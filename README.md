@@ -24,6 +24,16 @@ Edit `src/mapoi_packages/mapoi_turtlebot3_example/maps/turtlebot3_world/map_info
 ## Make your original map
 
 make maps directory in `your_package/maps/site`.
+
+```
+# mapoi_turtlebot3_example
+maps/
+└── turtlebot3_world
+    ├── map_info.yaml
+    ├── turtlebot3_world.pgm
+    └── turtlebot3_world.yaml
+```
+
 Add `mapoi_poi_server` with `map_info_file` in `your_robot_launch.yaml`.
 
 ```your_robot_launch.yaml
