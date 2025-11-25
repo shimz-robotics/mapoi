@@ -19,6 +19,16 @@ MapoiPoiServer::MapoiPoiServer() : Node("mapoi_poi_server") {
   get_route_pois_service_ = this->create_service<mapoi_interfaces::srv::GetRoutePois>("get_route_pois",
     std::bind(&MapoiPoiServer::get_route_pois_service, this, std::placeholders::_1, std::placeholders::_2));
 
+  // initialpose subscriber and publisher
+  mapoi_initialpose_poi_sub_ = this->create_subscription<std_msgs::msg::String>(
+    "mapoi_initialpose_poi", 1, std::bind(&MapoiPoiServer::mapoi_initialpose_poi_cb, this, std::placeholders::_1));
+  nav2_initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("initialpose", 1);
+
+  // goal_pose subscriber and publisher
+  mapoi_goal_pose_poi_sub_ = this->create_subscription<std_msgs::msg::String>(
+    "mapoi_goal_pose_poi", 1, std::bind(&MapoiPoiServer::mapoi_goal_pose_poi_cb, this, std::placeholders::_1));
+  nav2_goal_pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("goal_pose", 1);
+
   RCLCPP_INFO(this->get_logger(), "Ready to serve. The current map_name is %s", current_map_info_file_.c_str());
 }
 
@@ -111,6 +121,55 @@ void MapoiPoiServer::get_route_pois_service(
   RCLCPP_DEBUG(this->get_logger(), "Collected POIs in route '%s': [%s]",
                request->route_name.c_str(), poi_names.c_str());
 }
+
+void MapoiPoiServer::mapoi_initialpose_poi_cb(const std_msgs::msg::String::SharedPtr msg)
+{
+  RCLCPP_INFO(this->get_logger(), "Received POI name for initialpose: %s", msg->data.c_str());
+
+  // Find the POI in the pois_list_
+  for (const auto &poi : pois_list_) {
+    if (poi["name"].as<std::string>() == msg->data) {
+      geometry_msgs::msg::PoseWithCovarianceStamped init_pose;
+      init_pose.header.frame_id = "map";
+      init_pose.pose.pose.position.x = poi["pose"]["x"].as<double>();
+      init_pose.pose.pose.position.y = poi["pose"]["y"].as<double>();
+      auto yaw = poi["pose"]["yaw"].as<double>();
+      init_pose.pose.pose.orientation.z = std::sin(yaw / 2.0);
+      init_pose.pose.pose.orientation.w = std::cos(yaw / 2.0);
+      init_pose.pose.covariance[0] = 0.25;
+      init_pose.pose.covariance[7] = 0.25;
+      init_pose.pose.covariance[35] = 0.06853891945200942;
+
+      nav2_initialpose_pub_->publish(init_pose);
+      RCLCPP_INFO(this->get_logger(), "Published initial pose from POI: %s", msg->data.c_str());
+      return;
+    }
+  }
+  RCLCPP_WARN(this->get_logger(), "POI named '%s' not found!", msg->data.c_str());
+}
+
+void MapoiPoiServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedPtr msg)
+{
+  RCLCPP_INFO(this->get_logger(), "Received POI name for goal pose: %s", msg->data.c_str());
+
+  // Find the POI in the pois_list_
+  for (const auto &poi : pois_list_) {
+    if (poi["name"].as<std::string>() == msg->data) {
+      geometry_msgs::msg::PoseStamped goal_pose;
+      goal_pose.header.frame_id = "map";
+      goal_pose.pose.position.x = poi["pose"]["x"].as<double>();
+      goal_pose.pose.position.y = poi["pose"]["y"].as<double>();
+      auto yaw = poi["pose"]["yaw"].as<double>();
+      goal_pose.pose.orientation.z = std::sin(yaw / 2.0);
+      goal_pose.pose.orientation.w = std::cos(yaw / 2.0);
+      nav2_goal_pose_pub_->publish(goal_pose);
+      RCLCPP_INFO(this->get_logger(), "Published goal pose from POI: %s", msg->data.c_str());
+      return;
+    }
+  }
+  RCLCPP_WARN(this->get_logger(), "POI named '%s' not found!", msg->data.c_str());
+}
+
 
 int main(int argc, char **argv)
 {
