@@ -1,0 +1,3 @@
+string route_name
+---
+mapoi_interfaces/PointOfInterest[] pois_list
