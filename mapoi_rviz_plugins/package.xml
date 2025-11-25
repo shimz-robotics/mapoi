@@ -1,0 +1,21 @@
+<package format="2">
+  <name>mapoi_rviz_plugins</name>
+  <version>1.0.0</version>
+  <description>Rviz2 plugins for mapoi</description>
+
+  <author email="kimushun1101@gmail.com">Shunsuke Kimura</author>
+  <maintainer email="kimushun1101@gmail.com">Shunsuke Kimura</maintainer>
+  <license>MIT</license>
+
+  <depend>ament_cmake_auto</depend>
+  <depend>std_srvs</depend>
+  <depend>rviz_common</depend>
+  <depend>rviz_default_plugins</depend>
+  <depend>mapoi_interfaces</depend>
+  <depend>cmd_vel_manager</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+
+</package>

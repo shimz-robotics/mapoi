@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PoiEditorUi</class>
+ <widget class="QWidget" name="PoiEditorUi">
+  <property name="windowModality">
+   <enum>Qt::WindowModal</enum>
+  </property>
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>688</width>
+    <height>478</height>
+   </rect>
+  </property>
+  <property name="sizePolicy">
+   <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+    <horstretch>0</horstretch>
+    <verstretch>0</verstretch>
+   </sizepolicy>
+  </property>
+  <property name="windowTitle">
+   <string>TestWidget Window</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout">
+     <item>
+      <widget class="QComboBox" name="MapListcomboBox">
+       <property name="currentText">
+        <string/>
+       </property>
+       <property name="currentIndex">
+        <number>-1</number>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="MapComboBox">
+       <property name="layoutDirection">
+        <enum>Qt::LeftToRight</enum>
+       </property>
+       <item>
+        <property name="text">
+         <string>map name</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="ResetButton">
+       <property name="text">
+        <string>reset POIs</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QTableWidget" name="PoiTable">
+     <property name="rowCount">
+      <number>2</number>
+     </property>
+     <property name="columnCount">
+      <number>6</number>
+     </property>
+     <row>
+      <property name="text">
+       <string>1</string>
+      </property>
+     </row>
+     <row>
+      <property name="text">
+       <string>2</string>
+      </property>
+     </row>
+     <column>
+      <property name="text">
+       <string>id</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>name</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>jp</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>pose</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>radius</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>tags</string>
+      </property>
+     </column>
+     <item row="0" column="0">
+      <property name="text">
+       <string>201</string>
+      </property>
+     </item>
+     <item row="0" column="1">
+      <property name="text">
+       <string>ELV</string>
+      </property>
+     </item>
+     <item row="0" column="2">
+      <property name="text">
+       <string>エレベータ</string>
+      </property>
+     </item>
+     <item row="0" column="3">
+      <property name="text">
+       <string>1.0, 2.0, 3.0</string>
+      </property>
+     </item>
+     <item row="0" column="4">
+      <property name="text">
+       <string>0.5</string>
+      </property>
+     </item>
+     <item row="0" column="5">
+      <property name="text">
+       <string>Distination, origin</string>
+      </property>
+     </item>
+     <item row="1" column="0">
+      <property name="text">
+       <string>202</string>
+      </property>
+     </item>
+     <item row="1" column="1">
+      <property name="text">
+       <string>TheaterRoom</string>
+      </property>
+     </item>
+     <item row="1" column="2">
+      <property name="text">
+       <string>シアタールーム</string>
+      </property>
+     </item>
+     <item row="1" column="3">
+      <property name="text">
+       <string>0.1, 2.4, 5.6</string>
+      </property>
+     </item>
+     <item row="1" column="4">
+      <property name="text">
+       <string>1.0</string>
+      </property>
+     </item>
+     <item row="1" column="5">
+      <property name="text">
+       <string>Distination</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_1">
+     <item>
+      <widget class="QPushButton" name="NewButton">
+       <property name="text">
+        <string>New</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="CopyButton">
+       <property name="text">
+        <string>Copy</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="DeleteButton">
+       <property name="text">
+        <string>Delete</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_2" stretch="1,0">
+     <item>
+      <widget class="QComboBox" name="FileComboBox">
+       <property name="editable">
+        <bool>true</bool>
+       </property>
+       <item>
+        <property name="text">
+         <string>file to save</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="SaveButton">
+       <property name="text">
+        <string>save</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

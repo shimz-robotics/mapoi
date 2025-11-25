@@ -1,0 +1,155 @@
+map_localization: giken2F_real_localization
+map_pathplanning: giken2F_real_pathplanning
+initial_pose: {x: 0.0, y: 0.0, yaw: 0.0}
+poi:
+  - id: 205
+    name: PresentationRoom
+    jp: プレゼンテーションルーム
+    pose:
+      x: -8.202450000000001
+      y: -9.127000000000001
+      yaw: 0
+    radius: 0.5
+    tags:
+      - destination
+  - id: 206
+    name: HistoryExhibitionRoom
+    jp: 歴史展示室
+    pose:
+      x: -1.20319
+      y: -9.27528
+      yaw: -1.57
+    radius: 0.5
+    tags:
+      - destination
+  - id: 200
+    name: ELVHall
+    jp: エレベーターホール
+    pose:
+      x: 0
+      y: 0
+      yaw: 0
+    radius: 0.5
+    tags:
+      - destination
+      - origin
+  - id: 207
+    name: ShowRoom
+    jp: ショールーム
+    pose:
+      x: -2.43894
+      y: 8.76211
+      yaw: 1.57
+    radius: 0.5
+    tags:
+      - destination
+  - id: 208
+    name: Biotop
+    jp: ビオトープ
+    pose:
+      x: -13.0961
+      y: 4.84647
+      yaw: -3.13034
+    radius: 0.5
+    tags:
+      - destination
+  - id: 250
+    name: Wellhole
+    jp: 吹き抜け
+    pose:
+      x: -12.1714
+      y: 1.69135
+      yaw: 0.005021
+    radius: 0.5
+    tags:
+      - landmark
+  - id: 261
+    name: guide_10mLeft
+    jp: 階段あがったところ
+    pose:
+      x: -8.100949999999999
+      y: -7.76364
+      yaw: -0.004296
+    radius: 0.5
+    tags:
+      - guide
+  - id: 261
+    name: guide_Remaining6
+    jp: ベンチあたり
+    pose:
+      x: -3.53709
+      y: -7.37358
+      yaw: 0.006466
+    radius: 0.5
+    tags:
+      - guide
+  - id: 262
+    name: guide_ArriveSoon
+    jp: 曲がり角前
+    pose:
+      x: 0.66794
+      y: -8.232340000000001
+      yaw: -0.0201428
+    radius: 1.5
+    tags:
+      - guide
+  - id: 263
+    name: guide_Remaining21Theater
+    jp: 曲がり終わり
+    pose:
+      x: 2.68914
+      y: -7.35474
+      yaw: 1.56458
+    radius: 1
+    tags:
+      - guide
+  - id: 264
+    name: guide_LeftMenRestroom
+    jp: 左に男子トイレ
+    pose:
+      x: 2.34455
+      y: -3.68618
+      yaw: 1.56656
+    radius: 0.5
+    tags:
+      - guide
+  - id: 265
+    name: guide_LeftElevatorHall
+    jp: 左にエレベーターホール
+    pose:
+      x: 2.58543
+      y: -0.6323569999999999
+      yaw: 1.59224
+    radius: 0.5
+    tags:
+      - guide
+  - id: 266
+    name: guide_LeftWomenRestroom
+    jp: 左に女子トイレ
+    pose:
+      x: 2.78424
+      y: 2.81508
+      yaw: 1.55683
+    radius: 0.5
+    tags:
+      - guide
+  - id: 267
+    name: guide_LeftShowroom
+    jp: 左にショールーム
+    pose:
+      x: 3.76672
+      y: 11.5136
+      yaw: 1.53828
+    radius: 0.5
+    tags:
+      - guide
+  - id: 290
+    name: Empathic_Building_origin
+    jp: 位置情報タグの原点
+    pose:
+      x: 4.80946
+      y: -23.5654
+      yaw: 1.57659
+    radius: 1
+    tags:
+      - eb_origin
