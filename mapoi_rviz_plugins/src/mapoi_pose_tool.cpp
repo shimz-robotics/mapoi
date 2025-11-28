@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "mapoi_rviz_plugins/poi_tool.hpp"
+#include "mapoi_rviz_plugins/mapoi_pose_tool.hpp"
 
 #include <memory>
 #include <string>
@@ -24,27 +24,27 @@
 namespace mapoi_rviz_plugins
 {
 
-PoiTool::PoiTool()
+MapoiPoseTool::MapoiPoseTool()
 : rviz_default_plugins::tools::PoseTool()
 {
   shortcut_key_ = 'i';
 }
 
-PoiTool::~PoiTool()
+MapoiPoseTool::~MapoiPoseTool()
 {
 }
 
-void PoiTool::onInitialize()
+void MapoiPoseTool::onInitialize()
 {
   PoseTool::onInitialize();
-  setName("Set POI");
+  setName("Set Mapoi Pose");
   setIcon(rviz_common::loadPixmap("package://rviz_default_plugins/icons/classes/SetGoal.png"));
   node_ = context_->getRosNodeAbstraction().lock()->get_raw_node();
-  poi_pose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseStamped>("poi_pose", 1);
+  poi_pose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseStamped>("mapoi_rviz_pose", 1);
 }
 
 void
-PoiTool::onPoseSet(double x, double y, double theta)
+MapoiPoseTool::onPoseSet(double x, double y, double theta)
 {
   auto msg = std::make_shared<geometry_msgs::msg::PoseStamped>();
   msg->header.frame_id = context_->getFrameManager()->getFixedFrame();
@@ -64,4 +64,4 @@ PoiTool::onPoseSet(double x, double y, double theta)
 }  // namespace mapoi_rviz_plugins
 
 #include <pluginlib/class_list_macros.hpp>  // NOLINT
-PLUGINLIB_EXPORT_CLASS(mapoi_rviz_plugins::PoiTool, rviz_common::Tool)
+PLUGINLIB_EXPORT_CLASS(mapoi_rviz_plugins::MapoiPoseTool, rviz_common::Tool)

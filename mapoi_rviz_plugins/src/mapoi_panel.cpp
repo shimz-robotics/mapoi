@@ -22,8 +22,8 @@ void MapoiPanel::onInitialize()
   node_ = this->getDisplayContext()->getRosNodeAbstraction().lock()->get_raw_node();
 
   connect(ui_->MapComboBox, SIGNAL(activated(int)), this, SLOT(MapComboBox()));
-  connect(ui_->DestinationComboBox, SIGNAL(activated(int)), this, SLOT(DestinationComboBox()));
-  connect(ui_->FootprintComboBox, SIGNAL(activated(int)), this, SLOT(FootprintComboBox()));
+  connect(ui_->Nav2GoalComboBox, SIGNAL(activated(int)), this, SLOT(Nav2GoalComboBox()));
+  connect(ui_->MapoiRouteComboBox, SIGNAL(activated(int)), this, SLOT(MapoiRouteComboBox()));
 
   connect(ui_->LocalizationButton, SIGNAL(clicked()), this, SLOT(LocalizationButton()));
   connect(ui_->RunButton, SIGNAL(clicked()), this, SLOT(RunButton()));
@@ -32,17 +32,17 @@ void MapoiPanel::onInitialize()
   parentWidget()->setVisible(true);
 
   // map ComboBox
-  auto node = rclcpp::Node::make_shared("mapoi_panel_get_map_info_client");
-  auto get_map_info_cli = node->create_client<mapoi_interfaces::srv::GetMapInfo>("get_map_info");
-  while(!get_map_info_cli->wait_for_service(1s)){
+  auto node = rclcpp::Node::make_shared("mapoi_panel_get_maps_info_client");
+  auto get_maps_info_cli = node->create_client<mapoi_interfaces::srv::GetMapsInfo>("get_maps_info");
+  while(!get_maps_info_cli->wait_for_service(1s)){
     if(!rclcpp::ok()){
       RCLCPP_ERROR(node->get_logger(), "Interrupted while waiting for the service. Exiting.");
       return;
     }
     RCLCPP_INFO(node->get_logger(), "service not available, waiting again...");
   }
-  auto request = std::make_shared<mapoi_interfaces::srv::GetMapInfo::Request>();
-  auto result = get_map_info_cli->async_send_request(request);
+  auto request = std::make_shared<mapoi_interfaces::srv::GetMapsInfo::Request>();
+  auto result = get_maps_info_cli->async_send_request(request);
   if(rclcpp::spin_until_future_complete(node, result) == rclcpp::FutureReturnCode::SUCCESS)
   {
     auto map_info = result.get();
@@ -53,30 +53,22 @@ void MapoiPanel::onInitialize()
     }
     SetMapComboBox(map_info->map_name);
   }else{
-    RCLCPP_ERROR(node->get_logger(), "Failed to call service get_tagged_pois");
+    RCLCPP_ERROR(node->get_logger(), "Failed to call service get_pois_info");
   }
 
   // Buttons
-  initialpose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("initialpose", 1);
-  goal_name_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_nav/goal_names", 1);
-  cancel_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_nav/cancel", 1);
+  nav2_initialpose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("initialpose", 1);
+  nav2_goal_pose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseStamped>("goal_pose", 1);
 
-  cmd_vel_mode_sub_ = node_->create_subscription<CmdVelFrom>(
-    "/cmd_vel/mode", 10, [this](CmdVelFrom::ConstSharedPtr msg) {
-        cmd_vel_mode_ = msg->cmd_vel_mode;
-      });
-  cmd_vel_mode_ = CmdVelFrom::NON;
   map_name_sub_ = node_->create_subscription<std_msgs::msg::String>(
       "/mapoi_interfaces/current_map", 10,
       std::bind(&MapoiPanel::MapNameCallback, this, std::placeholders::_1));
 
-  // footprint ComboBox
-  footprint_mode_pub_ =
-      node_->create_publisher<std_msgs::msg::Int8>("footprint_mode", 1);
-  ui_->FootprintComboBox->addItem("NORMAL");
-  ui_->FootprintComboBox->addItem("SMALLEST");
-  ui_->FootprintComboBox->addItem("DYNAMIC");
-  ui_->FootprintComboBox->addItem("SMALL");
+  // Mapoi Route ComboBox
+  ui_->MapoiRouteComboBox->addItem("NORMAL");
+  ui_->MapoiRouteComboBox->addItem("SMALLEST");
+  ui_->MapoiRouteComboBox->addItem("DYNAMIC");
+  ui_->MapoiRouteComboBox->addItem("SMALL");
 }
 
 void MapoiPanel::onEnable()
@@ -118,16 +110,13 @@ void MapoiPanel::MapComboBox() //Set"Floor"
   }
 }
 
-void MapoiPanel::DestinationComboBox()
+void MapoiPanel::Nav2GoalComboBox()
 {
-  dest_ind_ = ui_->DestinationComboBox->currentIndex();
+  goal_combobox_ind_ = ui_->Nav2GoalComboBox->currentIndex();
 }
 
-void MapoiPanel::FootprintComboBox()
+void MapoiPanel::MapoiRouteComboBox()
 {
-  std_msgs::msg::Int8 footprint_mode_msg;
-  footprint_mode_msg.data = ui_->FootprintComboBox->currentIndex();
-  footprint_mode_pub_->publish(footprint_mode_msg);
 }
 
 void MapoiPanel::LocalizationButton()
@@ -135,73 +124,32 @@ void MapoiPanel::LocalizationButton()
   geometry_msgs::msg::PoseWithCovarianceStamped msg_init;
   msg_init.header.stamp = rclcpp::Clock().now();
   msg_init.header.frame_id = "map";
-  msg_init.pose.pose = pois_[dest_ind_].pose;
+  msg_init.pose.pose = pois_[goal_combobox_ind_].pose;
   msg_init.pose.covariance[0] = 0.25;
   msg_init.pose.covariance[7] = 0.25;
   msg_init.pose.covariance[35] = 0.06853891945200942;
 
-  initialpose_pub_->publish(msg_init);
+  nav2_initialpose_pub_->publish(msg_init);
   RCLCPP_INFO(LOGGER, "A initialpose was set.");
 }
 
 void MapoiPanel::RunButton()
 {
-  std_msgs::msg::String msg;
-  msg.data = pois_[dest_ind_].name;
-  goal_name_pub_->publish(msg);
-
-  if(cmd_vel_mode_ != CmdVelFrom::AUTO){
-    MapoiPanel::RequestSetCmdVelMode(CmdVelFrom::AUTO);
-  }
+  geometry_msgs::msg::PoseStamped msg_goal;
+  msg_goal.header.stamp = rclcpp::Clock().now();
+  msg_goal.header.frame_id = "map";
+  msg_goal.pose = pois_[goal_combobox_ind_].pose;
+  nav2_goal_pose_pub_->publish(msg_goal);
   RCLCPP_INFO(LOGGER, "A goal pose was set");
 }
 
 void MapoiPanel::StopButton()
 {
-  RCLCPP_INFO(LOGGER, "cmd_vel_mode_ : %s", cmd_vel_mode_.c_str());
-  // if(cmd_vel_mode_ == CmdVelFrom::AUTO){
     std_msgs::msg::String msg;
     msg.data = "mapoi_panel";
-    cancel_pub_->publish(msg);
-    MapoiPanel::RequestSetCmdVelMode(CmdVelFrom::NON);
-    RCLCPP_INFO(LOGGER, "AI suitcase was stopped");
+    mapoi_cancel_pub_->publish(msg);
+    RCLCPP_INFO(LOGGER, "The robot was stopped");
   // }
-}
-
-void MapoiPanel::RequestSetCmdVelMode(std::string cm)
-{
-  std::shared_ptr<rclcpp::Node> node = rclcpp::Node::make_shared("set_cmd_vel_mode_client");
-  auto cmd_vel_mode_cli = node->create_client<cmd_vel_manager::srv::SetCmdVelMode>("set_cmd_vel_mode");
-
-  while(!cmd_vel_mode_cli->wait_for_service(1s)){
-    if(!rclcpp::ok()){
-      RCLCPP_ERROR(rclcpp::get_logger("set_cmd_vel_mode_client"), "Interrupted while waiting for the service. Exiting.");
-      return;
-    }
-    RCLCPP_INFO(rclcpp::get_logger("set_cmd_vel_mode_client"), "service not available, waiting again...");
-  }
-
-  auto request = std::make_shared<cmd_vel_manager::srv::SetCmdVelMode::Request>();
-  request->cmd_vel_mode = cm;
-  while(!cmd_vel_mode_cli->wait_for_service(1s)){
-    if(!rclcpp::ok()){
-      RCLCPP_ERROR(LOGGER, "Interrupted while waiting for the service. Exiting.");
-      return;
-    }
-    RCLCPP_INFO(LOGGER, "service not available, waiting again...");
-  }
-  auto result = cmd_vel_mode_cli->async_send_request(request);
-  // Wait for the result.
-  if(rclcpp::spin_until_future_complete(node, result) == rclcpp::FutureReturnCode::SUCCESS)
-  {
-    if(result.get()->success){
-      RCLCPP_INFO(LOGGER, "cmd_vel_mode was switched into %s", request->cmd_vel_mode.c_str());
-    }else{
-      RCLCPP_ERROR(LOGGER, "Something wrong");
-    }
-  }else{
-    RCLCPP_ERROR(LOGGER, "Failed to call service set_cmd_vel_mode");
-  }
 }
 
 void MapoiPanel::MapNameCallback(std_msgs::msg::String::SharedPtr msg)
@@ -218,7 +166,7 @@ void MapoiPanel::SetMapComboBox(std::string map_name)
   for(auto map : map_name_list_){
     if(map == map_name){
       ui_->MapComboBox->setCurrentIndex(i);
-      SetDestComboBox();
+      SetNav2GoalComboBox();
       return;
     }
     i++;
@@ -231,14 +179,13 @@ void MapoiPanel::SetMapComboBox(std::string map_name)
   RCLCPP_ERROR_STREAM(LOGGER, "Couldn't get " << map_name << " correctly");
 }
 
-void MapoiPanel::SetDestComboBox()
+void MapoiPanel::SetNav2GoalComboBox()
 {
-  auto node = rclcpp::Node::make_shared("mapoi_panel_get_tagged_pois_client");
-  rclcpp::Client<mapoi_interfaces::srv::GetTaggedPois>::SharedPtr client_gtp =
-    node->create_client<mapoi_interfaces::srv::GetTaggedPois>("get_tagged_pois");
+  auto node = rclcpp::Node::make_shared("mapoi_panel_get_pois_info_client");
+  rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr client_gtp =
+    node->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
 
-  auto request_gtp = std::make_shared<mapoi_interfaces::srv::GetTaggedPois::Request>();
-  request_gtp->tag = "destination";
+  auto request_gtp = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
 
   while(!client_gtp->wait_for_service(1s)){
     if(!rclcpp::ok()){
@@ -248,20 +195,33 @@ void MapoiPanel::SetDestComboBox()
     RCLCPP_INFO(LOGGER, "service not available, waiting again...");
   }
 
-  auto result_gtp = client_gtp->async_send_request(request_gtp);
+  auto result_get_pois_info = client_gtp->async_send_request(request_gtp);
   // Wait for the result.
-  if(rclcpp::spin_until_future_complete(node, result_gtp) == rclcpp::FutureReturnCode::SUCCESS)
+  if(rclcpp::spin_until_future_complete(node, result_get_pois_info) == rclcpp::FutureReturnCode::SUCCESS)
   {
-    auto poi_info = result_gtp.get();
-    auto tag_poi = poi_info->pois_list;
-    RCLCPP_INFO(LOGGER, "Size of result: %ld", tag_poi.size());
-    pois_ = poi_info->pois_list;
-    ui_->DestinationComboBox->clear();
-    for(mapoi_interfaces::msg::PointOfInterest p : pois_)
-      ui_->DestinationComboBox->addItem(QString::fromStdString(p.description));
-    dest_ind_ = 0;
+
+    auto pois_all = result_get_pois_info.get()->pois_list;
+    ui_->Nav2GoalComboBox->clear();
+    pois_.clear();
+
+    for(mapoi_interfaces::msg::PointOfInterest p : pois_all){
+      // もしpoiがgoalかwaypointタグを持っていたらpois_に追加
+      auto tags = p.tags;
+      bool is_goal_or_waypoint = false;
+      for(auto tag : tags){
+        if(tag == "goal" || tag == "waypoint"){
+          is_goal_or_waypoint = true;
+          break;
+        }
+      }
+      if(is_goal_or_waypoint){
+        pois_.push_back(p);
+        ui_->Nav2GoalComboBox->addItem(QString::fromStdString(p.description));
+      }
+    }
+    goal_combobox_ind_ = 0;
   }else{
-    RCLCPP_ERROR(LOGGER, "Failed to call service get_tagged_pois");
+    RCLCPP_ERROR(LOGGER, "Failed to call service get_pois_info");
   }
 }
 

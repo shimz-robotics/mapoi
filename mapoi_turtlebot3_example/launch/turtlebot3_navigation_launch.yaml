@@ -1,6 +1,6 @@
 launch:
 
-# --- Arguments ---
+# Arguments
 - let: {name: pkg_name, value: "turtlebot3_navigation2"}
 - arg:
     name: map
@@ -9,7 +9,7 @@ launch:
 
 - arg:
     name: params_file
-    default: "$(find-pkg-share turtlebot3_navigation2)/param/humble/$(env TURTLEBOT3_MODEL).yaml"
+    default: "$(find-pkg-share mapoi_turtlebot3_example)/param/$(env TURTLEBOT3_MODEL).yaml"
     description: "Full path to param file to load"
 
 - arg:
@@ -17,12 +17,12 @@ launch:
     default: "true"
     description: "Use simulation clock if true"
 
-# --- Gazebo launch ---
+# Gazebo launch
 - include:
     file: "$(find-pkg-share turtlebot3_gazebo)/launch/turtlebot3_world.launch.py"
 
 
-# --- Include Nav2 bringup ---
+# Include Nav2 bringup
 - include:
     file: "$(find-pkg-share nav2_bringup)/launch/bringup_launch.py"
     arg:
@@ -31,7 +31,7 @@ launch:
       - {name: use_sim_time, value: "$(var use_sim_time)"}
 
 
-# --- RViz2 ---
+# RViz2
 - node:
     pkg: rviz2
     exec: rviz2
@@ -41,12 +41,19 @@ launch:
     output: "screen"
 
 
-# --- Mapoi Server ---
+# Mapoi Server
 - node:
     pkg: mapoi_server
-    exec: mapoi_poi_server
+    exec: mapoi_server
     param:
-      - {name: map_info_file, value: "$(find-pkg-share mapoi_turtlebot3_example)/maps/turtlebot3_world/map_info.yaml"}
+      - {name: maps_path, value: "$(find-pkg-share mapoi_turtlebot3_example)/maps"}
+      - {name: map_name, value: "turtlebot3_world"}
+      - {name: config_file, value: "mapoi_config.yaml"}
+      - {name: pub_interval_ms, value: 500}
+
+- node:
+    pkg: mapoi_server
+    exec: mapoi_nav_server
 
 - node:
     pkg: mapoi_server

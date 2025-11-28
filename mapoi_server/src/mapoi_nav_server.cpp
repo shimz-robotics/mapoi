@@ -12,31 +12,107 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
 {
   this->get_logger().set_level(rclcpp::Logger::Level::Info);
 
-  this->declare_parameter("route_name", "route_1");
-  this->declare_parameter("poi_tag", "all");
+  // initialpose subscriber and publisher
+  mapoi_initialpose_poi_sub_ = this->create_subscription<std_msgs::msg::String>(
+    "mapoi_initialpose_poi", 1, std::bind(&MapoiNavServer::mapoi_initialpose_poi_cb, this, std::placeholders::_1));
+  nav2_initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("initialpose", 1);
+
+  // goal_pose subscriber and publisher
+  mapoi_goal_pose_poi_sub_ = this->create_subscription<std_msgs::msg::String>(
+    "mapoi_goal_pose_poi", 1, std::bind(&MapoiNavServer::mapoi_goal_pose_poi_cb, this, std::placeholders::_1));
+  nav2_goal_pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("goal_pose", 1);
+
+  // route subscriber
+  mapoi_route_sub_ = this->create_subscription<std_msgs::msg::String>(
+    "mapoi_route", 1, std::bind(&MapoiNavServer::mapoi_route_cb, this, std::placeholders::_1));
 
   // アクションクライアントの作成
   // テンプレート引数にエイリアス FollowWaypoints を使用
   this->action_client_ = rclcpp_action::create_client<FollowWaypoints>(this, "follow_waypoints");
 
   // サービスクライアントの作成
+  this->pois_info_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
   this->route_client_ = this->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
-  while(!this->route_client_->wait_for_service(1s)) {
-    if (!rclcpp::ok()) {
-      RCLCPP_ERROR(this->get_logger(), "Interrupted while waiting for route_pois service. Exiting.");
-      return;
-    }
-    RCLCPP_INFO(this->get_logger(), "route_pois service not available, waiting again...");
-  }
-  auto route_request = std::make_shared<mapoi_interfaces::srv::GetRoutePois::Request>();
-  route_request->route_name = this->get_parameter("route_name").as_string();
-
-  RCLCPP_INFO(this->get_logger(), "Requesting Route Info for: %s", route_request->route_name.c_str());
-
-  route_client_->async_send_request(
-    route_request, std::bind(&MapoiNavServer::on_route_received, this, _1));
 
   RCLCPP_INFO(this->get_logger(), "MapoiNavServer initialized.");
+}
+
+void MapoiNavServer::get_pois_list(){
+  while(!this->pois_info_client_->wait_for_service(1s)) {
+    if (!rclcpp::ok()) {
+      RCLCPP_ERROR(this->get_logger(), "Interrupted while waiting for pois_info service. Exiting.");
+      return;
+    }
+    RCLCPP_INFO(this->get_logger(), "pois_info service not available, waiting again...");
+  }
+  auto pois_info_request = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
+  pois_info_client_->async_send_request(
+    pois_info_request, std::bind(&MapoiNavServer::on_pois_info_received, this, _1));
+}
+
+void MapoiNavServer::mapoi_initialpose_poi_cb(const std_msgs::msg::String::SharedPtr msg)
+{
+  get_pois_list();
+  RCLCPP_INFO(this->get_logger(), "Received POI name for initialpose: %s", msg->data.c_str());
+
+  // Find the POI in the pois_list_
+  for (const auto &poi : pois_list_) {
+    if (poi.name == msg->data) {
+      geometry_msgs::msg::PoseWithCovarianceStamped init_pose;
+      init_pose.header.frame_id = "map";
+      init_pose.pose.pose = poi.pose;
+      init_pose.pose.covariance[0] = 0.25;
+      init_pose.pose.covariance[7] = 0.25;
+      init_pose.pose.covariance[35] = 0.06853891945200942;
+
+      nav2_initialpose_pub_->publish(init_pose);
+      RCLCPP_INFO(this->get_logger(), "Published initial pose from POI: %s", msg->data.c_str());
+      return;
+    }
+  }
+  RCLCPP_WARN(this->get_logger(), "POI named '%s' not found!", msg->data.c_str());
+}
+
+void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedPtr msg)
+{
+  get_pois_list();
+  RCLCPP_INFO(this->get_logger(), "Received POI name for goal pose: %s", msg->data.c_str());
+
+  // Find the POI in the pois_list_
+  for (const auto &poi : pois_list_) {
+    if (poi.name == msg->data) {
+      geometry_msgs::msg::PoseStamped goal_pose;
+      goal_pose.header.frame_id = "map";
+      goal_pose.pose = poi.pose;
+      nav2_goal_pose_pub_->publish(goal_pose);
+      RCLCPP_INFO(this->get_logger(), "Published goal pose from POI: %s", msg->data.c_str());
+      return;
+    }
+  }
+  RCLCPP_WARN(this->get_logger(), "POI named '%s' not found!", msg->data.c_str());
+}
+
+void MapoiNavServer::mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg)
+{
+  RCLCPP_INFO(this->get_logger(), "Received route name: %s", msg->data.c_str());
+
+  auto route_request = std::make_shared<mapoi_interfaces::srv::GetRoutePois::Request>();
+  route_request->route_name = msg->data;
+
+  this->route_client_->async_send_request(
+    route_request, std::bind(&MapoiNavServer::on_route_received, this, _1));
+}
+
+void MapoiNavServer::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future)
+{
+  auto result = future.get();
+  if (!result) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to get Tagged POIs.");
+    return;
+  }
+
+  pois_list_ = result->pois_list;
+  RCLCPP_INFO(this->get_logger(), "Received %ld Tagged POIs.", pois_list_.size());
 }
 
 void MapoiNavServer::on_route_received(rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future)
@@ -64,25 +140,14 @@ void MapoiNavServer::on_route_received(rclcpp::Client<mapoi_interfaces::srv::Get
     return;
   }
 
-  this->send_waypoints(waypoints);
-}
-
-void MapoiNavServer::send_waypoints(const std::vector<geometry_msgs::msg::PoseStamped>& waypoints)
-{
-  if (!this->action_client_->wait_for_action_server(1s)) {
-    RCLCPP_WARN(this->get_logger(), "Action server not available. Retrying in 1s...");
-    if(!this->retry_timer_) {
-        this->retry_timer_ = this->create_wall_timer(
-            1s, [this, waypoints]() { this->send_waypoints(waypoints); });
+  // Send waypoints to Nav2 with action client
+  while(!this->action_client_->wait_for_action_server(1s)) {
+        if (!rclcpp::ok()) {
+      RCLCPP_ERROR(this->get_logger(), "Interrupted while waiting for action server. Exiting.");
+      return;
     }
-    return;
+    RCLCPP_INFO(this->get_logger(), "Action server not available, waiting again...");
   }
-
-  if(this->retry_timer_) {
-      this->retry_timer_->cancel();
-      this->retry_timer_.reset();
-  }
-
   RCLCPP_INFO(this->get_logger(), "Sending goal with %ld waypoints.", waypoints.size());
 
   auto goal_msg = FollowWaypoints::Goal();
@@ -134,8 +199,6 @@ void MapoiNavServer::result_callback(const GoalHandleFollowWaypoints::WrappedRes
       RCLCPP_ERROR(this->get_logger(), "❓ Unknown result code");
       break;
   }
-  
-  rclcpp::shutdown();
 }
 
 int main(int argc, char ** argv)

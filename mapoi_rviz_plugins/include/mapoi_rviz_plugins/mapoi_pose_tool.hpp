@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef POI_TOOL_HPP_
-#define POI_TOOL_HPP_
+#pragma once
 
 #include <QObject>
 #include <memory>
@@ -37,13 +36,13 @@
 namespace mapoi_rviz_plugins
 {
 
-class RVIZ_DEFAULT_PLUGINS_PUBLIC PoiTool : public rviz_default_plugins::tools::PoseTool
+class RVIZ_DEFAULT_PLUGINS_PUBLIC MapoiPoseTool : public rviz_default_plugins::tools::PoseTool
 {
   Q_OBJECT
 
 public:
-  PoiTool();
-  ~PoiTool() override;
+  MapoiPoseTool();
+  ~MapoiPoseTool() override;
 
   void onInitialize() override;
 
@@ -56,5 +55,3 @@ private:
 };
 
 }  // namespace mapoi_rviz_plugins
-
-#endif  // POI_TOOL_HPP_

@@ -19,7 +19,7 @@ Open another terminal
 ros2 run mapoi_server mapoi_nav_server --ros-args -p route_name:=route_1
 ```
 
-Edit `src/mapoi_packages/mapoi_turtlebot3_example/maps/turtlebot3_world/map_info.yaml`
+Edit `src/mapoi_packages/mapoi_turtlebot3_example/maps/turtlebot3_world/mapoi_config.yaml`
 
 ## Make your original map
 
@@ -27,29 +27,55 @@ make maps directory in `your_package/maps/site`.
 
 ```
 # mapoi_turtlebot3_example
-maps/
+maps
+├── turtlebot3_dqn_stage1
+│   ├── mapoi_config.yaml
+│   ├── turtlebot3.pgm
+│   └── turtlebot3.yaml
 └── turtlebot3_world
-    ├── map_info.yaml
-    ├── turtlebot3_world.pgm
-    └── turtlebot3_world.yaml
+    ├── mapoi_config.yaml
+    ├── turtlebot3.pgm
+    └── turtlebot3.yaml
 ```
 
-Add `mapoi_poi_server` with `map_info_file` in `your_robot_launch.yaml`.
+Add `mapoi_server` with `mapoi_config_file` in `your_robot_launch.yaml`.
 
 ```your_robot_launch.yaml
-# --- Mapoi Server ---
+# Mapoi Server
 - node:
     pkg: mapoi_server
-    exec: mapoi_poi_server
+    exec: mapoi_server
     param:
-      - {name: map_info_file, value: "$(find-pkg-share mapoi_server)/maps/turtlebot3_world/map_info.yaml"}
+      - {name: maps_path, value: "$(find-pkg-share mapoi_turtlebot3_example)/maps"}
+      - {name: map_name, value: "turtlebot3_world"}
+      - {name: config_file, value: "mapoi_config.yaml"}
+      - {name: pub_interval_ms, value: 500}
+
+- node:
+    pkg: mapoi_server
+    exec: mapoi_nav_server
+
+- node:
+    pkg: mapoi_server
+    exec: mapoi_rviz2_publisher
+```
+
+Configure parameters to automatically set the initial position and enable map switching when you use `amcl`.
+
+```
+amcl:
+  ros__parameters:
+    ...
+    ...
+    ...
+    # Added parameters for initial pose
+    set_initial_pose: True
+    initial_pose: {x: -2.0, y: -0.5, yaw: 0.0}
+    # Added parameter to switch maps
+    first_map_only_: False
 ```
 
 To test, build your package, source `install/setup.bash`, launch `your_robot_launch.yaml` and command in another terminal.
-
-```sh
-ros2 run mapoi_server mapoi_nav_server --ros-args -p route_name:=route_1
-```
 
 ## contents
 
@@ -68,4 +94,3 @@ See the [README.md](/mapoi_interfaces/README.md).
 
 `mapoi_rviz_plugins` provides GUI-based operation using RViz.
 See the [README.md](/mapoi_rviz_plugins/README.md).
-

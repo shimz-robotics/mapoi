@@ -38,7 +38,7 @@ int main(int argc, char **argv)
   if(rclcpp::spin_until_future_complete(node, result) ==
     rclcpp::FutureReturnCode::SUCCESS)
   {
-    RCLCPP_INFO(rclcpp::get_logger("switch_map"), "Success: %d", result.get()->success);
+    RCLCPP_INFO(rclcpp::get_logger("switch_map"), "Result: %d", result.get()->success);
   }else{
     RCLCPP_ERROR(rclcpp::get_logger("switch_map"), "Failed to call service switch_map");
   }
