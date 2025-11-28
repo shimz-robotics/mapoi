@@ -13,10 +13,10 @@ source install/setup.bash
 ros2 launch mapoi_turtlebot3_example turtlebot3_navigation_launch.yaml
 ```
 
-Open another terminal
+Open another terminal and test command.
 
 ```sh
-ros2 run mapoi_server mapoi_nav_server --ros-args -p route_name:=route_1
+ros2 topic pub -1 /mapoi_goal_pose_poi std_msgs/msg/String "{data : conference_room}"
 ```
 
 Edit `src/mapoi_packages/mapoi_turtlebot3_example/maps/turtlebot3_world/mapoi_config.yaml`
