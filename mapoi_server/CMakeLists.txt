@@ -4,8 +4,8 @@ project(mapoi_server)
 find_package(ament_cmake_auto REQUIRED)
 ament_auto_find_build_dependencies()
 
-ament_auto_add_executable(mapoi_poi_server
-  src/mapoi_poi_server.cpp
+ament_auto_add_executable(mapoi_server
+  src/mapoi_server.cpp
 )
 
 ament_auto_add_executable(mapoi_nav_server

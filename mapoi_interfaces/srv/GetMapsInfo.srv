@@ -1,4 +1,3 @@
 ---
-string maps_path
 string[] maps_list
 string map_name

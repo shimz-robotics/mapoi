@@ -11,7 +11,8 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/PointOfInterest.msg"
   "srv/SwitchMap.srv"
-  "srv/GetMapInfo.srv"
+  "srv/GetMapsInfo.srv"
+  "srv/GetPoisInfo.srv"
   "srv/GetTaggedPois.srv"
   "srv/GetRoutePois.srv"
   "action/FollowPoiList.action"

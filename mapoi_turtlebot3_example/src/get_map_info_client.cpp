@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <memory>
 
-#include "mapoi_interfaces/srv/get_map_info.hpp"
+#include "mapoi_interfaces/srv/get_maps_info.hpp"
 
 using namespace std::chrono_literals;
 
@@ -17,10 +17,10 @@ int main(int argc, char **argv)
   // }
 
   std::shared_ptr<rclcpp::Node> node = rclcpp::Node::make_shared("get_map_info_client");
-  rclcpp::Client<mapoi_interfaces::srv::GetMapInfo>::SharedPtr client =
-    node->create_client<mapoi_interfaces::srv::GetMapInfo>("get_map_info");
+  rclcpp::Client<mapoi_interfaces::srv::GetMapsInfo>::SharedPtr client =
+    node->create_client<mapoi_interfaces::srv::GetMapsInfo>("get_maps_info");
 
-  auto request = std::make_shared<mapoi_interfaces::srv::GetMapInfo::Request>();
+  auto request = std::make_shared<mapoi_interfaces::srv::GetMapsInfo::Request>();
   // request->list_name = argv[1];
 
   while(!client->wait_for_service(1s)){
@@ -36,7 +36,6 @@ int main(int argc, char **argv)
   if(rclcpp::spin_until_future_complete(node, result) == rclcpp::FutureReturnCode::SUCCESS)
   {
     auto map_info = result.get();
-    RCLCPP_INFO(rclcpp::get_logger("get_map_info_client"), "Current List: %s", map_info->maps_path.c_str());
     RCLCPP_INFO(rclcpp::get_logger("get_map_info_client"), "Current Map: %s", map_info->map_name.c_str());
     for(auto map : map_info->maps_list){
       RCLCPP_INFO(rclcpp::get_logger("get_map_info_client"), "Map: %s", map.c_str());

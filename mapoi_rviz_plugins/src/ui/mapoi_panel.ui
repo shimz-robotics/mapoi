@@ -33,14 +33,14 @@
       </widget>
      </item>
      <item>
-      <widget class="QComboBox" name="DestinationComboBox">
+      <widget class="QComboBox" name="Nav2GoalComboBox">
        <property name="editable">
         <bool>false</bool>
        </property>
       </widget>
      </item>
      <item>
-      <widget class="QComboBox" name="FootprintComboBox"/>
+      <widget class="QComboBox" name="MapoiRouteComboBox"/>
      </item>
     </layout>
    </item>

@@ -38,6 +38,11 @@ amcl:
     z_rand: 0.5
     z_short: 0.05
     scan_topic: scan
+    # Added parameters for initial pose
+    set_initial_pose: True
+    initial_pose: {x: -2.0, y: -0.5, yaw: 0.0}
+    # Added parameter to switch maps
+    first_map_only_: False
 
 amcl_map_client:
   ros__parameters:

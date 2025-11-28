@@ -11,7 +11,7 @@
 #include <geometry_msgs/msg/pose.hpp>
 
 #include <yaml-cpp/yaml.h>
-#include "mapoi_interfaces/srv/get_tagged_pois.hpp"
+#include "mapoi_interfaces/srv/get_pois_info.hpp"
 #include "mapoi_interfaces/msg/point_of_interest.hpp"
 
 class MapoiRviz2Publisher : public rclcpp::Node
@@ -34,7 +34,7 @@ private:
    * @brief POI情報取得サービスのレスポンス処理
    * @param future サービスの結果
    */
-  void on_poi_received(rclcpp::Client<mapoi_interfaces::srv::GetTaggedPois>::SharedFuture future);
+  void on_poi_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future);
 
   // --- Member Variables ---
 
@@ -42,11 +42,11 @@ private:
   int id_buf_;
 
   // Publishers
-  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_dest_pub_;
-  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_event_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_waypoints_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_events_pub_;
 
   // Clients
-  rclcpp::Client<mapoi_interfaces::srv::GetTaggedPois>::SharedPtr poi_client_;
+  rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr poi_client_;
 
   // Timers
   rclcpp::TimerBase::SharedPtr init_timer_;

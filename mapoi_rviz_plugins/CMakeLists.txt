@@ -13,7 +13,7 @@ pluginlib_export_plugin_description_file(rviz_common plugin_description.xml)
 set(HEADERS
   include/mapoi_rviz_plugins/mapoi_panel.hpp
   include/mapoi_rviz_plugins/poi_editor.hpp
-  include/mapoi_rviz_plugins/poi_tool.hpp
+  include/mapoi_rviz_plugins/mapoi_pose_tool.hpp
 )
 qt5_wrap_ui(UIC_FILES
   src/ui/mapoi_panel.ui
@@ -22,7 +22,7 @@ qt5_wrap_ui(UIC_FILES
 set(SOURCE_FILES
   src/mapoi_panel.cpp
   src/poi_editor.cpp
-  src/poi_tool.cpp
+  src/mapoi_pose_tool.cpp
 )
 
 ament_auto_add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${HEADERS} ${UIC_FILES})

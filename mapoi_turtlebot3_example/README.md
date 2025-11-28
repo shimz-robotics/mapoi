@@ -37,6 +37,12 @@ export TURTLEBOT3_MODEL=burger
 ros2 launch turtlebot3_cartographer cartographer.launch.py use_sim_time:=True
 ```
 
+Turtlebot3の移動
+
+```sh
+ros2 run mouse_teleop mouse_teleop --ros-args -r /mouse_vel:=/cmd_vel
+```
+
 地図を保存
 
 ```sh
@@ -49,10 +55,10 @@ ros2 launch turtlebot3_cartographer cartographer.launch.py use_sim_time:=True
 
 ## 自律走行テスト
 
-Navigationとmapoi_poi_serverを立ち上げる。
+Navigationとmapoi_serverを立ち上げる。
 
 ```sh
-ros2 run mapoi_server mapoi_poi_server
+ros2 run mapoi_server mapoi_server
 ```
 
 走行テスト用のノードを実行する。
