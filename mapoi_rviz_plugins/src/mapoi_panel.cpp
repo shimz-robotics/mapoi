@@ -216,7 +216,7 @@ void MapoiPanel::SetNav2GoalComboBox()
       }
       if(is_goal_or_waypoint){
         pois_.push_back(p);
-        ui_->Nav2GoalComboBox->addItem(QString::fromStdString(p.description));
+        ui_->Nav2GoalComboBox->addItem(QString::fromStdString(p.name));
       }
     }
     goal_combobox_ind_ = 0;
