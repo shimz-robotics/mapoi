@@ -8,6 +8,7 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <nav2_msgs/action/follow_waypoints.hpp>
+#include <nav2_msgs/action/navigate_to_pose.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
@@ -21,6 +22,7 @@ class MapoiNavServer : public rclcpp::Node
 public:
   using FollowWaypoints = nav2_msgs::action::FollowWaypoints;
   using GoalHandleFollowWaypoints = rclcpp_action::ClientGoalHandle<FollowWaypoints>;
+  using NavigateToPose = nav2_msgs::action::NavigateToPose;
 
   explicit MapoiNavServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
@@ -53,11 +55,16 @@ private:
 
   // Clients
   rclcpp_action::Client<FollowWaypoints>::SharedPtr action_client_;
+  rclcpp_action::Client<NavigateToPose>::SharedPtr nav_to_pose_client_;
   GoalHandleFollowWaypoints::SharedPtr current_goal_handle_;
   rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr pois_info_client_;
   rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedPtr route_client_;
 
   std::vector<mapoi_interfaces::msg::PointOfInterest> pois_list_;
+
+  // Nav status publisher
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr nav_status_pub_;
+  void publish_nav_status(const std::string & status);
 };
 
 #endif  // MAPOI_SERVER__MAPOI_NAV_SERVER_HPP_

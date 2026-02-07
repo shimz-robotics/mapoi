@@ -33,6 +33,10 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   // アクションクライアントの作成
   // テンプレート引数にエイリアス FollowWaypoints を使用
   this->action_client_ = rclcpp_action::create_client<FollowWaypoints>(this, "follow_waypoints");
+  this->nav_to_pose_client_ = rclcpp_action::create_client<NavigateToPose>(this, "navigate_to_pose");
+
+  // Nav status publisher
+  nav_status_pub_ = this->create_publisher<std_msgs::msg::String>("mapoi_nav_status", 10);
 
   // サービスクライアントの作成
   this->pois_info_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
@@ -177,6 +181,7 @@ void MapoiNavServer::goal_response_callback(const GoalHandleFollowWaypoints::Sha
     RCLCPP_ERROR(this->get_logger(), "Goal was rejected by server");
   } else {
     current_goal_handle_ = goal_handle;
+    publish_nav_status("navigating");
     RCLCPP_INFO(this->get_logger(), "Goal accepted by server, waiting for result");
   }
 }
@@ -193,27 +198,45 @@ void MapoiNavServer::result_callback(const GoalHandleFollowWaypoints::WrappedRes
   current_goal_handle_.reset();
   switch (result.code) {
     case rclcpp_action::ResultCode::SUCCEEDED:
-      RCLCPP_INFO(this->get_logger(), "✅ Navigation SUCCEEDED!");
+      publish_nav_status("succeeded");
+      RCLCPP_INFO(this->get_logger(), "Navigation SUCCEEDED!");
       break;
     case rclcpp_action::ResultCode::ABORTED:
-      RCLCPP_ERROR(this->get_logger(), "❌ Navigation ABORTED");
+      publish_nav_status("aborted");
+      RCLCPP_ERROR(this->get_logger(), "Navigation ABORTED");
       break;
     case rclcpp_action::ResultCode::CANCELED:
-      RCLCPP_WARN(this->get_logger(), "⚠️ Navigation CANCELED");
+      publish_nav_status("canceled");
+      RCLCPP_WARN(this->get_logger(), "Navigation CANCELED");
       break;
     default:
-      RCLCPP_ERROR(this->get_logger(), "❓ Unknown result code");
+      RCLCPP_ERROR(this->get_logger(), "Unknown result code");
       break;
   }
+}
+
+void MapoiNavServer::publish_nav_status(const std::string & status)
+{
+  std_msgs::msg::String msg;
+  msg.data = status;
+  nav_status_pub_->publish(msg);
 }
 
 void MapoiNavServer::mapoi_cancel_cb(const std_msgs::msg::String::SharedPtr msg)
 {
   (void)msg;
+  bool canceled = false;
   if (current_goal_handle_) {
-    RCLCPP_INFO(this->get_logger(), "Canceling current navigation goal...");
+    RCLCPP_INFO(this->get_logger(), "Canceling FollowWaypoints goal...");
     action_client_->async_cancel_goal(current_goal_handle_);
-  } else {
+    canceled = true;
+  }
+  if (nav_to_pose_client_->action_server_is_ready()) {
+    RCLCPP_INFO(this->get_logger(), "Canceling all NavigateToPose goals...");
+    nav_to_pose_client_->async_cancel_all_goals();
+    canceled = true;
+  }
+  if (!canceled) {
     RCLCPP_WARN(this->get_logger(), "No active navigation goal to cancel.");
   }
 }

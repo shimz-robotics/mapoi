@@ -2,6 +2,10 @@
 #define MAPOI_SERVER__MAPOI_RVIZ2_PUBLISHER_HPP_
 
 #include <vector>
+#include <set>
+#include <map>
+#include <string>
+#include <sstream>
 #include <chrono>
 #include <cmath>
 
@@ -9,6 +13,7 @@
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 #include <geometry_msgs/msg/pose.hpp>
+#include <std_msgs/msg/string.hpp>
 
 #include <yaml-cpp/yaml.h>
 #include "mapoi_interfaces/srv/get_pois_info.hpp"
@@ -48,12 +53,20 @@ private:
   // Clients
   rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr poi_client_;
 
+  // Subscribers
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr highlight_goal_sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr highlight_route_sub_;
+  void on_highlight_goal_received(const std_msgs::msg::String::SharedPtr msg);
+  void on_highlight_route_received(const std_msgs::msg::String::SharedPtr msg);
+
   // Timers
   rclcpp::TimerBase::SharedPtr init_timer_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   // Data storage
   std::vector<mapoi_interfaces::msg::PointOfInterest> pois_list_;
+  std::set<std::string> highlighted_goal_names_;
+  std::map<std::string, int> highlighted_route_names_;
 };
 
 #endif  // MAPOI_SERVER__MAPOI_RVIZ2_PUBLISHER_HPP_

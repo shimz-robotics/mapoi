@@ -34,6 +34,9 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   
   get_maps_info_service_ = this->create_service<mapoi_interfaces::srv::GetMapsInfo>("get_maps_info",
     std::bind(&MapoiServer::get_maps_info_service, this, std::placeholders::_1, std::placeholders::_2));
+
+  get_routes_info_service_ = this->create_service<mapoi_interfaces::srv::GetRoutesInfo>("get_routes_info",
+    std::bind(&MapoiServer::get_routes_info_service, this, std::placeholders::_1, std::placeholders::_2));
   
   switch_map_service_ = this->create_service<mapoi_interfaces::srv::SwitchMap>("switch_map",
     std::bind(&MapoiServer::switch_map_service, this, std::placeholders::_1, std::placeholders::_2));
@@ -150,6 +153,22 @@ void MapoiServer::get_maps_info_service(
   response->map_name = map_name_;
 
   RCLCPP_DEBUG(this->get_logger(), "sending back response '%ld' maps", response->maps_list.size());
+}
+
+void MapoiServer::get_routes_info_service(
+    const std::shared_ptr<mapoi_interfaces::srv::GetRoutesInfo::Request> request,
+    std::shared_ptr<mapoi_interfaces::srv::GetRoutesInfo::Response> response)
+{
+  (void)request;
+  RCLCPP_DEBUG(this->get_logger(), "Incoming get_routes_info request");
+
+  std::vector<std::string> routes_list;
+  for (const auto &route : routes_list_) {
+    routes_list.push_back(route["name"].as<std::string>());
+  }
+
+  response->routes_list = routes_list;
+  RCLCPP_DEBUG(this->get_logger(), "sending back response '%ld' routes", response->routes_list.size());
 }
 
 // Map

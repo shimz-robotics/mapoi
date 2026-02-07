@@ -19,6 +19,7 @@
 #include "mapoi_interfaces/srv/get_route_pois.hpp"
 #include "mapoi_interfaces/msg/point_of_interest.hpp"
 #include "mapoi_interfaces/srv/get_maps_info.hpp"
+#include "mapoi_interfaces/srv/get_routes_info.hpp"
 #include "mapoi_interfaces/srv/switch_map.hpp"
 
 
@@ -49,6 +50,7 @@ private:
   rclcpp::Service<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr get_pois_info_service_;
   rclcpp::Service<mapoi_interfaces::srv::GetRoutePois>::SharedPtr get_route_pois_service_;
   rclcpp::Service<mapoi_interfaces::srv::GetMapsInfo>::SharedPtr get_maps_info_service_;
+  rclcpp::Service<mapoi_interfaces::srv::GetRoutesInfo>::SharedPtr get_routes_info_service_;
   rclcpp::Service<mapoi_interfaces::srv::SwitchMap>::SharedPtr switch_map_service_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reload_map_info_service_;
 
@@ -62,6 +64,9 @@ private:
   void get_maps_info_service(
     const std::shared_ptr<mapoi_interfaces::srv::GetMapsInfo::Request> request,
     std::shared_ptr<mapoi_interfaces::srv::GetMapsInfo::Response> response);
+  void get_routes_info_service(
+    const std::shared_ptr<mapoi_interfaces::srv::GetRoutesInfo::Request> request,
+    std::shared_ptr<mapoi_interfaces::srv::GetRoutesInfo::Response> response);
   void switch_map_service(
     const std::shared_ptr<mapoi_interfaces::srv::SwitchMap::Request> request,
     std::shared_ptr<mapoi_interfaces::srv::SwitchMap::Response> response);
