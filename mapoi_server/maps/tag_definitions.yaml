@@ -1,25 +1,10 @@
 # System tags: システムが動作に使用。削除・リネーム非推奨。
-# User tags: 自由に追加可能。POI Editorのヘルパーに表示される。
+# User tags は各 mapoi_config.yaml の custom_tags セクションで定義してください。
 
 tags:
   - name: goal
     description: "Navigation goal destination"
-    system: true
   - name: waypoint
     description: "Intermediate navigation waypoint"
-    system: true
-  - name: initial_pose
-    description: "Initial robot pose on map switch"
-    system: true
-  - name: event
-    description: "Event trigger area"
-    system: true
   - name: origin
     description: "Map origin reference point"
-    system: true
-  - name: destination
-    description: "General destination point"
-    system: false
-  - name: landmark
-    description: "Landmark for guidance"
-    system: false

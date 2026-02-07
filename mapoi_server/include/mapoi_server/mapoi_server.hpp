@@ -12,7 +12,6 @@
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <nav2_msgs/srv/load_map.hpp>
-#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
 #include "mapoi_interfaces/srv/get_pois_info.hpp"
@@ -48,7 +47,9 @@ private:
   YAML::Node routes_list_;
   YAML::Node nav2_map_list_;
 
-  // tag definitions
+  // tag definitions (system tags loaded once, user tags merged on config load)
+  std::vector<std::string> system_tag_names_;
+  std::vector<std::string> system_tag_descriptions_;
   std::vector<std::string> tag_names_;
   std::vector<std::string> tag_descriptions_;
   std::vector<bool> tag_is_system_;
@@ -91,6 +92,4 @@ private:
     const std::string& server_name,
     const std::string& map_file);
 
-  // publisher for initialpose
-  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr nav2_initialpose_pub_;
 };
