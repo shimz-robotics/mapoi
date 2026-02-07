@@ -1,88 +1,115 @@
 # mapoi_server
 
-## ROS API
+**mapoi のメインパッケージです。**
+地図と POI の情報を管理し、他のパッケージにサービスとして提供します。
 
-| Type | Name | Example or msg_type | Description |
-| ---- | ---- | ---- | ---- |
-| Parameter | maps_path | path/to/maps | Path to the directory where your maps are stored |
-| Parameter | map_name | turtlebot3_world | Name of the map to load at startup |
-| Service | warp_pose  |  request robot position on Gazebo  |  geometry_msgs::msg::Pose  |
-| Publisher | warp_pose  |  request robot position on Gazebo  |  geometry_msgs::msg::Pose  |
+## ノード
 
-## 実行確認
+### mapoi_server
 
-```sh
-export TURTLEBOT3_MODEL=burger
-ros2 launch turtlebot3_gazebo turtlebot3_world.launch.py
-```
+地図・POI の設定ファイルを読み込み、情報提供サービスを公開するノードです。
 
-```sh
-export TURTLEBOT3_MODEL=burger
-ros2 launch turtlebot3_navigation2 navigation2.launch.py use_sim_time:=True map:=$HOME/map.yaml
-```
+#### パラメータ
 
-## 既存.pcdファイルから.pgmへ変換する場合の操作方法
-- .pcdファイルから直接.pgmに変換する場合はmap~lidatrodom間のstatic_transform_publisherが必要
+| パラメータ名 | 型 | デフォルト | 説明 |
+| --- | --- | --- | --- |
+| `maps_path` | `string` | - | 地図ディレクトリのパス |
+| `map_name` | `string` | - | 起動時に読み込む地図名 |
+| `config_file` | `string` | - | 設定ファイル名（例: `mapoi_config.yaml`） |
+| `pub_interval_ms` | `int` | `500` | 設定パスの配信間隔（ミリ秒） |
 
-1. $MAPNAMEを指定して以下実行
-```
-ros2 run tf2_ros static_transform_publisher 0.0 0.0 -0.74 -1.57.0 0.0 0.0 lidar_odom map & ros2 launch pc2map pcd_publisher.launch.py pcd_file_path:="$WS_ROOT/src/shimz_pkgs/mapoi_server/map/$MAPNAME/GlobalMap.pcd"
-```
+#### サービス
 
-1.  以下実行
-- 以下の例では`map`フレームで0.2-2[m]の点群を.pgm化
-```
-ros2 launch pc2map pc2map.launch.xml map_min_z:=0.2 map_max_z:=2.0
-```
+| サービス名 | 型 | 説明 |
+| --- | --- | --- |
+| `get_maps_info` | `mapoi_interfaces/srv/GetMapsInfo` | 利用可能な地図一覧と現在の地図名を取得 |
+| `get_pois_info` | `mapoi_interfaces/srv/GetPoisInfo` | 現在の地図の全 POI を取得 |
+| `get_tagged_pois` | `mapoi_interfaces/srv/GetTaggedPois` | タグでフィルタした POI を取得 |
+| `get_route_pois` | `mapoi_interfaces/srv/GetRoutePois` | ルート上の POI を取得 |
+| `switch_map` | `mapoi_interfaces/srv/SwitchMap` | 地図を切り替え |
 
-1.  $MAPNAMEを指定して以下実行
-```
-export MAPNAME=test #例：test
-ros2 service call /cmd pc2map_msgs/srv/SaveMap "{filepath: $WS_ROOT/src/shimz_pkgs/mapoi_server/map/$MAPNAME/GlobalMap.pcd}"
-```
+#### パブリッシャー
 
-1.  $MAPNAMEを指定して以下実行
-```
-export MAPNAME=test #例：test
-ros2 run nav2_map_server map_saver_cli -f $WS_ROOT/src/shimz_pkgs/mapoi_server/map/$MAPNAME/map --ros-args -p save_map_timeout:=5000.0
-```
-
-1. CloudCompareでGlobalMap.pcdをz軸方向に-90度回転させて上書き保存する
-
-
-### mapoi_map_saver
-
-- 引数として、保存先のmapsディレクトリとmap名の2を受け取る。もし引数を忘れている場合にはエラーを出して使用方法を表示する。
-- nav2_map_serverのmap_saver_serverを呼び出して、保存先のmapsディレクトリにmap名.yamlとmap名.pgmを作成する。
-- map名.yamlとmap名.pgmをコピーして、保存先のmapsディレクトリにmap名_keepout.yamlとmap名_keepout.pgmを作成する。
-- map名_keepout.yamlの`image: map名.pgm`を`image: map名_keepout.pgm`に変更する。
-- 保存先のmapsディレクトリにmap名_poi.yamlを以下の内容で作成する。
-```yaml
-gazebo_model: giken2F
-gazebo_pose: {x: 0.0, y: 0.0, z: 0.0, yaw: 0.0}
-poi:
-  - id: 400
-    name: initial_position
-    description: 初期位置
-    pose: {x: 0.0, y: 0.0, yaw: 0.0}
-    radius: 0.5
-    tags: [destination, origin, initial]
-  - id: 401
-    name: destinationA
-    description: 目的地A
-    pose: {x: -2.476456, y: -1.170249, yaw: 3.137366}
-    radius: 0.5
-    tags: [destination, ELV]
-  - id: 401
-    name: ELVHall
-    description: エレベーター
-    pose: {x: -2.476456, y: -1.170249, yaw: 3.137366}
-    radius: 0.5
-    tags: [destination, ELV]
-```
-
+| トピック名 | 型 | 説明 |
+| --- | --- | --- |
+| `mapoi_config_path` | `std_msgs/msg/String` | 現在の設定ファイルのパス |
 
 ### mapoi_nav_server
 
-mapoi_interfacesパッケージのNavigateToPoi.actionを利用して指定されたstring nameへの自律走行を行う。
+POI 名を指定した自律走行を行うノードです。トピック経由で初期位置の設定やゴール指定、ルート走行を受け付けます。
 
+#### サブスクライバー
+
+| トピック名 | 型 | 説明 |
+| --- | --- | --- |
+| `mapoi_initialpose_poi` | `std_msgs/msg/String` | 指定した POI 名の位置に初期位置を設定 |
+| `mapoi_goal_pose_poi` | `std_msgs/msg/String` | 指定した POI 名の位置に自律走行 |
+| `mapoi_route` | `std_msgs/msg/String` | 指定したルート名のウェイポイントを順に走行 |
+
+#### パブリッシャー
+
+| トピック名 | 型 | 説明 |
+| --- | --- | --- |
+| `initialpose` | `geometry_msgs/msg/PoseWithCovarianceStamped` | 初期位置の配信 |
+| `goal_pose` | `geometry_msgs/msg/PoseStamped` | ゴール位置の配信 |
+
+#### アクションクライアント
+
+| アクション名 | 型 | 説明 |
+| --- | --- | --- |
+| `follow_waypoints` | `nav2_msgs/action/FollowWaypoints` | Navigation2 のウェイポイント追従 |
+
+### mapoi_rviz2_publisher
+
+RViz2 上に POI のマーカーを表示するためのノードです。
+
+## 設定ファイル (mapoi_config.yaml)
+
+各地図ディレクトリに `mapoi_config.yaml` を配置して、地図と POI を設定します。
+
+```yaml
+map:
+  - node_name: /map_server
+    map_file: turtlebot3.yaml
+
+poi:
+  - name: elevator_hall
+    pose: {x: -2.0, y: -0.5, yaw: 0.0}
+    radius: 0.5
+    tags: [goal, initial_pose]
+    description: エレベーターホール
+  - name: meeting_room_a
+    pose: {x: -0.5, y: -0.5, yaw: 0.0}
+    radius: 0.5
+    tags: [goal]
+    description: 会議室A
+
+route:
+  - name: route_1
+    waypoints: [meeting_room_a, elevator_hall, meeting_room_a]
+```
+
+### フィールド説明
+
+- **map**: 使用する地図ファイルの設定
+  - `node_name`: map_server のノード名
+  - `map_file`: 地図の YAML ファイル名
+- **poi**: POI の定義
+  - `name`: POI の名前（トピックで指定する際に使用）
+  - `pose`: 位置（`x`, `y`, `yaw`）
+  - `radius`: 到達判定の半径
+  - `tags`: タグのリスト（フィルタ用）
+  - `description`: 説明文
+- **route**: ルートの定義
+  - `name`: ルート名
+  - `waypoints`: 巡回する POI 名のリスト
+
+## ディレクトリ構成
+
+```
+maps/
+└── <地図名>/
+    ├── mapoi_config.yaml    # POI・ルート設定
+    ├── <地図名>.yaml        # 地図メタデータ
+    └── <地図名>.pgm         # 地図画像
+```
