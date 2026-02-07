@@ -16,7 +16,7 @@
 | `maps_path` | `string` | - | 地図ディレクトリのパス |
 | `map_name` | `string` | - | 起動時に読み込む地図名 |
 | `config_file` | `string` | - | 設定ファイル名（例: `mapoi_config.yaml`） |
-| `pub_interval_ms` | `int` | `500` | 設定パスの配信間隔（ミリ秒） |
+| `pub_interval_ms` | `int` | `5000` | 設定パスの配信間隔（ミリ秒） |
 
 #### サービス
 
@@ -26,12 +26,14 @@
 | `get_pois_info` | `mapoi_interfaces/srv/GetPoisInfo` | 現在の地図の全 POI を取得 |
 | `get_route_pois` | `mapoi_interfaces/srv/GetRoutePois` | ルート上の POI を取得 |
 | `switch_map` | `mapoi_interfaces/srv/SwitchMap` | 地図を切り替え |
+| `reload_map_info` | `std_srvs/srv/Trigger` | 設定ファイルを再読み込み |
 
 #### パブリッシャー
 
 | トピック名 | 型 | 説明 |
 | --- | --- | --- |
 | `mapoi_config_path` | `std_msgs/msg/String` | 現在の設定ファイルのパス |
+| `initialpose` | `geometry_msgs/msg/PoseWithCovarianceStamped` | 地図切替時の初期位置の配信 |
 
 ### mapoi_nav_server
 
@@ -44,6 +46,7 @@ POI 名を指定した自律走行を行うノードです。トピック経由�
 | `mapoi_initialpose_poi` | `std_msgs/msg/String` | 指定した POI 名の位置に初期位置を設定 |
 | `mapoi_goal_pose_poi` | `std_msgs/msg/String` | 指定した POI 名の位置に自律走行 |
 | `mapoi_route` | `std_msgs/msg/String` | 指定したルート名のウェイポイントを順に走行 |
+| `mapoi_cancel` | `std_msgs/msg/String` | ルート走行のキャンセル |
 
 #### パブリッシャー
 
@@ -61,6 +64,13 @@ POI 名を指定した自律走行を行うノードです。トピック経由�
 ### mapoi_rviz2_publisher
 
 RViz2 上に POI のマーカーを表示するためのノードです。
+
+#### パブリッシャー
+
+| トピック名 | 型 | 説明 |
+| --- | --- | --- |
+| `mapoi_goal_marks` | `visualization_msgs/msg/MarkerArray` | goal・waypoint タグを持つ POI のマーカー |
+| `mapoi_event_marks` | `visualization_msgs/msg/MarkerArray` | event・origin タグを持つ POI のマーカー |
 
 ## 設定ファイル (mapoi_config.yaml)
 

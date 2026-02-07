@@ -26,6 +26,10 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   mapoi_route_sub_ = this->create_subscription<std_msgs::msg::String>(
     "mapoi_route", 1, std::bind(&MapoiNavServer::mapoi_route_cb, this, std::placeholders::_1));
 
+  // cancel subscriber
+  mapoi_cancel_sub_ = this->create_subscription<std_msgs::msg::String>(
+    "mapoi_cancel", 1, std::bind(&MapoiNavServer::mapoi_cancel_cb, this, std::placeholders::_1));
+
   // アクションクライアントの作成
   // テンプレート引数にエイリアス FollowWaypoints を使用
   this->action_client_ = rclcpp_action::create_client<FollowWaypoints>(this, "follow_waypoints");
@@ -172,6 +176,7 @@ void MapoiNavServer::goal_response_callback(const GoalHandleFollowWaypoints::Sha
   if (!goal_handle) {
     RCLCPP_ERROR(this->get_logger(), "Goal was rejected by server");
   } else {
+    current_goal_handle_ = goal_handle;
     RCLCPP_INFO(this->get_logger(), "Goal accepted by server, waiting for result");
   }
 }
@@ -185,6 +190,7 @@ void MapoiNavServer::feedback_callback(
 
 void MapoiNavServer::result_callback(const GoalHandleFollowWaypoints::WrappedResult & result)
 {
+  current_goal_handle_.reset();
   switch (result.code) {
     case rclcpp_action::ResultCode::SUCCEEDED:
       RCLCPP_INFO(this->get_logger(), "✅ Navigation SUCCEEDED!");
@@ -198,6 +204,17 @@ void MapoiNavServer::result_callback(const GoalHandleFollowWaypoints::WrappedRes
     default:
       RCLCPP_ERROR(this->get_logger(), "❓ Unknown result code");
       break;
+  }
+}
+
+void MapoiNavServer::mapoi_cancel_cb(const std_msgs::msg::String::SharedPtr msg)
+{
+  (void)msg;
+  if (current_goal_handle_) {
+    RCLCPP_INFO(this->get_logger(), "Canceling current navigation goal...");
+    action_client_->async_cancel_goal(current_goal_handle_);
+  } else {
+    RCLCPP_WARN(this->get_logger(), "No active navigation goal to cancel.");
   }
 }
 

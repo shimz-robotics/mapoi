@@ -57,8 +57,8 @@ protected:
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr nav2_goal_pose_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr mapoi_cancel_pub_;
 
-  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr map_name_sub_;
-  void MapNameCallback(std_msgs::msg::String::SharedPtr msg);
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr config_path_sub_;
+  void ConfigPathCallback(std_msgs::msg::String::SharedPtr msg);
 
   void RequestSetCmdVelMode(std::string cm);
   void SetMapComboBox(std::string map_name);
