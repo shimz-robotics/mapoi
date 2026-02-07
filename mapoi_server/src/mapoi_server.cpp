@@ -15,8 +15,8 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   map_name_ = this->get_parameter("map_name").as_string();
   config_file_ = this->get_parameter("config_file").as_string();
 
-  load_mapoi_config_file();
   load_tag_definitions();
+  load_mapoi_config_file();
 
   // Publish config_path_
   config_path_publisher_ = this->create_publisher<std_msgs::msg::String>("mapoi_config_path", 10);
@@ -48,8 +48,6 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   get_tag_definitions_srv_ = this->create_service<mapoi_interfaces::srv::GetTagDefinitions>("get_tag_definitions",
     std::bind(&MapoiServer::get_tag_definitions_service, this, std::placeholders::_1, std::placeholders::_2));
 
-  nav2_initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("initialpose", 1);
-
   RCLCPP_INFO(this->get_logger(), "Ready to serve. The current map_name is %s", config_path_.c_str());
 }
 
@@ -62,6 +60,25 @@ void MapoiServer::load_mapoi_config_file()
     pois_list_ = mapoi_config["poi"];
     routes_list_ = mapoi_config["route"];
     nav2_map_list_ = mapoi_config["map"];
+
+    // Rebuild tag list: system tags + user tags from config
+    tag_names_.clear();
+    tag_descriptions_.clear();
+    tag_is_system_.clear();
+    for (size_t i = 0; i < system_tag_names_.size(); ++i) {
+      tag_names_.push_back(system_tag_names_[i]);
+      tag_descriptions_.push_back(system_tag_descriptions_[i]);
+      tag_is_system_.push_back(true);
+    }
+    if (mapoi_config["custom_tags"]) {
+      for (const auto& tag : mapoi_config["custom_tags"]) {
+        tag_names_.push_back(tag["name"].as<std::string>());
+        tag_descriptions_.push_back(tag["description"].as<std::string>(""));
+        tag_is_system_.push_back(false);
+      }
+    }
+    RCLCPP_INFO(this->get_logger(), "Tag definitions: %zu system + %zu user",
+                system_tag_names_.size(), tag_names_.size() - system_tag_names_.size());
   } catch (const YAML::BadFile & e) {
     RCLCPP_ERROR(this->get_logger(), "Failed to load mapoi config file: %s", e.what());
     rclcpp::shutdown();
@@ -222,26 +239,6 @@ void MapoiServer::switch_map_service(const std::shared_ptr<mapoi_interfaces::srv
     RCLCPP_INFO(this->get_logger(), "Loaded map for %s", map_url.c_str());
   }
 
-  // send initial pose
-  for (const auto& poi: pois_list_) {
-    // tags に initial_pose が含まれている POI を探す
-    auto tags = poi["tags"].as<std::vector<std::string>>();
-    if (std::find(tags.begin(), tags.end(), "initial_pose") != tags.end()) {
-      geometry_msgs::msg::PoseWithCovarianceStamped init_pose;
-      init_pose.header.frame_id = "map";
-      init_pose.pose.pose.position.x = poi["pose"]["x"].as<std::double_t>();
-      init_pose.pose.pose.position.y = poi["pose"]["y"].as<std::double_t>();
-      auto yaw = poi["pose"]["yaw"].as<std::double_t>();
-      init_pose.pose.pose.orientation.z = sin(yaw/2.0);
-      init_pose.pose.pose.orientation.w = cos(yaw/2.0);
-      init_pose.pose.covariance[0] = 0.25;
-      init_pose.pose.covariance[7] = 0.25;
-      init_pose.pose.covariance[35] = 0.06853891945200942;
-      nav2_initialpose_pub_->publish(init_pose);
-      RCLCPP_INFO(this->get_logger(), "Publish initial pose");
-    }
-  }
-
   RCLCPP_INFO(this->get_logger(), "The map was switched into %s", map_name_.c_str());
   response->success = true;
 }
@@ -261,23 +258,21 @@ void MapoiServer::reload_map_info_service(
 void MapoiServer::load_tag_definitions()
 {
   std::string tag_defs_path = mapoi_server_pkg_ + "/maps/tag_definitions.yaml";
-  tag_names_.clear();
-  tag_descriptions_.clear();
-  tag_is_system_.clear();
+  system_tag_names_.clear();
+  system_tag_descriptions_.clear();
 
   try {
     YAML::Node tag_config = YAML::LoadFile(tag_defs_path);
     if (tag_config["tags"]) {
       for (const auto& tag : tag_config["tags"]) {
-        tag_names_.push_back(tag["name"].as<std::string>());
-        tag_descriptions_.push_back(tag["description"].as<std::string>(""));
-        tag_is_system_.push_back(tag["system"].as<bool>(false));
+        system_tag_names_.push_back(tag["name"].as<std::string>());
+        system_tag_descriptions_.push_back(tag["description"].as<std::string>(""));
       }
     }
-    RCLCPP_INFO(this->get_logger(), "Loaded %zu tag definitions from %s",
-                tag_names_.size(), tag_defs_path.c_str());
+    RCLCPP_INFO(this->get_logger(), "Loaded %zu system tag definitions from %s",
+                system_tag_names_.size(), tag_defs_path.c_str());
   } catch (const YAML::BadFile& e) {
-    RCLCPP_WARN(this->get_logger(), "Tag definitions file not found: %s. Continuing with empty list.",
+    RCLCPP_WARN(this->get_logger(), "System tag definitions file not found: %s. Continuing with empty list.",
                 tag_defs_path.c_str());
   }
 }
