@@ -1,5 +1,6 @@
 #include "mapoi_rviz_plugins/poi_editor.hpp"
 #include <class_loader/class_loader.hpp>
+#include <filesystem>
 
 #include <QFileDialog>
 #include <QStandardPaths>
@@ -35,7 +36,7 @@ void PoiEditorPanel::onInitialize()
   connect(ui_->SaveButton, SIGNAL(clicked()), this, SLOT(SaveButton()));
 
   poi_pose_sub_ = node_->create_subscription<geometry_msgs::msg::PoseStamped>(
-    "poi_pose", 10, std::bind(&PoiEditorPanel::PoiPoseCallback, this, std::placeholders::_1));
+    "mapoi_rviz_pose", 10, std::bind(&PoiEditorPanel::PoiPoseCallback, this, std::placeholders::_1));
 
   parentWidget()->setVisible(true);
 
@@ -54,9 +55,9 @@ void PoiEditorPanel::onInitialize()
   }
   InitConfigs(map_info->map_name);
 
-  map_name_sub_ = node_->create_subscription<std_msgs::msg::String>(
-    "mapoi_interfaces/current_map", 10,
-    std::bind(&PoiEditorPanel::MapNameCallback, this, std::placeholders::_1));
+  config_path_sub_ = node_->create_subscription<std_msgs::msg::String>(
+    "mapoi_config_path", 10,
+    std::bind(&PoiEditorPanel::ConfigPathCallback, this, std::placeholders::_1));
 }
 
 void PoiEditorPanel::onEnable()
@@ -80,12 +81,12 @@ void PoiEditorPanel::MapComboBox()
   request_sm->map_name = map_name_list_[ui_->MapComboBox->currentIndex()];
   auto result_sm = client_sm->async_send_request(request_sm);
   rclcpp::spin_until_future_complete(node, result_sm);
-  PoiEditorPanel::UpdatePoiTable("all");
+  PoiEditorPanel::UpdatePoiTable();
 }
 
 void PoiEditorPanel::ResetButton()
 {
-  PoiEditorPanel::UpdatePoiTable("all");
+  PoiEditorPanel::UpdatePoiTable();
 }
 
 void PoiEditorPanel::TableChanged(int row, int column)
@@ -140,17 +141,19 @@ void PoiEditorPanel::RowMoved(int logicalIndex, int oldVisualIndex, int newVisua
 
 void PoiEditorPanel::FileComboBox()
 {
-  if(ui_->FileComboBox->currentIndex() == 2){
+  int last = ui_->FileComboBox->count() - 1;
+  if(ui_->FileComboBox->currentIndex() == last){
     QString filename = QFileDialog::getOpenFileName(
-        this, tr("Select a poi_file"), ui_->FileComboBox->itemText(1), tr("YAML files(*.yaml)"));
+        this, tr("Select a poi_file"), QString::fromStdString(config_path_), tr("YAML files(*.yaml)"));
     if(filename == ""){ // choosing file was canceled
-      ui_->FileComboBox->setItemText(2, "the other");
+      ui_->FileComboBox->setItemText(last, "the other");
       ui_->FileComboBox->setCurrentIndex(0);
     }else{
-      ui_->FileComboBox->setItemText(2, filename);
+      ui_->FileComboBox->setItemText(last, filename);
     }
   } else{
-    ui_->FileComboBox->setItemText(2, "the other");
+    int last = ui_->FileComboBox->count() - 1;
+    ui_->FileComboBox->setItemText(last, "the other");
   }
   ui_->SaveButton->setText("save");
 }
@@ -207,11 +210,15 @@ void PoiEditorPanel::PoiPoseCallback(geometry_msgs::msg::PoseStamped::SharedPtr 
   ui_->PoiTable->setItem(current_row, 3, new QTableWidgetItem(txt));
 }
 
-void PoiEditorPanel::MapNameCallback(std_msgs::msg::String::SharedPtr msg)
+void PoiEditorPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
 {
-  if(current_map_ != msg->data){
-    current_map_ = msg->data;
-    InitConfigs(msg->data);
+  std::filesystem::path p(msg->data);
+  std::string map_name = p.parent_path().filename().string();
+  bool first_config = config_path_.empty();
+  config_path_ = msg->data;
+  if(current_map_ != map_name || first_config){
+    current_map_ = map_name;
+    InitConfigs(map_name);
   }
 }
 
@@ -229,28 +236,24 @@ void PoiEditorPanel::InitConfigs(std::string map_name)
   }
 
   // FileComboBox
-  char * home_dir = getenv("HOME");
-  auto install_dir = std::string(home_dir) + "/work/mapoi5_ws/install/mapoi_interfaces/share/mapoi_interfaces/map/" + map_name + "/" + map_name + ".yaml";
-  auto src_dir = std::string(home_dir) + "/work/mapoi5_ws/src/shimz_pkgs/mapoi_interfaces/map/" + map_name + "/" + map_name + ".yaml";
-
   ui_->FileComboBox->clear();
-  ui_->FileComboBox->addItem(QString::fromStdString(install_dir));
-  ui_->FileComboBox->addItem(QString::fromStdString(src_dir));
+  if (!config_path_.empty()) {
+    ui_->FileComboBox->addItem(QString::fromStdString(config_path_));
+  }
   ui_->FileComboBox->addItem("the other");
 
   // PoiTable, SaveButton, and CheckBox
-  PoiEditorPanel::UpdatePoiTable("all");
+  PoiEditorPanel::UpdatePoiTable();
 }
 
-void PoiEditorPanel::UpdatePoiTable(std::string tag)
+void PoiEditorPanel::UpdatePoiTable()
 {
   // get pois
-  auto node = rclcpp::Node::make_shared("poieditorget_tagged_pois_client");
-  rclcpp::Client<mapoi_interfaces::srv::GetTaggedPois>::SharedPtr client_gtp =
-    node->create_client<mapoi_interfaces::srv::GetTaggedPois>("get_tagged_pois");
+  auto node = rclcpp::Node::make_shared("poieditor_get_pois_info_client");
+  rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr client_gtp =
+    node->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
 
-  auto request_gtp = std::make_shared<mapoi_interfaces::srv::GetTaggedPois::Request>();
-  request_gtp->tag = tag;
+  auto request_gtp = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
 
   while(!client_gtp->wait_for_service(1s)){
     if(!rclcpp::ok()){

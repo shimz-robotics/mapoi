@@ -15,7 +15,7 @@
 #include <std_srvs/srv/trigger.hpp>
 #include <mapoi_interfaces/msg/point_of_interest.hpp>
 #include <mapoi_interfaces/srv/switch_map.hpp>
-#include <mapoi_interfaces/srv/get_tagged_pois.hpp>
+#include <mapoi_interfaces/srv/get_pois_info.hpp>
 #include <mapoi_interfaces/srv/get_maps_info.hpp>
 
 #include <yaml-cpp/yaml.h>
@@ -53,6 +53,7 @@ private Q_SLOTS:
 protected:
   Ui::PoiEditorUi* ui_;
   std::string current_map_;
+  std::string config_path_;
   std::vector<std::string> map_name_list_;
   bool is_table_color_;
 
@@ -60,12 +61,12 @@ protected:
   rclcpp::Node::SharedPtr node_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr poi_pose_sub_;
   void PoiPoseCallback(geometry_msgs::msg::PoseStamped::SharedPtr msg);
-  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr map_name_sub_;
-  void MapNameCallback(std_msgs::msg::String::SharedPtr msg);
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr config_path_sub_;
+  void ConfigPathCallback(std_msgs::msg::String::SharedPtr msg);
 
   // Functions
   void InitConfigs(std::string map_name);
-  void UpdatePoiTable(std::string tag);
+  void UpdatePoiTable();
   double calcYaw(geometry_msgs::msg::Pose pose);
 
   std::string join(const std::vector<std::string>& v, const char* delim);

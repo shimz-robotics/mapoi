@@ -33,10 +33,12 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr nav2_goal_pose_pub_;
 
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_route_sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_cancel_sub_;
 
   void mapoi_initialpose_poi_cb(const std_msgs::msg::String::SharedPtr msg);
   void mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedPtr msg);
   void mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg);
+  void mapoi_cancel_cb(const std_msgs::msg::String::SharedPtr msg);
 
   // Service Callbacks
   void on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future);
@@ -51,6 +53,7 @@ private:
 
   // Clients
   rclcpp_action::Client<FollowWaypoints>::SharedPtr action_client_;
+  GoalHandleFollowWaypoints::SharedPtr current_goal_handle_;
   rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr pois_info_client_;
   rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedPtr route_client_;
 

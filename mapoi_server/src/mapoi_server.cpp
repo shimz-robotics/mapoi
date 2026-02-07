@@ -38,6 +38,9 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   switch_map_service_ = this->create_service<mapoi_interfaces::srv::SwitchMap>("switch_map",
     std::bind(&MapoiServer::switch_map_service, this, std::placeholders::_1, std::placeholders::_2));
 
+  reload_map_info_service_ = this->create_service<std_srvs::srv::Trigger>("reload_map_info",
+    std::bind(&MapoiServer::reload_map_info_service, this, std::placeholders::_1, std::placeholders::_2));
+
   nav2_initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("initialpose", 1);
 
   RCLCPP_INFO(this->get_logger(), "Ready to serve. The current map_name is %s", config_path_.c_str());
@@ -181,6 +184,7 @@ void MapoiServer::switch_map_service(const std::shared_ptr<mapoi_interfaces::srv
     return;
   }
 
+  map_name_ = map_name_new;
   load_mapoi_config_file();
 
   auto node = rclcpp::Node::make_shared("sc_map_client");
@@ -202,9 +206,9 @@ void MapoiServer::switch_map_service(const std::shared_ptr<mapoi_interfaces::srv
     if (std::find(tags.begin(), tags.end(), "initial_pose") != tags.end()) {
       geometry_msgs::msg::PoseWithCovarianceStamped init_pose;
       init_pose.header.frame_id = "map";
-      init_pose.pose.pose.position.x = poi["initial_pose"]["x"].as<std::double_t>();
-      init_pose.pose.pose.position.y = poi["initial_pose"]["y"].as<std::double_t>();
-      auto yaw = poi["initial_pose"]["yaw"].as<std::double_t>();
+      init_pose.pose.pose.position.x = poi["pose"]["x"].as<std::double_t>();
+      init_pose.pose.pose.position.y = poi["pose"]["y"].as<std::double_t>();
+      auto yaw = poi["pose"]["yaw"].as<std::double_t>();
       init_pose.pose.pose.orientation.z = sin(yaw/2.0);
       init_pose.pose.pose.orientation.w = cos(yaw/2.0);
       init_pose.pose.covariance[0] = 0.25;
@@ -215,12 +219,21 @@ void MapoiServer::switch_map_service(const std::shared_ptr<mapoi_interfaces::srv
     }
   }
 
-  map_name_ = map_name_new;
-  config_path_ = maps_path_ + "/" + map_name_ + "/" + config_file_;
   RCLCPP_INFO(this->get_logger(), "The map was switched into %s", map_name_.c_str());
   response->success = true;
 }
 
+
+void MapoiServer::reload_map_info_service(
+    const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+    std::shared_ptr<std_srvs::srv::Trigger::Response> response)
+{
+  (void)request;
+  load_mapoi_config_file();
+  response->success = true;
+  response->message = config_path_;
+  RCLCPP_INFO(this->get_logger(), "Reloaded mapoi config: %s", config_path_.c_str());
+}
 
 int main(int argc, char **argv)
 {

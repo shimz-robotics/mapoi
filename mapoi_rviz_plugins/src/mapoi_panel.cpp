@@ -1,5 +1,6 @@
 #include "mapoi_rviz_plugins/mapoi_panel.hpp"
 #include <class_loader/class_loader.hpp>
+#include <filesystem>
 
 #include "ui_mapoi_panel.h"
 
@@ -60,9 +61,11 @@ void MapoiPanel::onInitialize()
   nav2_initialpose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("initialpose", 1);
   nav2_goal_pose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseStamped>("goal_pose", 1);
 
-  map_name_sub_ = node_->create_subscription<std_msgs::msg::String>(
-      "/mapoi_interfaces/current_map", 10,
-      std::bind(&MapoiPanel::MapNameCallback, this, std::placeholders::_1));
+  mapoi_cancel_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_cancel", 1);
+
+  config_path_sub_ = node_->create_subscription<std_msgs::msg::String>(
+      "mapoi_config_path", 10,
+      std::bind(&MapoiPanel::ConfigPathCallback, this, std::placeholders::_1));
 
   // Mapoi Route ComboBox
   ui_->MapoiRouteComboBox->addItem("NORMAL");
@@ -152,11 +155,13 @@ void MapoiPanel::StopButton()
   // }
 }
 
-void MapoiPanel::MapNameCallback(std_msgs::msg::String::SharedPtr msg)
+void MapoiPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
 {
-  if(current_map_ != msg->data){
-    current_map_ = msg->data;
-    SetMapComboBox(msg->data);
+  std::filesystem::path config_path(msg->data);
+  std::string map_name = config_path.parent_path().filename().string();
+  if(current_map_ != map_name){
+    current_map_ = map_name;
+    SetMapComboBox(map_name);
   }
 }
 

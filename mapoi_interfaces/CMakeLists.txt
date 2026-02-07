@@ -13,9 +13,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SwitchMap.srv"
   "srv/GetMapsInfo.srv"
   "srv/GetPoisInfo.srv"
-  "srv/GetTaggedPois.srv"
   "srv/GetRoutePois.srv"
-  "action/FollowPoiList.action"
   DEPENDENCIES geometry_msgs
 )
 
