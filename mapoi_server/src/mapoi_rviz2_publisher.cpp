@@ -11,6 +11,14 @@ MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
   marker_events_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_event_marks", 10);
 
   this->poi_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
+
+  highlight_goal_sub_ = this->create_subscription<std_msgs::msg::String>(
+    "mapoi_highlight_goal", 10,
+    std::bind(&MapoiRviz2Publisher::on_highlight_goal_received, this, _1));
+  highlight_route_sub_ = this->create_subscription<std_msgs::msg::String>(
+    "mapoi_highlight_route", 10,
+    std::bind(&MapoiRviz2Publisher::on_highlight_route_received, this, _1));
+
   // 初期化シーケンスをデッドロック回避のため少し遅延させて開始
   this->init_timer_ = this->create_wall_timer(100ms, std::bind(&MapoiRviz2Publisher::start_sequence, this));
 
@@ -51,6 +59,29 @@ void MapoiRviz2Publisher::on_poi_received(rclcpp::Client<mapoi_interfaces::srv::
 }
 
 
+void MapoiRviz2Publisher::on_highlight_goal_received(const std_msgs::msg::String::SharedPtr msg)
+{
+  highlighted_goal_names_.clear();
+  if (!msg->data.empty()) {
+    highlighted_goal_names_.insert(msg->data);
+  }
+}
+
+void MapoiRviz2Publisher::on_highlight_route_received(const std_msgs::msg::String::SharedPtr msg)
+{
+  highlighted_route_names_.clear();
+  if (!msg->data.empty()) {
+    std::istringstream ss(msg->data);
+    std::string token;
+    int order = 1;
+    while (std::getline(ss, token, ',')) {
+      if (!token.empty()) {
+        highlighted_route_names_[token] = order++;
+      }
+    }
+  }
+}
+
 void MapoiRviz2Publisher::timer_callback(){
   // publish markers on rviz
   visualization_msgs::msg::Marker default_arrow_marker;
@@ -83,12 +114,30 @@ void MapoiRviz2Publisher::timer_callback(){
         visualization_msgs::msg::Marker m_waypoint = default_arrow_marker;
         m_waypoint.pose = pose;
         m_waypoint.pose.position.z = 0.1;
+        {
+          bool is_goal = highlighted_goal_names_.count(poi.name) > 0;
+          bool is_route = highlighted_route_names_.count(poi.name) > 0;
+          if (is_goal && is_route) {
+            m_waypoint.color.r = 0.8; m_waypoint.color.g = 0.4; m_waypoint.color.b = 0.5; m_waypoint.color.a = 0.7;
+          } else if (is_goal) {
+            m_waypoint.color.r = 1.0; m_waypoint.color.g = 0.6; m_waypoint.color.b = 0.0; m_waypoint.color.a = 0.7;
+          } else if (is_route) {
+            m_waypoint.color.r = 0.6; m_waypoint.color.g = 0.2; m_waypoint.color.b = 1.0; m_waypoint.color.a = 0.7;
+          }
+        }
         m_waypoint.id = id;
         ma_waypoints.markers.push_back(m_waypoint);
         id += 1;
 
         visualization_msgs::msg::Marker m_text = default_text_marker;
-        m_text.text = poi.name;
+        {
+          auto it = highlighted_route_names_.find(poi.name);
+          if (it != highlighted_route_names_.end()) {
+            m_text.text = "[" + std::to_string(it->second) + "] " + poi.name;
+          } else {
+            m_text.text = poi.name;
+          }
+        }
         m_text.pose = pose;
         m_text.pose.position.z = 0.1;
         m_text.id = id;
@@ -100,12 +149,30 @@ void MapoiRviz2Publisher::timer_callback(){
         m_waypoint.pose = pose;
         m_waypoint.pose.position.z = 0.1;
         m_waypoint.scale.x = 0.1; m_waypoint.scale.y = 0.1; m_waypoint.scale.z = 0.1;
+        {
+          bool is_goal = highlighted_goal_names_.count(poi.name) > 0;
+          bool is_route = highlighted_route_names_.count(poi.name) > 0;
+          if (is_goal && is_route) {
+            m_waypoint.color.r = 0.8; m_waypoint.color.g = 0.4; m_waypoint.color.b = 0.5; m_waypoint.color.a = 0.7;
+          } else if (is_goal) {
+            m_waypoint.color.r = 1.0; m_waypoint.color.g = 0.6; m_waypoint.color.b = 0.0; m_waypoint.color.a = 0.7;
+          } else if (is_route) {
+            m_waypoint.color.r = 0.6; m_waypoint.color.g = 0.2; m_waypoint.color.b = 1.0; m_waypoint.color.a = 0.7;
+          }
+        }
         m_waypoint.id = id;
         ma_waypoints.markers.push_back(m_waypoint);
         id += 1;
 
         visualization_msgs::msg::Marker m_text = default_text_marker;
-        m_text.text = poi.name;
+        {
+          auto it = highlighted_route_names_.find(poi.name);
+          if (it != highlighted_route_names_.end()) {
+            m_text.text = "[" + std::to_string(it->second) + "] " + poi.name;
+          } else {
+            m_text.text = poi.name;
+          }
+        }
         m_text.pose = pose;
         m_text.pose.position.z = 0.1;
         m_text.id = id;
