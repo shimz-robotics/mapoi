@@ -1,0 +1,4 @@
+---
+string[] tag_names
+string[] tag_descriptions
+bool[] is_system

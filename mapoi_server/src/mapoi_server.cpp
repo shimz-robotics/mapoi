@@ -16,6 +16,7 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   config_file_ = this->get_parameter("config_file").as_string();
 
   load_mapoi_config_file();
+  load_tag_definitions();
 
   // Publish config_path_
   config_path_publisher_ = this->create_publisher<std_msgs::msg::String>("mapoi_config_path", 10);
@@ -43,6 +44,9 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
 
   reload_map_info_service_ = this->create_service<std_srvs::srv::Trigger>("reload_map_info",
     std::bind(&MapoiServer::reload_map_info_service, this, std::placeholders::_1, std::placeholders::_2));
+
+  get_tag_definitions_srv_ = this->create_service<mapoi_interfaces::srv::GetTagDefinitions>("get_tag_definitions",
+    std::bind(&MapoiServer::get_tag_definitions_service, this, std::placeholders::_1, std::placeholders::_2));
 
   nav2_initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("initialpose", 1);
 
@@ -252,6 +256,41 @@ void MapoiServer::reload_map_info_service(
   response->success = true;
   response->message = config_path_;
   RCLCPP_INFO(this->get_logger(), "Reloaded mapoi config: %s", config_path_.c_str());
+}
+
+void MapoiServer::load_tag_definitions()
+{
+  std::string tag_defs_path = mapoi_server_pkg_ + "/maps/tag_definitions.yaml";
+  tag_names_.clear();
+  tag_descriptions_.clear();
+  tag_is_system_.clear();
+
+  try {
+    YAML::Node tag_config = YAML::LoadFile(tag_defs_path);
+    if (tag_config["tags"]) {
+      for (const auto& tag : tag_config["tags"]) {
+        tag_names_.push_back(tag["name"].as<std::string>());
+        tag_descriptions_.push_back(tag["description"].as<std::string>(""));
+        tag_is_system_.push_back(tag["system"].as<bool>(false));
+      }
+    }
+    RCLCPP_INFO(this->get_logger(), "Loaded %zu tag definitions from %s",
+                tag_names_.size(), tag_defs_path.c_str());
+  } catch (const YAML::BadFile& e) {
+    RCLCPP_WARN(this->get_logger(), "Tag definitions file not found: %s. Continuing with empty list.",
+                tag_defs_path.c_str());
+  }
+}
+
+void MapoiServer::get_tag_definitions_service(
+    const std::shared_ptr<mapoi_interfaces::srv::GetTagDefinitions::Request> request,
+    std::shared_ptr<mapoi_interfaces::srv::GetTagDefinitions::Response> response)
+{
+  (void)request;
+  response->tag_names = tag_names_;
+  response->tag_descriptions = tag_descriptions_;
+  response->is_system = tag_is_system_;
+  RCLCPP_DEBUG(this->get_logger(), "Sending %zu tag definitions", tag_names_.size());
 }
 
 int main(int argc, char **argv)
