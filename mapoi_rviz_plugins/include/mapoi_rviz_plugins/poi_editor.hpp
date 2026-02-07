@@ -16,7 +16,7 @@
 #include <mapoi_interfaces/msg/point_of_interest.hpp>
 #include <mapoi_interfaces/srv/switch_map.hpp>
 #include <mapoi_interfaces/srv/get_tagged_pois.hpp>
-#include <mapoi_interfaces/srv/get_map_info.hpp>
+#include <mapoi_interfaces/srv/get_maps_info.hpp>
 
 #include <yaml-cpp/yaml.h>
 

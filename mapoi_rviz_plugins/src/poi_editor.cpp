@@ -40,9 +40,9 @@ void PoiEditorPanel::onInitialize()
   parentWidget()->setVisible(true);
 
   // MapComboBox
-  auto node = rclcpp::Node::make_shared("poieditorget_map_info_client");
-  auto get_map_info_cli = node->create_client<mapoi_interfaces::srv::GetMapInfo>("get_map_info");
-  auto request = std::make_shared<mapoi_interfaces::srv::GetMapInfo::Request>();
+  auto node = rclcpp::Node::make_shared("poieditor_get_maps_info_client");
+  auto get_map_info_cli = node->create_client<mapoi_interfaces::srv::GetMapsInfo>("get_maps_info");
+  auto request = std::make_shared<mapoi_interfaces::srv::GetMapsInfo::Request>();
   auto result = get_map_info_cli->async_send_request(request);
   rclcpp::spin_until_future_complete(node, result);
   auto map_info = result.get();

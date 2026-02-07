@@ -24,7 +24,6 @@
 | --- | --- | --- |
 | `get_maps_info` | `mapoi_interfaces/srv/GetMapsInfo` | 利用可能な地図一覧と現在の地図名を取得 |
 | `get_pois_info` | `mapoi_interfaces/srv/GetPoisInfo` | 現在の地図の全 POI を取得 |
-| `get_tagged_pois` | `mapoi_interfaces/srv/GetTaggedPois` | タグでフィルタした POI を取得 |
 | `get_route_pois` | `mapoi_interfaces/srv/GetRoutePois` | ルート上の POI を取得 |
 | `switch_map` | `mapoi_interfaces/srv/SwitchMap` | 地図を切り替え |
 
