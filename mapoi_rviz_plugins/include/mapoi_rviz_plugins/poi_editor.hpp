@@ -2,9 +2,8 @@
 
 #ifndef Q_MOC_RUN
 #include <rclcpp/rclcpp.hpp>
-#endif
-
-#include <math.h>
+#include <filesystem>
+#include <set>
 
 #include <rviz_common/panel.hpp>
 #include <rviz_common/display_context.hpp>
@@ -17,8 +16,15 @@
 #include <mapoi_interfaces/srv/switch_map.hpp>
 #include <mapoi_interfaces/srv/get_pois_info.hpp>
 #include <mapoi_interfaces/srv/get_maps_info.hpp>
+#include <mapoi_interfaces/srv/get_tag_definitions.hpp>
 
 #include <yaml-cpp/yaml.h>
+#endif
+
+#include <math.h>
+
+#include <QMessageBox>
+#include <QLabel>
 
 namespace Ui {
 class PoiEditorUi;
@@ -49,6 +55,8 @@ private Q_SLOTS:
   void DeleteButton();
   void FileComboBox();
   void SaveButton();
+  void TagFilterChanged(int index);
+  void TagHelperSelected(int index);
 
 protected:
   Ui::PoiEditorUi* ui_;
@@ -56,6 +64,13 @@ protected:
   std::string config_path_;
   std::vector<std::string> map_name_list_;
   bool is_table_color_;
+
+  // Tag filter: store all POIs to restore when filter is cleared
+  std::vector<mapoi_interfaces::msg::PointOfInterest> all_pois_;
+
+  // Tag definitions from server
+  std::vector<std::string> known_tag_names_;
+  std::vector<bool> known_tag_is_system_;
 
   // ROS
   rclcpp::Node::SharedPtr node_;
@@ -67,6 +82,10 @@ protected:
   // Functions
   void InitConfigs(std::string map_name);
   void UpdatePoiTable();
+  void UpdatePoiCount();
+  void PopulateTagFilter();
+  void LoadTagDefinitions();
+  bool ValidatePois();
   double calcYaw(geometry_msgs::msg::Pose pose);
 
   std::string join(const std::vector<std::string>& v, const char* delim);

@@ -15,6 +15,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GetPoisInfo.srv"
   "srv/GetRoutePois.srv"
   "srv/GetRoutesInfo.srv"
+  "srv/GetTagDefinitions.srv"
   DEPENDENCIES geometry_msgs
 )
 

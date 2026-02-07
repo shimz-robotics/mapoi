@@ -21,6 +21,7 @@
 #include "mapoi_interfaces/srv/get_maps_info.hpp"
 #include "mapoi_interfaces/srv/get_routes_info.hpp"
 #include "mapoi_interfaces/srv/switch_map.hpp"
+#include "mapoi_interfaces/srv/get_tag_definitions.hpp"
 
 
 class MapoiServer : public rclcpp::Node
@@ -42,9 +43,15 @@ private:
 
   // methods
   void load_mapoi_config_file();
+  void load_tag_definitions();
   YAML::Node pois_list_;
   YAML::Node routes_list_;
   YAML::Node nav2_map_list_;
+
+  // tag definitions
+  std::vector<std::string> tag_names_;
+  std::vector<std::string> tag_descriptions_;
+  std::vector<bool> tag_is_system_;
 
   // services
   rclcpp::Service<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr get_pois_info_service_;
@@ -53,6 +60,7 @@ private:
   rclcpp::Service<mapoi_interfaces::srv::GetRoutesInfo>::SharedPtr get_routes_info_service_;
   rclcpp::Service<mapoi_interfaces::srv::SwitchMap>::SharedPtr switch_map_service_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reload_map_info_service_;
+  rclcpp::Service<mapoi_interfaces::srv::GetTagDefinitions>::SharedPtr get_tag_definitions_srv_;
 
   // callbacks
   void get_pois_info_service(
@@ -73,6 +81,9 @@ private:
   void reload_map_info_service(
     const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
     std::shared_ptr<std_srvs::srv::Trigger::Response> response);
+  void get_tag_definitions_service(
+    const std::shared_ptr<mapoi_interfaces::srv::GetTagDefinitions::Request> request,
+    std::shared_ptr<mapoi_interfaces::srv::GetTagDefinitions::Response> response);
 
   // helper functions
   bool send_load_map_request(
