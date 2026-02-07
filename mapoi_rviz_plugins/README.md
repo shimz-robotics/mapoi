@@ -29,6 +29,12 @@ RViz2 のツールバーに追加できるポーズ指定ツールです。
 - mapoi 向けのポーズをパブリッシュ
 - 使用後は自動的にデフォルトツールに戻る
 
+## トピック
+
+| トピック名 | 型 | 説明 |
+| --- | --- | --- |
+| `mapoi_rviz_pose` | `geometry_msgs/msg/PoseStamped` | MapoiPoseTool から PoiEditor への位置・姿勢の受け渡し |
+
 ## RViz2 への追加方法
 
 1. RViz2 を起動
