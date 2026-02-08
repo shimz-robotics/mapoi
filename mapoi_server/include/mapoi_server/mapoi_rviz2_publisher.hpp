@@ -67,6 +67,7 @@ private:
   std::vector<mapoi_interfaces::msg::PointOfInterest> pois_list_;
   std::set<std::string> highlighted_goal_names_;
   std::map<std::string, int> highlighted_route_names_;
+  std::vector<std::string> highlighted_route_ordered_;
 };
 
 #endif  // MAPOI_SERVER__MAPOI_RVIZ2_PUBLISHER_HPP_
