@@ -70,6 +70,7 @@ void MapoiRviz2Publisher::on_highlight_goal_received(const std_msgs::msg::String
 void MapoiRviz2Publisher::on_highlight_route_received(const std_msgs::msg::String::SharedPtr msg)
 {
   highlighted_route_names_.clear();
+  highlighted_route_ordered_.clear();
   if (!msg->data.empty()) {
     std::istringstream ss(msg->data);
     std::string token;
@@ -77,6 +78,7 @@ void MapoiRviz2Publisher::on_highlight_route_received(const std_msgs::msg::Strin
     while (std::getline(ss, token, ',')) {
       if (!token.empty()) {
         highlighted_route_names_[token] = order++;
+        highlighted_route_ordered_.push_back(token);
       }
     }
   }
@@ -116,13 +118,8 @@ void MapoiRviz2Publisher::timer_callback(){
         m_waypoint.pose.position.z = 0.1;
         {
           bool is_goal = highlighted_goal_names_.count(poi.name) > 0;
-          bool is_route = highlighted_route_names_.count(poi.name) > 0;
-          if (is_goal && is_route) {
-            m_waypoint.color.r = 0.8; m_waypoint.color.g = 0.4; m_waypoint.color.b = 0.5; m_waypoint.color.a = 0.7;
-          } else if (is_goal) {
+          if (is_goal) {
             m_waypoint.color.r = 1.0; m_waypoint.color.g = 0.6; m_waypoint.color.b = 0.0; m_waypoint.color.a = 0.7;
-          } else if (is_route) {
-            m_waypoint.color.r = 0.6; m_waypoint.color.g = 0.2; m_waypoint.color.b = 1.0; m_waypoint.color.a = 0.7;
           }
         }
         m_waypoint.id = id;
@@ -151,13 +148,8 @@ void MapoiRviz2Publisher::timer_callback(){
         m_waypoint.scale.x = 0.1; m_waypoint.scale.y = 0.1; m_waypoint.scale.z = 0.1;
         {
           bool is_goal = highlighted_goal_names_.count(poi.name) > 0;
-          bool is_route = highlighted_route_names_.count(poi.name) > 0;
-          if (is_goal && is_route) {
-            m_waypoint.color.r = 0.8; m_waypoint.color.g = 0.4; m_waypoint.color.b = 0.5; m_waypoint.color.a = 0.7;
-          } else if (is_goal) {
+          if (is_goal) {
             m_waypoint.color.r = 1.0; m_waypoint.color.g = 0.6; m_waypoint.color.b = 0.0; m_waypoint.color.a = 0.7;
-          } else if (is_route) {
-            m_waypoint.color.r = 0.6; m_waypoint.color.g = 0.2; m_waypoint.color.b = 1.0; m_waypoint.color.a = 0.7;
           }
         }
         m_waypoint.id = id;
@@ -214,6 +206,49 @@ void MapoiRviz2Publisher::timer_callback(){
         ma_events.markers.push_back(m_event);
         id += 1;
       }
+    }
+  }
+
+  // ルート経由点間の矢印マーカー生成
+  if (highlighted_route_ordered_.size() >= 2) {
+    // POI名→poseのルックアップマップを構築
+    std::map<std::string, geometry_msgs::msg::Pose> poi_pose_map;
+    for (const auto & poi : pois_list_) {
+      poi_pose_map[poi.name] = poi.pose;
+    }
+
+    for (size_t i = 0; i + 1 < highlighted_route_ordered_.size(); ++i) {
+      auto it_start = poi_pose_map.find(highlighted_route_ordered_[i]);
+      auto it_end = poi_pose_map.find(highlighted_route_ordered_[i + 1]);
+      if (it_start == poi_pose_map.end() || it_end == poi_pose_map.end()) {
+        continue;
+      }
+
+      visualization_msgs::msg::Marker m_arrow;
+      m_arrow.header.frame_id = "map";
+      m_arrow.header.stamp = rclcpp::Clock().now();
+      m_arrow.action = visualization_msgs::msg::Marker::ADD;
+      m_arrow.type = visualization_msgs::msg::Marker::ARROW;
+      m_arrow.scale.x = 0.05;  // shaft diameter
+      m_arrow.scale.y = 0.1;   // head diameter
+      m_arrow.scale.z = 0.1;   // head length
+      m_arrow.color.r = 0.6; m_arrow.color.g = 0.2; m_arrow.color.b = 1.0; m_arrow.color.a = 0.7;
+      m_arrow.lifetime.sec = 2.0;
+
+      geometry_msgs::msg::Point p_start;
+      p_start.x = it_start->second.position.x;
+      p_start.y = it_start->second.position.y;
+      p_start.z = 0.15;
+      geometry_msgs::msg::Point p_end;
+      p_end.x = it_end->second.position.x;
+      p_end.y = it_end->second.position.y;
+      p_end.z = 0.15;
+
+      m_arrow.points.push_back(p_start);
+      m_arrow.points.push_back(p_end);
+      m_arrow.id = id;
+      ma_waypoints.markers.push_back(m_arrow);
+      id += 1;
     }
   }
 
