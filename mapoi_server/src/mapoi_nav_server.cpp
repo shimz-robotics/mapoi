@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <functional>
+#include <cmath>
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -41,6 +42,30 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   // サービスクライアントの作成
   this->pois_info_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
   this->route_client_ = this->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
+
+  // --- POI radius event detection ---
+  this->declare_parameter<double>("radius_check_hz", 5.0);
+  this->declare_parameter<double>("hysteresis_exit_multiplier", 1.15);
+  this->declare_parameter<std::string>("map_frame", "map");
+  this->declare_parameter<std::string>("base_frame", "base_link");
+
+  tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
+  tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+
+  poi_event_pub_ = this->create_publisher<mapoi_interfaces::msg::PoiEvent>("mapoi_poi_events", 10);
+
+  config_path_sub_ = this->create_subscription<std_msgs::msg::String>(
+    "mapoi_config_path", rclcpp::QoS(1).transient_local(),
+    std::bind(&MapoiNavServer::on_config_path_changed, this, _1));
+
+  tag_defs_client_ = this->create_client<mapoi_interfaces::srv::GetTagDefinitions>("get_tag_definitions");
+  fetch_system_tags();
+
+  double hz = this->get_parameter("radius_check_hz").as_double();
+  auto period = std::chrono::duration<double>(1.0 / hz);
+  radius_check_timer_ = this->create_wall_timer(
+    std::chrono::duration_cast<std::chrono::nanoseconds>(period),
+    std::bind(&MapoiNavServer::radius_check_callback, this));
 
   RCLCPP_INFO(this->get_logger(), "MapoiNavServer initialized.");
 }
@@ -121,6 +146,7 @@ void MapoiNavServer::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv:
 
   pois_list_ = result->pois_list;
   RCLCPP_INFO(this->get_logger(), "Received %ld Tagged POIs.", pois_list_.size());
+  rebuild_event_pois();
 }
 
 void MapoiNavServer::on_route_received(rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future)
@@ -239,6 +265,129 @@ void MapoiNavServer::mapoi_cancel_cb(const std_msgs::msg::String::SharedPtr msg)
   if (!canceled) {
     RCLCPP_WARN(this->get_logger(), "No active navigation goal to cancel.");
   }
+}
+
+// --- POI radius event detection methods ---
+
+void MapoiNavServer::fetch_system_tags()
+{
+  if (!tag_defs_client_->service_is_ready()) {
+    RCLCPP_INFO(this->get_logger(), "get_tag_definitions service not available yet, waiting...");
+    return;  // radius_check_callback will retry via guard check
+  }
+  auto request = std::make_shared<mapoi_interfaces::srv::GetTagDefinitions::Request>();
+  tag_defs_client_->async_send_request(
+    request, std::bind(&MapoiNavServer::on_system_tags_received, this, _1));
+}
+
+void MapoiNavServer::on_system_tags_received(
+  rclcpp::Client<mapoi_interfaces::srv::GetTagDefinitions>::SharedFuture future)
+{
+  auto result = future.get();
+  if (!result) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to get tag definitions.");
+    return;
+  }
+  system_tags_.clear();
+  for (size_t i = 0; i < result->tag_names.size(); ++i) {
+    if (result->is_system[i]) {
+      system_tags_.insert(result->tag_names[i]);
+    }
+  }
+  system_tags_loaded_ = true;
+  RCLCPP_INFO(this->get_logger(), "Loaded %ld system tags for POI event filtering.", system_tags_.size());
+  rebuild_event_pois();
+}
+
+void MapoiNavServer::on_config_path_changed(const std_msgs::msg::String::SharedPtr msg)
+{
+  if (msg->data == last_config_path_) {
+    return;
+  }
+  last_config_path_ = msg->data;
+  RCLCPP_INFO(this->get_logger(), "Map config changed: %s — refreshing POI list.", msg->data.c_str());
+  poi_inside_state_.clear();
+  event_pois_.clear();
+  get_pois_list();
+}
+
+void MapoiNavServer::rebuild_event_pois()
+{
+  if (!system_tags_loaded_) {
+    return;
+  }
+  event_pois_.clear();
+  for (const auto & poi : pois_list_) {
+    bool has_user_tag = false;
+    for (const auto & tag : poi.tags) {
+      if (system_tags_.find(tag) == system_tags_.end()) {
+        has_user_tag = true;
+        break;
+      }
+    }
+    if (has_user_tag) {
+      event_pois_.push_back(poi);
+    }
+  }
+  RCLCPP_INFO(this->get_logger(), "Monitoring %ld POIs with user tags for radius events.", event_pois_.size());
+}
+
+void MapoiNavServer::radius_check_callback()
+{
+  if (!system_tags_loaded_) {
+    fetch_system_tags();
+    return;
+  }
+  if (event_pois_.empty()) {
+    return;
+  }
+
+  std::string map_frame = this->get_parameter("map_frame").as_string();
+  std::string base_frame = this->get_parameter("base_frame").as_string();
+
+  geometry_msgs::msg::TransformStamped transform;
+  try {
+    transform = tf_buffer_->lookupTransform(map_frame, base_frame, tf2::TimePointZero);
+  } catch (const tf2::TransformException & ex) {
+    // TF not yet available — silently skip
+    return;
+  }
+
+  double rx = transform.transform.translation.x;
+  double ry = transform.transform.translation.y;
+  double hysteresis = this->get_parameter("hysteresis_exit_multiplier").as_double();
+
+  for (const auto & poi : event_pois_) {
+    double dist = distance_2d(poi.pose, rx, ry);
+    bool was_inside = poi_inside_state_[poi.name];
+
+    if (!was_inside && dist <= poi.radius) {
+      // ENTER event
+      poi_inside_state_[poi.name] = true;
+      mapoi_interfaces::msg::PoiEvent event;
+      event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_ENTER;
+      event.poi = poi;
+      event.stamp = this->now();
+      poi_event_pub_->publish(event);
+      RCLCPP_INFO(this->get_logger(), "POI ENTER: %s (dist=%.2f, radius=%.2f)", poi.name.c_str(), dist, poi.radius);
+    } else if (was_inside && dist > poi.radius * hysteresis) {
+      // EXIT event
+      poi_inside_state_[poi.name] = false;
+      mapoi_interfaces::msg::PoiEvent event;
+      event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_EXIT;
+      event.poi = poi;
+      event.stamp = this->now();
+      poi_event_pub_->publish(event);
+      RCLCPP_INFO(this->get_logger(), "POI EXIT: %s (dist=%.2f, radius=%.2f)", poi.name.c_str(), dist, poi.radius);
+    }
+  }
+}
+
+double MapoiNavServer::distance_2d(const geometry_msgs::msg::Pose & poi_pose, double rx, double ry)
+{
+  double dx = poi_pose.position.x - rx;
+  double dy = poi_pose.position.y - ry;
+  return std::sqrt(dx * dx + dy * dy);
 }
 
 int main(int argc, char ** argv)

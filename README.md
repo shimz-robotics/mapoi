@@ -1,15 +1,15 @@
 # mapoi
 
 Navigation2 向けの地図（Map）と関心地点（POI: Point of Interest）を管理するメタパッケージです。
-地図の切り替え、POI の管理、RViz2 GUI からの自律走行操作を提供します。
+地図の切り替え、POI の管理、RViz2 GUI からの自律走行操作、POI 半径イベントの検知を提供します。
 
 ## パッケージ構成
 
 | パッケージ | 説明 |
 | --- | --- |
-| [mapoi_server](./mapoi_server/) | 地図・POI 情報の管理サーバーおよびナビゲーションサーバー（メインパッケージ） |
-| [mapoi_interfaces](./mapoi_interfaces/) | メッセージ・サービス・アクションの定義 |
-| [mapoi_rviz_plugins](./mapoi_rviz_plugins/) | RViz2 プラグイン（地図切替・POI 選択・自律走行の GUI） |
+| [mapoi_server](./mapoi_server/) | 地図・POI 情報の管理サーバー、ナビゲーションサーバー、RViz2 マーカー配信（メインパッケージ） |
+| [mapoi_interfaces](./mapoi_interfaces/) | メッセージ・サービスの定義 |
+| [mapoi_rviz_plugins](./mapoi_rviz_plugins/) | RViz2 プラグイン（地図切替・POI 選択・自律走行の GUI、POI エディタ） |
 | [mapoi_turtlebot3_example](./mapoi_turtlebot3_example/) | TurtleBot3 シミュレーション環境でのサンプル |
 
 ## ビルドとサンプルの実行
@@ -30,6 +30,16 @@ ros2 launch mapoi_turtlebot3_example turtlebot3_navigation_launch.yaml
 ros2 topic pub -1 /mapoi_goal_pose_poi std_msgs/msg/String "{data: conference_room}"
 ```
 
+## 主な機能
+
+- **地図管理**: 複数地図の切り替え、Nav2 との連携
+- **POI 管理**: YAML ベースの POI 定義、サービス経由での取得
+- **自律走行**: POI 名指定でのゴール走行、ルート走行
+- **POI 半径イベント**: ユーザータグ付き POI の半径にロボットが侵入/退出した際のイベント発行
+- **タグシステム**: システムタグ（`goal`, `waypoint`, `origin`）とユーザー定義タグによる POI 分類
+- **RViz2 GUI**: 地図切替・ゴール指定・ルート走行の操作パネル、POI エディタ、ポーズ指定ツール
+- **マーカー表示**: RViz2 上での POI 可視化、ハイライト表示、半径表示
+
 ## 自分のロボットへの導入方法
 
 ### 1. 地図ディレクトリの作成
@@ -39,7 +49,7 @@ ros2 topic pub -1 /mapoi_goal_pose_poi std_msgs/msg/String "{data: conference_ro
 ```
 maps/
 ├── site_a/
-│   ├── mapoi_config.yaml    # POI・ルート設定
+│   ├── mapoi_config.yaml    # POI・ルート・ユーザータグ設定
 │   ├── map.pgm              # 地図画像
 │   └── map.yaml             # 地図メタデータ
 └── site_b/
@@ -87,6 +97,17 @@ amcl:
     # 地図切り替えの有効化
     first_map_only_: False
 ```
+
+### 4. POI 半径イベントの利用（オプション）
+
+ユーザータグを持つ POI の半径内にロボットが入ると `mapoi_poi_events` トピックにイベントが配信されます。
+
+```sh
+# イベントの確認
+ros2 topic echo /mapoi_poi_events
+```
+
+詳細は [mapoi_server の README](./mapoi_server/README.md) を参照してください。
 
 ## ライセンス
 
