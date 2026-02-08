@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mapoi - POI Editor</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header>
+    <h1>mapoi POI Editor</h1>
+    <div id="map-selector">
+      <label for="map-select">Map:</label>
+      <select id="map-select"></select>
+    </div>
+  </header>
+
+  <main>
+    <div id="map-container">
+      <div id="map"></div>
+      <div id="map-status"></div>
+    </div>
+
+    <div id="poi-panel">
+      <div id="poi-toolbar">
+        <button id="btn-add-poi" title="Add POI">+ Add POI</button>
+        <button id="btn-save" title="Save changes" disabled>Save</button>
+        <button id="btn-discard" title="Discard changes" disabled>Discard</button>
+        <span id="dirty-indicator"></span>
+      </div>
+      <div id="poi-list"></div>
+
+      <div id="poi-edit-form" class="hidden">
+        <h3 id="form-title">Edit POI</h3>
+        <div class="form-row">
+          <label for="poi-name">Name</label>
+          <input type="text" id="poi-name" />
+        </div>
+        <div class="form-row">
+          <label for="poi-x">X</label>
+          <input type="number" id="poi-x" step="0.01" />
+        </div>
+        <div class="form-row">
+          <label for="poi-y">Y</label>
+          <input type="number" id="poi-y" step="0.01" />
+        </div>
+        <div class="form-row">
+          <label for="poi-yaw">Yaw</label>
+          <input type="number" id="poi-yaw" step="0.01" />
+        </div>
+        <div class="form-row">
+          <label for="poi-radius">Radius</label>
+          <input type="number" id="poi-radius" step="0.1" min="0" />
+        </div>
+        <div class="form-row">
+          <label for="poi-tags">Tags</label>
+          <input type="text" id="poi-tags" placeholder="goal, waypoint" />
+        </div>
+        <div class="form-row">
+          <label for="poi-description">Description</label>
+          <input type="text" id="poi-description" />
+        </div>
+        <div class="form-actions">
+          <button id="btn-form-ok">OK</button>
+          <button id="btn-form-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/map-viewer.js"></script>
+  <script src="/js/poi-editor.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
