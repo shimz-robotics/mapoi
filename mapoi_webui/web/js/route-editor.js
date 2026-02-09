@@ -8,12 +8,15 @@ class RouteEditor {
     this.originalRoutes = [];
     this.dirty = false;
     this.editingIndex = -1; // -1 = closed, >=0 = editing, -2 = new route
+    this.selectedIndex = -1; // -1 = none selected
     this.visibleRoutes = new Set();
     this.poiNames = [];
     this.editingWaypoints = []; // working waypoint list for form
 
     this.onDirtyChange = null;
     this.onVisibilityChange = null;
+    this.onEditingChange = null; // callback(isEditing) - fired when editing starts/stops
+    this.onSelectionChange = null; // callback(index) - fired when selection changes
 
     // DOM references
     this.listEl = document.getElementById('route-list');
@@ -46,6 +49,7 @@ class RouteEditor {
     this.routes = JSON.parse(JSON.stringify(routes));
     this.originalRoutes = JSON.parse(JSON.stringify(routes));
     this.editingIndex = -1;
+    this.selectedIndex = -1;
     this.visibleRoutes = new Set(routes.map((r) => r.name));
     this.setDirty(false);
     this.hideForm();
@@ -67,7 +71,14 @@ class RouteEditor {
     this.routes.forEach((route, idx) => {
       const color = this.getRouteColor(idx);
       const item = document.createElement('div');
-      item.className = 'route-item';
+      let cls = 'route-item';
+      if (idx === this.editingIndex) cls += ' editing';
+      if (idx === this.selectedIndex) cls += ' selected';
+      item.className = cls;
+
+      item.addEventListener('click', () => {
+        this.selectRoute(idx);
+      });
 
       const cb = document.createElement('input');
       cb.type = 'checkbox';
@@ -112,6 +123,15 @@ class RouteEditor {
       });
       actions.appendChild(editBtn);
 
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'btn-copy';
+      copyBtn.textContent = 'Copy';
+      copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.copyRoute(idx);
+      });
+      actions.appendChild(copyBtn);
+
       const delBtn = document.createElement('button');
       delBtn.className = 'btn-delete';
       delBtn.textContent = 'Del';
@@ -130,8 +150,11 @@ class RouteEditor {
   }
 
   getRouteColor(idx) {
-    const palette = ['#8e44ad', '#2980b9', '#16a085', '#c0392b', '#d35400', '#7f8c8d'];
-    return palette[idx % palette.length];
+    const palette = ['#2980b9', '#8e44ad', '#16a085', '#d35400', '#c0392b', '#7f8c8d'];
+    if (idx < palette.length) return palette[idx];
+    const n = idx - palette.length;
+    const hue = (n * 47 + 30) % 360;
+    return `hsl(${hue}, 55%, 45%)`;
   }
 
   /**
@@ -139,10 +162,13 @@ class RouteEditor {
    */
   editRoute(index) {
     this.editingIndex = index;
+    this.selectedIndex = index;
     const route = this.routes[index];
     this.formTitle.textContent = 'Edit Route';
     this.fillForm(route);
     this.showForm();
+    this.renderList();
+    this._fireEditingChange();
   }
 
   /**
@@ -152,10 +178,32 @@ class RouteEditor {
     const name = this.routes[index].name;
     this.routes.splice(index, 1);
     this.visibleRoutes.delete(name);
+    this.selectedIndex = -1;
     this.setDirty(true);
     this.hideForm();
     this.renderList();
+    if (this.onSelectionChange) this.onSelectionChange(-1);
     if (this.onVisibilityChange) this.onVisibilityChange();
+  }
+
+  /**
+   * Copy a route (deep clone with "_copy" suffix, open in edit form).
+   */
+  copyRoute(index) {
+    const original = this.routes[index];
+    const copy = JSON.parse(JSON.stringify(original));
+    copy.name = original.name + '_copy';
+    this.routes.push(copy);
+    const newIdx = this.routes.length - 1;
+    this.visibleRoutes.add(copy.name);
+    this.editingIndex = newIdx;
+    this.selectedIndex = newIdx;
+    this.formTitle.textContent = 'Edit Route (Copy)';
+    this.fillForm(copy);
+    this.showForm();
+    this.setDirty(true);
+    this.renderList();
+    this._fireEditingChange();
   }
 
   /**
@@ -166,6 +214,8 @@ class RouteEditor {
     this.formTitle.textContent = 'New Route';
     this.fillForm({ name: '', waypoints: [] });
     this.showForm();
+    this.renderList();
+    this._fireEditingChange();
   }
 
   /**
@@ -261,6 +311,17 @@ class RouteEditor {
     this.editingWaypoints.push(val);
     this.waypointSelect.value = '';
     this.renderWaypointList();
+    this._fireEditingChange();
+  }
+
+  /**
+   * Add a waypoint by POI name (e.g. from map click).
+   */
+  addWaypointByName(name) {
+    if (this.editingIndex === -1) return;
+    this.editingWaypoints.push(name);
+    this.renderWaypointList();
+    this._fireEditingChange();
   }
 
   moveWaypoint(index, dir) {
@@ -270,11 +331,13 @@ class RouteEditor {
     this.editingWaypoints[index] = this.editingWaypoints[newIndex];
     this.editingWaypoints[newIndex] = tmp;
     this.renderWaypointList();
+    this._fireEditingChange();
   }
 
   removeWaypoint(index) {
     this.editingWaypoints.splice(index, 1);
     this.renderWaypointList();
+    this._fireEditingChange();
   }
 
   /**
@@ -326,6 +389,7 @@ class RouteEditor {
     this.setDirty(true);
     this.hideForm();
     this.renderList();
+    this._fireEditingChange();
     if (this.onVisibilityChange) this.onVisibilityChange();
   }
 
@@ -335,6 +399,8 @@ class RouteEditor {
   formCancel() {
     this.editingIndex = -1;
     this.hideForm();
+    this.renderList();
+    this._fireEditingChange();
   }
 
   showForm() {
@@ -400,5 +466,28 @@ class RouteEditor {
     this.visibleRoutes = new Set();
     this.renderList();
     if (this.onVisibilityChange) this.onVisibilityChange();
+  }
+
+  /**
+   * Select a route by index (toggle: re-click deselects).
+   */
+  selectRoute(index) {
+    this.selectedIndex = this.selectedIndex === index ? -1 : index;
+    this.renderList();
+    if (this.onSelectionChange) this.onSelectionChange(this.selectedIndex);
+  }
+
+  /**
+   * Returns the editing route color, or null if not editing an existing route.
+   */
+  getEditingRouteColor() {
+    if (this.editingIndex >= 0) return this.getRouteColor(this.editingIndex);
+    if (this.editingIndex === -2) return this.getRouteColor(this.routes.length);
+    return null;
+  }
+
+  /** @private */
+  _fireEditingChange() {
+    if (this.onEditingChange) this.onEditingChange(this.editingIndex !== -1);
   }
 }
