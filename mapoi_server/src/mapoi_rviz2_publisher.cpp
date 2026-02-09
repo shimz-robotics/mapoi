@@ -54,13 +54,17 @@ void MapoiRviz2Publisher::on_poi_received(rclcpp::Client<mapoi_interfaces::srv::
     RCLCPP_ERROR(this->get_logger(), "Failed to get Pois Info.");
     return;
   }
-  pois_list_ = result->pois_list;
-  RCLCPP_INFO(this->get_logger(), "Received %ld POIs.", pois_list_.size());
+  {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    pois_list_ = result->pois_list;
+  }
+  RCLCPP_INFO(this->get_logger(), "Received %zu POIs.", pois_list_.size());
 }
 
 
 void MapoiRviz2Publisher::on_highlight_goal_received(const std_msgs::msg::String::SharedPtr msg)
 {
+  std::lock_guard<std::mutex> lock(data_mutex_);
   highlighted_goal_names_.clear();
   if (!msg->data.empty()) {
     highlighted_goal_names_.insert(msg->data);
@@ -69,6 +73,7 @@ void MapoiRviz2Publisher::on_highlight_goal_received(const std_msgs::msg::String
 
 void MapoiRviz2Publisher::on_highlight_route_received(const std_msgs::msg::String::SharedPtr msg)
 {
+  std::lock_guard<std::mutex> lock(data_mutex_);
   highlighted_route_names_.clear();
   highlighted_route_ordered_.clear();
   if (!msg->data.empty()) {
@@ -85,6 +90,7 @@ void MapoiRviz2Publisher::on_highlight_route_received(const std_msgs::msg::Strin
 }
 
 void MapoiRviz2Publisher::timer_callback(){
+  std::lock_guard<std::mutex> lock(data_mutex_);
   // publish markers on rviz
   visualization_msgs::msg::Marker default_arrow_marker;
   default_arrow_marker.header.frame_id = "map";
@@ -108,10 +114,10 @@ void MapoiRviz2Publisher::timer_callback(){
   visualization_msgs::msg::MarkerArray ma_waypoints;
   visualization_msgs::msg::MarkerArray ma_events;
   int id = 0;
-  for (auto poi : pois_list_) {
+  for (const auto & poi : pois_list_) {
     geometry_msgs::msg::Pose pose = poi.pose;
 
-    for(auto tag : poi.tags){
+    for(const auto & tag : poi.tags){
       if(tag == "goal"){
         visualization_msgs::msg::Marker m_waypoint = default_arrow_marker;
         m_waypoint.pose = pose;

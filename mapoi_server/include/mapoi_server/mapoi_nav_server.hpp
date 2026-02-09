@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <cmath>
+#include <mutex>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
@@ -68,6 +69,7 @@ private:
   rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr pois_info_client_;
   rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedPtr route_client_;
 
+  std::mutex data_mutex_;
   std::vector<mapoi_interfaces::msg::PointOfInterest> pois_list_;
 
   // Nav status publisher

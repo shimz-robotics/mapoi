@@ -8,6 +8,7 @@
 #include <sstream>
 #include <chrono>
 #include <cmath>
+#include <mutex>
 
 #include <rclcpp/rclcpp.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
@@ -64,6 +65,7 @@ private:
   rclcpp::TimerBase::SharedPtr timer_;
 
   // Data storage
+  std::mutex data_mutex_;
   std::vector<mapoi_interfaces::msg::PointOfInterest> pois_list_;
   std::set<std::string> highlighted_goal_names_;
   std::map<std::string, int> highlighted_route_names_;
