@@ -82,7 +82,7 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 - TF lookup (`map` -> `base_link`) でロボット位置を取得（デフォルト 5Hz）
 - **侵入判定**: 距離 <= `radius`
 - **退出判定**: 距離 > `radius * hysteresis_exit_multiplier`（デフォルト 1.15）
-- システムタグ（`goal`, `waypoint`, `origin`）のみの POI はイベント対象外
+- システムタグ（`goal`, `origin`）のみの POI はイベント対象外
 - マップ切替時は内部状態をリセットし、新しい POI リストで監視を再開
 
 ### mapoi_rviz2_publisher
@@ -100,7 +100,7 @@ RViz2 上に POI のマーカーを表示するためのノードです。
 
 | トピック名 | 型 | 説明 |
 | --- | --- | --- |
-| `mapoi_goal_marks` | `visualization_msgs/MarkerArray` | goal・waypoint タグの POI マーカー |
+| `mapoi_goal_marks` | `visualization_msgs/MarkerArray` | goal タグの POI マーカー |
 | `mapoi_event_marks` | `visualization_msgs/MarkerArray` | event・origin タグの POI マーカー（半径表示含む） |
 
 ## タグシステム
@@ -114,7 +114,6 @@ POI にはタグを付与して用途を分類できます。タグは **シス�
 | タグ名 | 説明 |
 | --- | --- |
 | `goal` | ナビゲーション目的地 |
-| `waypoint` | 中間ウェイポイント |
 | `origin` | 地図原点の基準点 |
 
 ### ユーザータグ

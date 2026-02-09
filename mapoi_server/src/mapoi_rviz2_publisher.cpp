@@ -147,36 +147,6 @@ void MapoiRviz2Publisher::timer_callback(){
         ma_waypoints.markers.push_back(m_text);
         id += 1;
       }
-      else if(tag == "waypoint"){
-        visualization_msgs::msg::Marker m_waypoint = default_arrow_marker;
-        m_waypoint.pose = pose;
-        m_waypoint.pose.position.z = 0.1;
-        m_waypoint.scale.x = 0.1; m_waypoint.scale.y = 0.1; m_waypoint.scale.z = 0.1;
-        {
-          bool is_goal = highlighted_goal_names_.count(poi.name) > 0;
-          if (is_goal) {
-            m_waypoint.color.r = 1.0; m_waypoint.color.g = 0.6; m_waypoint.color.b = 0.0; m_waypoint.color.a = 0.7;
-          }
-        }
-        m_waypoint.id = id;
-        ma_waypoints.markers.push_back(m_waypoint);
-        id += 1;
-
-        visualization_msgs::msg::Marker m_text = default_text_marker;
-        {
-          auto it = highlighted_route_names_.find(poi.name);
-          if (it != highlighted_route_names_.end()) {
-            m_text.text = "[" + std::to_string(it->second) + "] " + poi.name;
-          } else {
-            m_text.text = poi.name;
-          }
-        }
-        m_text.pose = pose;
-        m_text.pose.position.z = 0.1;
-        m_text.id = id;
-        ma_waypoints.markers.push_back(m_text);
-        id += 1;
-      }
       else if(tag == "event"){
         visualization_msgs::msg::Marker m_event = default_arrow_marker;
         m_event.pose = pose;

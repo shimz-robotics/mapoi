@@ -14,7 +14,7 @@ POI（Point of Interest）を表すメッセージです。
 | `name` | `string` | POI の名前 |
 | `pose` | `geometry_msgs/Pose` | POI の位置・姿勢 |
 | `radius` | `float64` | POI の半径 |
-| `tags` | `string[]` | POI に紐づくタグ（例: `goal`, `waypoint`, `audio_info`） |
+| `tags` | `string[]` | POI に紐づくタグ（例: `goal`, `audio_info`） |
 | `description` | `string` | POI の説明 |
 
 ### PoiEvent.msg

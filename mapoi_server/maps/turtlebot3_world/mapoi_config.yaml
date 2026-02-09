@@ -26,7 +26,7 @@ poi:
   - name: corridor_a
     pose: {x: 0.5, y: 0.5, yaw: -3.14}
     radius: 0.5
-    tags: [waypoint]
+    tags: [goal]
     description: 廊下
   - name: model_exhibit
     pose: {x: -0.5, y: 0.5, yaw: -1.57}
