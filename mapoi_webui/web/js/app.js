@@ -70,7 +70,16 @@
   }
 
   function redrawRoutes() {
-    mapViewer.showRoutes(routeEditor.routes, poiEditor.pois, routeEditor.visibleRoutes);
+    if (routeEditor.editingIndex !== -1) {
+      // Hide all other routes while editing; show only the editing preview
+      mapViewer.clearRoutes();
+      const color = routeEditor.getEditingRouteColor() || '#2980b9';
+      mapViewer.showEditingRoutePreview(
+        routeEditor.editingWaypoints, poiEditor.pois, color
+      );
+    } else {
+      mapViewer.showRoutes(routeEditor.routes, poiEditor.pois, routeEditor.visibleRoutes);
+    }
   }
 
   // --- Map selector change ---
@@ -124,6 +133,14 @@
 
   // POI marker click on map
   mapViewer.onPoiClick = (index) => {
+    // If route editing is active, add the clicked POI as a waypoint
+    if (routeEditor.editingIndex !== -1) {
+      const poi = poiEditor.pois[index];
+      if (poi && poi.name) {
+        routeEditor.addWaypointByName(poi.name);
+      }
+      return;
+    }
     poiEditor.selectPoi(index);
     mapViewer.highlightPoi(index);
   };
@@ -161,14 +178,37 @@
     }
   };
 
+  // Route click on map
+  mapViewer.onRouteClick = (routeIdx) => {
+    // Ignore during editing
+    if (routeEditor.editingIndex !== -1) return;
+    routeEditor.selectRoute(routeIdx);
+  };
+
+  // Route selection change — highlight on map
+  routeEditor.onSelectionChange = (index) => {
+    mapViewer.highlightRoute(index);
+  };
+
+  // Route editing state change — redraw routes with editing preview
+  routeEditor.onEditingChange = () => {
+    redrawRoutes();
+  };
+
   // Route visibility toggle
   routeEditor.onVisibilityChange = () => {
     redrawRoutes();
+    if (routeEditor.selectedIndex >= 0) {
+      mapViewer.highlightRoute(routeEditor.selectedIndex);
+    }
   };
 
   // Route dirty state change — refresh routes on map and nav select after save/discard
   routeEditor.onDirtyChange = (isDirty) => {
     redrawRoutes();
+    if (routeEditor.selectedIndex >= 0) {
+      mapViewer.highlightRoute(routeEditor.selectedIndex);
+    }
     if (!isDirty) {
       populateNavRouteSelect(routeEditor.routes);
     }
@@ -209,7 +249,7 @@
     pois
       .filter((p) => {
         const tags = (p.tags || []).map((t) => t.toLowerCase());
-        return tags.includes('goal') || tags.includes('waypoint');
+        return tags.includes('goal');
       })
       .forEach((p) => {
         const opt = document.createElement('option');
@@ -251,7 +291,7 @@
     const s = status || 'idle';
     navStatusDot.className = 'nav-status-dot nav-status-' + s;
     let label = statusLabels[s] || s;
-    if (target && s === 'navigating') {
+    if (target && s !== 'idle') {
       label += ': ' + target;
     }
     navStatusText.textContent = label;

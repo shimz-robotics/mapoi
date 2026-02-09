@@ -230,6 +230,11 @@ main {
   color: #fff;
 }
 
+.btn-copy {
+  background: #3498db;
+  color: #fff;
+}
+
 .btn-delete {
   background: #e74c3c;
   color: #fff;
@@ -438,6 +443,17 @@ main {
   background: #f0f0f0;
 }
 
+.route-item.selected {
+  background: #e8eaf6;
+  border-left: 3px solid #3498db;
+}
+
+.route-item.editing {
+  background: #ede7f6;
+  border-left: 3px solid #8e44ad;
+  font-weight: 600;
+}
+
 .route-item input[type="checkbox"] {
   flex-shrink: 0;
   width: 16px;
@@ -608,6 +624,20 @@ main {
   font-size: 0.85rem;
 }
 
+.route-wp-map-hint {
+  font-size: 0.78rem;
+  color: #8e44ad;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.route-wp-map-hint::before {
+  content: '\25C0';
+  font-size: 0.65rem;
+}
+
 .route-wp-add-row {
   display: flex;
   gap: 6px;
@@ -766,8 +796,8 @@ main {
 }
 
 .nav-status-idle { background: #95a5a6; }
-.nav-status-navigating { background: #27ae60; animation: pulse 1s infinite; }
-.nav-status-succeeded { background: #3498db; }
+.nav-status-navigating { background: #3498db; animation: pulse 1s infinite; }
+.nav-status-succeeded { background: #27ae60; }
 .nav-status-aborted { background: #e74c3c; }
 .nav-status-canceled { background: #e67e22; }
 

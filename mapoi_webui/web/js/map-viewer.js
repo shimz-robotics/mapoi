@@ -20,7 +20,9 @@ class MapViewer {
     this.robotMarker = null;     // Leaflet marker for robot position
     this.onMapClick = null;      // callback(worldX, worldY)
     this.onPoiClick = null;      // callback(index)
+    this.onRouteClick = null;    // callback(routeIndex)
     this._poseTool = null;       // pose tool state
+    this._routePolylines = [];   // { line, hitLine, routeIdx, color } for click & highlight
 
     this.map.on('click', (e) => {
       if (this._poseTool) {
@@ -118,7 +120,7 @@ class MapViewer {
     for (const tag of tags) {
       if (this.tagColors[tag]) return this.tagColors[tag];
     }
-    return '#f39c12';
+    return '#3498db';
   }
 
   /**
@@ -336,8 +338,36 @@ class MapViewer {
    * Get the color for a route by its index.
    */
   getRouteColor(routeIdx) {
-    const palette = ['#8e44ad', '#2980b9', '#16a085', '#c0392b', '#d35400', '#7f8c8d'];
-    return palette[routeIdx % palette.length];
+    const palette = ['#2980b9', '#8e44ad', '#16a085', '#d35400', '#c0392b', '#7f8c8d'];
+    if (routeIdx < palette.length) return palette[routeIdx];
+    // HSL fallback: distribute hues avoiding palette hues
+    const usedHues = [207, 282, 168, 24, 4, 210]; // approx hues of palette colors
+    const n = routeIdx - palette.length;
+    const hue = (n * 47 + 30) % 360; // step by golden-angle-ish offset, start at 30
+    return `hsl(${hue}, 55%, 45%)`;
+  }
+
+  /**
+   * Create an SVG chevron (>) direction marker.
+   * Default orientation: tip points UP (^). Rotated by rotDeg.
+   * Open V-shape with no fill — lightweight and unambiguous.
+   */
+  createRouteDirectionSvg(color, rotDeg, size) {
+    const s = size || 18;
+    return `<svg width="${s}" height="${s}" viewBox="0 0 16 16" style="transform: rotate(${rotDeg}deg);">` +
+      `<path d="M4 12 L8 4 L12 12" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>` +
+      `<path d="M4 12 L8 4 L12 12" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/>` +
+      `<path d="M4 12 L8 4 L12 12" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>` +
+      `</svg>`;
+  }
+
+  /**
+   * Compute CSS rotation (degrees) for a route direction marker (teardrop pointing UP by default).
+   * from/to are Leaflet LatLng objects.
+   */
+  routeDirectionDeg(from, to) {
+    const screenAngle = Math.atan2(to.lat - from.lat, to.lng - from.lng) * (180 / Math.PI);
+    return 90 - screenAngle;
   }
 
   /**
@@ -394,18 +424,34 @@ class MapViewer {
       line.bringToBack();
       this.routeLayers.push(line);
 
-      // Draw arrowhead markers along segments
+      // Invisible wider hit area for easier clicking
+      const hitLine = L.polyline(latlngs, {
+        color: '#000',
+        weight: 16,
+        opacity: 0,
+        interactive: true,
+      }).addTo(this.map);
+
+      hitLine.on('click', (e) => {
+        L.DomEvent.stopPropagation(e);
+        if (this.onRouteClick) this.onRouteClick(routeIdx);
+      });
+
+      hitLine.bringToBack();
+      this.routeLayers.push(hitLine);
+      this._routePolylines.push({ line, hitLine, routeIdx, color, latlngs });
+
+      // Draw teardrop direction markers along segments
       for (let i = 0; i < latlngs.length - 1; i++) {
         const from = latlngs[i];
         const to = latlngs[i + 1];
-        // Place arrow at midpoint of segment
         const midLat = (from.lat + to.lat) / 2;
         const midLng = (from.lng + to.lng) / 2;
-        const angle = Math.atan2(to.lng - from.lng, to.lat - from.lat) * (180 / Math.PI);
+        const rotDeg = this.routeDirectionDeg(from, to);
 
         const arrowIcon = L.divIcon({
           className: 'route-arrow',
-          html: `<div style="transform: rotate(${90 - angle}deg); color: ${color}; font-size: 16px; font-weight: bold; line-height: 1;">&#9654;</div>`,
+          html: this.createRouteDirectionSvg(color, rotDeg, 16),
           iconSize: [16, 16],
           iconAnchor: [8, 8],
         });
@@ -441,6 +487,107 @@ class MapViewer {
       this.map.removeLayer(layer);
     });
     this.routeLayers = [];
+    this._routePolylines = [];
+    this.clearEditingRoutePreview();
+  }
+
+  /**
+   * Highlight a specific route on the map (solid, thicker line).
+   * Pass -1 to clear highlight.
+   */
+  highlightRoute(routeIdx) {
+    this._routePolylines.forEach((item) => {
+      if (item.routeIdx === routeIdx) {
+        item.line.setStyle({ weight: 5, opacity: 1.0, dashArray: null });
+      } else {
+        item.line.setStyle({ weight: 3, opacity: 0.7, dashArray: '8, 6' });
+      }
+    });
+  }
+
+  /**
+   * Show a live preview of the route being edited.
+   * @param {Array} waypoints - waypoint name array (editingWaypoints)
+   * @param {Array} pois - POI array to resolve names
+   * @param {string} color - route color
+   */
+  showEditingRoutePreview(waypoints, pois, color) {
+    this.clearEditingRoutePreview();
+    if (!this.metadata || !waypoints || !pois) return;
+
+    const poiByName = {};
+    pois.forEach((poi) => { if (poi.name) poiByName[poi.name] = poi; });
+
+    const latlngs = [];
+    const resolved = [];
+    waypoints.forEach((wpName, i) => {
+      const poi = poiByName[wpName];
+      if (poi && poi.pose) {
+        const ll = this.worldToLatLng(poi.pose.x, poi.pose.y);
+        latlngs.push(ll);
+        resolved.push({ latlng: ll, order: i + 1 });
+      }
+    });
+
+    this._editingPreviewLayers = [];
+
+    // Draw solid polyline (editing preview is solid, not dashed)
+    if (latlngs.length >= 2) {
+      const line = L.polyline(latlngs, {
+        color: color,
+        weight: 5,
+        opacity: 0.9,
+      }).addTo(this.map);
+      line.bringToBack();
+      this._editingPreviewLayers.push(line);
+
+      // Directional teardrop markers
+      for (let i = 0; i < latlngs.length - 1; i++) {
+        const from = latlngs[i];
+        const to = latlngs[i + 1];
+        const midLat = (from.lat + to.lat) / 2;
+        const midLng = (from.lng + to.lng) / 2;
+        const rotDeg = this.routeDirectionDeg(from, to);
+        const arrowIcon = L.divIcon({
+          className: 'route-arrow',
+          html: this.createRouteDirectionSvg(color, rotDeg, 20),
+          iconSize: [20, 20],
+          iconAnchor: [10, 10],
+        });
+        const arrowMarker = L.marker([midLat, midLng], {
+          icon: arrowIcon,
+          interactive: false,
+        }).addTo(this.map);
+        this._editingPreviewLayers.push(arrowMarker);
+      }
+    }
+
+    // Order labels
+    resolved.forEach(({ latlng, order }) => {
+      const icon = L.divIcon({
+        className: 'route-order-label',
+        html: `<span style="background: ${color}; box-shadow: 0 0 6px ${color};">${order}</span>`,
+        iconSize: [22, 22],
+        iconAnchor: [-6, 28],
+      });
+      const labelMarker = L.marker(latlng, {
+        icon: icon,
+        interactive: false,
+      }).addTo(this.map);
+      this._editingPreviewLayers.push(labelMarker);
+    });
+  }
+
+  /**
+   * Remove editing route preview layers.
+   */
+  clearEditingRoutePreview() {
+    if (this._editingPreviewLayers) {
+      this._editingPreviewLayers.forEach((layer) => {
+        this.map.removeLayer(layer);
+      });
+    }
+    this._editingPreviewLayers = [];
   }
 
   /**
