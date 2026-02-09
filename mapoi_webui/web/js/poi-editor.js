@@ -114,6 +114,15 @@ class PoiEditor {
       });
       actions.appendChild(editBtn);
 
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'btn-copy';
+      copyBtn.textContent = 'Copy';
+      copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.copyPoi(i);
+      });
+      actions.appendChild(copyBtn);
+
       const delBtn = document.createElement('button');
       delBtn.className = 'btn-delete';
       delBtn.textContent = 'Del';
@@ -173,6 +182,24 @@ class PoiEditor {
     if (this.onSelectionChange) {
       this.onSelectionChange(this.selectedIndex);
     }
+  }
+
+  /**
+   * Copy a POI (deep clone with "_copy" suffix, open in edit form).
+   */
+  copyPoi(index) {
+    const original = this.pois[index];
+    const copy = JSON.parse(JSON.stringify(original));
+    copy.name = original.name + '_copy';
+    this.pois.push(copy);
+    const newIdx = this.pois.length - 1;
+    this.visiblePois.add(newIdx);
+    this.editingIndex = newIdx;
+    this.formTitle.textContent = 'Edit POI (Copy)';
+    this.fillForm(copy);
+    this.showForm();
+    this.setDirty(true);
+    this.selectPoi(newIdx);
   }
 
   /**
