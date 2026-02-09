@@ -14,6 +14,7 @@ class MapViewer {
 
     this.imageOverlay = null;
     this.poiMarkers = [];  // { marker, poi, index }
+    this.routeLayers = []; // Leaflet layers for route lines and labels
     this.metadata = null;
     this.tagColors = {};  // tag_name -> color, built from definitions
     this.onMapClick = null;      // callback(worldX, worldY)
@@ -109,26 +110,48 @@ class MapViewer {
   }
 
   /**
-   * Display POI markers on the map.
+   * Create an SVG arrow icon for a POI marker.
+   * The arrow points in the yaw direction (ROS: 0=+x, pi/2=+y).
    */
-  showPois(pois) {
+  createArrowIcon(color, yaw, highlight) {
+    const strokeColor = highlight ? '#e67e22' : '#fff';
+    const strokeWidth = highlight ? 2.5 : 1.5;
+    // SVG arrow pointing UP; CSS rotation converts yaw to visual direction.
+    // yaw=0 → right(+x) → rotate 90° CW from up
+    const rotDeg = 90 - (yaw * 180 / Math.PI);
+    const svg = `<svg width="32" height="32" viewBox="0 0 32 32" style="transform: rotate(${rotDeg}deg);">` +
+      `<path d="M16 2 L27 24 L16 18 L5 24 Z" fill="${color}" fill-opacity="0.85" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linejoin="round"/>` +
+      `</svg>`;
+    return L.divIcon({
+      className: 'poi-arrow-icon',
+      html: svg,
+      iconSize: [32, 32],
+      iconAnchor: [16, 18],  // anchor at the notch (POI position)
+    });
+  }
+
+  /**
+   * Display POI markers as directional arrows on the map.
+   * @param {Array} pois - POI array
+   * @param {Set|null} visibleSet - if provided, only show POIs whose index is in this set
+   */
+  showPois(pois, visibleSet) {
     this.clearPois();
     pois.forEach((poi, index) => {
       if (!poi.pose) return;
+      if (visibleSet && !visibleSet.has(index)) return;
+
       const latlng = this.worldToLatLng(poi.pose.x, poi.pose.y);
       const color = this.getPoiColor(poi);
-      const marker = L.circleMarker(latlng, {
-        radius: 8,
-        fillColor: color,
-        color: '#fff',
-        weight: 2,
-        fillOpacity: 0.8,
-      }).addTo(this.map);
+      const yaw = poi.pose.yaw || 0;
+
+      const icon = this.createArrowIcon(color, yaw, false);
+      const marker = L.marker(latlng, { icon }).addTo(this.map);
 
       marker.bindTooltip(poi.name || `POI ${index}`, {
         permanent: false,
         direction: 'top',
-        offset: [0, -10],
+        offset: [0, -14],
       });
 
       marker.on('click', (e) => {
@@ -138,7 +161,7 @@ class MapViewer {
         }
       });
 
-      this.poiMarkers.push({ marker, poi, index });
+      this.poiMarkers.push({ marker, poi, index, color, yaw });
     });
   }
 
@@ -147,11 +170,13 @@ class MapViewer {
    */
   highlightPoi(index) {
     this.poiMarkers.forEach((item) => {
-      if (item.index === index) {
-        item.marker.setStyle({ weight: 4, color: '#e67e22' });
-        item.marker.bringToFront();
+      const isHighlighted = item.index === index;
+      const icon = this.createArrowIcon(item.color, item.yaw, isHighlighted);
+      item.marker.setIcon(icon);
+      if (isHighlighted) {
+        item.marker.setZIndexOffset(1000);
       } else {
-        item.marker.setStyle({ weight: 2, color: '#fff' });
+        item.marker.setZIndexOffset(0);
       }
     });
   }
@@ -164,5 +189,116 @@ class MapViewer {
       this.map.removeLayer(item.marker);
     });
     this.poiMarkers = [];
+  }
+
+  /**
+   * Get the color for a route by its index.
+   */
+  getRouteColor(routeIdx) {
+    const palette = ['#8e44ad', '#2980b9', '#16a085', '#c0392b', '#d35400', '#7f8c8d'];
+    return palette[routeIdx % palette.length];
+  }
+
+  /**
+   * Display routes on the map as polylines with waypoint order labels.
+   * @param {Array} routes - [{name, waypoints: [poiName, ...]}, ...]
+   * @param {Array} pois - POI array to resolve waypoint names to coordinates
+   * @param {Set|null} visibleNames - if provided, only show routes whose name is in this set
+   */
+  showRoutes(routes, pois, visibleNames) {
+    this.clearRoutes();
+    if (!this.metadata || !routes || !pois) return;
+
+    // Build name -> poi lookup
+    const poiByName = {};
+    pois.forEach((poi) => {
+      if (poi.name) poiByName[poi.name] = poi;
+    });
+
+    routes.forEach((route, routeIdx) => {
+      // Filter by visible set
+      if (visibleNames && !visibleNames.has(route.name)) return;
+
+      const color = this.getRouteColor(routeIdx);
+      const waypoints = route.waypoints || [];
+
+      // Resolve waypoint names to LatLng positions
+      const latlngs = [];
+      const resolved = []; // { latlng, order }
+      waypoints.forEach((wpName, i) => {
+        const poi = poiByName[wpName];
+        if (poi && poi.pose) {
+          const ll = this.worldToLatLng(poi.pose.x, poi.pose.y);
+          latlngs.push(ll);
+          resolved.push({ latlng: ll, order: i + 1 });
+        }
+      });
+
+      if (latlngs.length < 2) return;
+
+      // Draw polyline (dashed)
+      const line = L.polyline(latlngs, {
+        color: color,
+        weight: 3,
+        opacity: 0.7,
+        dashArray: '8, 6',
+      }).addTo(this.map);
+
+      line.bindTooltip(route.name || `Route ${routeIdx + 1}`, {
+        sticky: true,
+        direction: 'top',
+        offset: [0, -8],
+      });
+
+      line.bringToBack();
+      this.routeLayers.push(line);
+
+      // Draw arrowhead markers along segments
+      for (let i = 0; i < latlngs.length - 1; i++) {
+        const from = latlngs[i];
+        const to = latlngs[i + 1];
+        // Place arrow at midpoint of segment
+        const midLat = (from.lat + to.lat) / 2;
+        const midLng = (from.lng + to.lng) / 2;
+        const angle = Math.atan2(to.lng - from.lng, to.lat - from.lat) * (180 / Math.PI);
+
+        const arrowIcon = L.divIcon({
+          className: 'route-arrow',
+          html: `<div style="transform: rotate(${90 - angle}deg); color: ${color}; font-size: 16px; font-weight: bold; line-height: 1;">&#9654;</div>`,
+          iconSize: [16, 16],
+          iconAnchor: [8, 8],
+        });
+        const arrowMarker = L.marker([midLat, midLng], {
+          icon: arrowIcon,
+          interactive: false,
+        }).addTo(this.map);
+        this.routeLayers.push(arrowMarker);
+      }
+
+      // Draw order labels at each waypoint
+      resolved.forEach(({ latlng, order }) => {
+        const icon = L.divIcon({
+          className: 'route-order-label',
+          html: `<span style="background: ${color};">${order}</span>`,
+          iconSize: [22, 22],
+          iconAnchor: [-6, 28],
+        });
+        const labelMarker = L.marker(latlng, {
+          icon: icon,
+          interactive: false,
+        }).addTo(this.map);
+        this.routeLayers.push(labelMarker);
+      });
+    });
+  }
+
+  /**
+   * Remove all route layers from the map.
+   */
+  clearRoutes() {
+    this.routeLayers.forEach((layer) => {
+      this.map.removeLayer(layer);
+    });
+    this.routeLayers = [];
   }
 }

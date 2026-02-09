@@ -23,7 +23,28 @@
     </div>
 
     <div id="poi-panel">
-      <div id="poi-list"></div>
+      <div id="route-section" class="panel-section">
+        <div class="section-header">
+          <span>Routes</span>
+          <div class="section-header-actions">
+            <button id="btn-route-all" class="btn-check-all" title="Check all">All</button>
+            <button id="btn-route-none" class="btn-check-all" title="Uncheck all">None</button>
+            <button id="btn-route-toggle" class="btn-section-toggle" title="Toggle">&#9660;</button>
+          </div>
+        </div>
+        <div id="route-list" class="section-body"></div>
+      </div>
+      <div id="poi-section" class="panel-section">
+        <div class="section-header">
+          <span>POIs</span>
+          <div class="section-header-actions">
+            <button id="btn-poi-all" class="btn-check-all" title="Check all">All</button>
+            <button id="btn-poi-none" class="btn-check-all" title="Uncheck all">None</button>
+            <button id="btn-poi-toggle" class="btn-section-toggle" title="Toggle">&#9660;</button>
+          </div>
+        </div>
+        <div id="poi-list" class="section-body"></div>
+      </div>
 
       <div id="poi-edit-form" class="hidden">
         <h3 id="form-title">Edit POI</h3>
