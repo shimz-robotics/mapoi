@@ -40,6 +40,15 @@ const MapoiApi = {
     return res.json();
   },
 
+  async saveRoutes(routes) {
+    const res = await fetch('/api/routes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ routes }),
+    });
+    return res.json();
+  },
+
   async navGoal(poiName) {
     const res = await fetch('/api/nav/goal', {
       method: 'POST',

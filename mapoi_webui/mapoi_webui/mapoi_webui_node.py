@@ -15,7 +15,7 @@ import tf2_ros
 
 from flask import Flask, jsonify, request, send_from_directory, Response
 
-from mapoi_webui.yaml_handler import load_config, save_pois, get_pois, get_routes, get_tag_definitions
+from mapoi_webui.yaml_handler import load_config, save_pois, save_routes, get_pois, get_routes, get_tag_definitions
 from mapoi_webui.map_image import get_map_metadata, get_map_png
 
 
@@ -272,6 +272,22 @@ class MapoiWebNode(Node):
                 return jsonify({'error': 'Config not found'}), 404
             routes = get_routes(config_path)
             return jsonify({'routes': routes, 'map_name': node.map_name_})
+
+        @app.route('/api/routes', methods=['POST'])
+        def api_save_routes():
+            data = request.get_json()
+            if data is None or 'routes' not in data:
+                return jsonify({'error': 'Invalid request body'}), 400
+            config_path = node.get_config_path()
+            if not os.path.exists(config_path):
+                return jsonify({'error': 'Config not found'}), 404
+            try:
+                save_routes(config_path, data['routes'])
+                node.call_reload_map_info()
+                return jsonify({'success': True})
+            except Exception as e:
+                node.get_logger().error(f'Failed to save routes: {e}')
+                return jsonify({'error': str(e)}), 500
 
         @app.route('/api/nav/goal', methods=['POST'])
         def api_nav_goal():
