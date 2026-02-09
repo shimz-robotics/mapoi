@@ -272,14 +272,14 @@ void MapoiPanel::SetNav2GoalComboBox()
     pois_.clear();
 
     for(const auto & p : pois_all){
-      bool is_goal_or_waypoint = false;
+      bool is_goal = false;
       for(const auto & tag : p.tags){
-        if(tag == "goal" || tag == "waypoint"){
-          is_goal_or_waypoint = true;
+        if(tag == "goal"){
+          is_goal = true;
           break;
         }
       }
-      if(is_goal_or_waypoint){
+      if(is_goal){
         pois_.push_back(p);
         ui_->Nav2GoalComboBox->addItem(QString::fromStdString(p.name));
       }

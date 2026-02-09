@@ -4,7 +4,5 @@
 tags:
   - name: goal
     description: "Navigation goal destination"
-  - name: waypoint
-    description: "Intermediate navigation waypoint"
   - name: origin
     description: "Map origin reference point"
