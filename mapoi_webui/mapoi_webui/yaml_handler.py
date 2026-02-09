@@ -27,6 +27,19 @@ def save_pois(config_path, pois):
         yaml.dump(config, f, default_flow_style=None, allow_unicode=True, sort_keys=False)
 
 
+def save_routes(config_path, routes):
+    """Replace only the 'route' section in config_path, preserving other sections.
+
+    Args:
+        config_path: Path to mapoi_config.yaml
+        routes: List of route dicts to write
+    """
+    config = load_config(config_path)
+    config['route'] = routes
+    with open(config_path, 'w') as f:
+        yaml.dump(config, f, default_flow_style=None, allow_unicode=True, sort_keys=False)
+
+
 def get_pois(config_path):
     """Read POI list from config file."""
     config = load_config(config_path)

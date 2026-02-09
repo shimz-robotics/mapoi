@@ -69,7 +69,36 @@
             <button id="btn-route-toggle" class="btn-section-toggle" title="Toggle">&#9660;</button>
           </div>
         </div>
-        <div id="route-list" class="section-body"></div>
+        <div id="route-body">
+          <div id="route-list" class="section-body"></div>
+          <div id="route-edit-form" class="hidden">
+            <h3 id="route-form-title">Edit Route</h3>
+            <div class="form-row">
+              <label for="route-name">Name</label>
+              <input type="text" id="route-name" />
+            </div>
+            <div class="route-wp-section">
+              <label>Waypoints</label>
+              <div id="route-waypoint-list" class="route-waypoint-list"></div>
+              <div class="route-wp-add-row">
+                <select id="route-wp-select" class="route-wp-select">
+                  <option value="">-- Select POI --</option>
+                </select>
+                <button type="button" id="btn-add-waypoint" class="btn-add-wp">+</button>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button id="btn-route-form-ok">OK</button>
+              <button id="btn-route-form-cancel">Cancel</button>
+            </div>
+          </div>
+          <div id="route-toolbar">
+            <button id="btn-add-route" title="Add Route">+ Add Route</button>
+            <button id="btn-save-routes" title="Save route changes" disabled>Save</button>
+            <button id="btn-discard-routes" title="Discard route changes" disabled>Discard</button>
+            <span id="route-dirty-indicator"></span>
+          </div>
+        </div>
       </div>
       <div id="poi-section" class="panel-section">
         <div class="section-header">
@@ -132,6 +161,7 @@
   <script src="/js/api.js"></script>
   <script src="/js/map-viewer.js"></script>
   <script src="/js/poi-editor.js"></script>
+  <script src="/js/route-editor.js"></script>
   <script src="/js/app.js"></script>
 </body>
 </html>
