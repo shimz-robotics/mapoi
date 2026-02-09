@@ -1,11 +1,11 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>mapoi_web</name>
+  <name>mapoi_webui</name>
   <version>0.0.0</version>
-  <description>Web-based POI editor for mapoi</description>
+  <description>Web UI for mapoi - POI editing, navigation, and robot monitoring</description>
   <maintainer email="kimushun1101@gmail.com">kimura</maintainer>
-  <license>TODO: License declaration</license>
+  <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>ament_cmake_python</buildtool_depend>
@@ -14,6 +14,7 @@
   <depend>std_srvs</depend>
   <depend>std_msgs</depend>
   <depend>mapoi_interfaces</depend>
+  <depend>tf2_ros</depend>
 
   <exec_depend>python3-flask</exec_depend>
   <exec_depend>python3-pil</exec_depend>

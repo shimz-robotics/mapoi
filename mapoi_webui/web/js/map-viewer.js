@@ -17,6 +17,7 @@ class MapViewer {
     this.routeLayers = []; // Leaflet layers for route lines and labels
     this.metadata = null;
     this.tagColors = {};  // tag_name -> color, built from definitions
+    this.robotMarker = null;     // Leaflet marker for robot position
     this.onMapClick = null;      // callback(worldX, worldY)
     this.onPoiClick = null;      // callback(index)
 
@@ -300,5 +301,48 @@ class MapViewer {
       this.map.removeLayer(layer);
     });
     this.routeLayers = [];
+  }
+
+  /**
+   * Create an SVG icon for the robot marker (red circle with direction arrow).
+   */
+  createRobotIcon(yaw) {
+    const rotDeg = 90 - (yaw * 180 / Math.PI);
+    const svg = `<svg width="36" height="36" viewBox="0 0 36 36" style="transform: rotate(${rotDeg}deg);">` +
+      `<circle cx="18" cy="18" r="12" fill="#00bcd4" fill-opacity="0.7" stroke="#fff" stroke-width="2"/>` +
+      `<path d="M18 8 L24 24 L18 19 L12 24 Z" fill="#fff" fill-opacity="0.9" stroke="none"/>` +
+      `</svg>`;
+    return L.divIcon({
+      className: 'robot-icon',
+      html: svg,
+      iconSize: [36, 36],
+      iconAnchor: [18, 18],
+    });
+  }
+
+  /**
+   * Update or hide the robot marker on the map.
+   * @param {Object|null} pose - {x, y, yaw} or null to hide
+   */
+  updateRobotMarker(pose) {
+    if (!pose || !this.metadata) {
+      if (this.robotMarker) {
+        this.map.removeLayer(this.robotMarker);
+        this.robotMarker = null;
+      }
+      return;
+    }
+    const latlng = this.worldToLatLng(pose.x, pose.y);
+    const icon = this.createRobotIcon(pose.yaw || 0);
+    if (this.robotMarker) {
+      this.robotMarker.setLatLng(latlng);
+      this.robotMarker.setIcon(icon);
+    } else {
+      this.robotMarker = L.marker(latlng, {
+        icon,
+        interactive: false,
+        zIndexOffset: 2000,
+      }).addTo(this.map);
+    }
   }
 }

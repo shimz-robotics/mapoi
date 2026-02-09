@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(mapoi_web)
+project(mapoi_webui)
 
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
@@ -14,7 +14,7 @@ install(
 )
 
 install(PROGRAMS
-  mapoi_web/mapoi_web_node.py
+  mapoi_webui/mapoi_webui_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
