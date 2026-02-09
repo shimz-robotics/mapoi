@@ -1,0 +1,12 @@
+# Goal
+geometry_msgs/PoseStamped[] poses
+
+---
+# Result
+bool success
+string message
+
+---
+# Feedback
+uint32 current_index
+string state

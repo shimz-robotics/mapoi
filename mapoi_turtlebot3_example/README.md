@@ -76,8 +76,8 @@ mapoi のサービス・アクションの使用例として、以下のクラ�
 
 | ノード名 | 説明 |
 | --- | --- |
-| `get_maps_info_client` | 地図情報の取得 |
-| `get_pois_info_client` | 全 POI の取得 |
+| `get_map_info_client` | 地図情報の取得 |
+| `get_tagged_pois_client` | タグ指定による POI の取得 |
 | `switch_map_client` | 地図の切り替え |
 | `navigate_to_pose_client` | 指定位置へのナビゲーション |
 | `follow_waypoints_client` | ウェイポイント追従 |
@@ -86,8 +86,8 @@ mapoi のサービス・アクションの使用例として、以下のクラ�
 実行例:
 
 ```sh
-ros2 run mapoi_turtlebot3_example get_maps_info_client
-ros2 run mapoi_turtlebot3_example get_pois_info_client
+ros2 run mapoi_turtlebot3_example get_map_info_client
+ros2 run mapoi_turtlebot3_example get_tagged_pois_client
 ```
 
 ## サンプル地図
