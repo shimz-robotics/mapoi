@@ -25,7 +25,14 @@ export TURTLEBOT3_MODEL=burger
 ros2 launch mapoi_turtlebot3_example turtlebot3_navigation_launch.yaml
 ```
 
-別ターミナルから自律走行をテスト:
+ブラウザから Web UI にアクセス:
+
+http://localhost:8765
+
+スマートフォンからも同一ネットワーク内であればアクセスできます。その場合、localhostの部分を実行しているPCのIPアドレスに変更してください。
+地図表示・POI 編集・ナビゲーション操作・ロボット位置表示が可能です。
+
+コマンドで目的地をしたい場合には、別ターミナルから自律走行をテストできます。
 
 ```sh
 ros2 topic pub -1 /mapoi_goal_pose_poi std_msgs/msg/String "{data: conference_room}"
