@@ -28,7 +28,16 @@
   async function switchMap(mapName) {
     currentMap = mapName;
     await mapViewer.loadMap(mapName);
+    await loadTagDefinitions();
     await loadPois();
+  }
+
+  // --- Load tag definitions ---
+  async function loadTagDefinitions() {
+    const data = await MapoiApi.getTagDefinitions();
+    const tags = data.tags || [];
+    poiEditor.setTagDefinitions(tags);
+    mapViewer.setTagDefinitions(tags);
   }
 
   // --- Load POIs ---

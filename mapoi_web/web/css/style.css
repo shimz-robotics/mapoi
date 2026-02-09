@@ -45,14 +45,15 @@ header h1 {
 
 main {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  height: calc(100vh - 44px);
 }
 
 /* Map */
 #map-container {
   position: relative;
-  height: 60vh;
-  min-height: 250px;
+  flex: 1;
+  min-width: 0;
 }
 
 #map {
@@ -76,15 +77,22 @@ main {
 
 /* POI Panel */
 #poi-panel {
-  padding: 8px 16px;
+  width: 350px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid #ddd;
 }
 
 #poi-toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  padding: 8px 16px;
   flex-wrap: wrap;
+  border-top: 1px solid #ddd;
+  background: #f5f5f5;
+  flex-shrink: 0;
 }
 
 #poi-toolbar button {
@@ -154,8 +162,9 @@ main {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 35vh;
+  padding: 8px 16px;
   overflow-y: auto;
+  flex: 1;
 }
 
 .poi-card {
@@ -228,8 +237,9 @@ main {
   background: #fff;
   border-radius: 4px;
   padding: 12px;
-  margin-top: 8px;
+  margin: 0 16px 8px;
   border: 2px solid #3498db;
+  flex-shrink: 0;
 }
 
 #poi-edit-form.hidden {
@@ -288,13 +298,69 @@ main {
   color: #fff;
 }
 
-/* Tag colors for POI markers */
-.tag-goal { color: #e74c3c; }
-.tag-waypoint { color: #3498db; }
-.tag-initial_pose { color: #27ae60; }
+/* Tag chips in edit form */
+.tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.tag-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  border: 1px solid #bbb;
+  background: #f0f0f0;
+  color: #555;
+  user-select: none;
+}
+
+.tag-chip.system {
+  border-color: #3498db;
+  color: #2980b9;
+}
+
+.tag-chip.user {
+  border-color: #27ae60;
+  color: #219a52;
+}
+
+.tag-chip.active {
+  background: #3498db;
+  color: #fff;
+  border-color: #3498db;
+}
+
+.tag-chip.active.user {
+  background: #27ae60;
+  border-color: #27ae60;
+}
+
+.tag-chip:hover {
+  opacity: 0.8;
+}
 
 /* Mobile adjustments */
-@media (max-width: 600px) {
+@media (max-width: 768px) {
+  main {
+    flex-direction: column;
+    height: auto;
+  }
+
+  #map-container {
+    height: 50vh;
+  }
+
+  #poi-panel {
+    width: auto;
+    border-left: none;
+    border-top: 1px solid #ddd;
+    padding: 8px;
+  }
+
   header {
     flex-direction: column;
     gap: 4px;
@@ -303,18 +369,6 @@ main {
 
   header h1 {
     font-size: 1rem;
-  }
-
-  #map-container {
-    height: 50vh;
-  }
-
-  #poi-panel {
-    padding: 8px;
-  }
-
-  #poi-list {
-    max-height: none;
   }
 
   .form-row {
