@@ -20,11 +20,22 @@ class MapViewer {
     this.robotMarker = null;     // Leaflet marker for robot position
     this.onMapClick = null;      // callback(worldX, worldY)
     this.onPoiClick = null;      // callback(index)
+    this._poseTool = null;       // pose tool state
 
     this.map.on('click', (e) => {
+      if (this._poseTool) {
+        this._handlePoseToolClick(e.latlng);
+        return;
+      }
       if (this.onMapClick && this.metadata) {
         const world = this.latLngToWorld(e.latlng);
         this.onMapClick(world.x, world.y);
+      }
+    });
+
+    this.map.on('mousemove', (e) => {
+      if (this._poseTool && this._poseTool.phase === 'yaw') {
+        this._updatePoseToolArrow(e.latlng);
       }
     });
   }
@@ -180,6 +191,135 @@ class MapViewer {
         item.marker.setZIndexOffset(0);
       }
     });
+  }
+
+  /**
+   * Enable two-click pose tool (RViz-style).
+   * Phase 'position': click sets X/Y, then enters 'yaw' phase.
+   * Phase 'yaw': mousemove shows arrow preview, click sets yaw, then enters 'position' phase.
+   * @param {object} callbacks - { onPositionSet(x,y), onYawSet(yaw) }
+   * @param {L.LatLng|null} initialLatLng - if provided, start in 'yaw' phase with this position
+   */
+  enablePoseTool(callbacks, initialLatLng) {
+    this.disablePoseTool();
+    this._poseTool = {
+      phase: initialLatLng ? 'yaw' : 'position',
+      startLatLng: initialLatLng || null,
+      circle: null,
+      line: null,
+      arrowHead: null,
+      callbacks,
+    };
+    if (initialLatLng) {
+      this._poseTool.circle = L.circleMarker(initialLatLng, {
+        radius: 6, color: '#e67e22', fillColor: '#e67e22', fillOpacity: 0.8, weight: 2,
+      }).addTo(this.map);
+    }
+    this.map.getContainer().style.cursor = 'crosshair';
+  }
+
+  /**
+   * Disable the pose tool and clean up visuals.
+   */
+  disablePoseTool() {
+    if (!this._poseTool) return;
+    this._clearPoseToolVisuals();
+    this._poseTool = null;
+    this.map.getContainer().style.cursor = '';
+  }
+
+  /** @private */
+  _handlePoseToolClick(latlng) {
+    const pt = this._poseTool;
+    if (pt.phase === 'position') {
+      this._clearPoseToolVisuals();
+      pt.startLatLng = latlng;
+      const world = this.latLngToWorld(latlng);
+
+      pt.circle = L.circleMarker(latlng, {
+        radius: 6, color: '#e67e22', fillColor: '#e67e22', fillOpacity: 0.8, weight: 2,
+      }).addTo(this.map);
+
+      pt.phase = 'yaw';
+      if (pt.callbacks.onPositionSet) {
+        pt.callbacks.onPositionSet(world.x, world.y);
+      }
+    } else if (pt.phase === 'yaw') {
+      const start = pt.startLatLng;
+      const yaw = Math.atan2(latlng.lat - start.lat, latlng.lng - start.lng);
+
+      this._clearPoseToolVisuals();
+      pt.phase = 'position';
+
+      if (pt.callbacks.onYawSet) {
+        pt.callbacks.onYawSet(yaw);
+      }
+    }
+  }
+
+  /** @private */
+  _updatePoseToolArrow(latlng) {
+    const pt = this._poseTool;
+    if (!pt || !pt.startLatLng) return;
+    const start = pt.startLatLng;
+
+    // Dashed line from position to cursor
+    if (pt.line) {
+      pt.line.setLatLngs([start, latlng]);
+    } else {
+      pt.line = L.polyline([start, latlng], {
+        color: '#e67e22', weight: 3, dashArray: '6, 4',
+      }).addTo(this.map);
+    }
+
+    // Arrowhead at tip
+    const yaw = Math.atan2(latlng.lat - start.lat, latlng.lng - start.lng);
+    const rotDeg = 90 - (yaw * 180 / Math.PI);
+    const svg = `<svg width="24" height="24" viewBox="0 0 24 24" style="transform: rotate(${rotDeg}deg);">` +
+      `<path d="M12 2 L20 18 L12 14 L4 18 Z" fill="#e67e22" fill-opacity="0.9" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>` +
+      `</svg>`;
+    const icon = L.divIcon({
+      className: 'pose-tool-arrow',
+      html: svg,
+      iconSize: [24, 24],
+      iconAnchor: [12, 14],
+    });
+
+    if (pt.arrowHead) {
+      pt.arrowHead.setLatLng(latlng);
+      pt.arrowHead.setIcon(icon);
+    } else {
+      pt.arrowHead = L.marker(latlng, { icon, interactive: false }).addTo(this.map);
+    }
+  }
+
+  /** @private */
+  _clearPoseToolVisuals() {
+    const pt = this._poseTool;
+    if (!pt) return;
+    if (pt.circle) { this.map.removeLayer(pt.circle); pt.circle = null; }
+    if (pt.line) { this.map.removeLayer(pt.line); pt.line = null; }
+    if (pt.arrowHead) { this.map.removeLayer(pt.arrowHead); pt.arrowHead = null; }
+  }
+
+  /**
+   * Update a POI marker's position on the map.
+   */
+  updatePoiMarkerPosition(index, x, y) {
+    const item = this.poiMarkers.find((m) => m.index === index);
+    if (!item) return;
+    item.marker.setLatLng(this.worldToLatLng(x, y));
+  }
+
+  /**
+   * Update a POI marker's arrow rotation to reflect a new yaw.
+   */
+  updatePoiMarkerYaw(index, yaw) {
+    const item = this.poiMarkers.find((m) => m.index === index);
+    if (!item) return;
+    item.yaw = yaw;
+    const icon = this.createArrowIcon(item.color, yaw, true);
+    item.marker.setIcon(icon);
   }
 
   /**

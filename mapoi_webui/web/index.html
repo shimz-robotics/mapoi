@@ -49,6 +49,7 @@
               <button id="btn-nav-run" class="nav-btn-run">Run</button>
             </div>
           </div>
+          <button id="btn-nav-stop" class="nav-btn-stop">Stop Navigation</button>
           <div class="nav-control-label">Initial Pose</div>
           <div class="nav-control-row">
             <select id="nav-initialpose-select" class="nav-select">
@@ -56,7 +57,61 @@
             </select>
             <button id="btn-nav-setpose" class="nav-btn-initialpose">Set Pose</button>
           </div>
-          <button id="btn-nav-stop" class="nav-btn-stop">Stop Navigation</button>
+        </div>
+      </div>
+
+      <div id="poi-section" class="panel-section">
+        <div class="section-header">
+          <span>POIs</span>
+          <div class="section-header-actions">
+            <button id="btn-poi-all" class="btn-check-all" title="Check all">All</button>
+            <button id="btn-poi-none" class="btn-check-all" title="Uncheck all">None</button>
+            <button id="btn-poi-toggle" class="btn-section-toggle" title="Toggle">&#9660;</button>
+          </div>
+        </div>
+        <div id="poi-body">
+          <div id="poi-list" class="section-body"></div>
+          <div id="poi-edit-form" class="hidden">
+            <h3 id="form-title">Edit POI</h3>
+            <div class="form-row">
+              <label for="poi-name">Name</label>
+              <input type="text" id="poi-name" />
+            </div>
+            <div class="form-row">
+              <label for="poi-x">X</label>
+              <input type="number" id="poi-x" step="0.01" />
+            </div>
+            <div class="form-row">
+              <label for="poi-y">Y</label>
+              <input type="number" id="poi-y" step="0.01" />
+            </div>
+            <div class="form-row">
+              <label for="poi-yaw">Yaw</label>
+              <input type="number" id="poi-yaw" step="0.01" />
+            </div>
+            <div class="form-row">
+              <label for="poi-radius">Radius</label>
+              <input type="number" id="poi-radius" step="0.1" min="0" />
+            </div>
+            <div class="form-row">
+              <label for="poi-tags">Tags</label>
+              <input type="text" id="poi-tags" placeholder="goal, waypoint" />
+            </div>
+            <div class="form-row">
+              <label for="poi-description">Description</label>
+              <input type="text" id="poi-description" />
+            </div>
+            <div class="form-actions">
+              <button id="btn-form-ok">OK</button>
+              <button id="btn-form-cancel">Cancel</button>
+            </div>
+          </div>
+          <div id="poi-toolbar">
+            <button id="btn-add-poi" title="Add POI">+ Add POI</button>
+            <button id="btn-save" title="Save changes" disabled>Save</button>
+            <button id="btn-discard" title="Discard changes" disabled>Discard</button>
+            <span id="dirty-indicator"></span>
+          </div>
         </div>
       </div>
 
@@ -99,60 +154,6 @@
             <span id="route-dirty-indicator"></span>
           </div>
         </div>
-      </div>
-      <div id="poi-section" class="panel-section">
-        <div class="section-header">
-          <span>POIs</span>
-          <div class="section-header-actions">
-            <button id="btn-poi-all" class="btn-check-all" title="Check all">All</button>
-            <button id="btn-poi-none" class="btn-check-all" title="Uncheck all">None</button>
-            <button id="btn-poi-toggle" class="btn-section-toggle" title="Toggle">&#9660;</button>
-          </div>
-        </div>
-        <div id="poi-list" class="section-body"></div>
-      </div>
-
-      <div id="poi-edit-form" class="hidden">
-        <h3 id="form-title">Edit POI</h3>
-        <div class="form-row">
-          <label for="poi-name">Name</label>
-          <input type="text" id="poi-name" />
-        </div>
-        <div class="form-row">
-          <label for="poi-x">X</label>
-          <input type="number" id="poi-x" step="0.01" />
-        </div>
-        <div class="form-row">
-          <label for="poi-y">Y</label>
-          <input type="number" id="poi-y" step="0.01" />
-        </div>
-        <div class="form-row">
-          <label for="poi-yaw">Yaw</label>
-          <input type="number" id="poi-yaw" step="0.01" />
-        </div>
-        <div class="form-row">
-          <label for="poi-radius">Radius</label>
-          <input type="number" id="poi-radius" step="0.1" min="0" />
-        </div>
-        <div class="form-row">
-          <label for="poi-tags">Tags</label>
-          <input type="text" id="poi-tags" placeholder="goal, waypoint" />
-        </div>
-        <div class="form-row">
-          <label for="poi-description">Description</label>
-          <input type="text" id="poi-description" />
-        </div>
-        <div class="form-actions">
-          <button id="btn-form-ok">OK</button>
-          <button id="btn-form-cancel">Cancel</button>
-        </div>
-      </div>
-
-      <div id="poi-toolbar">
-        <button id="btn-add-poi" title="Add POI">+ Add POI</button>
-        <button id="btn-save" title="Save changes" disabled>Save</button>
-        <button id="btn-discard" title="Discard changes" disabled>Discard</button>
-        <span id="dirty-indicator"></span>
       </div>
     </div>
   </main>

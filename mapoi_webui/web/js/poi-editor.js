@@ -336,6 +336,9 @@ class PoiEditor {
   formCancel() {
     this.editingIndex = -1;
     this.hideForm();
+    if (this.onSelectionChange) {
+      this.onSelectionChange(this.selectedIndex);
+    }
   }
 
   showForm() {
@@ -353,6 +356,14 @@ class PoiEditor {
     if (this.editingIndex === -1) return;
     this.inputX.value = Math.round(x * 100) / 100;
     this.inputY.value = Math.round(y * 100) / 100;
+  }
+
+  /**
+   * Update form Yaw from map click direction.
+   */
+  updateFormYaw(yaw) {
+    if (this.editingIndex === -1) return;
+    this.inputYaw.value = Math.round(yaw * 100) / 100;
   }
 
   setDirty(isDirty) {

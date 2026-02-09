@@ -302,11 +302,16 @@ main {
 }
 
 /* Tag chips in edit form */
+.form-row:has(.tag-chips) {
+  flex-wrap: wrap;
+}
+
 .tag-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 4px;
+  width: 100%;
 }
 
 .tag-chip {
@@ -354,6 +359,13 @@ main {
 
 #poi-section {
   flex-shrink: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+#poi-body {
+  flex: 1;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -696,6 +708,12 @@ main {
 
 /* POI arrow icons */
 .poi-arrow-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Pose tool arrow (two-click placement) */
+.pose-tool-arrow {
   background: transparent !important;
   border: none !important;
 }

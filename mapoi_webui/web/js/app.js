@@ -8,7 +8,6 @@
   const routeEditor = new RouteEditor();
 
   const mapSelect = document.getElementById('map-select');
-  const poiListEl = document.getElementById('poi-list');
   const navGoalSelect = document.getElementById('nav-goal-select');
   const navRouteSelect = document.getElementById('nav-route-select');
   const navInitialPoseSelect = document.getElementById('nav-initialpose-select');
@@ -87,12 +86,39 @@
 
   // --- Wire callbacks ---
 
-  // Map click
+  // Helper: enable pose tool for the currently editing POI
+  function enablePoseToolForEditing() {
+    const callbacks = {
+      onPositionSet: (x, y) => {
+        poiEditor.updateFormPosition(x, y);
+        if (poiEditor.editingIndex >= 0) {
+          mapViewer.updatePoiMarkerPosition(poiEditor.editingIndex, x, y);
+        }
+      },
+      onYawSet: (yaw) => {
+        poiEditor.updateFormYaw(yaw);
+        if (poiEditor.editingIndex >= 0) {
+          mapViewer.updatePoiMarkerYaw(poiEditor.editingIndex, yaw);
+        }
+      },
+    };
+
+    if (poiEditor.editingIndex === -2) {
+      // New POI: placing click already set position → start in yaw phase
+      const formX = parseFloat(poiEditor.inputX.value) || 0;
+      const formY = parseFloat(poiEditor.inputY.value) || 0;
+      mapViewer.enablePoseTool(callbacks, mapViewer.worldToLatLng(formX, formY));
+    } else {
+      // Existing POI: start in position phase (click 1 = position, click 2 = yaw)
+      mapViewer.enablePoseTool(callbacks);
+    }
+  }
+
+  // Map click — only used for placing new POI (pose tool handles editing clicks)
   mapViewer.onMapClick = (x, y) => {
     if (poiEditor.placingMode) {
       poiEditor.placeNewPoi(x, y);
-    } else if (poiEditor.editingIndex !== -1) {
-      poiEditor.updateFormPosition(x, y);
+      enablePoseToolForEditing();
     }
   };
 
@@ -109,6 +135,12 @@
     if (poiEditor.dirty) {
       mapViewer.showPois(poiEditor.pois, poiEditor.visiblePois);
       if (index >= 0) mapViewer.highlightPoi(index);
+    }
+    // Enable pose tool when editing, disable when form closes
+    if (poiEditor.editingIndex >= 0) {
+      enablePoseToolForEditing();
+    } else {
+      mapViewer.disablePoseTool();
     }
   };
 
@@ -153,7 +185,7 @@
     });
   }
   setupSectionToggle('btn-route-toggle', document.getElementById('route-body'));
-  setupSectionToggle('btn-poi-toggle', poiListEl);
+  setupSectionToggle('btn-poi-toggle', document.getElementById('poi-body'));
 
   // --- All / None buttons ---
   // Routes
