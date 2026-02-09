@@ -10,6 +10,7 @@ class PoiEditor {
     this.editingIndex = -1;  // -1 = closed, >=0 = editing existing, -2 = new POI
     this.placingMode = false;
 
+    this.tagDefinitions = [];  // [{name, description, is_system}, ...]
     this.onDirtyChange = null;     // callback(isDirty)
     this.onSelectionChange = null; // callback(index)
     this.onPlacingModeChange = null; // callback(isPlacing)
@@ -194,6 +195,60 @@ class PoiEditor {
   }
 
   /**
+   * Set available tag definitions for tag helper UI.
+   */
+  setTagDefinitions(tags) {
+    this.tagDefinitions = tags || [];
+  }
+
+  /**
+   * Render tag chips below the tags input.
+   */
+  renderTagChips() {
+    let container = document.getElementById('tag-chips');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'tag-chips';
+      container.className = 'tag-chips';
+      this.inputTags.parentElement.appendChild(container);
+    }
+    container.innerHTML = '';
+
+    if (this.tagDefinitions.length === 0) return;
+
+    const currentTags = this.inputTags.value.split(',').map(t => t.trim()).filter(t => t);
+
+    this.tagDefinitions.forEach((td) => {
+      const chip = document.createElement('span');
+      const isActive = currentTags.includes(td.name);
+      chip.className = 'tag-chip' +
+        (isActive ? ' active' : '') +
+        (td.is_system ? ' system' : ' user');
+      chip.textContent = td.name;
+      chip.title = td.description + (td.is_system ? ' (system)' : '');
+      chip.addEventListener('click', () => {
+        this.toggleTag(td.name);
+      });
+      container.appendChild(chip);
+    });
+  }
+
+  /**
+   * Toggle a tag in the tags input field.
+   */
+  toggleTag(tagName) {
+    let tags = this.inputTags.value.split(',').map(t => t.trim()).filter(t => t);
+    const idx = tags.indexOf(tagName);
+    if (idx >= 0) {
+      tags.splice(idx, 1);
+    } else {
+      tags.push(tagName);
+    }
+    this.inputTags.value = tags.join(', ');
+    this.renderTagChips();
+  }
+
+  /**
    * Fill the edit form with POI data.
    */
   fillForm(poi) {
@@ -205,6 +260,7 @@ class PoiEditor {
     this.inputRadius.value = poi.radius || 0.5;
     this.inputTags.value = (poi.tags || []).join(', ');
     this.inputDescription.value = poi.description || '';
+    this.renderTagChips();
   }
 
   /**

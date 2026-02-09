@@ -9,11 +9,13 @@ class MapViewer {
       minZoom: -3,
       maxZoom: 5,
       zoomSnap: 0.25,
+      attributionControl: false,
     });
 
     this.imageOverlay = null;
     this.poiMarkers = [];  // { marker, poi, index }
     this.metadata = null;
+    this.tagColors = {};  // tag_name -> color, built from definitions
     this.onMapClick = null;      // callback(worldX, worldY)
     this.onPoiClick = null;      // callback(index)
 
@@ -85,14 +87,24 @@ class MapViewer {
   }
 
   /**
+   * Set tag definitions and build color map.
+   */
+  setTagDefinitions(tags) {
+    const palette = ['#e74c3c', '#3498db', '#27ae60', '#9b59b6', '#e67e22', '#1abc9c', '#f39c12', '#8e44ad'];
+    this.tagColors = {};
+    (tags || []).forEach((td, i) => {
+      this.tagColors[td.name] = palette[i % palette.length];
+    });
+  }
+
+  /**
    * Tag-based color for POI markers.
    */
   getPoiColor(poi) {
     const tags = poi.tags || [];
-    if (tags.includes('initial_pose')) return '#27ae60';
-    if (tags.includes('waypoint')) return '#3498db';
-    if (tags.includes('goal')) return '#e74c3c';
-    if (tags.includes('audio_info')) return '#9b59b6';
+    for (const tag of tags) {
+      if (this.tagColors[tag]) return this.tagColors[tag];
+    }
     return '#f39c12';
   }
 

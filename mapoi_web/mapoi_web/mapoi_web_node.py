@@ -12,7 +12,7 @@ from mapoi_interfaces.srv import GetMapsInfo
 
 from flask import Flask, jsonify, request, send_from_directory, Response
 
-from mapoi_web.yaml_handler import load_config, save_pois, get_pois, get_routes
+from mapoi_web.yaml_handler import load_config, save_pois, get_pois, get_routes, get_tag_definitions
 from mapoi_web.map_image import get_map_metadata, get_map_png
 
 
@@ -24,7 +24,7 @@ class MapoiWebNode(Node):
         self.declare_parameter('maps_path', '')
         self.declare_parameter('map_name', 'turtlebot3_world')
         self.declare_parameter('config_file', 'mapoi_config.yaml')
-        self.declare_parameter('web_port', 8080)
+        self.declare_parameter('web_port', 8765)
         self.declare_parameter('web_host', '0.0.0.0')
 
         self.maps_path_ = self.get_parameter('maps_path').get_parameter_value().string_value
@@ -40,6 +40,19 @@ class MapoiWebNode(Node):
         # Subscribe to mapoi_config_path for external map switches
         self.config_path_sub_ = self.create_subscription(
             String, 'mapoi_config_path', self.config_path_callback, 10)
+
+        # Resolve system tag_definitions.yaml from mapoi_server package
+        self.system_tags_path_ = ''
+        try:
+            from ament_index_python.packages import get_package_share_directory
+            self.system_tags_path_ = os.path.join(
+                get_package_share_directory('mapoi_server'), 'maps', 'tag_definitions.yaml')
+        except Exception:
+            # Fallback: try sibling directory
+            pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            fallback = os.path.join(os.path.dirname(pkg_dir), 'mapoi_server', 'maps', 'tag_definitions.yaml')
+            if os.path.exists(fallback):
+                self.system_tags_path_ = fallback
 
         # If maps_path not set, try to get it from get_maps_info service or use default
         if not self.maps_path_:
@@ -195,6 +208,12 @@ class MapoiWebNode(Node):
             except Exception as e:
                 node.get_logger().error(f'Failed to save POIs: {e}')
                 return jsonify({'error': str(e)}), 500
+
+        @app.route('/api/tag_definitions')
+        def api_tag_definitions():
+            config_path = node.get_config_path()
+            tags = get_tag_definitions(node.system_tags_path_, config_path)
+            return jsonify({'tags': tags})
 
         @app.route('/api/routes')
         def api_get_routes():

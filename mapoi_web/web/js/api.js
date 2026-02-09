@@ -30,6 +30,11 @@ const MapoiApi = {
     return res.json();
   },
 
+  async getTagDefinitions() {
+    const res = await fetch('/api/tag_definitions');
+    return res.json();
+  },
+
   async getRoutes() {
     const res = await fetch('/api/routes');
     return res.json();

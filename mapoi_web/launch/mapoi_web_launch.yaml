@@ -17,7 +17,7 @@ launch:
 
 - arg:
     name: web_port
-    default: "8080"
+    default: "8765"
     description: "HTTP server port"
 
 - arg:

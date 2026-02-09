@@ -1,13 +1,17 @@
 # mapoi_web 実装メモ
 
-## 実装状況 (2026-02-07)
+## 実装状況 (2026-02-09)
 - パッケージスケルトン: 完了
 - バックエンド (Python): 完了
 - フロントエンド (HTML/CSS/JS): 完了
 - ラウンチファイル: 完了
 - colcon build: 成功
 - 単体テスト (YAML round-trip, PGM→PNG): 成功
-- **動作テスト: 未実施**
+- **動作テスト: 完了**
+  - [x] Flask起動・API疎通確認済み
+  - [x] スマホブラウザからの接続確認済み
+  - [x] POI追加/編集/削除/保存の操作確認
+  - [x] マップ切り替え確認
 
 ## 次のステップ (動作確認)
 
@@ -48,7 +52,11 @@ ros2 run mapoi_web mapoi_web_node.py --ros-args -p maps_path:=<maps_path> -p map
   → launch YAML で `"8080"` としているが ROS2 パラメータ型変換に注意
 
 ## Phase 2 予定
-- ナビゲーション操作（目的地送信、ルート実行）
+- ルート表示（POI間を線で結んで地図上に描画）
+- ナビゲーション操作パネル（RViz MapoiPanel相当）
+  - POI選択 → 目的地送信（NavigateToPose）
+  - ルート選択 → ルート走行開始（FollowWaypoints等）
+  - 走行状態の表示（実行中/完了/失敗）
 - ルート編集
 - POIマーカーのドラッグ&ドロップ
 - 自動リフレッシュ（ポーリング/WebSocket）
