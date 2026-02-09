@@ -14,6 +14,8 @@
   <depend>std_msgs</depend>
   <depend>std_srvs</depend>
   <depend>turtlebot3</depend>
+  <depend>turtlebot3_gazebo</depend>
+  <depend>turtlebot3_navigation2</depend>
   <depend>yaml_cpp_vendor</depend>
   <depend>ament_index_cpp</depend>
   <depend>geometry_msgs</depend>
