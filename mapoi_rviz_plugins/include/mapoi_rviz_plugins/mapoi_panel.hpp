@@ -55,6 +55,15 @@ protected:
   std::string current_map_;
 
   rclcpp::Node::SharedPtr node_;
+
+  // Shared service node and persistent clients
+  rclcpp::Node::SharedPtr service_node_;
+  rclcpp::Client<mapoi_interfaces::srv::SwitchMap>::SharedPtr switch_map_client_;
+  rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr get_pois_info_client_;
+  rclcpp::Client<mapoi_interfaces::srv::GetMapsInfo>::SharedPtr get_maps_info_client_;
+  rclcpp::Client<mapoi_interfaces::srv::GetRoutesInfo>::SharedPtr get_routes_info_client_;
+  rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedPtr get_route_pois_client_;
+
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr nav2_initialpose_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr nav2_goal_pose_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr mapoi_cancel_pub_;

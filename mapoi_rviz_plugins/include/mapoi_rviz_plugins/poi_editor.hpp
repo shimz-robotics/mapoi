@@ -74,6 +74,15 @@ protected:
 
   // ROS
   rclcpp::Node::SharedPtr node_;
+
+  // Shared service node and persistent clients
+  rclcpp::Node::SharedPtr service_node_;
+  rclcpp::Client<mapoi_interfaces::srv::SwitchMap>::SharedPtr switch_map_client_;
+  rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr get_pois_info_client_;
+  rclcpp::Client<mapoi_interfaces::srv::GetMapsInfo>::SharedPtr get_maps_info_client_;
+  rclcpp::Client<mapoi_interfaces::srv::GetTagDefinitions>::SharedPtr get_tag_defs_client_;
+  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr reload_map_info_client_;
+
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr poi_pose_sub_;
   void PoiPoseCallback(geometry_msgs::msg::PoseStamped::SharedPtr msg);
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr config_path_sub_;

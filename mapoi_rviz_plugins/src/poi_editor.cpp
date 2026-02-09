@@ -1,6 +1,7 @@
 #include "mapoi_rviz_plugins/poi_editor.hpp"
 #include <class_loader/class_loader.hpp>
 #include <filesystem>
+#include <fstream>
 
 #include <QFileDialog>
 #include <QStandardPaths>
@@ -22,8 +23,15 @@ PoiEditorPanel::~PoiEditorPanel() = default;
 
 void PoiEditorPanel::onInitialize()
 {
-  // https://qiita.com/Kotakku/items/01082cfd024a68c0d6ec
   node_ = this->getDisplayContext()->getRosNodeAbstraction().lock()->get_raw_node();
+
+  // Create shared service node and persistent clients
+  service_node_ = rclcpp::Node::make_shared("poieditor_service_client");
+  switch_map_client_ = service_node_->create_client<mapoi_interfaces::srv::SwitchMap>("switch_map");
+  get_pois_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
+  get_maps_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetMapsInfo>("get_maps_info");
+  get_tag_defs_client_ = service_node_->create_client<mapoi_interfaces::srv::GetTagDefinitions>("get_tag_definitions");
+  reload_map_info_client_ = service_node_->create_client<std_srvs::srv::Trigger>("reload_map_info");
 
   connect(ui_->MapComboBox, SIGNAL(activated(int)), this, SLOT(MapComboBox()));
   connect(ui_->ResetButton, SIGNAL(clicked()), this, SLOT(ResetButton()));
@@ -43,16 +51,21 @@ void PoiEditorPanel::onInitialize()
   parentWidget()->setVisible(true);
 
   // MapComboBox
-  auto node = rclcpp::Node::make_shared("poieditor_get_maps_info_client");
-  auto get_map_info_cli = node->create_client<mapoi_interfaces::srv::GetMapsInfo>("get_maps_info");
+  if (!get_maps_info_client_->wait_for_service(3s)) {
+    RCLCPP_ERROR(LOGGER, "get_maps_info service not available after 3s timeout.");
+    return;
+  }
   auto request = std::make_shared<mapoi_interfaces::srv::GetMapsInfo::Request>();
-  auto result = get_map_info_cli->async_send_request(request);
-  rclcpp::spin_until_future_complete(node, result);
+  auto result = get_maps_info_client_->async_send_request(request);
+  if (rclcpp::spin_until_future_complete(service_node_, result) != rclcpp::FutureReturnCode::SUCCESS) {
+    RCLCPP_ERROR(LOGGER, "Failed to call service get_maps_info");
+    return;
+  }
   auto map_info = result.get();
   current_map_ = map_info->map_name;
   map_name_list_ = map_info->maps_list;
   ui_->MapComboBox->clear();
-  for (auto map : map_name_list_) {
+  for (const auto & map : map_name_list_) {
     ui_->MapComboBox->addItem(QString::fromStdString(map));
   }
   InitConfigs(map_info->map_name);
@@ -77,13 +90,16 @@ void PoiEditorPanel::onDisable()
 
 void PoiEditorPanel::MapComboBox()
 {
-  auto node = rclcpp::Node::make_shared("poieditorswitch_map_client");
-  rclcpp::Client<mapoi_interfaces::srv::SwitchMap>::SharedPtr client_sm =
-    node->create_client<mapoi_interfaces::srv::SwitchMap>("switch_map");
   auto request_sm = std::make_shared<mapoi_interfaces::srv::SwitchMap::Request>();
   request_sm->map_name = map_name_list_[ui_->MapComboBox->currentIndex()];
-  auto result_sm = client_sm->async_send_request(request_sm);
-  rclcpp::spin_until_future_complete(node, result_sm);
+
+  if (!switch_map_client_->wait_for_service(3s)) {
+    RCLCPP_ERROR(LOGGER, "switch_map service not available after 3s timeout.");
+    return;
+  }
+
+  auto result_sm = switch_map_client_->async_send_request(request_sm);
+  rclcpp::spin_until_future_complete(service_node_, result_sm);
   PoiEditorPanel::UpdatePoiTable();
 }
 
@@ -117,7 +133,6 @@ void PoiEditorPanel::NewButton()
 
 void PoiEditorPanel::CopyButton()
 {
-  // https://www.youtube.com/watch?v=qCrU6VZToTw
   int current_row = ui_->PoiTable->currentRow();
   if (current_row < 0) return;
   int new_row = current_row + 1;
@@ -156,15 +171,15 @@ void PoiEditorPanel::FileComboBox()
   if(ui_->FileComboBox->currentIndex() == last){
     QString filename = QFileDialog::getOpenFileName(
         this, tr("Select a poi_file"), QString::fromStdString(config_path_), tr("YAML files(*.yaml)"));
-    if(filename == ""){ // choosing file was canceled
+    if(filename == ""){
       ui_->FileComboBox->setItemText(last, "the other");
       ui_->FileComboBox->setCurrentIndex(0);
     }else{
       ui_->FileComboBox->setItemText(last, filename);
     }
   } else{
-    int last = ui_->FileComboBox->count() - 1;
-    ui_->FileComboBox->setItemText(last, "the other");
+    int last2 = ui_->FileComboBox->count() - 1;
+    ui_->FileComboBox->setItemText(last2, "the other");
   }
   ui_->SaveButton->setText("save");
 }
@@ -189,17 +204,22 @@ void PoiEditorPanel::SaveButton()
   std::vector<YAML::Node> pois_list;
 
   for (int row = 0; row < numRows; row++) {
-    // https://stackoverflow.com/questions/41418409/how-to-determine-the-new-order-of-rows-in-qtablewidget-after-sectionmoved-event
     int logical_row = ui_->PoiTable->verticalHeader()->logicalIndex(row);
     YAML::Node poi;
-    // Table columns: 0=name, 1=description, 2=pose, 3=radius, 4=tags
     poi["name"] = ui_->PoiTable->item(logical_row, 0)->text().toStdString();
     poi["description"] = ui_->PoiTable->item(logical_row, 1)->text().toStdString();
     auto poses_str  = ui_->PoiTable->item(logical_row, 2)->text().toStdString();
     auto poses = this->SplitSentence(poses_str, ", ");
-    poi["pose"]["x"] = stod(poses[0]);
-    poi["pose"]["y"] = stod(poses[1]);
-    poi["pose"]["yaw"] = stod(poses[2]);
+    try {
+      poi["pose"]["x"] = stod(poses[0]);
+      poi["pose"]["y"] = stod(poses[1]);
+      poi["pose"]["yaw"] = stod(poses[2]);
+    } catch (const std::exception & e) {
+      RCLCPP_ERROR(LOGGER, "Failed to parse pose at row %d: %s", row, e.what());
+      QMessageBox::critical(this, tr("Parse Error"),
+        tr("Failed to parse pose at row %1: %2").arg(row + 1).arg(e.what()));
+      return;
+    }
     poi["radius"] = ui_->PoiTable->item(logical_row, 3)->text().toDouble();
     auto tags_str  = ui_->PoiTable->item(logical_row, 4)->text().toStdString();
     poi["tags"] = this->SplitSentence(tags_str, ", ");
@@ -209,28 +229,47 @@ void PoiEditorPanel::SaveButton()
   map_info["poi"] = pois_list;
   YAML::Emitter out;
   out << map_info;
-  std::ofstream file(ui_->FileComboBox->currentText().toStdString());
+
+  std::string save_path = ui_->FileComboBox->currentText().toStdString();
+  std::ofstream file(save_path);
+  if (!file.is_open()) {
+    RCLCPP_ERROR(LOGGER, "Failed to open file for writing: %s", save_path.c_str());
+    QMessageBox::critical(this, tr("Save Error"),
+      tr("Failed to open file for writing:\n%1").arg(QString::fromStdString(save_path)));
+    return;
+  }
   file << out.c_str();
   file.close();
+  if (!file.good()) {
+    RCLCPP_ERROR(LOGGER, "Error occurred while writing file: %s", save_path.c_str());
+    QMessageBox::critical(this, tr("Save Error"),
+      tr("Error occurred while writing file:\n%1").arg(QString::fromStdString(save_path)));
+    return;
+  }
 
   ui_->SaveButton->setText("SAVED!");
   ui_->SaveButton->setStyleSheet("QPushButton {background-color: green; color: black;}");
 
-  auto node = rclcpp::Node::make_shared("poieditorreload_map_info");
-  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr client_reload_map_info =
-    node->create_client<std_srvs::srv::Trigger>("reload_map_info");
+  if (!reload_map_info_client_->wait_for_service(3s)) {
+    RCLCPP_ERROR(LOGGER, "reload_map_info service not available after 3s timeout.");
+    return;
+  }
   auto request_reload_map_info = std::make_shared<std_srvs::srv::Trigger::Request>();
-  auto result_reload_map_info = client_reload_map_info->async_send_request(request_reload_map_info);
-  rclcpp::spin_until_future_complete(node, result_reload_map_info);
+  auto result_reload_map_info = reload_map_info_client_->async_send_request(request_reload_map_info);
+  rclcpp::spin_until_future_complete(service_node_, result_reload_map_info);
 }
 
 // Subscription Callback
 void PoiEditorPanel::PoiPoseCallback(geometry_msgs::msg::PoseStamped::SharedPtr msg)
 {
-  int current_row = ui_->PoiTable->currentRow();
   auto p = msg->pose;
   auto txt = tr("%1, %2, %3").arg(p.position.x).arg(p.position.y).arg(this->calcYaw(p));
-  ui_->PoiTable->setItem(current_row, 2, new QTableWidgetItem(txt));
+  QMetaObject::invokeMethod(this, [this, txt]() {
+    int current_row = ui_->PoiTable->currentRow();
+    if (current_row >= 0) {
+      ui_->PoiTable->setItem(current_row, 2, new QTableWidgetItem(txt));
+    }
+  }, Qt::QueuedConnection);
 }
 
 void PoiEditorPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
@@ -250,7 +289,9 @@ void PoiEditorPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
   config_path_ = resolved_path;
   if(current_map_ != map_name || first_config){
     current_map_ = map_name;
-    InitConfigs(map_name);
+    QMetaObject::invokeMethod(this, [this, map_name]() {
+      InitConfigs(map_name);
+    }, Qt::QueuedConnection);
   }
 }
 
@@ -258,7 +299,6 @@ void PoiEditorPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
 void PoiEditorPanel::TagFilterChanged(int index)
 {
   if (index <= 0) {
-    // "All" selected — show all POIs
     UpdatePoiTable();
     return;
   }
@@ -311,21 +351,22 @@ void PoiEditorPanel::PopulateTagFilter()
 
 void PoiEditorPanel::LoadTagDefinitions()
 {
-  auto node = rclcpp::Node::make_shared("poieditor_get_tag_defs_client");
-  auto client = node->create_client<mapoi_interfaces::srv::GetTagDefinitions>("get_tag_definitions");
-
-  if (!client->wait_for_service(3s)) {
+  if (!get_tag_defs_client_->wait_for_service(3s)) {
     RCLCPP_WARN(LOGGER, "get_tag_definitions service not available, TagHelper will be empty.");
     return;
   }
 
   auto request = std::make_shared<mapoi_interfaces::srv::GetTagDefinitions::Request>();
-  auto result = client->async_send_request(request);
-  rclcpp::spin_until_future_complete(node, result);
+  auto result = get_tag_defs_client_->async_send_request(request);
+  rclcpp::spin_until_future_complete(service_node_, result);
   auto response = result.get();
 
-  known_tag_names_ = response->tag_names;
-  known_tag_is_system_.assign(response->is_system.begin(), response->is_system.end());
+  known_tag_names_.clear();
+  known_tag_is_system_.clear();
+  for (const auto & def : response->definitions) {
+    known_tag_names_.push_back(def.name);
+    known_tag_is_system_.push_back(def.is_system);
+  }
 
   // Build TagHelperComboBox
   ui_->TagHelperComboBox->clear();
@@ -366,7 +407,6 @@ void PoiEditorPanel::TagHelperSelected(int index)
   auto tag_list = this->SplitSentence(current_tags, ", ");
   for (const auto& t : tag_list) {
     if (t == tag_name) {
-      // Already present, reset combo and return
       ui_->TagHelperComboBox->setCurrentIndex(0);
       return;
     }
@@ -486,7 +526,7 @@ void PoiEditorPanel::InitConfigs(std::string map_name)
 {
   // MapComboBox
   int i = 0;
-  for(auto map : map_name_list_){
+  for(const auto & map : map_name_list_){
     if(map == map_name){
       ui_->MapComboBox->setCurrentIndex(i);
       break;
@@ -507,23 +547,15 @@ void PoiEditorPanel::InitConfigs(std::string map_name)
 
 void PoiEditorPanel::UpdatePoiTable()
 {
-  // get pois
-  auto node = rclcpp::Node::make_shared("poieditor_get_pois_info_client");
-  rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr client_gtp =
-    node->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
-
   auto request_gtp = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
 
-  while(!client_gtp->wait_for_service(1s)){
-    if(!rclcpp::ok()){
-      RCLCPP_ERROR(LOGGER, "Interrupted while waiting for the service. Exiting.");
-      return;
-    }
-    RCLCPP_INFO(LOGGER, "service not available, waiting again...");
+  if (!get_pois_info_client_->wait_for_service(3s)) {
+    RCLCPP_ERROR(LOGGER, "get_pois_info service not available after 3s timeout.");
+    return;
   }
 
-  auto result_gtp = client_gtp->async_send_request(request_gtp);
-  rclcpp::spin_until_future_complete(node, result_gtp);
+  auto result_gtp = get_pois_info_client_->async_send_request(request_gtp);
+  rclcpp::spin_until_future_complete(service_node_, result_gtp);
   auto poi_info = result_gtp.get();
   auto pois = poi_info->pois_list;
   auto numRows = pois.size();
@@ -542,8 +574,8 @@ void PoiEditorPanel::UpdatePoiTable()
   ui_->PoiTable->horizontalHeader()->setSortIndicator(0, Qt::AscendingOrder);
 
   is_table_color_ = false;
-  for (int row = 0; row < numRows; row++){
-    auto p = pois[row];
+  for (size_t row = 0; row < numRows; row++){
+    const auto & p = pois[row];
     ui_->PoiTable->setItem(row, 0, new QTableWidgetItem(QString::fromStdString(p.name)));
     ui_->PoiTable->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(p.description)));
     ui_->PoiTable->setItem(row, 2, new QTableWidgetItem(tr("%1, %2, %3").arg(p.pose.position.x).arg(p.pose.position.y).arg(this->calcYaw(p.pose))));

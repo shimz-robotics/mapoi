@@ -21,6 +21,7 @@
 #include "mapoi_interfaces/srv/get_routes_info.hpp"
 #include "mapoi_interfaces/srv/switch_map.hpp"
 #include "mapoi_interfaces/srv/get_tag_definitions.hpp"
+#include "mapoi_interfaces/msg/tag_definition.hpp"
 
 
 class MapoiServer : public rclcpp::Node
@@ -48,11 +49,11 @@ private:
   YAML::Node nav2_map_list_;
 
   // tag definitions (system tags loaded once, user tags merged on config load)
-  std::vector<std::string> system_tag_names_;
-  std::vector<std::string> system_tag_descriptions_;
-  std::vector<std::string> tag_names_;
-  std::vector<std::string> tag_descriptions_;
-  std::vector<bool> tag_is_system_;
+  std::vector<mapoi_interfaces::msg::TagDefinition> system_tags_;
+  std::vector<mapoi_interfaces::msg::TagDefinition> tag_definitions_;
+
+  // POI YAML conversion helper
+  mapoi_interfaces::msg::PointOfInterest yaml_to_poi_msg(const YAML::Node & poi);
 
   // services
   rclcpp::Service<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr get_pois_info_service_;

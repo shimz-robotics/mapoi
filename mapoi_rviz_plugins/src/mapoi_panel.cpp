@@ -20,8 +20,15 @@ MapoiPanel::~MapoiPanel() = default;
 
 void MapoiPanel::onInitialize()
 {
-  // https://qiita.com/Kotakku/items/01082cfd024a68c0d6ec
   node_ = this->getDisplayContext()->getRosNodeAbstraction().lock()->get_raw_node();
+
+  // Create shared service node and persistent clients
+  service_node_ = rclcpp::Node::make_shared("mapoi_panel_service_client");
+  switch_map_client_ = service_node_->create_client<mapoi_interfaces::srv::SwitchMap>("switch_map");
+  get_pois_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
+  get_maps_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetMapsInfo>("get_maps_info");
+  get_routes_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetRoutesInfo>("get_routes_info");
+  get_route_pois_client_ = service_node_->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
 
   connect(ui_->MapComboBox, SIGNAL(activated(int)), this, SLOT(MapComboBox()));
   connect(ui_->Nav2GoalComboBox, SIGNAL(activated(int)), this, SLOT(Nav2GoalComboBox()));
@@ -35,28 +42,23 @@ void MapoiPanel::onInitialize()
   parentWidget()->setVisible(true);
 
   // map ComboBox
-  auto node = rclcpp::Node::make_shared("mapoi_panel_get_maps_info_client");
-  auto get_maps_info_cli = node->create_client<mapoi_interfaces::srv::GetMapsInfo>("get_maps_info");
-  while(!get_maps_info_cli->wait_for_service(1s)){
-    if(!rclcpp::ok()){
-      RCLCPP_ERROR(node->get_logger(), "Interrupted while waiting for the service. Exiting.");
-      return;
-    }
-    RCLCPP_INFO(node->get_logger(), "service not available, waiting again...");
+  if (!get_maps_info_client_->wait_for_service(3s)) {
+    RCLCPP_ERROR(LOGGER, "get_maps_info service not available after 3s timeout.");
+    return;
   }
   auto request = std::make_shared<mapoi_interfaces::srv::GetMapsInfo::Request>();
-  auto result = get_maps_info_cli->async_send_request(request);
-  if(rclcpp::spin_until_future_complete(node, result) == rclcpp::FutureReturnCode::SUCCESS)
+  auto result = get_maps_info_client_->async_send_request(request);
+  if(rclcpp::spin_until_future_complete(service_node_, result) == rclcpp::FutureReturnCode::SUCCESS)
   {
     auto map_info = result.get();
     current_map_ = map_info->map_name;
     map_name_list_ = map_info->maps_list;
-    for (auto map : map_name_list_) {
+    for (const auto & map : map_name_list_) {
       ui_->MapComboBox->addItem(QString::fromStdString(map));
     }
     SetMapComboBox(map_info->map_name);
   }else{
-    RCLCPP_ERROR(node->get_logger(), "Failed to call service get_pois_info");
+    RCLCPP_ERROR(LOGGER, "Failed to call service get_maps_info");
   }
 
   // Buttons
@@ -94,26 +96,18 @@ void MapoiPanel::onDisable()
   parentWidget()->hide();
 }
 
-void MapoiPanel::MapComboBox() //Set"Floor"
+void MapoiPanel::MapComboBox()
 {
-  // switch map
-  auto node = rclcpp::Node::make_shared("mapoi_panel_switch_map_client");
-  rclcpp::Client<mapoi_interfaces::srv::SwitchMap>::SharedPtr client_sm =
-    node->create_client<mapoi_interfaces::srv::SwitchMap>("switch_map");
-
   auto request_sm = std::make_shared<mapoi_interfaces::srv::SwitchMap::Request>();
   request_sm->map_name = map_name_list_[ui_->MapComboBox->currentIndex()];
 
-  while(!client_sm->wait_for_service(1s)){
-    if(!rclcpp::ok()){
-      RCLCPP_ERROR(LOGGER, "Interrupted while waiting for the service. Exiting.");
-      return;
-    }
-    RCLCPP_INFO(LOGGER, "service not available, waiting again...");
+  if (!switch_map_client_->wait_for_service(3s)) {
+    RCLCPP_ERROR(LOGGER, "switch_map service not available after 3s timeout.");
+    return;
   }
 
-  auto result_sm = client_sm->async_send_request(request_sm);
-  if(rclcpp::spin_until_future_complete(node, result_sm) == rclcpp::FutureReturnCode::SUCCESS)
+  auto result_sm = switch_map_client_->async_send_request(request_sm);
+  if(rclcpp::spin_until_future_complete(service_node_, result_sm) == rclcpp::FutureReturnCode::SUCCESS)
   {
     RCLCPP_INFO(LOGGER, "Success: %d", result_sm.get()->success);
   }else{
@@ -137,19 +131,16 @@ void MapoiPanel::MapoiRouteComboBox()
   route_combobox_ind_ = ui_->MapoiRouteComboBox->currentIndex();
   highlighted_route_poi_names_.clear();
   if (route_combobox_ind_ < 1) {
-    // "(なし)" selected — clear highlight
     PublishHighlightPois();
     return;
   }
   int route_index = route_combobox_ind_ - 1;
   if (route_index >= 0 && route_index < static_cast<int>(route_name_list_.size())) {
-    auto node = rclcpp::Node::make_shared("mapoi_panel_get_route_pois_client");
-    auto client = node->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
-    if (client->wait_for_service(1s)) {
+    if (get_route_pois_client_->wait_for_service(3s)) {
       auto request = std::make_shared<mapoi_interfaces::srv::GetRoutePois::Request>();
       request->route_name = route_name_list_[route_index];
-      auto result = client->async_send_request(request);
-      if (rclcpp::spin_until_future_complete(node, result, 5s) == rclcpp::FutureReturnCode::SUCCESS) {
+      auto result = get_route_pois_client_->async_send_request(request);
+      if (rclcpp::spin_until_future_complete(service_node_, result, 5s) == rclcpp::FutureReturnCode::SUCCESS) {
         auto response = result.get();
         if (response) {
           for (const auto & poi : response->pois_list) {
@@ -157,13 +148,15 @@ void MapoiPanel::MapoiRouteComboBox()
           }
         }
       }
+    } else {
+      RCLCPP_ERROR(LOGGER, "get_route_pois service not available after 3s timeout.");
     }
   }
   PublishHighlightPois();
 }
 
 void MapoiPanel::LocalizationButton()
-{  
+{
   geometry_msgs::msg::PoseWithCovarianceStamped msg_init;
   msg_init.header.stamp = rclcpp::Clock().now();
   msg_init.header.frame_id = "map";
@@ -231,7 +224,9 @@ void MapoiPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
   std::string map_name = config_path.parent_path().filename().string();
   if(current_map_ != map_name){
     current_map_ = map_name;
-    SetMapComboBox(map_name);
+    QMetaObject::invokeMethod(this, [this, map_name]() {
+      SetMapComboBox(map_name);
+    }, Qt::QueuedConnection);
   }
 }
 
@@ -242,7 +237,7 @@ void MapoiPanel::SetMapComboBox(std::string map_name)
   PublishHighlightPois();
 
   int i = 0;
-  for(auto map : map_name_list_){
+  for(const auto & map : map_name_list_){
     if(map == map_name){
       ui_->MapComboBox->setCurrentIndex(i);
       SetNav2GoalComboBox();
@@ -252,7 +247,7 @@ void MapoiPanel::SetMapComboBox(std::string map_name)
     i++;
   }
   i = 0;
-  for(auto map : map_name_list_){
+  for(const auto & map : map_name_list_){
     RCLCPP_ERROR_STREAM(LOGGER, "map" << i << " : " << map << " correctly");
     i++;
   }
@@ -261,34 +256,24 @@ void MapoiPanel::SetMapComboBox(std::string map_name)
 
 void MapoiPanel::SetNav2GoalComboBox()
 {
-  auto node = rclcpp::Node::make_shared("mapoi_panel_get_pois_info_client");
-  rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr client_gtp =
-    node->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
-
   auto request_gtp = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
 
-  while(!client_gtp->wait_for_service(1s)){
-    if(!rclcpp::ok()){
-      RCLCPP_ERROR(LOGGER, "Interrupted while waiting for the service. Exiting.");
-      return;
-    }
-    RCLCPP_INFO(LOGGER, "service not available, waiting again...");
+  if (!get_pois_info_client_->wait_for_service(3s)) {
+    RCLCPP_ERROR(LOGGER, "get_pois_info service not available after 3s timeout.");
+    return;
   }
 
-  auto result_get_pois_info = client_gtp->async_send_request(request_gtp);
-  // Wait for the result.
-  if(rclcpp::spin_until_future_complete(node, result_get_pois_info) == rclcpp::FutureReturnCode::SUCCESS)
+  auto result_get_pois_info = get_pois_info_client_->async_send_request(request_gtp);
+  if(rclcpp::spin_until_future_complete(service_node_, result_get_pois_info) == rclcpp::FutureReturnCode::SUCCESS)
   {
 
     auto pois_all = result_get_pois_info.get()->pois_list;
     ui_->Nav2GoalComboBox->clear();
     pois_.clear();
 
-    for(mapoi_interfaces::msg::PointOfInterest p : pois_all){
-      // もしpoiがgoalかwaypointタグを持っていたらpois_に追加
-      auto tags = p.tags;
+    for(const auto & p : pois_all){
       bool is_goal_or_waypoint = false;
-      for(auto tag : tags){
+      for(const auto & tag : p.tags){
         if(tag == "goal" || tag == "waypoint"){
           is_goal_or_waypoint = true;
           break;
@@ -307,20 +292,14 @@ void MapoiPanel::SetNav2GoalComboBox()
 
 void MapoiPanel::SetMapoiRouteComboBox()
 {
-  auto node = rclcpp::Node::make_shared("mapoi_panel_get_routes_info_client");
-  auto client = node->create_client<mapoi_interfaces::srv::GetRoutesInfo>("get_routes_info");
-
-  while(!client->wait_for_service(1s)){
-    if(!rclcpp::ok()){
-      RCLCPP_ERROR(LOGGER, "Interrupted while waiting for the service. Exiting.");
-      return;
-    }
-    RCLCPP_INFO(LOGGER, "get_routes_info service not available, waiting again...");
+  if (!get_routes_info_client_->wait_for_service(3s)) {
+    RCLCPP_ERROR(LOGGER, "get_routes_info service not available after 3s timeout.");
+    return;
   }
 
   auto request = std::make_shared<mapoi_interfaces::srv::GetRoutesInfo::Request>();
-  auto result = client->async_send_request(request);
-  if(rclcpp::spin_until_future_complete(node, result) == rclcpp::FutureReturnCode::SUCCESS)
+  auto result = get_routes_info_client_->async_send_request(request);
+  if(rclcpp::spin_until_future_complete(service_node_, result) == rclcpp::FutureReturnCode::SUCCESS)
   {
     ui_->MapoiRouteComboBox->clear();
     ui_->MapoiRouteComboBox->addItem(QString::fromStdString("(なし)"));
@@ -337,21 +316,23 @@ void MapoiPanel::SetMapoiRouteComboBox()
 void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
 {
   const auto & status = msg->data;
-  if (status == "navigating") {
-    if (current_nav_mode_ == "route") {
-      ui_->NavStatusLabel->setText(
-          QString::fromStdString("ルート走行中: " + current_nav_target_));
+  QMetaObject::invokeMethod(this, [this, status]() {
+    if (status == "navigating") {
+      if (current_nav_mode_ == "route") {
+        ui_->NavStatusLabel->setText(
+            QString::fromStdString("ルート走行中: " + current_nav_target_));
+      }
+    } else if (status == "succeeded") {
+      current_nav_mode_ = "idle";
+      ui_->NavStatusLabel->setText(QString::fromStdString("到着"));
+    } else if (status == "aborted") {
+      current_nav_mode_ = "idle";
+      ui_->NavStatusLabel->setText(QString::fromStdString("走行失敗"));
+    } else if (status == "canceled") {
+      current_nav_mode_ = "idle";
+      ui_->NavStatusLabel->setText(QString::fromStdString("走行キャンセル"));
     }
-  } else if (status == "succeeded") {
-    current_nav_mode_ = "idle";
-    ui_->NavStatusLabel->setText(QString::fromStdString("到着"));
-  } else if (status == "aborted") {
-    current_nav_mode_ = "idle";
-    ui_->NavStatusLabel->setText(QString::fromStdString("走行失敗"));
-  } else if (status == "canceled") {
-    current_nav_mode_ = "idle";
-    ui_->NavStatusLabel->setText(QString::fromStdString("走行キャンセル"));
-  }
+  }, Qt::QueuedConnection);
 }
 
 void MapoiPanel::PublishHighlightPois()

@@ -1,3 +1,5 @@
-string map_name
+# Switch the active map and reload all associated configuration
+string map_name       # Name of the map directory to switch to
 ---
-bool success
+bool success          # True if the map was switched successfully
+string error_message  # Non-empty on failure with description of the error
