@@ -159,24 +159,27 @@ main {
 
 /* POI List */
 #poi-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 16px;
-  overflow-y: auto;
   flex: 1;
+  gap: 4px;
 }
 
 .poi-card {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   padding: 8px 12px;
   background: #fff;
   border-radius: 4px;
   border-left: 4px solid #3498db;
   cursor: pointer;
   min-height: 44px;
+}
+
+.poi-card-checkbox {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
 }
 
 .poi-card:hover {
@@ -341,6 +344,149 @@ main {
 
 .tag-chip:hover {
   opacity: 0.8;
+}
+
+/* Panel sections (Routes, POIs) */
+.panel-section {
+  flex-shrink: 0;
+  border-bottom: 1px solid #ddd;
+}
+
+#poi-section {
+  flex-shrink: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  background: #ecf0f1;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #555;
+}
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-section-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #888;
+  padding: 2px 6px;
+}
+
+.btn-check-all {
+  background: none;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  color: #666;
+  padding: 1px 6px;
+  line-height: 1.4;
+}
+
+.btn-check-all:hover {
+  background: #ddd;
+}
+
+.section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 16px 8px;
+  overflow-y: auto;
+}
+
+#route-list {
+  max-height: 180px;
+}
+
+.route-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.route-item:hover {
+  background: #f0f0f0;
+}
+
+.route-item input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.route-color-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(0,0,0,0.15);
+}
+
+.route-item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.route-item-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.route-item-detail {
+  font-size: 0.75rem;
+  color: #888;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* POI arrow icons */
+.poi-arrow-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Route order labels */
+.route-order-label span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  border: 1.5px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.route-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Mobile adjustments */

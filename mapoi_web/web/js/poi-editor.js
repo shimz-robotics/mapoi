@@ -9,11 +9,13 @@ class PoiEditor {
     this.selectedIndex = -1;
     this.editingIndex = -1;  // -1 = closed, >=0 = editing existing, -2 = new POI
     this.placingMode = false;
+    this.visiblePois = new Set(); // indices of visible POIs
 
     this.tagDefinitions = [];  // [{name, description, is_system}, ...]
     this.onDirtyChange = null;     // callback(isDirty)
     this.onSelectionChange = null; // callback(index)
     this.onPlacingModeChange = null; // callback(isPlacing)
+    this.onVisibilityChange = null;  // callback(visibleSet)
 
     // DOM references
     this.listEl = document.getElementById('poi-list');
@@ -49,6 +51,7 @@ class PoiEditor {
     this.originalPois = JSON.parse(JSON.stringify(pois));
     this.selectedIndex = -1;
     this.editingIndex = -1;
+    this.visiblePois = new Set(pois.map((_, i) => i));
     this.setDirty(false);
     this.hideForm();
     this.renderList();
@@ -64,6 +67,23 @@ class PoiEditor {
       card.className = 'poi-card' + (i === this.selectedIndex ? ' selected' : '');
       card.dataset.index = i;
 
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.className = 'poi-card-checkbox';
+      cb.checked = this.visiblePois.has(i);
+      cb.addEventListener('click', (e) => e.stopPropagation());
+      cb.addEventListener('change', () => {
+        if (cb.checked) {
+          this.visiblePois.add(i);
+        } else {
+          this.visiblePois.delete(i);
+        }
+        if (this.onVisibilityChange) {
+          this.onVisibilityChange(this.visiblePois);
+        }
+      });
+      card.appendChild(cb);
+
       const info = document.createElement('div');
       info.className = 'poi-card-info';
 
@@ -77,7 +97,7 @@ class PoiEditor {
       const pose = poi.pose || {};
       const tags = (poi.tags || []).join(', ');
       const desc = poi.description || '';
-      detail.textContent = `(${(pose.x||0).toFixed(2)}, ${(pose.y||0).toFixed(2)}) ${tags} ${desc}`;
+      detail.textContent = `(${(pose.x||0).toFixed(2)}, ${(pose.y||0).toFixed(2)}) yaw=${(pose.yaw||0).toFixed(2)} ${tags} ${desc}`;
       info.appendChild(detail);
 
       card.appendChild(info);
@@ -140,6 +160,13 @@ class PoiEditor {
     this.pois.splice(index, 1);
     if (this.selectedIndex === index) this.selectedIndex = -1;
     if (this.selectedIndex > index) this.selectedIndex--;
+    // Rebuild visiblePois with shifted indices
+    const newVisible = new Set();
+    this.visiblePois.forEach((vi) => {
+      if (vi < index) newVisible.add(vi);
+      else if (vi > index) newVisible.add(vi - 1);
+    });
+    this.visiblePois = newVisible;
     this.setDirty(true);
     this.hideForm();
     this.renderList();
@@ -289,6 +316,7 @@ class PoiEditor {
       // New POI
       this.pois.push(poi);
       this.selectedIndex = this.pois.length - 1;
+      this.visiblePois.add(this.selectedIndex);
     } else if (this.editingIndex >= 0) {
       // Merge: keep unknown fields from original
       this.pois[this.editingIndex] = { ...this.pois[this.editingIndex], ...poi };
@@ -374,5 +402,23 @@ class PoiEditor {
     if (this.onSelectionChange) {
       this.onSelectionChange(-1);
     }
+  }
+
+  /**
+   * Show all POIs on the map.
+   */
+  setAllVisible() {
+    this.visiblePois = new Set(this.pois.map((_, i) => i));
+    this.renderList();
+    if (this.onVisibilityChange) this.onVisibilityChange(this.visiblePois);
+  }
+
+  /**
+   * Hide all POIs from the map.
+   */
+  setAllHidden() {
+    this.visiblePois = new Set();
+    this.renderList();
+    if (this.onVisibilityChange) this.onVisibilityChange(this.visiblePois);
   }
 }
