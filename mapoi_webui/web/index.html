@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>mapoi - POI Editor</title>
+  <title>mapoi Web UI</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
   <header>
-    <h1>mapoi POI Editor</h1>
+    <h1>mapoi Web UI</h1>
     <div id="map-selector">
       <label for="map-select">Map:</label>
       <select id="map-select"></select>
@@ -23,6 +23,43 @@
     </div>
 
     <div id="poi-panel">
+      <div id="nav-section" class="panel-section">
+        <div class="section-header">
+          <span>Navigation</span>
+          <div class="section-header-actions">
+            <button id="btn-nav-toggle" class="btn-section-toggle" title="Toggle">&#9660;</button>
+          </div>
+        </div>
+        <div id="nav-body" class="nav-body">
+          <div class="nav-status">
+            <span id="nav-status-dot" class="nav-status-dot nav-status-idle"></span>
+            <span id="nav-status-text">Idle</span>
+          </div>
+          <div class="nav-control-group">
+            <div class="nav-control-row">
+              <select id="nav-goal-select" class="nav-select">
+                <option value="">-- Select POI --</option>
+              </select>
+              <button id="btn-nav-go" class="nav-btn-go">Go</button>
+            </div>
+            <div class="nav-control-row">
+              <select id="nav-route-select" class="nav-select">
+                <option value="">-- Select Route --</option>
+              </select>
+              <button id="btn-nav-run" class="nav-btn-run">Run</button>
+            </div>
+          </div>
+          <div class="nav-control-label">Initial Pose</div>
+          <div class="nav-control-row">
+            <select id="nav-initialpose-select" class="nav-select">
+              <option value="">-- Select POI --</option>
+            </select>
+            <button id="btn-nav-setpose" class="nav-btn-initialpose">Set Pose</button>
+          </div>
+          <button id="btn-nav-stop" class="nav-btn-stop">Stop Navigation</button>
+        </div>
+      </div>
+
       <div id="route-section" class="panel-section">
         <div class="section-header">
           <span>Routes</span>

@@ -26,8 +26,8 @@ launch:
     description: "HTTP server bind address"
 
 - node:
-    pkg: mapoi_web
-    exec: mapoi_web_node.py
+    pkg: mapoi_webui
+    exec: mapoi_webui_node.py
     param:
       - {name: maps_path, value: "$(var maps_path)"}
       - {name: map_name, value: "$(var map_name)"}

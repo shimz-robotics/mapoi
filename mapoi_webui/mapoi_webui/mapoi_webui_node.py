@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""mapoi_web_node: ROS2 node with embedded Flask server for web-based POI editing."""
+"""mapoi_webui_node: ROS2 node with embedded Flask server for mapoi Web UI."""
 
+import math
 import os
+import logging
 import threading
 
 import rclpy
@@ -9,16 +11,17 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from mapoi_interfaces.srv import GetMapsInfo
+import tf2_ros
 
 from flask import Flask, jsonify, request, send_from_directory, Response
 
-from mapoi_web.yaml_handler import load_config, save_pois, get_pois, get_routes, get_tag_definitions
-from mapoi_web.map_image import get_map_metadata, get_map_png
+from mapoi_webui.yaml_handler import load_config, save_pois, get_pois, get_routes, get_tag_definitions
+from mapoi_webui.map_image import get_map_metadata, get_map_png
 
 
 class MapoiWebNode(Node):
     def __init__(self):
-        super().__init__('mapoi_web_node')
+        super().__init__('mapoi_webui_node')
 
         # Parameters (same as mapoi_server)
         self.declare_parameter('maps_path', '')
@@ -26,16 +29,38 @@ class MapoiWebNode(Node):
         self.declare_parameter('config_file', 'mapoi_config.yaml')
         self.declare_parameter('web_port', 8765)
         self.declare_parameter('web_host', '0.0.0.0')
+        self.declare_parameter('map_frame', 'map')
+        self.declare_parameter('base_frame', 'base_link')
 
         self.maps_path_ = self.get_parameter('maps_path').get_parameter_value().string_value
         self.map_name_ = self.get_parameter('map_name').get_parameter_value().string_value
         self.config_file_ = self.get_parameter('config_file').get_parameter_value().string_value
         self.web_port_ = self.get_parameter('web_port').get_parameter_value().integer_value
         self.web_host_ = self.get_parameter('web_host').get_parameter_value().string_value
+        self.map_frame_ = self.get_parameter('map_frame').get_parameter_value().string_value
+        self.base_frame_ = self.get_parameter('base_frame').get_parameter_value().string_value
 
         # ROS2 service clients
         self.reload_client_ = self.create_client(Trigger, 'reload_map_info')
         self.get_maps_client_ = self.create_client(GetMapsInfo, 'get_maps_info')
+
+        # Navigation publishers
+        self.goal_poi_pub_ = self.create_publisher(String, 'mapoi_goal_pose_poi', 10)
+        self.route_pub_ = self.create_publisher(String, 'mapoi_route', 10)
+        self.cancel_pub_ = self.create_publisher(String, 'mapoi_cancel', 10)
+        self.initialpose_poi_pub_ = self.create_publisher(String, 'mapoi_initialpose_poi', 10)
+
+        # TF for robot pose
+        self.tf_buffer_ = tf2_ros.Buffer()
+        self.tf_listener_ = tf2_ros.TransformListener(self.tf_buffer_, self)
+        self.robot_pose_ = None
+        self.create_timer(0.2, self.update_robot_pose)
+
+        # Navigation status
+        self.nav_status_ = 'idle'
+        self.nav_status_target_ = ''
+        self.nav_status_sub_ = self.create_subscription(
+            String, 'mapoi_nav_status', self.nav_status_callback, 10)
 
         # Subscribe to mapoi_config_path for external map switches
         self.config_path_sub_ = self.create_subscription(
@@ -59,7 +84,7 @@ class MapoiWebNode(Node):
             self.get_logger().warn('maps_path parameter not set. Set it to use the web editor.')
 
         self.get_logger().info(
-            f'mapoi_web_node started: maps_path={self.maps_path_}, '
+            f'mapoi_webui_node started: maps_path={self.maps_path_}, '
             f'map_name={self.map_name_}, port={self.web_port_}')
 
         # Start Flask in daemon thread
@@ -67,6 +92,30 @@ class MapoiWebNode(Node):
         flask_thread = threading.Thread(
             target=self.run_flask, daemon=True)
         flask_thread.start()
+
+    def nav_status_callback(self, msg):
+        """Update navigation status from mapoi_nav_status topic."""
+        # Expected format: "status" or "status:target"
+        parts = msg.data.split(':', 1)
+        self.nav_status_ = parts[0]
+        self.nav_status_target_ = parts[1] if len(parts) > 1 else ''
+
+    def update_robot_pose(self):
+        """Lookup TF map->base_link and cache robot pose."""
+        try:
+            t = self.tf_buffer_.lookup_transform(
+                self.map_frame_, self.base_frame_, rclpy.time.Time())
+            q = t.transform.rotation
+            yaw = math.atan2(
+                2.0 * (q.w * q.z + q.x * q.y),
+                1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+            self.robot_pose_ = {
+                'x': t.transform.translation.x,
+                'y': t.transform.translation.y,
+                'yaw': yaw,
+            }
+        except Exception:
+            self.robot_pose_ = None
 
     def config_path_callback(self, msg):
         """Detect external map switches via mapoi_config_path topic."""
@@ -128,6 +177,7 @@ class MapoiWebNode(Node):
     def create_flask_app(self):
         """Create and configure the Flask application."""
         app = Flask(__name__)
+        logging.getLogger('werkzeug').setLevel(logging.WARNING)
         node = self  # capture for closures
 
         # Static files directory
@@ -138,7 +188,7 @@ class MapoiWebNode(Node):
         try:
             from ament_index_python.packages import get_package_share_directory
             share_web_dir = os.path.join(
-                get_package_share_directory('mapoi_web'), 'web')
+                get_package_share_directory('mapoi_webui'), 'web')
             if os.path.isdir(share_web_dir):
                 web_dir = share_web_dir
         except Exception:
@@ -222,6 +272,60 @@ class MapoiWebNode(Node):
                 return jsonify({'error': 'Config not found'}), 404
             routes = get_routes(config_path)
             return jsonify({'routes': routes, 'map_name': node.map_name_})
+
+        @app.route('/api/nav/goal', methods=['POST'])
+        def api_nav_goal():
+            data = request.get_json()
+            if not data or 'poi_name' not in data:
+                return jsonify({'error': 'poi_name required'}), 400
+            msg = String()
+            msg.data = data['poi_name']
+            node.goal_poi_pub_.publish(msg)
+            node.nav_status_ = 'navigating'
+            node.nav_status_target_ = data['poi_name']
+            node.get_logger().info(f'Nav goal: {data["poi_name"]}')
+            return jsonify({'success': True})
+
+        @app.route('/api/nav/route', methods=['POST'])
+        def api_nav_route():
+            data = request.get_json()
+            if not data or 'route_name' not in data:
+                return jsonify({'error': 'route_name required'}), 400
+            msg = String()
+            msg.data = data['route_name']
+            node.route_pub_.publish(msg)
+            node.nav_status_ = 'navigating'
+            node.nav_status_target_ = data['route_name']
+            node.get_logger().info(f'Nav route: {data["route_name"]}')
+            return jsonify({'success': True})
+
+        @app.route('/api/nav/cancel', methods=['POST'])
+        def api_nav_cancel():
+            msg = String()
+            msg.data = 'cancel'
+            node.cancel_pub_.publish(msg)
+            node.nav_status_ = 'canceled'
+            node.get_logger().info('Nav canceled')
+            return jsonify({'success': True})
+
+        @app.route('/api/nav/status')
+        def api_nav_status():
+            return jsonify({
+                'status': node.nav_status_,
+                'target': node.nav_status_target_,
+                'robot_pose': node.robot_pose_,
+            })
+
+        @app.route('/api/nav/initialpose', methods=['POST'])
+        def api_nav_initialpose():
+            data = request.get_json()
+            if not data or 'poi_name' not in data:
+                return jsonify({'error': 'poi_name required'}), 400
+            msg = String()
+            msg.data = data['poi_name']
+            node.initialpose_poi_pub_.publish(msg)
+            node.get_logger().info(f'Initial pose: {data["poi_name"]}')
+            return jsonify({'success': True})
 
         return app
 
