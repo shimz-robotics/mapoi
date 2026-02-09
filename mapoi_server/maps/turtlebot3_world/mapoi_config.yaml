@@ -1,3 +1,7 @@
+custom_tags:
+  - name: audio_info
+    description: "Audio guide trigger"
+
 map:
     path_planning: path_planning_map
     localization: localization_map

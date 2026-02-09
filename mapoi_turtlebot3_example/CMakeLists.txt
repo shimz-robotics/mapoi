@@ -4,12 +4,12 @@ project(mapoi_turtlebot3_example)
 find_package(ament_cmake_auto REQUIRED)
 ament_auto_find_build_dependencies()
 
-ament_auto_add_executable(get_map_info_client
-  src/get_map_info_client.cpp
+ament_auto_add_executable(get_maps_info_client
+  src/get_maps_info_client.cpp
 )
 
-ament_auto_add_executable(get_tagged_pois_client
-  src/get_tagged_pois_client.cpp
+ament_auto_add_executable(get_pois_info_client
+  src/get_pois_info_client.cpp
 )
 
 ament_auto_add_executable(print_initialpose
