@@ -730,6 +730,176 @@ main {
   color: #e74c3c;
 }
 
+/* Tag editor */
+#tag-list {
+  max-height: 200px;
+}
+
+.tag-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  border-left: 3px solid transparent;
+}
+
+.tag-item-system {
+  border-left-color: #3498db;
+}
+
+.tag-item-custom {
+  border-left-color: #27ae60;
+}
+
+.tag-lock {
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.tag-item-name {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.tag-item-desc {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8rem;
+  color: #888;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-type-label {
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.tag-type-system {
+  background: #ebf5fb;
+  color: #2980b9;
+}
+
+.tag-type-custom {
+  background: #eafaf1;
+  color: #219a52;
+}
+
+.tag-delete-btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #e74c3c;
+  padding: 2px 6px;
+  border-radius: 3px;
+  min-width: 24px;
+  min-height: 24px;
+  flex-shrink: 0;
+}
+
+.tag-delete-btn:hover:not(:disabled) {
+  background: #e74c3c;
+  color: #fff;
+}
+
+.tag-delete-btn:disabled {
+  color: #ccc;
+  cursor: default;
+}
+
+.tag-add-form {
+  display: flex;
+  gap: 6px;
+  padding: 6px 16px;
+  align-items: center;
+}
+
+.tag-add-form input {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  min-height: 32px;
+}
+
+.tag-add-form input:first-child {
+  flex: 0.8;
+}
+
+.tag-add-form button {
+  padding: 5px 12px;
+  border: none;
+  border-radius: 4px;
+  background: #27ae60;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  min-height: 32px;
+  white-space: nowrap;
+}
+
+.tag-add-form button:hover {
+  background: #219a52;
+}
+
+#tag-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  flex-wrap: wrap;
+}
+
+#tag-toolbar button {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  min-height: 36px;
+}
+
+#btn-save-tags {
+  background: #3498db;
+  color: #fff;
+}
+
+#btn-save-tags:hover:not(:disabled) {
+  background: #2980b9;
+}
+
+#btn-save-tags:disabled {
+  background: #bbb;
+  cursor: default;
+}
+
+#btn-discard-tags {
+  background: #95a5a6;
+  color: #fff;
+}
+
+#btn-discard-tags:hover:not(:disabled) {
+  background: #7f8c8d;
+}
+
+#btn-discard-tags:disabled {
+  background: #bbb;
+  cursor: default;
+}
+
+#tag-dirty-indicator {
+  font-size: 0.8rem;
+  color: #e74c3c;
+}
+
 /* Robot icon */
 .robot-icon {
   background: transparent !important;

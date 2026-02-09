@@ -15,6 +15,83 @@
   const navStatusText = document.getElementById('nav-status-text');
   let currentMap = '';
 
+  // --- Tag editor state ---
+  let tagDirty = false;
+  let editingTags = []; // working copy of tags (both system + custom)
+  const tagList = document.getElementById('tag-list');
+  const tagAddName = document.getElementById('tag-add-name');
+  const tagAddDesc = document.getElementById('tag-add-desc');
+  const btnTagAdd = document.getElementById('btn-tag-add');
+  const btnSaveTags = document.getElementById('btn-save-tags');
+  const btnDiscardTags = document.getElementById('btn-discard-tags');
+  const tagDirtyIndicator = document.getElementById('tag-dirty-indicator');
+
+  function renderTagList() {
+    tagList.innerHTML = '';
+    editingTags.forEach((tag, i) => {
+      const div = document.createElement('div');
+      div.className = 'tag-item ' + (tag.is_system ? 'tag-item-system' : 'tag-item-custom');
+      const icon = tag.is_system ? '<span class="tag-lock">&#128274;</span>' : '';
+      const typeLabel = tag.is_system ? '<span class="tag-type-label tag-type-system">system</span>' : '<span class="tag-type-label tag-type-custom">custom</span>';
+      const deleteBtn = tag.is_system
+        ? '<button class="tag-delete-btn" disabled title="System tags cannot be deleted">&#10005;</button>'
+        : `<button class="tag-delete-btn" data-index="${i}" title="Delete tag">&#10005;</button>`;
+      div.innerHTML = `${icon}<span class="tag-item-name">${tag.name}</span><span class="tag-item-desc">${tag.description || ''}</span>${typeLabel}${deleteBtn}`;
+      tagList.appendChild(div);
+    });
+    // Attach delete handlers
+    tagList.querySelectorAll('.tag-delete-btn:not(:disabled)').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const idx = parseInt(e.currentTarget.dataset.index);
+        editingTags.splice(idx, 1);
+        setTagDirty(true);
+        renderTagList();
+      });
+    });
+  }
+
+  function setTagDirty(dirty) {
+    tagDirty = dirty;
+    btnSaveTags.disabled = !dirty;
+    btnDiscardTags.disabled = !dirty;
+    tagDirtyIndicator.textContent = dirty ? 'unsaved changes' : '';
+  }
+
+  btnTagAdd.addEventListener('click', () => {
+    const name = tagAddName.value.trim();
+    const desc = tagAddDesc.value.trim();
+    if (!name) { tagAddName.focus(); return; }
+    // Check duplicate (case-insensitive)
+    if (editingTags.some((t) => t.name.toLowerCase() === name.toLowerCase())) {
+      alert('Tag "' + name + '" already exists.');
+      return;
+    }
+    editingTags.push({ name, description: desc, is_system: false });
+    tagAddName.value = '';
+    tagAddDesc.value = '';
+    setTagDirty(true);
+    renderTagList();
+  });
+
+  btnSaveTags.addEventListener('click', async () => {
+    const customTags = editingTags
+      .filter((t) => !t.is_system)
+      .map((t) => ({ name: t.name, description: t.description }));
+    const result = await MapoiApi.saveCustomTags(customTags);
+    if (result.error) {
+      alert('Failed to save tags: ' + result.error);
+      return;
+    }
+    setTagDirty(false);
+    await loadTagDefinitions();
+  });
+
+  btnDiscardTags.addEventListener('click', async () => {
+    if (tagDirty && !confirm('Discard unsaved tag changes?')) return;
+    setTagDirty(false);
+    await loadTagDefinitions();
+  });
+
   // --- Load maps list ---
   async function loadMaps() {
     const data = await MapoiApi.getMaps();
@@ -45,6 +122,9 @@
     const tags = data.tags || [];
     poiEditor.setTagDefinitions(tags);
     mapViewer.setTagDefinitions(tags);
+    // Update tag editor working copy
+    editingTags = tags.map((t) => ({ ...t }));
+    renderTagList();
   }
 
   // --- Load POIs ---
@@ -84,7 +164,7 @@
 
   // --- Map selector change ---
   mapSelect.addEventListener('change', () => {
-    if (poiEditor.dirty || routeEditor.dirty) {
+    if (poiEditor.dirty || routeEditor.dirty || tagDirty) {
       if (!confirm('Unsaved changes will be lost. Switch map?')) {
         mapSelect.value = currentMap;
         return;
@@ -215,9 +295,13 @@
   };
 
   // --- Section toggles ---
-  function setupSectionToggle(toggleBtnId, bodyEl) {
+  function setupSectionToggle(toggleBtnId, bodyEl, initialOpen = true) {
     const btn = document.getElementById(toggleBtnId);
-    let open = true;
+    let open = initialOpen;
+    if (!open) {
+      bodyEl.style.display = 'none';
+      btn.innerHTML = '&#9654;';
+    }
     btn.addEventListener('click', () => {
       open = !open;
       bodyEl.style.display = open ? '' : 'none';
@@ -226,6 +310,7 @@
   }
   setupSectionToggle('btn-route-toggle', document.getElementById('route-body'));
   setupSectionToggle('btn-poi-toggle', document.getElementById('poi-body'));
+  setupSectionToggle('btn-tag-toggle', document.getElementById('tag-body'), false);
 
   // --- All / None buttons ---
   // Routes

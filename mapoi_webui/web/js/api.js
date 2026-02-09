@@ -35,6 +35,15 @@ const MapoiApi = {
     return res.json();
   },
 
+  async saveCustomTags(customTags) {
+    const res = await fetch('/api/custom_tags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ custom_tags: customTags }),
+    });
+    return res.json();
+  },
+
   async getRoutes() {
     const res = await fetch('/api/routes');
     return res.json();

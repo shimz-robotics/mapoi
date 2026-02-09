@@ -115,6 +115,28 @@
         </div>
       </div>
 
+      <div id="tag-section" class="panel-section">
+        <div class="section-header">
+          <span>Tags</span>
+          <div class="section-header-actions">
+            <button id="btn-tag-toggle" class="btn-section-toggle" title="Toggle">&#9660;</button>
+          </div>
+        </div>
+        <div id="tag-body">
+          <div id="tag-list" class="section-body"></div>
+          <div id="tag-add-form" class="tag-add-form">
+            <input type="text" id="tag-add-name" placeholder="Tag name" />
+            <input type="text" id="tag-add-desc" placeholder="Description" />
+            <button id="btn-tag-add">+ Add</button>
+          </div>
+          <div id="tag-toolbar">
+            <button id="btn-save-tags" title="Save tag changes" disabled>Save</button>
+            <button id="btn-discard-tags" title="Discard tag changes" disabled>Discard</button>
+            <span id="tag-dirty-indicator"></span>
+          </div>
+        </div>
+      </div>
+
       <div id="route-section" class="panel-section">
         <div class="section-header">
           <span>Routes</span>

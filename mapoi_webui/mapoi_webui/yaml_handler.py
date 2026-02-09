@@ -86,3 +86,16 @@ def get_tag_definitions(system_tags_path, config_path):
             })
 
     return tags
+
+
+def save_custom_tags(config_path, custom_tags):
+    """Replace only the 'custom_tags' section in config_path, preserving other sections.
+
+    Args:
+        config_path: Path to mapoi_config.yaml
+        custom_tags: List of custom tag dicts [{'name': str, 'description': str}, ...]
+    """
+    config = load_config(config_path)
+    config['custom_tags'] = custom_tags
+    with open(config_path, 'w') as f:
+        yaml.dump(config, f, default_flow_style=None, allow_unicode=True, sort_keys=False)
