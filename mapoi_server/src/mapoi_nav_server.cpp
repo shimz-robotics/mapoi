@@ -2,7 +2,6 @@
 
 #include <chrono>
 #include <functional>
-#include <cmath>
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -27,42 +26,13 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   mapoi_route_sub_ = this->create_subscription<std_msgs::msg::String>(
     "mapoi_route", 1, std::bind(&MapoiNavServer::mapoi_route_cb, this, std::placeholders::_1));
 
-  // cancel subscriber
-  mapoi_cancel_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi_cancel", 1, std::bind(&MapoiNavServer::mapoi_cancel_cb, this, std::placeholders::_1));
-
+  // アクションクライアントの作成
+  // テンプレート引数にエイリアス FollowWaypoints を使用
   this->action_client_ = rclcpp_action::create_client<FollowWaypoints>(this, "follow_waypoints");
-  this->nav_to_pose_client_ = rclcpp_action::create_client<NavigateToPose>(this, "navigate_to_pose");
 
-  // Nav status publisher
-  nav_status_pub_ = this->create_publisher<std_msgs::msg::String>("mapoi_nav_status", 10);
-
+  // サービスクライアントの作成
   this->pois_info_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
   this->route_client_ = this->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
-
-  // --- POI radius event detection ---
-  this->declare_parameter<double>("radius_check_hz", 5.0);
-  this->declare_parameter<double>("hysteresis_exit_multiplier", 1.15);
-  this->declare_parameter<std::string>("map_frame", "map");
-  this->declare_parameter<std::string>("base_frame", "base_link");
-
-  tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
-  tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
-
-  poi_event_pub_ = this->create_publisher<mapoi_interfaces::msg::PoiEvent>("mapoi_poi_events", 10);
-
-  config_path_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi_config_path", rclcpp::QoS(1).transient_local(),
-    std::bind(&MapoiNavServer::on_config_path_changed, this, _1));
-
-  tag_defs_client_ = this->create_client<mapoi_interfaces::srv::GetTagDefinitions>("get_tag_definitions");
-  fetch_system_tags();
-
-  double hz = this->get_parameter("radius_check_hz").as_double();
-  auto period = std::chrono::duration<double>(1.0 / hz);
-  radius_check_timer_ = this->create_wall_timer(
-    std::chrono::duration_cast<std::chrono::nanoseconds>(period),
-    std::bind(&MapoiNavServer::radius_check_callback, this));
 
   RCLCPP_INFO(this->get_logger(), "MapoiNavServer initialized.");
 }
@@ -85,7 +55,7 @@ void MapoiNavServer::mapoi_initialpose_poi_cb(const std_msgs::msg::String::Share
   get_pois_list();
   RCLCPP_INFO(this->get_logger(), "Received POI name for initialpose: %s", msg->data.c_str());
 
-  std::lock_guard<std::mutex> lock(data_mutex_);
+  // Find the POI in the pois_list_
   for (const auto &poi : pois_list_) {
     if (poi.name == msg->data) {
       geometry_msgs::msg::PoseWithCovarianceStamped init_pose;
@@ -108,7 +78,7 @@ void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedP
   get_pois_list();
   RCLCPP_INFO(this->get_logger(), "Received POI name for goal pose: %s", msg->data.c_str());
 
-  std::lock_guard<std::mutex> lock(data_mutex_);
+  // Find the POI in the pois_list_
   for (const auto &poi : pois_list_) {
     if (poi.name == msg->data) {
       geometry_msgs::msg::PoseStamped goal_pose;
@@ -141,12 +111,8 @@ void MapoiNavServer::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv:
     return;
   }
 
-  {
-    std::lock_guard<std::mutex> lock(data_mutex_);
-    pois_list_ = result->pois_list;
-  }
-  RCLCPP_INFO(this->get_logger(), "Received %zu Tagged POIs.", pois_list_.size());
-  rebuild_event_pois();
+  pois_list_ = result->pois_list;
+  RCLCPP_INFO(this->get_logger(), "Received %ld Tagged POIs.", pois_list_.size());
 }
 
 void MapoiNavServer::on_route_received(rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future)
@@ -158,7 +124,7 @@ void MapoiNavServer::on_route_received(rclcpp::Client<mapoi_interfaces::srv::Get
   }
 
   const auto & route_poi = result->pois_list;
-  RCLCPP_INFO(this->get_logger(), "Received Route with %zu waypoints.", route_poi.size());
+  RCLCPP_INFO(this->get_logger(), "Received Route with %ld waypoints.", route_poi.size());
 
   std::vector<geometry_msgs::msg::PoseStamped> waypoints;
   for (size_t i = 0; i < route_poi.size(); ++i) {
@@ -182,19 +148,19 @@ void MapoiNavServer::on_route_received(rclcpp::Client<mapoi_interfaces::srv::Get
     }
     RCLCPP_INFO(this->get_logger(), "Action server not available, waiting again...");
   }
-  RCLCPP_INFO(this->get_logger(), "Sending goal with %zu waypoints.", waypoints.size());
+  RCLCPP_INFO(this->get_logger(), "Sending goal with %ld waypoints.", waypoints.size());
 
   auto goal_msg = FollowWaypoints::Goal();
   goal_msg.poses = waypoints;
 
   auto send_goal_options = rclcpp_action::Client<FollowWaypoints>::SendGoalOptions();
-
+  
   send_goal_options.goal_response_callback =
     std::bind(&MapoiNavServer::goal_response_callback, this, _1);
-
+  
   send_goal_options.feedback_callback =
     std::bind(&MapoiNavServer::feedback_callback, this, _1, _2);
-
+  
   send_goal_options.result_callback =
     std::bind(&MapoiNavServer::result_callback, this, _1);
 
@@ -206,8 +172,6 @@ void MapoiNavServer::goal_response_callback(const GoalHandleFollowWaypoints::Sha
   if (!goal_handle) {
     RCLCPP_ERROR(this->get_logger(), "Goal was rejected by server");
   } else {
-    current_goal_handle_ = goal_handle;
-    publish_nav_status("navigating");
     RCLCPP_INFO(this->get_logger(), "Goal accepted by server, waiting for result");
   }
 }
@@ -216,184 +180,25 @@ void MapoiNavServer::feedback_callback(
   GoalHandleFollowWaypoints::SharedPtr,
   const std::shared_ptr<const FollowWaypoints::Feedback> feedback)
 {
-  (void)feedback;
+  // RCLCPP_INFO(this->get_logger(), "Current Waypoint Index: %u", feedback->current_waypoint);
 }
 
 void MapoiNavServer::result_callback(const GoalHandleFollowWaypoints::WrappedResult & result)
 {
-  current_goal_handle_.reset();
   switch (result.code) {
     case rclcpp_action::ResultCode::SUCCEEDED:
-      publish_nav_status("succeeded");
-      RCLCPP_INFO(this->get_logger(), "Navigation SUCCEEDED!");
+      RCLCPP_INFO(this->get_logger(), "✅ Navigation SUCCEEDED!");
       break;
     case rclcpp_action::ResultCode::ABORTED:
-      publish_nav_status("aborted");
-      RCLCPP_ERROR(this->get_logger(), "Navigation ABORTED");
+      RCLCPP_ERROR(this->get_logger(), "❌ Navigation ABORTED");
       break;
     case rclcpp_action::ResultCode::CANCELED:
-      publish_nav_status("canceled");
-      RCLCPP_WARN(this->get_logger(), "Navigation CANCELED");
+      RCLCPP_WARN(this->get_logger(), "⚠️ Navigation CANCELED");
       break;
     default:
-      RCLCPP_ERROR(this->get_logger(), "Unknown result code");
+      RCLCPP_ERROR(this->get_logger(), "❓ Unknown result code");
       break;
   }
-}
-
-void MapoiNavServer::publish_nav_status(const std::string & status)
-{
-  std_msgs::msg::String msg;
-  msg.data = status;
-  nav_status_pub_->publish(msg);
-}
-
-void MapoiNavServer::mapoi_cancel_cb(const std_msgs::msg::String::SharedPtr msg)
-{
-  (void)msg;
-  bool canceled = false;
-  if (current_goal_handle_) {
-    RCLCPP_INFO(this->get_logger(), "Canceling FollowWaypoints goal...");
-    action_client_->async_cancel_goal(current_goal_handle_);
-    canceled = true;
-  }
-  if (nav_to_pose_client_->action_server_is_ready()) {
-    RCLCPP_INFO(this->get_logger(), "Canceling all NavigateToPose goals...");
-    nav_to_pose_client_->async_cancel_all_goals();
-    canceled = true;
-  }
-  if (!canceled) {
-    RCLCPP_WARN(this->get_logger(), "No active navigation goal to cancel.");
-  }
-}
-
-// --- POI radius event detection methods ---
-
-void MapoiNavServer::fetch_system_tags()
-{
-  if (!tag_defs_client_->service_is_ready()) {
-    RCLCPP_INFO(this->get_logger(), "get_tag_definitions service not available yet, waiting...");
-    return;  // radius_check_callback will retry via guard check
-  }
-  auto request = std::make_shared<mapoi_interfaces::srv::GetTagDefinitions::Request>();
-  tag_defs_client_->async_send_request(
-    request, std::bind(&MapoiNavServer::on_system_tags_received, this, _1));
-}
-
-void MapoiNavServer::on_system_tags_received(
-  rclcpp::Client<mapoi_interfaces::srv::GetTagDefinitions>::SharedFuture future)
-{
-  auto result = future.get();
-  if (!result) {
-    RCLCPP_ERROR(this->get_logger(), "Failed to get tag definitions.");
-    return;
-  }
-  system_tags_.clear();
-  for (const auto & def : result->definitions) {
-    if (def.is_system) {
-      system_tags_.insert(def.name);
-    }
-  }
-  system_tags_loaded_ = true;
-  RCLCPP_INFO(this->get_logger(), "Loaded %zu system tags for POI event filtering.", system_tags_.size());
-  rebuild_event_pois();
-}
-
-void MapoiNavServer::on_config_path_changed(const std_msgs::msg::String::SharedPtr msg)
-{
-  if (msg->data == last_config_path_) {
-    return;
-  }
-  last_config_path_ = msg->data;
-  RCLCPP_INFO(this->get_logger(), "Map config changed: %s — refreshing POI list.", msg->data.c_str());
-  {
-    std::lock_guard<std::mutex> lock(data_mutex_);
-    poi_inside_state_.clear();
-    event_pois_.clear();
-  }
-  get_pois_list();
-}
-
-void MapoiNavServer::rebuild_event_pois()
-{
-  if (!system_tags_loaded_) {
-    return;
-  }
-  std::lock_guard<std::mutex> lock(data_mutex_);
-  event_pois_.clear();
-  for (const auto & poi : pois_list_) {
-    bool has_user_tag = false;
-    for (const auto & tag : poi.tags) {
-      if (system_tags_.find(tag) == system_tags_.end()) {
-        has_user_tag = true;
-        break;
-      }
-    }
-    if (has_user_tag) {
-      event_pois_.push_back(poi);
-    }
-  }
-  RCLCPP_INFO(this->get_logger(), "Monitoring %zu POIs with user tags for radius events.", event_pois_.size());
-}
-
-void MapoiNavServer::radius_check_callback()
-{
-  if (!system_tags_loaded_) {
-    fetch_system_tags();
-    return;
-  }
-
-  std::lock_guard<std::mutex> lock(data_mutex_);
-  if (event_pois_.empty()) {
-    return;
-  }
-
-  std::string map_frame = this->get_parameter("map_frame").as_string();
-  std::string base_frame = this->get_parameter("base_frame").as_string();
-
-  geometry_msgs::msg::TransformStamped transform;
-  try {
-    transform = tf_buffer_->lookupTransform(map_frame, base_frame, tf2::TimePointZero);
-  } catch (const tf2::TransformException & ex) {
-    // TF not yet available — silently skip
-    return;
-  }
-
-  double rx = transform.transform.translation.x;
-  double ry = transform.transform.translation.y;
-  double hysteresis = this->get_parameter("hysteresis_exit_multiplier").as_double();
-
-  for (const auto & poi : event_pois_) {
-    double dist = distance_2d(poi.pose, rx, ry);
-    bool was_inside = poi_inside_state_[poi.name];
-
-    if (!was_inside && dist <= poi.radius) {
-      // ENTER event
-      poi_inside_state_[poi.name] = true;
-      mapoi_interfaces::msg::PoiEvent event;
-      event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_ENTER;
-      event.poi = poi;
-      event.stamp = this->now();
-      poi_event_pub_->publish(event);
-      RCLCPP_INFO(this->get_logger(), "POI ENTER: %s (dist=%.2f, radius=%.2f)", poi.name.c_str(), dist, poi.radius);
-    } else if (was_inside && dist > poi.radius * hysteresis) {
-      // EXIT event
-      poi_inside_state_[poi.name] = false;
-      mapoi_interfaces::msg::PoiEvent event;
-      event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_EXIT;
-      event.poi = poi;
-      event.stamp = this->now();
-      poi_event_pub_->publish(event);
-      RCLCPP_INFO(this->get_logger(), "POI EXIT: %s (dist=%.2f, radius=%.2f)", poi.name.c_str(), dist, poi.radius);
-    }
-  }
-}
-
-double MapoiNavServer::distance_2d(const geometry_msgs::msg::Pose & poi_pose, double rx, double ry)
-{
-  double dx = poi_pose.position.x - rx;
-  double dy = poi_pose.position.y - ry;
-  return std::sqrt(dx * dx + dy * dy);
 }
 
 int main(int argc, char ** argv)

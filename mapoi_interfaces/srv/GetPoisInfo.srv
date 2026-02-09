@@ -1,3 +1,2 @@
-# Retrieve all POIs for the currently active map
 ---
-mapoi_interfaces/PointOfInterest[] pois_list  # All POIs in the current map
+mapoi_interfaces/PointOfInterest[] pois_list
