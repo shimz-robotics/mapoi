@@ -15,7 +15,7 @@ import tf2_ros
 
 from flask import Flask, jsonify, request, send_from_directory, Response
 
-from mapoi_webui.yaml_handler import load_config, save_pois, save_routes, get_pois, get_routes, get_tag_definitions
+from mapoi_webui.yaml_handler import load_config, save_pois, save_routes, save_custom_tags, get_pois, get_routes, get_tag_definitions
 from mapoi_webui.map_image import get_map_metadata, get_map_png
 
 
@@ -267,6 +267,22 @@ class MapoiWebNode(Node):
             config_path = node.get_config_path()
             tags = get_tag_definitions(node.system_tags_path_, config_path)
             return jsonify({'tags': tags})
+
+        @app.route('/api/custom_tags', methods=['POST'])
+        def api_save_custom_tags():
+            data = request.get_json()
+            if data is None or 'custom_tags' not in data:
+                return jsonify({'error': 'Invalid request body'}), 400
+            config_path = node.get_config_path()
+            if not os.path.exists(config_path):
+                return jsonify({'error': 'Config not found'}), 404
+            try:
+                save_custom_tags(config_path, data['custom_tags'])
+                node.call_reload_map_info()
+                return jsonify({'success': True})
+            except Exception as e:
+                node.get_logger().error(f'Failed to save custom tags: {e}')
+                return jsonify({'error': str(e)}), 500
 
         @app.route('/api/routes')
         def api_get_routes():
