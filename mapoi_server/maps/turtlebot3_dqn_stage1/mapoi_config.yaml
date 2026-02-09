@@ -1,0 +1,39 @@
+route:
+  - name: route_1
+    waypoints: [meeting_room_a, conference_room, meeting_room_a]
+  - name: route_2
+    waypoints: [elevator_hall, corridor_a, conference_room]
+
+map:
+  - node_name: map_server
+    map_file: turtlebot3.yaml
+  # - node_name: map_server_localization
+  #   map_file: turtlebot3_amcl.yaml
+
+poi:
+  - name: elevator_hall
+    # pose: {x: 0.0, y: 0.0, yaw: 0.0}
+    pose: {x: -2.0, y: -0.5, yaw: 0.0}
+    radius: 0.5
+    tags: [goal, initial_pose]
+    description: エレベーターホール
+  - name: meeting_room_a
+    pose: {x: -0.5, y: -0.5, yaw: 0.0}
+    radius: 0.5
+    tags: [goal]
+    description: 会議室A
+  - name: conference_room
+    pose: {x: 0.5, y: -0.5, yaw: 1.57}
+    radius: 0.5
+    tags: [goal]
+    description: 大会議室
+  - name: corridor_a
+    pose: {x: 0.5, y: 0.5, yaw: -3.14}
+    radius: 0.5
+    tags: [goal]
+    description: 廊下
+  - name: model_exhibit
+    pose: {x: -0.5, y: 0.5, yaw: -1.57}
+    radius: 0.5
+    tags: [goal, audio_info]
+    description: 模型展示
