@@ -82,44 +82,99 @@ void MapoiNavServer::get_pois_list(){
 
 void MapoiNavServer::mapoi_initialpose_poi_cb(const std_msgs::msg::String::SharedPtr msg)
 {
-  get_pois_list();
-  RCLCPP_INFO(this->get_logger(), "Received POI name for initialpose: %s", msg->data.c_str());
+  std::string poi_name = msg->data;
+  RCLCPP_INFO(this->get_logger(), "Received POI name for initialpose: %s", poi_name.c_str());
 
-  std::lock_guard<std::mutex> lock(data_mutex_);
-  for (const auto &poi : pois_list_) {
-    if (poi.name == msg->data) {
-      geometry_msgs::msg::PoseWithCovarianceStamped init_pose;
-      init_pose.header.frame_id = "map";
-      init_pose.pose.pose = poi.pose;
-      init_pose.pose.covariance[0] = 0.25;
-      init_pose.pose.covariance[7] = 0.25;
-      init_pose.pose.covariance[35] = 0.06853891945200942;
-
-      nav2_initialpose_pub_->publish(init_pose);
-      RCLCPP_INFO(this->get_logger(), "Published initial pose from POI: %s", msg->data.c_str());
-      return;
-    }
+  // Fetch POI list asynchronously, then publish initialpose in the callback
+  if (!this->pois_info_client_->wait_for_service(2s)) {
+    RCLCPP_ERROR(this->get_logger(), "get_pois_info service not available");
+    return;
   }
-  RCLCPP_WARN(this->get_logger(), "POI named '%s' not found!", msg->data.c_str());
+  auto request = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
+  pois_info_client_->async_send_request(
+    request, [this, poi_name](rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future) {
+      auto result = future.get();
+      if (!result) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to get POI info for initialpose.");
+        return;
+      }
+      {
+        std::lock_guard<std::mutex> lock(data_mutex_);
+        pois_list_ = result->pois_list;
+      }
+      rebuild_event_pois();
+
+      for (const auto &poi : result->pois_list) {
+        if (poi.name == poi_name) {
+          geometry_msgs::msg::PoseWithCovarianceStamped init_pose;
+          init_pose.header.frame_id = "map";
+          init_pose.pose.pose = poi.pose;
+          init_pose.pose.covariance[0] = 0.25;
+          init_pose.pose.covariance[7] = 0.25;
+          init_pose.pose.covariance[35] = 0.06853891945200942;
+          nav2_initialpose_pub_->publish(init_pose);
+          RCLCPP_INFO(this->get_logger(), "Published initial pose from POI: %s", poi_name.c_str());
+          return;
+        }
+      }
+      RCLCPP_WARN(this->get_logger(), "POI named '%s' not found!", poi_name.c_str());
+    });
 }
 
 void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedPtr msg)
 {
-  get_pois_list();
-  RCLCPP_INFO(this->get_logger(), "Received POI name for goal pose: %s", msg->data.c_str());
+  std::string poi_name = msg->data;
+  RCLCPP_INFO(this->get_logger(), "Received POI name for goal pose: %s", poi_name.c_str());
 
-  std::lock_guard<std::mutex> lock(data_mutex_);
-  for (const auto &poi : pois_list_) {
-    if (poi.name == msg->data) {
-      geometry_msgs::msg::PoseStamped goal_pose;
-      goal_pose.header.frame_id = "map";
-      goal_pose.pose = poi.pose;
-      nav2_goal_pose_pub_->publish(goal_pose);
-      RCLCPP_INFO(this->get_logger(), "Published goal pose from POI: %s", msg->data.c_str());
-      return;
-    }
+  // Fetch POI list asynchronously, then navigate in the callback
+  if (!this->pois_info_client_->wait_for_service(2s)) {
+    RCLCPP_ERROR(this->get_logger(), "get_pois_info service not available");
+    return;
   }
-  RCLCPP_WARN(this->get_logger(), "POI named '%s' not found!", msg->data.c_str());
+  auto request = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
+  pois_info_client_->async_send_request(
+    request, [this, poi_name](rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future) {
+      auto result = future.get();
+      if (!result) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to get POI info for goal navigation.");
+        return;
+      }
+      {
+        std::lock_guard<std::mutex> lock(data_mutex_);
+        pois_list_ = result->pois_list;
+      }
+      rebuild_event_pois();
+
+      for (const auto &poi : result->pois_list) {
+        if (poi.name == poi_name) {
+          geometry_msgs::msg::PoseStamped goal_pose;
+          goal_pose.header.frame_id = "map";
+          goal_pose.header.stamp = this->now();
+          goal_pose.pose = poi.pose;
+
+          // Use NavigateToPose action client for result feedback
+          if (!this->nav_to_pose_client_->wait_for_action_server(std::chrono::seconds(2))) {
+            RCLCPP_WARN(this->get_logger(), "NavigateToPose action not available, falling back to topic");
+            nav2_goal_pose_pub_->publish(goal_pose);
+            return;
+          }
+
+          auto goal_msg = NavigateToPose::Goal();
+          goal_msg.pose = goal_pose;
+
+          auto send_goal_options = rclcpp_action::Client<NavigateToPose>::SendGoalOptions();
+          send_goal_options.goal_response_callback =
+            std::bind(&MapoiNavServer::ntp_goal_response_callback, this, _1);
+          send_goal_options.result_callback =
+            std::bind(&MapoiNavServer::ntp_result_callback, this, _1);
+
+          this->nav_to_pose_client_->async_send_goal(goal_msg, send_goal_options);
+          RCLCPP_INFO(this->get_logger(), "Sent NavigateToPose goal from POI: %s", poi_name.c_str());
+          return;
+        }
+      }
+      RCLCPP_WARN(this->get_logger(), "POI named '%s' not found!", poi_name.c_str());
+    });
 }
 
 void MapoiNavServer::mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg)
@@ -241,6 +296,39 @@ void MapoiNavServer::result_callback(const GoalHandleFollowWaypoints::WrappedRes
   }
 }
 
+void MapoiNavServer::ntp_goal_response_callback(const GoalHandleNavigateToPose::SharedPtr & goal_handle)
+{
+  if (!goal_handle) {
+    RCLCPP_ERROR(this->get_logger(), "NavigateToPose goal was rejected by server");
+  } else {
+    current_ntp_goal_handle_ = goal_handle;
+    publish_nav_status("navigating");
+    RCLCPP_INFO(this->get_logger(), "NavigateToPose goal accepted, waiting for result");
+  }
+}
+
+void MapoiNavServer::ntp_result_callback(const GoalHandleNavigateToPose::WrappedResult & result)
+{
+  current_ntp_goal_handle_.reset();
+  switch (result.code) {
+    case rclcpp_action::ResultCode::SUCCEEDED:
+      publish_nav_status("succeeded");
+      RCLCPP_INFO(this->get_logger(), "NavigateToPose SUCCEEDED!");
+      break;
+    case rclcpp_action::ResultCode::ABORTED:
+      publish_nav_status("aborted");
+      RCLCPP_ERROR(this->get_logger(), "NavigateToPose ABORTED");
+      break;
+    case rclcpp_action::ResultCode::CANCELED:
+      publish_nav_status("canceled");
+      RCLCPP_WARN(this->get_logger(), "NavigateToPose CANCELED");
+      break;
+    default:
+      RCLCPP_ERROR(this->get_logger(), "NavigateToPose unknown result code");
+      break;
+  }
+}
+
 void MapoiNavServer::publish_nav_status(const std::string & status)
 {
   std_msgs::msg::String msg;
@@ -257,9 +345,9 @@ void MapoiNavServer::mapoi_cancel_cb(const std_msgs::msg::String::SharedPtr msg)
     action_client_->async_cancel_goal(current_goal_handle_);
     canceled = true;
   }
-  if (nav_to_pose_client_->action_server_is_ready()) {
-    RCLCPP_INFO(this->get_logger(), "Canceling all NavigateToPose goals...");
-    nav_to_pose_client_->async_cancel_all_goals();
+  if (current_ntp_goal_handle_) {
+    RCLCPP_INFO(this->get_logger(), "Canceling NavigateToPose goal...");
+    nav_to_pose_client_->async_cancel_goal(current_ntp_goal_handle_);
     canceled = true;
   }
   if (!canceled) {

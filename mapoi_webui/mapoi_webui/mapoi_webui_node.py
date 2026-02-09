@@ -98,7 +98,10 @@ class MapoiWebNode(Node):
         # Expected format: "status" or "status:target"
         parts = msg.data.split(':', 1)
         self.nav_status_ = parts[0]
-        self.nav_status_target_ = parts[1] if len(parts) > 1 else ''
+        # Only overwrite target if explicitly provided; keep previous target
+        # so that succeeded/aborted/canceled still show the target name.
+        if len(parts) > 1:
+            self.nav_status_target_ = parts[1]
 
     def update_robot_pose(self):
         """Lookup TF map->base_link and cache robot pose."""
