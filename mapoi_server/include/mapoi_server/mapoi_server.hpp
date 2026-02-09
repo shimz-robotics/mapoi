@@ -12,17 +12,15 @@
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <nav2_msgs/srv/load_map.hpp>
-#include <std_srvs/srv/trigger.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 
 #include "mapoi_interfaces/srv/get_pois_info.hpp"
 #include "mapoi_interfaces/srv/get_route_pois.hpp"
 #include "mapoi_interfaces/msg/point_of_interest.hpp"
 #include "mapoi_interfaces/srv/get_maps_info.hpp"
-#include "mapoi_interfaces/srv/get_routes_info.hpp"
 #include "mapoi_interfaces/srv/switch_map.hpp"
-#include "mapoi_interfaces/srv/get_tag_definitions.hpp"
-#include "mapoi_interfaces/msg/tag_definition.hpp"
 
+#include "mapoi_interfaces/action/follow_poi_list.hpp"
 
 class MapoiServer : public rclcpp::Node
 {
@@ -43,26 +41,15 @@ private:
 
   // methods
   void load_mapoi_config_file();
-  void load_tag_definitions();
   YAML::Node pois_list_;
   YAML::Node routes_list_;
   YAML::Node nav2_map_list_;
-
-  // tag definitions (system tags loaded once, user tags merged on config load)
-  std::vector<mapoi_interfaces::msg::TagDefinition> system_tags_;
-  std::vector<mapoi_interfaces::msg::TagDefinition> tag_definitions_;
-
-  // POI YAML conversion helper
-  mapoi_interfaces::msg::PointOfInterest yaml_to_poi_msg(const YAML::Node & poi);
 
   // services
   rclcpp::Service<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr get_pois_info_service_;
   rclcpp::Service<mapoi_interfaces::srv::GetRoutePois>::SharedPtr get_route_pois_service_;
   rclcpp::Service<mapoi_interfaces::srv::GetMapsInfo>::SharedPtr get_maps_info_service_;
-  rclcpp::Service<mapoi_interfaces::srv::GetRoutesInfo>::SharedPtr get_routes_info_service_;
   rclcpp::Service<mapoi_interfaces::srv::SwitchMap>::SharedPtr switch_map_service_;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reload_map_info_service_;
-  rclcpp::Service<mapoi_interfaces::srv::GetTagDefinitions>::SharedPtr get_tag_definitions_srv_;
 
   // callbacks
   void get_pois_info_service(
@@ -74,18 +61,9 @@ private:
   void get_maps_info_service(
     const std::shared_ptr<mapoi_interfaces::srv::GetMapsInfo::Request> request,
     std::shared_ptr<mapoi_interfaces::srv::GetMapsInfo::Response> response);
-  void get_routes_info_service(
-    const std::shared_ptr<mapoi_interfaces::srv::GetRoutesInfo::Request> request,
-    std::shared_ptr<mapoi_interfaces::srv::GetRoutesInfo::Response> response);
   void switch_map_service(
     const std::shared_ptr<mapoi_interfaces::srv::SwitchMap::Request> request,
     std::shared_ptr<mapoi_interfaces::srv::SwitchMap::Response> response);
-  void reload_map_info_service(
-    const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
-    std::shared_ptr<std_srvs::srv::Trigger::Response> response);
-  void get_tag_definitions_service(
-    const std::shared_ptr<mapoi_interfaces::srv::GetTagDefinitions::Request> request,
-    std::shared_ptr<mapoi_interfaces::srv::GetTagDefinitions::Response> response);
 
   // helper functions
   bool send_load_map_request(
@@ -93,4 +71,6 @@ private:
     const std::string& server_name,
     const std::string& map_file);
 
+  // publisher for initialpose
+  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr nav2_initialpose_pub_;
 };
