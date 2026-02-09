@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mapoi Web UI</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header>
+    <h1>mapoi Web UI</h1>
+    <div id="map-selector">
+      <label for="map-select">Map:</label>
+      <select id="map-select"></select>
+    </div>
+  </header>
+
+  <main>
+    <div id="map-container">
+      <div id="map"></div>
+      <div id="map-status"></div>
+    </div>
+
+    <div id="poi-panel">
+      <div id="nav-section" class="panel-section">
+        <div class="section-header">
+          <span>Navigation</span>
+          <div class="section-header-actions">
+            <button id="btn-nav-toggle" class="btn-section-toggle" title="Toggle">&#9660;</button>
+          </div>
+        </div>
+        <div id="nav-body" class="nav-body">
+          <div class="nav-status">
+            <span id="nav-status-dot" class="nav-status-dot nav-status-idle"></span>
+            <span id="nav-status-text">Idle</span>
+          </div>
+          <div class="nav-control-group">
+            <div class="nav-control-row">
+              <select id="nav-goal-select" class="nav-select">
+                <option value="">-- Select POI --</option>
+              </select>
+              <button id="btn-nav-go" class="nav-btn-go">Go</button>
+            </div>
+            <div class="nav-control-row">
+              <select id="nav-route-select" class="nav-select">
+                <option value="">-- Select Route --</option>
+              </select>
+              <button id="btn-nav-run" class="nav-btn-run">Run</button>
+            </div>
+          </div>
+          <button id="btn-nav-stop" class="nav-btn-stop">Stop Navigation</button>
+          <div class="nav-control-label">Initial Pose</div>
+          <div class="nav-control-row">
+            <select id="nav-initialpose-select" class="nav-select">
+              <option value="">-- Select POI --</option>
+            </select>
+            <button id="btn-nav-setpose" class="nav-btn-initialpose">Set Pose</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="poi-section" class="panel-section">
+        <div class="section-header">
+          <span>POIs</span>
+          <div class="section-header-actions">
+            <button id="btn-poi-all" class="btn-check-all" title="Check all">All</button>
+            <button id="btn-poi-none" class="btn-check-all" title="Uncheck all">None</button>
+            <button id="btn-poi-toggle" class="btn-section-toggle" title="Toggle">&#9660;</button>
+          </div>
+        </div>
+        <div id="poi-body">
+          <div id="poi-list" class="section-body"></div>
+          <div id="poi-edit-form" class="hidden">
+            <h3 id="form-title">Edit POI</h3>
+            <div class="form-row">
+              <label for="poi-name">Name</label>
+              <input type="text" id="poi-name" />
+            </div>
+            <div class="form-row">
+              <label for="poi-x">X</label>
+              <input type="number" id="poi-x" step="0.01" />
+            </div>
+            <div class="form-row">
+              <label for="poi-y">Y</label>
+              <input type="number" id="poi-y" step="0.01" />
+            </div>
+            <div class="form-row">
+              <label for="poi-yaw">Yaw</label>
+              <input type="number" id="poi-yaw" step="0.01" />
+            </div>
+            <div class="form-row">
+              <label for="poi-radius">Radius</label>
+              <input type="number" id="poi-radius" step="0.1" min="0" />
+            </div>
+            <div class="form-row">
+              <label for="poi-tags">Tags</label>
+              <input type="text" id="poi-tags" placeholder="goal, waypoint" />
+            </div>
+            <div class="form-row">
+              <label for="poi-description">Description</label>
+              <input type="text" id="poi-description" />
+            </div>
+            <div class="form-actions">
+              <button id="btn-form-ok">OK</button>
+              <button id="btn-form-cancel">Cancel</button>
+            </div>
+          </div>
+          <div id="poi-toolbar">
+            <button id="btn-add-poi" title="Add POI">+ Add POI</button>
+            <button id="btn-save" title="Save changes" disabled>Save</button>
+            <button id="btn-discard" title="Discard changes" disabled>Discard</button>
+            <span id="dirty-indicator"></span>
+          </div>
+        </div>
+      </div>
+
+      <div id="route-section" class="panel-section">
+        <div class="section-header">
+          <span>Routes</span>
+          <div class="section-header-actions">
+            <button id="btn-route-all" class="btn-check-all" title="Check all">All</button>
+            <button id="btn-route-none" class="btn-check-all" title="Uncheck all">None</button>
+            <button id="btn-route-toggle" class="btn-section-toggle" title="Toggle">&#9660;</button>
+          </div>
+        </div>
+        <div id="route-body">
+          <div id="route-list" class="section-body"></div>
+          <div id="route-edit-form" class="hidden">
+            <h3 id="route-form-title">Edit Route</h3>
+            <div class="form-row">
+              <label for="route-name">Name</label>
+              <input type="text" id="route-name" />
+            </div>
+            <div class="route-wp-section">
+              <label>Waypoints</label>
+              <div id="route-waypoint-list" class="route-waypoint-list"></div>
+              <div class="route-wp-add-row">
+                <select id="route-wp-select" class="route-wp-select">
+                  <option value="">-- Select POI --</option>
+                </select>
+                <button type="button" id="btn-add-waypoint" class="btn-add-wp">+</button>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button id="btn-route-form-ok">OK</button>
+              <button id="btn-route-form-cancel">Cancel</button>
+            </div>
+          </div>
+          <div id="route-toolbar">
+            <button id="btn-add-route" title="Add Route">+ Add Route</button>
+            <button id="btn-save-routes" title="Save route changes" disabled>Save</button>
+            <button id="btn-discard-routes" title="Discard route changes" disabled>Discard</button>
+            <span id="route-dirty-indicator"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/map-viewer.js"></script>
+  <script src="/js/poi-editor.js"></script>
+  <script src="/js/route-editor.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

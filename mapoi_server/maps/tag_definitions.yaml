@@ -1,0 +1,10 @@
+# System tags: システムが動作に使用。削除・リネーム非推奨。
+# User tags は各 mapoi_config.yaml の custom_tags セクションで定義してください。
+
+tags:
+  - name: goal
+    description: "Navigation goal destination"
+  - name: waypoint
+    description: "Intermediate navigation waypoint"
+  - name: origin
+    description: "Map origin reference point"

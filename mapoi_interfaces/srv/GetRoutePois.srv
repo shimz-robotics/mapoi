@@ -1,3 +1,4 @@
-string route_name
+# Retrieve the ordered list of POIs that make up a named route
+string route_name  # Name of the route to look up
 ---
-mapoi_interfaces/PointOfInterest[] pois_list
+mapoi_interfaces/PointOfInterest[] pois_list  # Ordered waypoints in the route
