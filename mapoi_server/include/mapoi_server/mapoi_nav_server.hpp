@@ -32,6 +32,7 @@ public:
   using FollowWaypoints = nav2_msgs::action::FollowWaypoints;
   using GoalHandleFollowWaypoints = rclcpp_action::ClientGoalHandle<FollowWaypoints>;
   using NavigateToPose = nav2_msgs::action::NavigateToPose;
+  using GoalHandleNavigateToPose = rclcpp_action::ClientGoalHandle<NavigateToPose>;
 
   explicit MapoiNavServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
@@ -57,15 +58,20 @@ private:
 
   void get_pois_list();
 
-  // Action Callbacks
+  // Action Callbacks (FollowWaypoints — routes)
   void goal_response_callback(const GoalHandleFollowWaypoints::SharedPtr & goal_handle);
   void feedback_callback(GoalHandleFollowWaypoints::SharedPtr, const std::shared_ptr<const FollowWaypoints::Feedback> feedback);
   void result_callback(const GoalHandleFollowWaypoints::WrappedResult & result);
+
+  // Action Callbacks (NavigateToPose — single POI)
+  void ntp_goal_response_callback(const GoalHandleNavigateToPose::SharedPtr & goal_handle);
+  void ntp_result_callback(const GoalHandleNavigateToPose::WrappedResult & result);
 
   // Clients
   rclcpp_action::Client<FollowWaypoints>::SharedPtr action_client_;
   rclcpp_action::Client<NavigateToPose>::SharedPtr nav_to_pose_client_;
   GoalHandleFollowWaypoints::SharedPtr current_goal_handle_;
+  GoalHandleNavigateToPose::SharedPtr current_ntp_goal_handle_;
   rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr pois_info_client_;
   rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedPtr route_client_;
 
