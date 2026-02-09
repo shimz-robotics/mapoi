@@ -26,6 +26,16 @@
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
      <item>
+      <widget class="QComboBox" name="MapListcomboBox">
+       <property name="currentText">
+        <string/>
+       </property>
+       <property name="currentIndex">
+        <number>-1</number>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QComboBox" name="MapComboBox">
        <property name="layoutDirection">
         <enum>Qt::LeftToRight</enum>
@@ -35,16 +45,6 @@
          <string>map name</string>
         </property>
        </item>
-      </widget>
-     </item>
-     <item>
-      <widget class="QComboBox" name="TagFilterComboBox">
-       <property name="currentText">
-        <string/>
-       </property>
-       <property name="currentIndex">
-        <number>-1</number>
-       </property>
       </widget>
      </item>
      <item>
@@ -62,7 +62,7 @@
       <number>2</number>
      </property>
      <property name="columnCount">
-      <number>5</number>
+      <number>6</number>
      </property>
      <row>
       <property name="text">
@@ -76,12 +76,17 @@
      </row>
      <column>
       <property name="text">
+       <string>id</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
        <string>name</string>
       </property>
      </column>
      <column>
       <property name="text">
-       <string>description</string>
+       <string>jp</string>
       </property>
      </column>
      <column>
@@ -101,50 +106,60 @@
      </column>
      <item row="0" column="0">
       <property name="text">
-       <string>ELV</string>
+       <string>201</string>
       </property>
      </item>
      <item row="0" column="1">
       <property name="text">
-       <string>エレベータ</string>
+       <string>ELV</string>
       </property>
      </item>
      <item row="0" column="2">
       <property name="text">
-       <string>1.0, 2.0, 3.0</string>
+       <string>エレベータ</string>
       </property>
      </item>
      <item row="0" column="3">
       <property name="text">
-       <string>0.5</string>
+       <string>1.0, 2.0, 3.0</string>
       </property>
      </item>
      <item row="0" column="4">
+      <property name="text">
+       <string>0.5</string>
+      </property>
+     </item>
+     <item row="0" column="5">
       <property name="text">
        <string>Distination, origin</string>
       </property>
      </item>
      <item row="1" column="0">
       <property name="text">
-       <string>TheaterRoom</string>
+       <string>202</string>
       </property>
      </item>
      <item row="1" column="1">
       <property name="text">
-       <string>シアタールーム</string>
+       <string>TheaterRoom</string>
       </property>
      </item>
      <item row="1" column="2">
       <property name="text">
-       <string>0.1, 2.4, 5.6</string>
+       <string>シアタールーム</string>
       </property>
      </item>
      <item row="1" column="3">
       <property name="text">
-       <string>1.0</string>
+       <string>0.1, 2.4, 5.6</string>
       </property>
      </item>
      <item row="1" column="4">
+      <property name="text">
+       <string>1.0</string>
+      </property>
+     </item>
+     <item row="1" column="5">
       <property name="text">
        <string>Distination</string>
       </property>
@@ -171,35 +186,6 @@
       <widget class="QPushButton" name="DeleteButton">
        <property name="text">
         <string>Delete</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QComboBox" name="TagHelperComboBox">
-       <item>
-        <property name="text">
-         <string>+ Add tag...</string>
-        </property>
-       </item>
-      </widget>
-     </item>
-     <item>
-      <spacer name="horizontalSpacer">
-       <property name="orientation">
-        <enum>Qt::Horizontal</enum>
-       </property>
-       <property name="sizeHint" stdset="0">
-        <size>
-         <width>40</width>
-         <height>20</height>
-        </size>
-       </property>
-      </spacer>
-     </item>
-     <item>
-      <widget class="QLabel" name="PoiCountLabel">
-       <property name="text">
-        <string>POIs: 0</string>
        </property>
       </widget>
      </item>

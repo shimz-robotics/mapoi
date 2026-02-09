@@ -58,15 +58,3 @@ launch:
 - node:
     pkg: mapoi_server
     exec: mapoi_rviz2_publisher
-
-# Mapoi Web UI
-- node:
-    pkg: mapoi_webui
-    exec: mapoi_webui_node.py
-    param:
-      - {name: maps_path, value: "$(find-pkg-share mapoi_turtlebot3_example)/maps"}
-      - {name: map_name, value: "turtlebot3_world"}
-      - {name: config_file, value: "mapoi_config.yaml"}
-      - {name: web_port, value: 8765}
-      - {name: web_host, value: "0.0.0.0"}
-    output: "screen"
