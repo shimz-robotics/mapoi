@@ -56,6 +56,8 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 | `mapoi_initialpose_poi` | `std_msgs/String` | 指定した POI 名の位置に初期位置を設定 |
 | `mapoi_goal_pose_poi` | `std_msgs/String` | 指定した POI 名の位置に自律走行 |
 | `mapoi_route` | `std_msgs/String` | 指定したルート名のウェイポイントを順に走行 |
+| `mapoi_pause` | `std_msgs/String` | ナビゲーションの一時停止 |
+| `mapoi_resume` | `std_msgs/String` | ナビゲーションの再開 |
 | `mapoi_cancel` | `std_msgs/String` | ナビゲーションのキャンセル |
 | `mapoi_config_path` | `std_msgs/String` | マップ切替検知（transient_local QoS） |
 
@@ -65,7 +67,7 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 | --- | --- | --- |
 | `initialpose` | `geometry_msgs/PoseWithCovarianceStamped` | 初期位置の配信 |
 | `goal_pose` | `geometry_msgs/PoseStamped` | ゴール位置の配信 |
-| `mapoi_nav_status` | `std_msgs/String` | ナビゲーション状態（`navigating`, `succeeded`, `aborted`, `canceled`） |
+| `mapoi_nav_status` | `std_msgs/String` | ナビゲーション状態（`navigating`, `succeeded`, `aborted`, `canceled`, `paused`） |
 | `mapoi_poi_events` | `mapoi_interfaces/PoiEvent` | POI 侵入・退出イベント |
 
 #### アクションクライアント

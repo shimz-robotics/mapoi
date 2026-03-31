@@ -81,6 +81,16 @@ const MapoiApi = {
     return res.json();
   },
 
+  async navPause() {
+    const res = await fetch('/api/nav/pause', { method: 'POST' });
+    return res.json();
+  },
+
+  async navResume() {
+    const res = await fetch('/api/nav/resume', { method: 'POST' });
+    return res.json();
+  },
+
   async navInitialPose(poiName) {
     const res = await fetch('/api/nav/initialpose', {
       method: 'POST',

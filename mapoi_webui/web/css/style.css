@@ -996,6 +996,8 @@ main {
 .nav-btn-go,
 .nav-btn-run,
 .nav-btn-initialpose,
+.nav-btn-pause,
+.nav-btn-resume,
 .nav-btn-stop {
   border: none;
   border-radius: 4px;
@@ -1022,6 +1024,22 @@ main {
   color: #666;
   margin-top: 4px;
 }
+
+.nav-pause-resume-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.nav-btn-pause,
+.nav-btn-resume {
+  flex: 1;
+}
+
+.nav-btn-pause { background: #f39c12; }
+.nav-btn-pause:hover { background: #d68910; }
+.nav-btn-resume { background: #27ae60; }
+.nav-btn-resume:hover { background: #219a52; }
 
 .nav-btn-stop {
   background: #e74c3c;

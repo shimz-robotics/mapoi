@@ -370,6 +370,7 @@
     succeeded: 'Succeeded',
     aborted: 'Aborted',
     canceled: 'Canceled',
+    paused: 'Paused',
   };
 
   function updateNavStatus(status, target) {
@@ -414,6 +415,16 @@
     const name = navInitialPoseSelect.value;
     if (!name) return;
     await MapoiApi.navInitialPose(name);
+  });
+
+  document.getElementById('btn-nav-pause').addEventListener('click', async () => {
+    await MapoiApi.navPause();
+    updateNavStatus('paused', '');
+  });
+
+  document.getElementById('btn-nav-resume').addEventListener('click', async () => {
+    await MapoiApi.navResume();
+    updateNavStatus('navigating', '');
   });
 
   document.getElementById('btn-nav-stop').addEventListener('click', async () => {

@@ -9,7 +9,7 @@ mapoi の Web UI パッケージです。
 - **地図表示**: 占有格子地図をブラウザ上に表示、地図の切り替え
 - **POI 編集**: POI の追加・編集・削除・保存（mapoi_server に自動リロード通知）
 - **ルート表示**: ルートのポリライン表示、矢印マーカー、表示/非表示の切り替え
-- **ナビゲーション操作**: POI へのゴール走行、ルート走行、停止
+- **ナビゲーション操作**: POI へのゴール走行、ルート走行、一時停止・再開、停止
 - **自己位置推定リセット**: POI 選択による Initial Pose の設定
 - **ロボット位置表示**: TF (`map` → `base_link`) によるリアルタイムのロボット位置マーカー表示
 - **タグシステム**: システムタグ・ユーザータグの表示、タグによる POI 色分け
@@ -38,6 +38,8 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 | --- | --- | --- |
 | `mapoi_goal_pose_poi` | `std_msgs/String` | ゴール POI 名の配信 |
 | `mapoi_route` | `std_msgs/String` | ルート走行の開始 |
+| `mapoi_pause` | `std_msgs/String` | ナビゲーションの一時停止 |
+| `mapoi_resume` | `std_msgs/String` | ナビゲーションの再開 |
 | `mapoi_cancel` | `std_msgs/String` | ナビゲーションのキャンセル |
 | `mapoi_initialpose_poi` | `std_msgs/String` | 初期位置設定の POI 名 |
 
@@ -68,6 +70,8 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 | GET | `/api/nav/status` | ナビゲーション状態・ロボット位置 |
 | POST | `/api/nav/goal` | POI へのゴール走行 |
 | POST | `/api/nav/route` | ルート走行の開始 |
+| POST | `/api/nav/pause` | ナビゲーションの一時停止 |
+| POST | `/api/nav/resume` | ナビゲーションの再開 |
 | POST | `/api/nav/cancel` | ナビゲーションの停止 |
 | POST | `/api/nav/initialpose` | 自己位置推定のリセット |
 
