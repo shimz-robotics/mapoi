@@ -549,28 +549,25 @@ void MapoiNavServer::rebuild_event_pois()
   event_pois_.clear();
   for (const auto & poi : pois_list_) {
     bool has_user_tag = false;
+    bool has_pause_tag = false;
     for (const auto & tag : poi.tags) {
-      if (system_tags_.find(tag) == system_tags_.end()) {
+      if (tag == "pause") {
+        has_pause_tag = true;
+      } else if (system_tags_.find(tag) == system_tags_.end()) {
         has_user_tag = true;
-        break;
       }
     }
-    if (has_user_tag) {
+    if (has_user_tag || has_pause_tag) {
       event_pois_.push_back(poi);
     }
   }
-  RCLCPP_INFO(this->get_logger(), "Monitoring %zu POIs with user tags for radius events.", event_pois_.size());
+  RCLCPP_INFO(this->get_logger(), "Monitoring %zu POIs with user/pause tags for radius events.", event_pois_.size());
 }
 
 void MapoiNavServer::radius_check_callback()
 {
   if (!system_tags_loaded_) {
     fetch_system_tags();
-    return;
-  }
-
-  std::lock_guard<std::mutex> lock(data_mutex_);
-  if (event_pois_.empty()) {
     return;
   }
 
@@ -589,29 +586,64 @@ void MapoiNavServer::radius_check_callback()
   double ry = transform.transform.translation.y;
   double hysteresis = this->get_parameter("hysteresis_exit_multiplier").as_double();
 
-  for (const auto & poi : event_pois_) {
-    double dist = distance_2d(poi.pose, rx, ry);
-    bool was_inside = poi_inside_state_[poi.name];
+  // pause タグ POI の ENTER を収集（mutex 外で処理するため）
+  std::string pause_triggered_poi;
 
-    if (!was_inside && dist <= poi.radius) {
-      // ENTER event
-      poi_inside_state_[poi.name] = true;
-      mapoi_interfaces::msg::PoiEvent event;
-      event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_ENTER;
-      event.poi = poi;
-      event.stamp = this->now();
-      poi_event_pub_->publish(event);
-      RCLCPP_INFO(this->get_logger(), "POI ENTER: %s (dist=%.2f, radius=%.2f)", poi.name.c_str(), dist, poi.radius);
-    } else if (was_inside && dist > poi.radius * hysteresis) {
-      // EXIT event
-      poi_inside_state_[poi.name] = false;
-      mapoi_interfaces::msg::PoiEvent event;
-      event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_EXIT;
-      event.poi = poi;
-      event.stamp = this->now();
-      poi_event_pub_->publish(event);
-      RCLCPP_INFO(this->get_logger(), "POI EXIT: %s (dist=%.2f, radius=%.2f)", poi.name.c_str(), dist, poi.radius);
+  {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    if (event_pois_.empty()) {
+      return;
     }
+
+    for (const auto & poi : event_pois_) {
+      double dist = distance_2d(poi.pose, rx, ry);
+      bool was_inside = poi_inside_state_[poi.name];
+
+      // pause タグを持つか確認
+      bool is_pause_poi = false;
+      for (const auto & tag : poi.tags) {
+        if (tag == "pause") { is_pause_poi = true; break; }
+      }
+
+      if (!was_inside && dist <= poi.radius) {
+        // ENTER event
+        poi_inside_state_[poi.name] = true;
+        if (is_pause_poi) {
+          // pause タグ POI: ロック外で pause 処理を行うため名前を保存
+          pause_triggered_poi = poi.name;
+          RCLCPP_INFO(this->get_logger(), "POI ENTER (pause tag): %s (dist=%.2f, radius=%.2f)", poi.name.c_str(), dist, poi.radius);
+        } else {
+          mapoi_interfaces::msg::PoiEvent event;
+          event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_ENTER;
+          event.poi = poi;
+          event.stamp = this->now();
+          poi_event_pub_->publish(event);
+          RCLCPP_INFO(this->get_logger(), "POI ENTER: %s (dist=%.2f, radius=%.2f)", poi.name.c_str(), dist, poi.radius);
+        }
+      } else if (was_inside && dist > poi.radius * hysteresis) {
+        // EXIT event
+        poi_inside_state_[poi.name] = false;
+        if (!is_pause_poi) {
+          mapoi_interfaces::msg::PoiEvent event;
+          event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_EXIT;
+          event.poi = poi;
+          event.stamp = this->now();
+          poi_event_pub_->publish(event);
+          RCLCPP_INFO(this->get_logger(), "POI EXIT: %s (dist=%.2f, radius=%.2f)", poi.name.c_str(), dist, poi.radius);
+        } else {
+          RCLCPP_INFO(this->get_logger(), "POI EXIT (pause tag): %s (dist=%.2f, radius=%.2f)", poi.name.c_str(), dist, poi.radius);
+        }
+      }
+    }
+  }  // data_mutex_ をここで解放
+
+  // pause タグ POI の ENTER → 走行中かつ未一時停止なら自動 pause
+  if (!pause_triggered_poi.empty() && nav_mode_ != NavMode::IDLE && !is_paused_) {
+    RCLCPP_INFO(this->get_logger(),
+      "Auto-pausing navigation: entered pause POI '%s'", pause_triggered_poi.c_str());
+    auto msg = std::make_shared<std_msgs::msg::String>();
+    msg->data = "poi_event:" + pause_triggered_poi;
+    mapoi_pause_cb(msg);
   }
 }
 
