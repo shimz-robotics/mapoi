@@ -34,6 +34,8 @@ public:
   using NavigateToPose = nav2_msgs::action::NavigateToPose;
   using GoalHandleNavigateToPose = rclcpp_action::ClientGoalHandle<NavigateToPose>;
 
+  enum class NavMode { IDLE, GOAL, ROUTE };
+
   explicit MapoiNavServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
 private:
@@ -46,11 +48,15 @@ private:
 
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_route_sub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_cancel_sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_pause_sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_resume_sub_;
 
   void mapoi_initialpose_poi_cb(const std_msgs::msg::String::SharedPtr msg);
   void mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedPtr msg);
   void mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg);
   void mapoi_cancel_cb(const std_msgs::msg::String::SharedPtr msg);
+  void mapoi_pause_cb(const std_msgs::msg::String::SharedPtr msg);
+  void mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg);
 
   // Service Callbacks
   void on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future);
@@ -74,6 +80,16 @@ private:
   GoalHandleNavigateToPose::SharedPtr current_ntp_goal_handle_;
   rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr pois_info_client_;
   rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedPtr route_client_;
+
+  // --- Pause / Resume state ---
+  NavMode nav_mode_ = NavMode::IDLE;
+  bool is_paused_ = false;
+  geometry_msgs::msg::PoseStamped paused_goal_pose_;
+  std::vector<geometry_msgs::msg::PoseStamped> current_route_waypoints_;
+  uint32_t current_waypoint_index_ = 0;
+  std::vector<geometry_msgs::msg::PoseStamped> paused_waypoints_;
+
+  void reset_nav_state();
 
   std::mutex data_mutex_;
   std::vector<mapoi_interfaces::msg::PointOfInterest> pois_list_;

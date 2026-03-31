@@ -31,6 +31,12 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   mapoi_cancel_sub_ = this->create_subscription<std_msgs::msg::String>(
     "mapoi_cancel", 1, std::bind(&MapoiNavServer::mapoi_cancel_cb, this, std::placeholders::_1));
 
+  // pause / resume subscribers
+  mapoi_pause_sub_ = this->create_subscription<std_msgs::msg::String>(
+    "mapoi_pause", 1, std::bind(&MapoiNavServer::mapoi_pause_cb, this, _1));
+  mapoi_resume_sub_ = this->create_subscription<std_msgs::msg::String>(
+    "mapoi_resume", 1, std::bind(&MapoiNavServer::mapoi_resume_cb, this, _1));
+
   this->action_client_ = rclcpp_action::create_client<FollowWaypoints>(this, "follow_waypoints");
   this->nav_to_pose_client_ = rclcpp_action::create_client<NavigateToPose>(this, "navigate_to_pose");
 
@@ -159,6 +165,10 @@ void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedP
             return;
           }
 
+          paused_goal_pose_ = goal_pose;
+          nav_mode_ = NavMode::GOAL;
+          is_paused_ = false;
+
           auto goal_msg = NavigateToPose::Goal();
           goal_msg.pose = goal_pose;
 
@@ -229,6 +239,11 @@ void MapoiNavServer::on_route_received(rclcpp::Client<mapoi_interfaces::srv::Get
     return;
   }
 
+  current_route_waypoints_ = waypoints;
+  current_waypoint_index_ = 0;
+  nav_mode_ = NavMode::ROUTE;
+  is_paused_ = false;
+
   // Send waypoints to Nav2 with action client
   while(!this->action_client_->wait_for_action_server(1s)) {
         if (!rclcpp::ok()) {
@@ -271,7 +286,7 @@ void MapoiNavServer::feedback_callback(
   GoalHandleFollowWaypoints::SharedPtr,
   const std::shared_ptr<const FollowWaypoints::Feedback> feedback)
 {
-  (void)feedback;
+  current_waypoint_index_ = feedback->current_waypoint;
 }
 
 void MapoiNavServer::result_callback(const GoalHandleFollowWaypoints::WrappedResult & result)
@@ -279,16 +294,23 @@ void MapoiNavServer::result_callback(const GoalHandleFollowWaypoints::WrappedRes
   current_goal_handle_.reset();
   switch (result.code) {
     case rclcpp_action::ResultCode::SUCCEEDED:
+      reset_nav_state();
       publish_nav_status("succeeded");
       RCLCPP_INFO(this->get_logger(), "Navigation SUCCEEDED!");
       break;
     case rclcpp_action::ResultCode::ABORTED:
+      reset_nav_state();
       publish_nav_status("aborted");
       RCLCPP_ERROR(this->get_logger(), "Navigation ABORTED");
       break;
     case rclcpp_action::ResultCode::CANCELED:
-      publish_nav_status("canceled");
-      RCLCPP_WARN(this->get_logger(), "Navigation CANCELED");
+      if (is_paused_) {
+        RCLCPP_INFO(this->get_logger(), "Cancel confirmed (pause triggered). Waiting for resume.");
+      } else {
+        reset_nav_state();
+        publish_nav_status("canceled");
+        RCLCPP_WARN(this->get_logger(), "Navigation CANCELED");
+      }
       break;
     default:
       RCLCPP_ERROR(this->get_logger(), "Unknown result code");
@@ -312,16 +334,23 @@ void MapoiNavServer::ntp_result_callback(const GoalHandleNavigateToPose::Wrapped
   current_ntp_goal_handle_.reset();
   switch (result.code) {
     case rclcpp_action::ResultCode::SUCCEEDED:
+      reset_nav_state();
       publish_nav_status("succeeded");
       RCLCPP_INFO(this->get_logger(), "NavigateToPose SUCCEEDED!");
       break;
     case rclcpp_action::ResultCode::ABORTED:
+      reset_nav_state();
       publish_nav_status("aborted");
       RCLCPP_ERROR(this->get_logger(), "NavigateToPose ABORTED");
       break;
     case rclcpp_action::ResultCode::CANCELED:
-      publish_nav_status("canceled");
-      RCLCPP_WARN(this->get_logger(), "NavigateToPose CANCELED");
+      if (is_paused_) {
+        RCLCPP_INFO(this->get_logger(), "Cancel confirmed (pause triggered). Waiting for resume.");
+      } else {
+        reset_nav_state();
+        publish_nav_status("canceled");
+        RCLCPP_WARN(this->get_logger(), "NavigateToPose CANCELED");
+      }
       break;
     default:
       RCLCPP_ERROR(this->get_logger(), "NavigateToPose unknown result code");
@@ -352,6 +381,115 @@ void MapoiNavServer::mapoi_cancel_cb(const std_msgs::msg::String::SharedPtr msg)
   }
   if (!canceled) {
     RCLCPP_WARN(this->get_logger(), "No active navigation goal to cancel.");
+  }
+  reset_nav_state();
+}
+
+void MapoiNavServer::reset_nav_state()
+{
+  nav_mode_ = NavMode::IDLE;
+  is_paused_ = false;
+  paused_goal_pose_ = geometry_msgs::msg::PoseStamped{};
+  current_route_waypoints_.clear();
+  paused_waypoints_.clear();
+  current_waypoint_index_ = 0;
+}
+
+void MapoiNavServer::mapoi_pause_cb(const std_msgs::msg::String::SharedPtr msg)
+{
+  (void)msg;
+
+  if (is_paused_) {
+    RCLCPP_WARN(this->get_logger(), "Already paused — ignoring mapoi_pause.");
+    return;
+  }
+
+  if (nav_mode_ == NavMode::GOAL && current_ntp_goal_handle_) {
+    RCLCPP_INFO(this->get_logger(), "Pausing NavigateToPose goal.");
+    nav_to_pose_client_->async_cancel_goal(current_ntp_goal_handle_);
+    is_paused_ = true;
+    publish_nav_status("paused");
+
+  } else if (nav_mode_ == NavMode::ROUTE && current_goal_handle_) {
+    uint32_t from = std::min(
+      current_waypoint_index_,
+      static_cast<uint32_t>(current_route_waypoints_.size()));
+    paused_waypoints_ = std::vector<geometry_msgs::msg::PoseStamped>(
+      current_route_waypoints_.begin() + from,
+      current_route_waypoints_.end());
+    RCLCPP_INFO(this->get_logger(),
+      "Pausing FollowWaypoints: saving %zu remaining waypoints (from index %u).",
+      paused_waypoints_.size(), from);
+    action_client_->async_cancel_goal(current_goal_handle_);
+    is_paused_ = true;
+    publish_nav_status("paused");
+
+  } else {
+    RCLCPP_WARN(this->get_logger(), "mapoi_pause received but no active navigation.");
+  }
+}
+
+void MapoiNavServer::mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg)
+{
+  (void)msg;
+
+  if (!is_paused_) {
+    RCLCPP_WARN(this->get_logger(), "Not paused — ignoring mapoi_resume.");
+    return;
+  }
+  is_paused_ = false;
+
+  if (nav_mode_ == NavMode::GOAL) {
+    if (!nav_to_pose_client_->wait_for_action_server(2s)) {
+      RCLCPP_ERROR(this->get_logger(), "NavigateToPose action server not available for resume.");
+      is_paused_ = true;
+      return;
+    }
+    RCLCPP_INFO(this->get_logger(), "Resuming NavigateToPose goal.");
+
+    auto goal_msg = NavigateToPose::Goal();
+    goal_msg.pose = paused_goal_pose_;
+
+    auto send_goal_options = rclcpp_action::Client<NavigateToPose>::SendGoalOptions();
+    send_goal_options.goal_response_callback =
+      std::bind(&MapoiNavServer::ntp_goal_response_callback, this, _1);
+    send_goal_options.result_callback =
+      std::bind(&MapoiNavServer::ntp_result_callback, this, _1);
+
+    nav_to_pose_client_->async_send_goal(goal_msg, send_goal_options);
+
+  } else if (nav_mode_ == NavMode::ROUTE) {
+    if (paused_waypoints_.empty()) {
+      RCLCPP_ERROR(this->get_logger(), "Cannot resume: no saved waypoints.");
+      return;
+    }
+    if (!action_client_->wait_for_action_server(2s)) {
+      RCLCPP_ERROR(this->get_logger(), "FollowWaypoints action server not available for resume.");
+      is_paused_ = true;
+      return;
+    }
+    current_route_waypoints_ = paused_waypoints_;
+    paused_waypoints_.clear();
+    current_waypoint_index_ = 0;
+
+    RCLCPP_INFO(this->get_logger(),
+      "Resuming FollowWaypoints with %zu remaining waypoints.", current_route_waypoints_.size());
+
+    auto goal_msg = FollowWaypoints::Goal();
+    goal_msg.poses = current_route_waypoints_;
+
+    auto send_goal_options = rclcpp_action::Client<FollowWaypoints>::SendGoalOptions();
+    send_goal_options.goal_response_callback =
+      std::bind(&MapoiNavServer::goal_response_callback, this, _1);
+    send_goal_options.feedback_callback =
+      std::bind(&MapoiNavServer::feedback_callback, this, _1, _2);
+    send_goal_options.result_callback =
+      std::bind(&MapoiNavServer::result_callback, this, _1);
+
+    action_client_->async_send_goal(goal_msg, send_goal_options);
+
+  } else {
+    RCLCPP_WARN(this->get_logger(), "mapoi_resume: inconsistent state (paused but IDLE).");
   }
 }
 

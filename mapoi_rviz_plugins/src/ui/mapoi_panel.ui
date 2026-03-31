@@ -87,6 +87,26 @@
       </widget>
      </item>
      <item>
+      <widget class="QPushButton" name="PauseButton">
+       <property name="text">
+        <string>一時停止</string>
+       </property>
+       <property name="autoDefault">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="ResumeButton">
+       <property name="text">
+        <string>再開</string>
+       </property>
+       <property name="autoDefault">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QPushButton" name="StopButton">
        <property name="acceptDrops">
         <bool>false</bool>

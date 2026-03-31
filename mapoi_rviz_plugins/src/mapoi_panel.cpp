@@ -37,6 +37,8 @@ void MapoiPanel::onInitialize()
   connect(ui_->LocalizationButton, SIGNAL(clicked()), this, SLOT(LocalizationButton()));
   connect(ui_->RunGoalButton, SIGNAL(clicked()), this, SLOT(RunGoalButton()));
   connect(ui_->RunRouteButton, SIGNAL(clicked()), this, SLOT(RunRouteButton()));
+  connect(ui_->PauseButton,    SIGNAL(clicked()), this, SLOT(PauseButton()));
+  connect(ui_->ResumeButton,   SIGNAL(clicked()), this, SLOT(ResumeButton()));
   connect(ui_->StopButton, SIGNAL(clicked()), this, SLOT(StopButton()));
 
   parentWidget()->setVisible(true);
@@ -66,6 +68,8 @@ void MapoiPanel::onInitialize()
   nav2_goal_pose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseStamped>("goal_pose", 1);
 
   mapoi_cancel_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_cancel", 1);
+  mapoi_pause_pub_  = node_->create_publisher<std_msgs::msg::String>("mapoi_pause",  1);
+  mapoi_resume_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_resume", 1);
   mapoi_route_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_route", 1);
   mapoi_highlight_goal_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_highlight_goal", 1);
   mapoi_highlight_route_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_highlight_route", 1);
@@ -207,6 +211,24 @@ void MapoiPanel::RunRouteButton()
   RCLCPP_INFO(LOGGER, "A route was set: %s", msg.data.c_str());
 }
 
+void MapoiPanel::PauseButton()
+{
+  std_msgs::msg::String msg;
+  msg.data = "mapoi_panel";
+  mapoi_pause_pub_->publish(msg);
+  ui_->NavStatusLabel->setText(QString::fromStdString("一時停止中"));
+  RCLCPP_INFO(LOGGER, "Pause requested");
+}
+
+void MapoiPanel::ResumeButton()
+{
+  std_msgs::msg::String msg;
+  msg.data = "mapoi_panel";
+  mapoi_resume_pub_->publish(msg);
+  ui_->NavStatusLabel->setText(QString::fromStdString("再開中..."));
+  RCLCPP_INFO(LOGGER, "Resume requested");
+}
+
 void MapoiPanel::StopButton()
 {
   std_msgs::msg::String msg;
@@ -331,6 +353,8 @@ void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
     } else if (status == "canceled") {
       current_nav_mode_ = "idle";
       ui_->NavStatusLabel->setText(QString::fromStdString("走行キャンセル"));
+    } else if (status == "paused") {
+      ui_->NavStatusLabel->setText(QString::fromStdString("一時停止中"));
     }
   }, Qt::QueuedConnection);
 }
