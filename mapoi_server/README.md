@@ -148,6 +148,11 @@ poi:
     radius: 0.5
     tags: [goal, initial_pose]
     description: エレベーターホール
+  - name: checkpoint_a
+    pose: {x: 0.5, y: 0.5, yaw: 0.0}
+    radius: 0.5
+    tags: [goal, pause]       # 半径内に入ると自動一時停止
+    description: 中間チェックポイント
   - name: info_point_a
     pose: {x: 1.0, y: 2.0, yaw: 1.57}
     radius: 1.0
