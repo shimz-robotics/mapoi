@@ -19,7 +19,8 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   load_mapoi_config_file();
 
   // Publish config_path_
-  config_path_publisher_ = this->create_publisher<std_msgs::msg::String>("mapoi_config_path", 10);
+  config_path_publisher_ = this->create_publisher<std_msgs::msg::String>(
+    "mapoi_config_path", rclcpp::QoS(1).transient_local());
   int pub_interval_ms = this->get_parameter("pub_interval_ms").as_int();
   timer_ = this->create_wall_timer(std::chrono::milliseconds(pub_interval_ms), [this]() {
     auto msg = std_msgs::msg::String();

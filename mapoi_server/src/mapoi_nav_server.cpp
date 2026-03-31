@@ -523,6 +523,8 @@ void MapoiNavServer::on_system_tags_received(
   system_tags_loaded_ = true;
   RCLCPP_INFO(this->get_logger(), "Loaded %zu system tags for POI event filtering.", system_tags_.size());
   rebuild_event_pois();
+  // 起動時に POI リストを取得（mapoi_config_path QoS 不一致のフォールバック）
+  get_pois_list();
 }
 
 void MapoiNavServer::on_config_path_changed(const std_msgs::msg::String::SharedPtr msg)
