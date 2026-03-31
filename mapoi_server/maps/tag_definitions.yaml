@@ -6,3 +6,5 @@ tags:
     description: "Navigation goal destination"
   - name: origin
     description: "Map origin reference point"
+  - name: pause
+    description: "Automatically pause navigation when robot enters the POI radius"
