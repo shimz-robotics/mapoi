@@ -45,6 +45,8 @@ private Q_SLOTS:
   void LocalizationButton();
   void RunGoalButton();
   void RunRouteButton();
+  void PauseButton();
+  void ResumeButton();
   void StopButton();
 
 protected:
@@ -67,6 +69,8 @@ protected:
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr nav2_initialpose_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr nav2_goal_pose_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr mapoi_cancel_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr mapoi_pause_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr mapoi_resume_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr mapoi_route_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr mapoi_highlight_goal_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr mapoi_highlight_route_pub_;

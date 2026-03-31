@@ -48,6 +48,8 @@ class MapoiWebNode(Node):
         self.goal_poi_pub_ = self.create_publisher(String, 'mapoi_goal_pose_poi', 10)
         self.route_pub_ = self.create_publisher(String, 'mapoi_route', 10)
         self.cancel_pub_ = self.create_publisher(String, 'mapoi_cancel', 10)
+        self.pause_pub_  = self.create_publisher(String, 'mapoi_pause',  10)
+        self.resume_pub_ = self.create_publisher(String, 'mapoi_resume', 10)
         self.initialpose_poi_pub_ = self.create_publisher(String, 'mapoi_initialpose_poi', 10)
 
         # TF for robot pose
@@ -341,6 +343,22 @@ class MapoiWebNode(Node):
             node.cancel_pub_.publish(msg)
             node.nav_status_ = 'canceled'
             node.get_logger().info('Nav canceled')
+            return jsonify({'success': True})
+
+        @app.route('/api/nav/pause', methods=['POST'])
+        def api_nav_pause():
+            msg = String()
+            msg.data = 'webui'
+            node.pause_pub_.publish(msg)
+            node.get_logger().info('Nav pause requested')
+            return jsonify({'success': True})
+
+        @app.route('/api/nav/resume', methods=['POST'])
+        def api_nav_resume():
+            msg = String()
+            msg.data = 'webui'
+            node.resume_pub_.publish(msg)
+            node.get_logger().info('Nav resume requested')
             return jsonify({'success': True})
 
         @app.route('/api/nav/status')
