@@ -34,7 +34,7 @@ mapoi のメインパッケージです。
 
 | トピック名 | 型 | 説明 |
 | --- | --- | --- |
-| `mapoi_config_path` | `std_msgs/String` | 現在の設定ファイルのパス（定期配信） |
+| `mapoi_config_path` | `std_msgs/String` | 現在の設定ファイルのパス（定期配信、transient_local QoS） |
 
 ### mapoi_nav_server
 
