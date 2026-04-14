@@ -24,4 +24,27 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  find_package(launch_testing_ament_cmake REQUIRED)
+
+  # Level 1: gtest unit tests
+  ament_auto_add_gtest(test_nav_server_unit
+    test/test_nav_server_unit.cpp
+    src/mapoi_nav_server.cpp
+  )
+  target_compile_definitions(test_nav_server_unit PRIVATE UNIT_TEST)
+
+  # Level 2: launch_testing integration tests
+  add_launch_test(
+    test/test_poi_event_integration.py
+  )
+
+  # Install test config
+  install(
+    FILES test/test_mapoi_config.yaml
+    DESTINATION share/${PROJECT_NAME}/test
+  )
+endif()
+
 ament_auto_package(USE_SCOPED_HEADER_INSTALL_DIR)

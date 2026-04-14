@@ -1,6 +1,10 @@
 #ifndef MAPOI_SERVER__MAPOI_NAV_SERVER_HPP_
 #define MAPOI_SERVER__MAPOI_NAV_SERVER_HPP_
 
+#ifdef UNIT_TEST
+#include <gtest/gtest.h>
+#endif
+
 #include <vector>
 #include <memory>
 #include <string>
@@ -119,6 +123,15 @@ private:
   void rebuild_event_pois();
   void radius_check_callback();
   double distance_2d(const geometry_msgs::msg::Pose & poi_pose, double rx, double ry);
+
+#ifdef UNIT_TEST
+  friend class NavServerTestFixture;
+  FRIEND_TEST(NavServerTestFixture, DistanceCalculation);
+  FRIEND_TEST(NavServerTestFixture, DistanceCalculationZero);
+  FRIEND_TEST(NavServerTestFixture, RebuildEventPoisIncludesAllPois);
+  FRIEND_TEST(NavServerTestFixture, RebuildEventPoisEmpty);
+  FRIEND_TEST(NavServerTestFixture, PauseTagDetection);
+#endif
 };
 
 #endif  // MAPOI_SERVER__MAPOI_NAV_SERVER_HPP_
