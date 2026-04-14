@@ -3,7 +3,7 @@
 <package format="3">
   <name>mapoi_turtlebot3_example</name>
   <version>0.1.0</version>
-  <description>TODO: Package description</description>
+  <description>TurtleBot3 simulation example for mapoi with sample maps and client nodes</description>
   <maintainer email="kimushun1101@gmail.com">kimura</maintainer>
   <license>MIT</license>
 
