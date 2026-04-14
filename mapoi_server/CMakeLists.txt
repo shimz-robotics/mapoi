@@ -31,6 +31,7 @@ if(BUILD_TESTING)
   # Level 1: gtest unit tests
   ament_auto_add_gtest(test_nav_server_unit
     test/test_nav_server_unit.cpp
+    src/mapoi_nav_server.cpp
   )
   target_compile_definitions(test_nav_server_unit PRIVATE UNIT_TEST)
 

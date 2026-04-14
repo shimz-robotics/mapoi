@@ -633,6 +633,7 @@ double MapoiNavServer::distance_2d(const geometry_msgs::msg::Pose & poi_pose, do
   return std::sqrt(dx * dx + dy * dy);
 }
 
+#ifndef UNIT_TEST
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
@@ -641,3 +642,4 @@ int main(int argc, char ** argv)
   rclcpp::shutdown();
   return 0;
 }
+#endif
