@@ -1,0 +1,58 @@
+# syntax=docker/dockerfile:1.6
+ARG ROS_DISTRO=humble
+
+FROM osrf/ros:${ROS_DISTRO}-desktop-full AS base
+
+ARG ROS_DISTRO
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 共通 apt 依存
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-pip \
+    python3-colcon-common-extensions \
+    python3-rosdep \
+    python3-flask \
+    python3-pil \
+    python3-yaml \
+    ros-${ROS_DISTRO}-turtlebot3 \
+    ros-${ROS_DISTRO}-turtlebot3-gazebo \
+    ros-${ROS_DISTRO}-turtlebot3-navigation2 \
+ && rm -rf /var/lib/apt/lists/*
+
+# 非 root ユーザー（UID/GID はビルド引数でホストと合わせる）
+ARG USER_NAME=ros
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+RUN groupadd -f -g ${GROUP_ID} ${USER_NAME} \
+ && useradd -m -u ${USER_ID} -g ${GROUP_ID} -s /bin/bash ${USER_NAME} \
+ && echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /home/${USER_NAME}/.bashrc \
+ && echo "[ -f /ros2_ws/install/setup.bash ] && source /ros2_ws/install/setup.bash" >> /home/${USER_NAME}/.bashrc \
+ && echo "export TURTLEBOT3_MODEL=burger" >> /home/${USER_NAME}/.bashrc
+
+ENV WS=/ros2_ws
+ENV TURTLEBOT3_MODEL=burger
+RUN mkdir -p ${WS}/src && chown -R ${USER_NAME}:${USER_NAME} ${WS}
+WORKDIR ${WS}
+
+# ----- dev stage: bind mount 前提、開発用 -----
+FROM base AS dev
+ARG USER_NAME=ros
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    vim less git gdb tmux \
+ && rm -rf /var/lib/apt/lists/*
+USER ${USER_NAME}
+CMD ["bash"]
+
+# ----- runtime stage: ソース焼き込み、お試し/デモ用 -----
+FROM base AS runtime
+ARG ROS_DISTRO
+ARG USER_NAME=ros
+COPY --chown=${USER_NAME}:${USER_NAME} . ${WS}/src/mapoi/
+USER ${USER_NAME}
+RUN bash -lc "source /opt/ros/${ROS_DISTRO}/setup.bash \
+ && cd ${WS} \
+ && rosdep update --rosdistro ${ROS_DISTRO} \
+ && rosdep install --from-paths src --ignore-src -r -y \
+ && colcon build --symlink-install"
+
+CMD ["bash", "-lc", "source /opt/ros/${ROS_DISTRO}/setup.bash && source /ros2_ws/install/setup.bash && ros2 launch mapoi_turtlebot3_example turtlebot3_navigation_launch.yaml"]

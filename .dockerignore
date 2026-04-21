@@ -1,0 +1,13 @@
+.git
+.github
+.vscode
+.idea
+build/
+install/
+log/
+__pycache__/
+*.py[oc]
+.venv/
+.DS_Store
+Thumbs.db
+.claude/
