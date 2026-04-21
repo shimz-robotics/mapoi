@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-${ROS_DISTRO}-turtlebot3 \
     ros-${ROS_DISTRO}-turtlebot3-gazebo \
     ros-${ROS_DISTRO}-turtlebot3-navigation2 \
+    fonts-noto-cjk \
  && rm -rf /var/lib/apt/lists/*
 
 # 非 root ユーザー（UID/GID はビルド引数でホストと合わせる）

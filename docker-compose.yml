@@ -27,6 +27,10 @@ services:
       - DISPLAY=${DISPLAY}
       - QT_X11_NO_MITSHM=1
       - TURTLEBOT3_MODEL=${TURTLEBOT3_MODEL:-burger}
+      # Gazebo のオンライン model database fetch を無効化。
+      # 初回起動時に gazebosim.org へアクセスしに行って spawn_entity が 30s timeout で
+      # 死ぬのを防ぐ。turtlebot3 world は apt の turtlebot3_gazebo のローカルモデルで動く。
+      - GAZEBO_MODEL_DATABASE_URI=
     volumes:
       - ./:/ros2_ws/src/mapoi
       - /tmp/.X11-unix:/tmp/.X11-unix
@@ -51,6 +55,7 @@ services:
       - DISPLAY=${DISPLAY}
       - QT_X11_NO_MITSHM=1
       - TURTLEBOT3_MODEL=${TURTLEBOT3_MODEL:-burger}
+      - GAZEBO_MODEL_DATABASE_URI=
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
       - ${HOME}/.Xauthority:/home/ros/.Xauthority:ro
