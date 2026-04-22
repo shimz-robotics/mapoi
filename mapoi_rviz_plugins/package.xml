@@ -1,11 +1,14 @@
-<package format="2">
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
   <name>mapoi_rviz_plugins</name>
-  <version>1.0.0</version>
+  <version>0.1.0</version>
   <description>Rviz2 plugins for mapoi</description>
-
-  <author email="kimushun1101@gmail.com">Shunsuke Kimura</author>
-  <maintainer email="kimushun1101@gmail.com">Shunsuke Kimura</maintainer>
+  <maintainer email="kimura.shunsuke@shimz.co.jp">Shunsuke Kimura</maintainer>
   <license>MIT</license>
+  <url type="repository">https://github.com/shimz-robotics/mapoi</url>
+  <url type="bugtracker">https://github.com/shimz-robotics/mapoi/issues</url>
+  <author email="kimura.shunsuke@shimz.co.jp">Shunsuke Kimura</author>
 
   <depend>ament_cmake_auto</depend>
   <depend>std_srvs</depend>
