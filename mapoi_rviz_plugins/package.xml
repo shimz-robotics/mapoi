@@ -1,6 +1,6 @@
 <package format="2">
   <name>mapoi_rviz_plugins</name>
-  <version>1.0.0</version>
+  <version>0.1.0</version>
   <description>Rviz2 plugins for mapoi</description>
 
   <author email="kimushun1101@gmail.com">Shunsuke Kimura</author>
