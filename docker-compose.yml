@@ -1,0 +1,61 @@
+# mapoi 用 Docker Compose
+#
+# GUI（RViz2 / Gazebo）を使う前にホスト側で実行:
+#   xhost +local:docker
+#
+# 開発用 (bind mount + bash):
+#   docker compose run --rm dev
+#
+# お試し/デモ (Turtlebot3 + Gazebo + mapoi):
+#   docker compose up demo
+#
+# ROS 2 のディストリ切替（将来の Jazzy 対応用）:
+#   ROS_DISTRO=jazzy docker compose build
+services:
+  dev:
+    build:
+      context: .
+      target: dev
+      args:
+        ROS_DISTRO: ${ROS_DISTRO:-humble}
+        USER_ID: ${USER_ID:-1000}
+        GROUP_ID: ${GROUP_ID:-1000}
+    image: mapoi:dev
+    network_mode: host
+    ipc: host
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - TURTLEBOT3_MODEL=${TURTLEBOT3_MODEL:-burger}
+      # Gazebo のオンライン model database fetch を無効化。
+      # 初回起動時に gazebosim.org へアクセスしに行って spawn_entity が 30s timeout で
+      # 死ぬのを防ぐ。turtlebot3 world は apt の turtlebot3_gazebo のローカルモデルで動く。
+      - GAZEBO_MODEL_DATABASE_URI=
+    volumes:
+      - ./:/ros2_ws/src/mapoi
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ${HOME}/.Xauthority:/home/ros/.Xauthority:ro
+    working_dir: /ros2_ws
+    command: bash
+    stdin_open: true
+    tty: true
+
+  demo:
+    build:
+      context: .
+      target: runtime
+      args:
+        ROS_DISTRO: ${ROS_DISTRO:-humble}
+        USER_ID: ${USER_ID:-1000}
+        GROUP_ID: ${GROUP_ID:-1000}
+    image: mapoi:demo
+    network_mode: host
+    ipc: host
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - TURTLEBOT3_MODEL=${TURTLEBOT3_MODEL:-burger}
+      - GAZEBO_MODEL_DATABASE_URI=
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ${HOME}/.Xauthority:/home/ros/.Xauthority:ro

@@ -38,6 +38,74 @@ http://localhost:8765
 ros2 topic pub -1 /mapoi_goal_pose_poi std_msgs/msg/String "{data: conference_room}"
 ```
 
+## Docker で試す
+
+ホスト側に ROS 2 環境を用意せず、Docker で mapoi を動かせます。
+Linux ホストが前提で、Turtlebot3 サンプルを Gazebo / RViz2 / Web UI で体験できます。
+
+### 前提
+
+- Docker Engine + Docker Compose v2
+- Linux ホスト（X11 経由で GUI 表示）
+- GPU は不要（CPU レンダリングで動作）
+
+### 初回準備
+
+```sh
+git clone git@github.com:shimz-robotics/mapoi.git
+cd mapoi
+
+# GUI 許可（X11）
+xhost +local:docker
+```
+
+### お試し・デモ（ソース焼き込み済みの runtime イメージ）
+
+Turtlebot3 + Gazebo + mapoi を 1 コマンドで起動します。
+
+```sh
+docker compose up demo
+```
+
+起動後、ブラウザで http://localhost:8765 にアクセスすると Web UI が表示されます。
+
+### 開発用（ホストのソースを bind mount、コンテナ内でビルド）
+
+```sh
+# 初回ビルド
+docker compose build dev
+
+# シェルに入る（ホストの ./ が /ros2_ws/src/mapoi にマウント済み）
+docker compose run --rm dev
+
+# コンテナ内
+cd /ros2_ws
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --symlink-install
+source install/setup.bash
+ros2 launch mapoi_turtlebot3_example turtlebot3_navigation_launch.yaml
+```
+
+ホスト側の `git` / VSCode でソース編集し、コンテナ内で再ビルドして反復できます。
+
+### 権限（UID/GID）の調整
+
+bind mount 時の所有者ずれを避けるため、ホストの UID/GID に合わせてビルドできます:
+
+```sh
+USER_ID=$(id -u) GROUP_ID=$(id -g) docker compose build dev
+```
+
+### 将来の Jazzy 対応
+
+Dockerfile は `ARG ROS_DISTRO` でディストリを切替可能にしてあります。
+
+```sh
+ROS_DISTRO=jazzy docker compose build
+```
+
+ただし Jazzy では Gazebo Classic → Gazebo Harmonic への移行など、別途対応が必要です（別 Issue で対応予定）。
+
 ## 主な機能
 
 - **地図管理**: 複数地図の切り替え、Nav2 との連携
