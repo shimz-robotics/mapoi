@@ -60,13 +60,15 @@ ghcr.io に公開されたイメージを pull するだけで起動できます
 xhost +local:docker
 docker run --rm -it --network host --ipc host \
   -e DISPLAY=$DISPLAY \
+  -e QT_X11_NO_MITSHM=1 \
   -e GAZEBO_MODEL_DATABASE_URI= \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
-  -v $HOME/.Xauthority:/home/ros/.Xauthority:ro \
   ghcr.io/shimz-robotics/mapoi:latest
 ```
 
 起動後、ブラウザで http://localhost:8765 にアクセスすると Web UI が表示されます。
+
+X11 接続が拒否される場合は `xhost +local:` を試してください（ローカル unix socket 経由の全接続を許可）。配布イメージ内のユーザーは UID 1000 固定のため、`$HOME/.Xauthority` の bind mount は行わず、X11 アクセス許可は `xhost` に委ねています。
 
 利用可能なタグ:
 
