@@ -4,6 +4,7 @@ ARG ROS_DISTRO=humble
 FROM osrf/ros:${ROS_DISTRO}-desktop-full AS base
 
 ARG ROS_DISTRO
+ENV ROS_DISTRO=${ROS_DISTRO}
 ENV DEBIAN_FRONTEND=noninteractive
 
 # 共通 apt 依存

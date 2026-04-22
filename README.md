@@ -38,32 +38,57 @@ http://localhost:8765
 ros2 topic pub -1 /mapoi_goal_pose_poi std_msgs/msg/String "{data: conference_room}"
 ```
 
-## Docker で試す
+## Docker で試す（demo）
 
-ホスト側に ROS 2 環境を用意せず、Docker で mapoi を動かせます。
+Docker イメージは **demo / 動作確認用**です。自作ロボットに組み込む場合は
+次節「自分のロボットへの導入方法」を参照してください（将来 apt/rosdep での
+提供を予定しています）。
+
 Linux ホストが前提で、Turtlebot3 サンプルを Gazebo / RViz2 / Web UI で体験できます。
 
 ### 前提
 
-- Docker Engine + Docker Compose v2
+- Docker Engine + Docker Compose v2（ソースからビルドする場合）
 - Linux ホスト（X11 経由で GUI 表示）
 - GPU は不要（CPU レンダリングで動作）
 
-### 初回準備
+### ビルド済みイメージから試す（最速）
+
+ghcr.io に公開されたイメージを pull するだけで起動できます。
+
+```sh
+xhost +local:docker
+docker run --rm -it --network host --ipc host \
+  -e DISPLAY=$DISPLAY \
+  -e QT_X11_NO_MITSHM=1 \
+  -e GAZEBO_MODEL_DATABASE_URI= \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  ghcr.io/shimz-robotics/mapoi:latest
+```
+
+起動後、ブラウザで http://localhost:8765 にアクセスすると Web UI が表示されます。
+
+X11 接続が拒否される場合は `xhost +local:` を試してください（ローカル unix socket 経由の全接続を許可）。配布イメージ内のユーザーは UID 1000 固定のため、`$HOME/.Xauthority` の bind mount は行わず、X11 アクセス許可は `xhost` に委ねています。
+
+利用可能なタグ:
+
+| タグ | 説明 |
+| --- | --- |
+| `latest` | 推奨版（現状 ROS 2 Humble ベース、随時更新） |
+| `humble` | ROS 2 Humble ベースで pin したい場合 |
+| `vX.Y.Z` | リリースタグ版（primary distro） |
+| `vX.Y.Z-humble` | リリースタグ版の humble ビルド |
+
+中身の ROS 2 バージョンは `docker inspect ghcr.io/shimz-robotics/mapoi:latest | grep ROS_DISTRO` で確認できます。
+
+### ソースから docker compose build（開発者向け）
+
+ローカル変更を含めて試したい場合は、リポジトリを clone して compose でビルドします。
 
 ```sh
 git clone git@github.com:shimz-robotics/mapoi.git
 cd mapoi
-
-# GUI 許可（X11）
 xhost +local:docker
-```
-
-### お試し・デモ（ソース焼き込み済みの runtime イメージ）
-
-Turtlebot3 + Gazebo + mapoi を 1 コマンドで起動します。
-
-```sh
 docker compose up demo
 ```
 
@@ -118,6 +143,9 @@ ROS_DISTRO=jazzy docker compose build
 - **マーカー表示**: RViz2 上での POI 可視化、ハイライト表示、半径表示
 
 ## 自分のロボットへの導入方法
+
+現状は本リポジトリを clone して colcon build で組み込んでください。
+**将来的に apt/rosdep での提供を予定しています**（別 Issue で対応）。
 
 ### 1. 地図ディレクトリの作成
 
