@@ -8,6 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # 共通 apt 依存
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
     python3-pip \
     python3-colcon-common-extensions \
     python3-rosdep \
@@ -34,6 +35,22 @@ ENV WS=/ros2_ws
 ENV TURTLEBOT3_MODEL=burger
 RUN mkdir -p ${WS}/src && chown -R ${USER_NAME}:${USER_NAME} ${WS}
 WORKDIR ${WS}
+
+# Gazebo デフォルトモデル (ground_plane, sun) を osrf/gazebo_models から取得し
+# /home/${USER_NAME}/.gazebo/models/ に配置する。docker-compose.yml で
+# GAZEBO_MODEL_DATABASE_URI= を空にしてオンライン fetch を止めているため、これが
+# ないと turtlebot3_world.world が ground_plane をロードできず、スポーンした
+# ロボットが床下に落下する。
+RUN set -eux; \
+    for model in ground_plane sun; do \
+        mkdir -p /home/${USER_NAME}/.gazebo/models/${model}; \
+        for file in model.config model.sdf; do \
+            curl -fsSL \
+                -o /home/${USER_NAME}/.gazebo/models/${model}/${file} \
+                https://raw.githubusercontent.com/osrf/gazebo_models/master/${model}/${file}; \
+        done; \
+    done; \
+    chown -R ${USER_NAME}:${USER_NAME} /home/${USER_NAME}/.gazebo
 
 # ----- dev stage: bind mount 前提、開発用 -----
 FROM base AS dev
