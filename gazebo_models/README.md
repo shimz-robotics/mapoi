@@ -10,15 +10,25 @@ Gazebo from blocking on `gazebosim.org` at startup. With the URI
 disabled, Gazebo cannot fetch these models online, so we ship them in
 the repo and `COPY` them into `~/.gazebo/models/` at image build time.
 
-## Source
+## Source and license
 
-Copied verbatim from the upstream [osrf/gazebo_models][upstream]
-repository (Apache-2.0 licensed).
+Copied verbatim (no modifications) from the upstream
+[osrf/gazebo_models][upstream] repository.
 
 - `ground_plane/` — flat infinite ground plane with collision
 - `sun/` — directional light source
 
-To refresh from upstream:
+Both models are:
+
+- Copyright 2012 Nate Koenig / Open Source Robotics Foundation
+- Licensed under the [Creative Commons Attribution 3.0 Unported
+  License][cc-by-3.0] (CC-BY 3.0)
+
+Original author attribution is preserved in each `model.config`
+(`<author>` element). The files are distributed here under the same
+CC-BY 3.0 terms.
+
+## Updating from upstream
 
 ```bash
 for model in ground_plane sun; do
@@ -30,3 +40,4 @@ done
 ```
 
 [upstream]: https://github.com/osrf/gazebo_models
+[cc-by-3.0]: https://creativecommons.org/licenses/by/3.0/legalcode
