@@ -40,8 +40,8 @@ WORKDIR ${WS}
 # docker-compose.yml で GAZEBO_MODEL_DATABASE_URI= を空にしてオンライン fetch を
 # 止めているため、これがないと turtlebot3_world.world が ground_plane をロード
 # できず、スポーンしたロボットが床下に落下する。
-# 由来と更新方法は gazebo_models/README.md を参照。
-COPY --chown=${USER_NAME}:${USER_NAME} gazebo_models /home/${USER_NAME}/.gazebo/models
+# 由来と更新方法は mapoi_turtlebot3_example/gazebo_models/README.md を参照。
+COPY --chown=${USER_NAME}:${USER_NAME} mapoi_turtlebot3_example/gazebo_models /home/${USER_NAME}/.gazebo/models
 
 # ----- dev stage: bind mount 前提、開発用 -----
 FROM base AS dev

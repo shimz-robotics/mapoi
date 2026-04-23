@@ -30,10 +30,12 @@ CC-BY 3.0 terms.
 
 ## Updating from upstream
 
+Run from this directory (`mapoi_turtlebot3_example/gazebo_models/`):
+
 ```bash
 for model in ground_plane sun; do
   for file in model.config model.sdf; do
-    curl -fsSL -o gazebo_models/${model}/${file} \
+    curl -fsSL -o ${model}/${file} \
       https://raw.githubusercontent.com/osrf/gazebo_models/master/${model}/${file}
   done
 done
