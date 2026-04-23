@@ -25,8 +25,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG USER_NAME=ros
 ARG USER_ID=1000
 ARG GROUP_ID=1000
-RUN groupadd -f -g ${GROUP_ID} ${USER_NAME} \
+# Ubuntu 24.04 (Jazzy ベース) には UID 1000 の ubuntu ユーザーが pre-created
+# されており、そのまま useradd -u 1000 すると exit 4 (UID in use) で落ちる。
+# 衝突する UID/GID を占有する既存ユーザー・グループを先に削除してから作り直す。
+# GID だけが衝突するケース (e.g. USER_ID=1001, GROUP_ID=1000) でも
+# 既存グループを使っているユーザーを userdel しないと groupdel が失敗し、
+# useradd -g が元の競合グループにぶら下がって primary group の GID が
+# ずれる事故が起きるため、両方を明示的にクリアする。
+RUN existing_user_by_uid="$(getent passwd ${USER_ID} | cut -d: -f1)" \
+ && if [ -n "${existing_user_by_uid}" ] && [ "${existing_user_by_uid}" != "${USER_NAME}" ]; then \
+      userdel -r "${existing_user_by_uid}" 2>/dev/null || userdel "${existing_user_by_uid}" ; \
+    fi \
+ && existing_user_by_gid="$(getent passwd | awk -F: -v g=${GROUP_ID} '$4==g {print $1; exit}')" \
+ && if [ -n "${existing_user_by_gid}" ] && [ "${existing_user_by_gid}" != "${USER_NAME}" ]; then \
+      userdel -r "${existing_user_by_gid}" 2>/dev/null || userdel "${existing_user_by_gid}" ; \
+    fi \
+ && existing_group="$(getent group ${GROUP_ID} | cut -d: -f1)" \
+ && if [ -n "${existing_group}" ] && [ "${existing_group}" != "${USER_NAME}" ]; then \
+      groupdel "${existing_group}" ; \
+    fi \
+ && groupadd -g ${GROUP_ID} ${USER_NAME} \
  && useradd -m -u ${USER_ID} -g ${GROUP_ID} -s /bin/bash ${USER_NAME} \
+ && [ "$(getent group ${GROUP_ID} | cut -d: -f1)" = "${USER_NAME}" ] \
  && echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /home/${USER_NAME}/.bashrc \
  && echo "[ -f /ros2_ws/install/setup.bash ] && source /ros2_ws/install/setup.bash" >> /home/${USER_NAME}/.bashrc \
  && echo "export TURTLEBOT3_MODEL=burger" >> /home/${USER_NAME}/.bashrc
