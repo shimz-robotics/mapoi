@@ -212,6 +212,52 @@ void MapoiNavServer::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv:
   }
   RCLCPP_INFO(this->get_logger(), "Received %zu Tagged POIs.", pois_list_.size());
   rebuild_event_pois();
+  auto_publish_initial_pose();
+}
+
+void MapoiNavServer::auto_publish_initial_pose()
+{
+  std::vector<mapoi_interfaces::msg::PointOfInterest> matched;
+  {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    for (const auto & poi : pois_list_) {
+      for (const auto & tag : poi.tags) {
+        if (tag == "initial_pose") {
+          matched.push_back(poi);
+          break;
+        }
+      }
+    }
+  }
+
+  if (matched.empty()) {
+    RCLCPP_INFO(this->get_logger(),
+      "No POI with 'initial_pose' tag found; skipping auto initial pose.");
+    return;
+  }
+
+  if (matched.size() > 1) {
+    std::string names;
+    for (size_t i = 0; i < matched.size(); ++i) {
+      if (i > 0) names += ", ";
+      names += matched[i].name;
+    }
+    RCLCPP_WARN(this->get_logger(),
+      "Multiple POIs with 'initial_pose' tag (%zu): [%s]. Using first: '%s'.",
+      matched.size(), names.c_str(), matched[0].name.c_str());
+  }
+
+  const auto & poi = matched[0];
+  geometry_msgs::msg::PoseWithCovarianceStamped init_pose;
+  init_pose.header.frame_id = this->get_parameter("map_frame").as_string();
+  init_pose.header.stamp = this->now();
+  init_pose.pose.pose = poi.pose;
+  init_pose.pose.covariance[0] = 0.25;
+  init_pose.pose.covariance[7] = 0.25;
+  init_pose.pose.covariance[35] = 0.06853891945200942;
+  nav2_initialpose_pub_->publish(init_pose);
+  RCLCPP_INFO(this->get_logger(),
+    "Auto-published initial pose from POI '%s'.", poi.name.c_str());
 }
 
 void MapoiNavServer::on_route_received(rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future)

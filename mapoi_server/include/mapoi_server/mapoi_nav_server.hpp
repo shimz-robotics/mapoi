@@ -124,6 +124,10 @@ private:
   void radius_check_callback();
   double distance_2d(const geometry_msgs::msg::Pose & poi_pose, double rx, double ry);
 
+  // initial_pose タグ付き POI を抽出して /initialpose に自動 publish。
+  // 0 個: skip / 1 個: そのまま / 複数: 警告して先頭を採用
+  void auto_publish_initial_pose();
+
 #ifdef UNIT_TEST
   friend class NavServerTestFixture;
   FRIEND_TEST(NavServerTestFixture, DistanceCalculation);

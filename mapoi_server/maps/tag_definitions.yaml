@@ -8,3 +8,5 @@ tags:
     description: "Map origin reference point"
   - name: pause
     description: "Automatically pause navigation when robot enters the POI radius"
+  - name: initial_pose
+    description: "Initial pose for localization (e.g. AMCL); auto-published on map load/switch"
