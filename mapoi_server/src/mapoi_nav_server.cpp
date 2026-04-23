@@ -112,14 +112,7 @@ void MapoiNavServer::mapoi_initialpose_poi_cb(const std_msgs::msg::String::Share
 
       for (const auto &poi : result->pois_list) {
         if (poi.name == poi_name) {
-          geometry_msgs::msg::PoseWithCovarianceStamped init_pose;
-          init_pose.header.frame_id = "map";
-          init_pose.pose.pose = poi.pose;
-          init_pose.pose.covariance[0] = 0.25;
-          init_pose.pose.covariance[7] = 0.25;
-          init_pose.pose.covariance[35] = 0.06853891945200942;
-          nav2_initialpose_pub_->publish(init_pose);
-          RCLCPP_INFO(this->get_logger(), "Published initial pose from POI: %s", poi_name.c_str());
+          publish_initial_pose(poi.pose, "explicit POI '" + poi_name + "'");
           return;
         }
       }
@@ -215,27 +208,18 @@ void MapoiNavServer::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv:
   auto_publish_initial_pose();
 }
 
-void MapoiNavServer::auto_publish_initial_pose()
+std::vector<mapoi_interfaces::msg::PointOfInterest> MapoiNavServer::select_initial_pose_pois(
+  const std::vector<mapoi_interfaces::msg::PointOfInterest> & pois)
 {
   std::vector<mapoi_interfaces::msg::PointOfInterest> matched;
-  {
-    std::lock_guard<std::mutex> lock(data_mutex_);
-    for (const auto & poi : pois_list_) {
-      for (const auto & tag : poi.tags) {
-        if (tag == "initial_pose") {
-          matched.push_back(poi);
-          break;
-        }
+  for (const auto & poi : pois) {
+    for (const auto & tag : poi.tags) {
+      if (tag == "initial_pose") {
+        matched.push_back(poi);
+        break;
       }
     }
   }
-
-  if (matched.empty()) {
-    RCLCPP_INFO(this->get_logger(),
-      "No POI with 'initial_pose' tag found; skipping auto initial pose.");
-    return;
-  }
-
   if (matched.size() > 1) {
     std::string names;
     for (size_t i = 0; i < matched.size(); ++i) {
@@ -246,18 +230,45 @@ void MapoiNavServer::auto_publish_initial_pose()
       "Multiple POIs with 'initial_pose' tag (%zu): [%s]. Using first: '%s'.",
       matched.size(), names.c_str(), matched[0].name.c_str());
   }
+  return matched;
+}
 
-  const auto & poi = matched[0];
-  geometry_msgs::msg::PoseWithCovarianceStamped init_pose;
-  init_pose.header.frame_id = this->get_parameter("map_frame").as_string();
-  init_pose.header.stamp = this->now();
-  init_pose.pose.pose = poi.pose;
-  init_pose.pose.covariance[0] = 0.25;
-  init_pose.pose.covariance[7] = 0.25;
-  init_pose.pose.covariance[35] = 0.06853891945200942;
-  nav2_initialpose_pub_->publish(init_pose);
-  RCLCPP_INFO(this->get_logger(),
-    "Auto-published initial pose from POI '%s'.", poi.name.c_str());
+void MapoiNavServer::auto_publish_initial_pose()
+{
+  // config_path 未確定 / 同一 config で publish 済み → スキップ（起動時の二重発火防止）
+  if (last_config_path_.empty() || last_config_path_ == last_initial_pose_config_path_) {
+    return;
+  }
+
+  std::vector<mapoi_interfaces::msg::PointOfInterest> matched;
+  {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    matched = select_initial_pose_pois(pois_list_);
+  }
+
+  if (matched.empty()) {
+    RCLCPP_INFO(this->get_logger(),
+      "No POI with 'initial_pose' tag found; skipping auto initial pose.");
+    last_initial_pose_config_path_ = last_config_path_;  // 同一 config の再評価を抑止
+    return;
+  }
+
+  publish_initial_pose(matched[0].pose, "auto from POI '" + matched[0].name + "'");
+  last_initial_pose_config_path_ = last_config_path_;
+}
+
+void MapoiNavServer::publish_initial_pose(
+  const geometry_msgs::msg::Pose & pose, const std::string & source)
+{
+  geometry_msgs::msg::PoseWithCovarianceStamped msg;
+  msg.header.frame_id = this->get_parameter("map_frame").as_string();
+  msg.header.stamp = this->now();
+  msg.pose.pose = pose;
+  msg.pose.covariance[0] = 0.25;
+  msg.pose.covariance[7] = 0.25;
+  msg.pose.covariance[35] = 0.06853891945200942;
+  nav2_initialpose_pub_->publish(msg);
+  RCLCPP_INFO(this->get_logger(), "Published initial pose (%s).", source.c_str());
 }
 
 void MapoiNavServer::on_route_received(rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future)
