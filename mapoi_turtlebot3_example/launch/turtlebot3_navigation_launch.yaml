@@ -27,12 +27,19 @@ launch:
     default: "true"
     description: "Launch Gazebo GUI (gzclient; set false for headless). gzserver は常時起動"
 
-# Gazebo launch (headless-aware wrapper)
+# Gazebo launch
+# - Humble: headless-aware wrapper (gazebo_gui arg で gzclient を条件化可能)
+# - Jazzy: 上流 launch を直接 include (headless 未対応、gazebo_gui arg は無視)
 - include:
     file: "$(find-pkg-share mapoi_turtlebot3_example)/launch/gazebo_headless_aware.launch.yaml"
     arg:
       - {name: gazebo_gui, value: "$(var gazebo_gui)"}
       - {name: use_sim_time, value: "$(var use_sim_time)"}
+    if: $(eval "'$(env ROS_DISTRO)' == 'humble'")
+
+- include:
+    file: "$(find-pkg-share turtlebot3_gazebo)/launch/turtlebot3_world.launch.py"
+    unless: $(eval "'$(env ROS_DISTRO)' == 'humble'")
 
 
 # Include Nav2 bringup
