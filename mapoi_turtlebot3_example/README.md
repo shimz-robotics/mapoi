@@ -35,6 +35,24 @@ ros2 launch mapoi_turtlebot3_example turtlebot3_navigation_launch.yaml
 ros2 topic pub -1 /mapoi_goal_pose_poi std_msgs/msg/String "{data: conference_room}"
 ```
 
+### Headless 起動（GUI なし）
+
+CI / SSH 接続環境 / 軽量検証用に RViz2・Gazebo GUI を起動しない形で立ち上げられます。WebUI (http://localhost:8765) は従来どおり使用可能です。
+
+```sh
+ros2 launch mapoi_turtlebot3_example turtlebot3_navigation_launch.yaml \
+  rviz:=false gazebo_gui:=false
+```
+
+個別制御も可能:
+
+| arg | default | 効果 |
+|---|---|---|
+| `rviz` | `true` | RViz2 の起動有無 |
+| `gazebo_gui` | `true` | Gazebo GUI (`gzclient`) の起動有無。`false` でも `gzserver` は起動し物理シミュレーションは動作 |
+
+> **⚠️ Distro の制約**: headless モード (`gazebo_gui:=false`) は現状 **Humble (Gazebo Classic) のみ対応**。Jazzy 以降は `turtlebot3_gazebo` 側の launch が `ros_gz_sim` (Harmonic) ベースに変わるため、`gazebo_gui` arg は無視され常に GUI 付きで起動する。Jazzy 対応は別 issue で追加予定。`rviz:=false` は distro によらず動作。
+
 ## 地図の作成（SLAM）
 
 ### 1. シミュレーターの起動
