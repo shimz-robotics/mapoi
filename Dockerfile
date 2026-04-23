@@ -84,4 +84,4 @@ RUN bash -lc "source /opt/ros/${ROS_DISTRO}/setup.bash \
  && rosdep install --from-paths src --ignore-src -r -y \
  && colcon build --symlink-install"
 
-CMD ["bash", "-lc", "source /opt/ros/${ROS_DISTRO}/setup.bash && source /ros2_ws/install/setup.bash && ros2 launch mapoi_turtlebot3_example turtlebot3_navigation_launch.yaml"]
+CMD ["bash", "-lc", "source /opt/ros/${ROS_DISTRO}/setup.bash && source /ros2_ws/install/setup.bash && ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml"]

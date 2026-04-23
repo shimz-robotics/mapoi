@@ -1,0 +1,47 @@
+# mapoi core 3 nodes を起動する最小 launch。
+# 自分のロボットに mapoi を組み込む場合はこの launch を include する想定:
+#
+#   - include:
+#       file: "$(find-pkg-share mapoi_server)/launch/mapoi_core.launch.yaml"
+#       arg:
+#         - {name: maps_path, value: "/path/to/maps"}
+#         - {name: map_name, value: "initial_map_name"}
+
+launch:
+
+- arg:
+    name: maps_path
+    default: ""
+    description: "Full path to maps directory (required)"
+
+- arg:
+    name: map_name
+    default: ""
+    description: "Initial map name (directory inside maps_path)"
+
+- arg:
+    name: config_file
+    default: "mapoi_config.yaml"
+    description: "Config file name inside each map directory"
+
+- arg:
+    name: pub_interval_ms
+    default: "500"
+    description: "mapoi_config_path publish interval (ms)"
+
+- node:
+    pkg: mapoi_server
+    exec: mapoi_server
+    param:
+      - {name: maps_path, value: "$(var maps_path)"}
+      - {name: map_name, value: "$(var map_name)"}
+      - {name: config_file, value: "$(var config_file)"}
+      - {name: pub_interval_ms, value: "$(var pub_interval_ms)"}
+
+- node:
+    pkg: mapoi_server
+    exec: mapoi_nav_server
+
+- node:
+    pkg: mapoi_server
+    exec: mapoi_rviz2_publisher
