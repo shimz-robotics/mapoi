@@ -17,9 +17,22 @@ launch:
     default: "true"
     description: "Use simulation clock if true"
 
-# Gazebo launch
+- arg:
+    name: gui
+    default: "true"
+    description: "Launch RViz2 GUI (set false for headless)"
+
+- arg:
+    name: gazebo_gui
+    default: "true"
+    description: "Launch Gazebo GUI (gzclient; set false for headless)"
+
+# Gazebo launch (headless-aware wrapper)
 - include:
-    file: "$(find-pkg-share turtlebot3_gazebo)/launch/turtlebot3_world.launch.py"
+    file: "$(find-pkg-share mapoi_turtlebot3_example)/launch/gazebo_headless_aware.launch.py"
+    arg:
+      - {name: gazebo_gui, value: "$(var gazebo_gui)"}
+      - {name: use_sim_time, value: "$(var use_sim_time)"}
 
 
 # Include Nav2 bringup
@@ -31,7 +44,7 @@ launch:
       - {name: use_sim_time, value: "$(var use_sim_time)"}
 
 
-# RViz2
+# RViz2 (skip in headless)
 - node:
     pkg: rviz2
     exec: rviz2
@@ -39,6 +52,7 @@ launch:
     param:
       - {name: use_sim_time, value: "$(var use_sim_time)"}
     output: "screen"
+    if: $(var gui)
 
 
 # Mapoi Server
