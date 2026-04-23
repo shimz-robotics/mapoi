@@ -9,8 +9,9 @@
 # お試し/デモ (Turtlebot3 + Gazebo + mapoi):
 #   docker compose up demo
 #
-# ROS 2 のディストリ切替（将来の Jazzy 対応用）:
+# Jazzy を試す場合（Gazebo Harmonic）:
 #   ROS_DISTRO=jazzy docker compose build
+#   ROS_DISTRO=jazzy docker compose up demo
 services:
   dev:
     build:

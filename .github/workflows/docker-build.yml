@@ -13,6 +13,10 @@ permissions:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [humble, jazzy]
     steps:
       - uses: actions/checkout@v4
 
@@ -24,18 +28,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # タグ戦略:
+      # - ${{ matrix.distro }} (例: humble / jazzy): default branch の main push で発行
+      # - latest: humble ビルドかつ default branch の main push のみ（primary distro を指す）
+      # - v{{version}}: humble ビルドかつ v* tag push のみ（primary distro を指す）
+      # - v{{version}}-${{ matrix.distro }}: v* tag push で distro 別に発行
       - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=humble,enable={{is_default_branch}}
-            type=semver,pattern=v{{version}}
-            type=semver,pattern=v{{version}}-humble
+            type=raw,value=${{ matrix.distro }},enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ matrix.distro == 'humble' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+            type=semver,pattern=v{{version}},enable=${{ matrix.distro == 'humble' }}
+            type=semver,pattern=v{{version}}-${{ matrix.distro }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.description=mapoi - ROS 2 Navigation2 用の地図・POI 管理メタパッケージ (demo image)
+            org.opencontainers.image.description=mapoi - ROS 2 Navigation2 用の地図・POI 管理メタパッケージ (${{ matrix.distro }} demo image)
             org.opencontainers.image.licenses=MIT
 
       # push: workflow_dispatch をデフォルトブランチ以外で実行した場合は tags が
@@ -48,7 +57,7 @@ jobs:
           push: ${{ github.event_name != 'workflow_dispatch' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.distro }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.distro }}
           build-args: |
-            ROS_DISTRO=humble
+            ROS_DISTRO=${{ matrix.distro }}
