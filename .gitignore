@@ -2,3 +2,7 @@ build
 install
 log
 .vscode/
+
+# Python bytecode cache
+__pycache__/
+*.py[cod]
