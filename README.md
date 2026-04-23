@@ -138,6 +138,35 @@ bind mount 時の所有者ずれを避けるため、ホストの UID/GID に合
 USER_ID=$(id -u) GROUP_ID=$(id -g) docker compose build dev
 ```
 
+### GPU (NVIDIA) で加速する
+
+デフォルトは CPU レンダリング (Mesa llvmpipe) で GPU 非依存ですが、NVIDIA GPU で RViz2 / Gazebo の描画を加速できます。
+
+ホスト要件:
+- NVIDIA ドライバがインストールされている Linux ホスト
+- [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) が設定済み
+
+pull 済みイメージから起動する場合（`--gpus all` を追加）:
+
+```sh
+xhost +local:docker
+docker run --rm -it --network host --ipc host --gpus all \
+  -e DISPLAY=$DISPLAY \
+  -e NVIDIA_DRIVER_CAPABILITIES=all \
+  -e QT_X11_NO_MITSHM=1 \
+  -e GAZEBO_MODEL_DATABASE_URI= \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  ghcr.io/shimz-robotics/mapoi:humble
+```
+
+compose から起動する場合（`docker-compose.gpu.yml` を override で重ねる）:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up demo
+```
+
+GPU を使わない通常起動は `docker-compose.yml` 単体、`--gpus all` 無しの `docker run` を使ってください（既存手順そのまま）。
+
 ### Jazzy で compose から試す
 
 Dockerfile / docker-compose は `ARG ROS_DISTRO` でディストリを切替可能です。Jazzy (Gazebo Harmonic) でソースビルドする場合:
