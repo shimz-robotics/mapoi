@@ -124,6 +124,23 @@ private:
   void radius_check_callback();
   double distance_2d(const geometry_msgs::msg::Pose & poi_pose, double rx, double ry);
 
+  // initial_pose タグ付き POI を抽出して /initialpose に自動 publish。
+  // 0 個: skip / 1 個: そのまま / 複数: 警告して先頭を採用。
+  // 同一 config_path に対する重複 publish はスキップする。
+  void auto_publish_initial_pose();
+
+  // POI リストから initial_pose タグ付き候補を返す純関数（test 容易化のため分離）。
+  // 複数あれば WARN を出し先頭、0 個なら空ベクタ。
+  std::vector<mapoi_interfaces::msg::PointOfInterest> select_initial_pose_pois(
+    const std::vector<mapoi_interfaces::msg::PointOfInterest> & pois);
+
+  // /initialpose 配信の単一エントリポイント（手動経路 / 自動経路で共通化）。
+  void publish_initial_pose(
+    const geometry_msgs::msg::Pose & pose, const std::string & source);
+
+  // 同一 config_path への重複 publish 防止
+  std::string last_initial_pose_config_path_;
+
 #ifdef UNIT_TEST
   friend class NavServerTestFixture;
   FRIEND_TEST(NavServerTestFixture, DistanceCalculation);
@@ -131,6 +148,9 @@ private:
   FRIEND_TEST(NavServerTestFixture, RebuildEventPoisIncludesAllPois);
   FRIEND_TEST(NavServerTestFixture, RebuildEventPoisEmpty);
   FRIEND_TEST(NavServerTestFixture, PauseTagDetection);
+  FRIEND_TEST(NavServerTestFixture, SelectInitialPosePoisEmpty);
+  FRIEND_TEST(NavServerTestFixture, SelectInitialPosePoisSingle);
+  FRIEND_TEST(NavServerTestFixture, SelectInitialPosePoisMultiple);
 #endif
 };
 

@@ -87,6 +87,38 @@ TEST_F(NavServerTestFixture, PauseTagDetection)
   EXPECT_FALSE(has_pause(poi_no_pause));
 }
 
+TEST_F(NavServerTestFixture, SelectInitialPosePoisEmpty)
+{
+  std::vector<mapoi_interfaces::msg::PointOfInterest> pois;
+  pois.push_back(make_poi("goal_only", 0.0, 0.0, 0.5, {"goal"}));
+  pois.push_back(make_poi("origin_only", 1.0, 0.0, 0.5, {"origin"}));
+  auto matched = node_->select_initial_pose_pois(pois);
+  EXPECT_EQ(matched.size(), 0u);
+}
+
+TEST_F(NavServerTestFixture, SelectInitialPosePoisSingle)
+{
+  std::vector<mapoi_interfaces::msg::PointOfInterest> pois;
+  pois.push_back(make_poi("goal_only", 0.0, 0.0, 0.5, {"goal"}));
+  pois.push_back(make_poi("entry", -2.0, -0.5, 0.5, {"goal", "initial_pose"}));
+  pois.push_back(make_poi("origin_only", 1.0, 0.0, 0.5, {"origin"}));
+  auto matched = node_->select_initial_pose_pois(pois);
+  ASSERT_EQ(matched.size(), 1u);
+  EXPECT_EQ(matched[0].name, "entry");
+}
+
+TEST_F(NavServerTestFixture, SelectInitialPosePoisMultiple)
+{
+  std::vector<mapoi_interfaces::msg::PointOfInterest> pois;
+  pois.push_back(make_poi("first", 1.0, 1.0, 0.5, {"initial_pose"}));
+  pois.push_back(make_poi("middle", 2.0, 2.0, 0.5, {"goal"}));
+  pois.push_back(make_poi("second", 3.0, 3.0, 0.5, {"initial_pose", "goal"}));
+  auto matched = node_->select_initial_pose_pois(pois);
+  ASSERT_EQ(matched.size(), 2u);
+  EXPECT_EQ(matched[0].name, "first");  // 順序保持・先頭採用
+  EXPECT_EQ(matched[1].name, "second");
+}
+
 int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);
