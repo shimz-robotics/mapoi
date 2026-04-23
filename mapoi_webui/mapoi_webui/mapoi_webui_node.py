@@ -392,7 +392,10 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        # launch 経由 SIGINT では rclpy context が既に shutdown 済みの場合があり、
+        # rclpy.shutdown() を直接呼ぶと RCLError になる。try_shutdown() は
+        # 状態確認と shutdown を 1 つの API に閉じ込めてある。
+        rclpy.try_shutdown()
 
 
 if __name__ == '__main__':
