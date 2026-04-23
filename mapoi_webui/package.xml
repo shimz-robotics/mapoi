@@ -23,6 +23,11 @@
   <exec_depend>python3-pil</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
 
+  <!-- mapoi_webui_node.py が get_package_share_directory('mapoi_server') で
+       maps/tag_definitions.yaml を runtime 参照するため。
+       #40 で mapoi_server → mapoi_webui の依存が消えたため、循環しない。 -->
+  <exec_depend>mapoi_server</exec_depend>
+
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 

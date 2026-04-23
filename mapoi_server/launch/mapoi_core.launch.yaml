@@ -11,13 +11,11 @@ launch:
 
 - arg:
     name: maps_path
-    default: ""
-    description: "Full path to maps directory (required)"
+    description: "Full path to maps directory (REQUIRED)"
 
 - arg:
     name: map_name
-    default: ""
-    description: "Initial map name (directory inside maps_path)"
+    description: "Initial map name, which is a directory name inside maps_path (REQUIRED)"
 
 - arg:
     name: config_file
