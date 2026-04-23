@@ -5,7 +5,7 @@
 # NOTE: この wrapper は Humble (Gazebo Classic) 専用。
 # Jazzy 以降は turtlebot3_gazebo 側の launch が ros_gz_sim (Harmonic) ベースに
 # 変わるため、この wrapper をそのまま流用できない。Jazzy 対応は別 issue で
-# 対応する。turtlebot3_navigation_launch.yaml は ROS_DISTRO で分岐して、
+# 対応する。turtlebot3_navigation.launch.yaml は ROS_DISTRO で分岐して、
 # Jazzy ではこの wrapper を使わず上流 launch を直接 include する。
 
 launch:

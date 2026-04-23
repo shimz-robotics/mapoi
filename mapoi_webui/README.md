@@ -78,7 +78,7 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 ## 起動方法
 
 ```bash
-ros2 launch mapoi_webui mapoi_webui_launch.yaml maps_path:=/path/to/maps map_name:=your_map
+ros2 launch mapoi_webui mapoi_webui.launch.yaml maps_path:=/path/to/maps map_name:=your_map
 ```
 
 ブラウザで `http://<ホスト>:8765` にアクセスしてください。

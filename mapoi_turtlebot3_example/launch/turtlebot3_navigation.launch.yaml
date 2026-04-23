@@ -62,32 +62,21 @@ launch:
     if: $(var rviz)
 
 
-# Mapoi Server
-- node:
-    pkg: mapoi_server
-    exec: mapoi_server
-    param:
+# Mapoi core (mapoi_server / mapoi_nav_server / mapoi_rviz2_publisher)
+- include:
+    file: "$(find-pkg-share mapoi_server)/launch/mapoi_core.launch.yaml"
+    arg:
       - {name: maps_path, value: "$(find-pkg-share mapoi_turtlebot3_example)/maps"}
       - {name: map_name, value: "turtlebot3_world"}
       - {name: config_file, value: "mapoi_config.yaml"}
-      - {name: pub_interval_ms, value: 500}
-
-- node:
-    pkg: mapoi_server
-    exec: mapoi_nav_server
-
-- node:
-    pkg: mapoi_server
-    exec: mapoi_rviz2_publisher
+      - {name: pub_interval_ms, value: "500"}
 
 # Mapoi Web UI
-- node:
-    pkg: mapoi_webui
-    exec: mapoi_webui_node.py
-    param:
+- include:
+    file: "$(find-pkg-share mapoi_webui)/launch/mapoi_webui.launch.yaml"
+    arg:
       - {name: maps_path, value: "$(find-pkg-share mapoi_turtlebot3_example)/maps"}
       - {name: map_name, value: "turtlebot3_world"}
       - {name: config_file, value: "mapoi_config.yaml"}
-      - {name: web_port, value: 8765}
+      - {name: web_port, value: "8765"}
       - {name: web_host, value: "0.0.0.0"}
-    output: "screen"

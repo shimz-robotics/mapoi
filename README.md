@@ -22,7 +22,7 @@ rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
 source install/setup.bash
 export TURTLEBOT3_MODEL=burger
-ros2 launch mapoi_turtlebot3_example turtlebot3_navigation_launch.yaml
+ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml
 ```
 
 ブラウザから Web UI にアクセス:
@@ -125,7 +125,7 @@ cd /ros2_ws
 rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
 source install/setup.bash
-ros2 launch mapoi_turtlebot3_example turtlebot3_navigation_launch.yaml
+ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml
 ```
 
 ホスト側の `git` / VSCode でソース編集し、コンテナ内で再ビルドして反復できます。

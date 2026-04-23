@@ -3,6 +3,36 @@
 mapoi のメインパッケージです。
 地図と POI の情報を管理し、他のパッケージにサービスとして提供します。また、POI 名を指定した自律走行やPOI半径イベントの検知を行います。
 
+## 自分のロボットへの組み込み方
+
+3 つの core node (`mapoi_server` / `mapoi_nav_server` / `mapoi_rviz2_publisher`) をまとめて起動する最小 launch を提供しています。自前の bringup launch から以下のように include してください:
+
+```yaml
+- include:
+    file: "$(find-pkg-share mapoi_server)/launch/mapoi_core.launch.yaml"
+    arg:
+      - {name: maps_path, value: "/path/to/your/maps"}    # REQUIRED
+      - {name: map_name, value: "initial_map_name"}        # REQUIRED
+      - {name: config_file, value: "mapoi_config.yaml"}    # optional
+      - {name: pub_interval_ms, value: "500"}              # optional
+```
+
+`maps_path` と `map_name` は **必須** です (未指定だと `mapoi_server` が config ファイルを解決できず起動失敗します)。
+
+Web UI も使う場合は `mapoi_webui.launch.yaml` も併せて include:
+
+```yaml
+- include:
+    file: "$(find-pkg-share mapoi_webui)/launch/mapoi_webui.launch.yaml"
+    arg:
+      - {name: maps_path, value: "/path/to/your/maps"}
+      - {name: map_name, value: "initial_map_name"}
+```
+
+> **NOTE**: `mapoi_webui` は現状 `mapoi_server` の share 配下 `maps/tag_definitions.yaml` を runtime 参照します (システムタグの表示に使用)。そのため `mapoi_webui` 単体を起動する場合も `mapoi_server` パッケージがインストール済みである必要があります。将来的に service 化する予定 (#39)。
+
+TurtleBot3 を使った動作例は `mapoi_turtlebot3_example` パッケージを参照してください。
+
 ## ノード
 
 ### mapoi_server

@@ -26,7 +26,7 @@ sudo apt install -y \
 
 ```sh
 export TURTLEBOT3_MODEL=burger
-ros2 launch mapoi_turtlebot3_example turtlebot3_navigation_launch.yaml
+ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml
 ```
 
 別ターミナルから POI への自律走行をテスト:
@@ -40,7 +40,7 @@ ros2 topic pub -1 /mapoi_goal_pose_poi std_msgs/msg/String "{data: conference_ro
 CI / SSH 接続環境 / 軽量検証用に RViz2・Gazebo GUI を起動しない形で立ち上げられます。WebUI (http://localhost:8765) は従来どおり使用可能です。
 
 ```sh
-ros2 launch mapoi_turtlebot3_example turtlebot3_navigation_launch.yaml \
+ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml \
   rviz:=false gazebo_gui:=false
 ```
 
