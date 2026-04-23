@@ -17,7 +17,7 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu, graphics, display]
+              capabilities: [gpu]
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
@@ -29,7 +29,7 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu, graphics, display]
+              capabilities: [gpu]
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
