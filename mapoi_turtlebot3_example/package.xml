@@ -19,6 +19,9 @@
   <exec_depend>turtlebot3</exec_depend>
   <exec_depend>turtlebot3_gazebo</exec_depend>
   <exec_depend>turtlebot3_navigation2</exec_depend>
+  <exec_depend>mapoi_server</exec_depend>
+  <exec_depend>mapoi_webui</exec_depend>
+  <exec_depend>mapoi_rviz_plugins</exec_depend>
   <depend>yaml_cpp_vendor</depend>
   <depend>ament_index_cpp</depend>
   <depend>geometry_msgs</depend>
