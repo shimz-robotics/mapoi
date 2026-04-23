@@ -138,15 +138,16 @@ bind mount 時の所有者ずれを避けるため、ホストの UID/GID に合
 USER_ID=$(id -u) GROUP_ID=$(id -g) docker compose build dev
 ```
 
-### 将来の Jazzy 対応
+### Jazzy で compose から試す
 
-Dockerfile は `ARG ROS_DISTRO` でディストリを切替可能にしてあります。
+Dockerfile / docker-compose は `ARG ROS_DISTRO` でディストリを切替可能です。Jazzy (Gazebo Harmonic) でソースビルドする場合:
 
 ```sh
 ROS_DISTRO=jazzy docker compose build
+ROS_DISTRO=jazzy docker compose up demo
 ```
 
-ただし Jazzy では Gazebo Classic → Gazebo Harmonic への移行など、別途対応が必要です（別 Issue で対応予定）。
+pull 済みイメージを使う場合は `ghcr.io/shimz-robotics/mapoi:jazzy` を直接 `docker run` する方が手軽です（上の「ビルド済みイメージから試す」節を参照）。Jazzy は Nav2 lifecycle 立ち上げに 30〜60 秒かかるので起動直後に kill しないでください。
 
 ## 主な機能
 
