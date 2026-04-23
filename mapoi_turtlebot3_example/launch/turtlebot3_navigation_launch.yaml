@@ -29,7 +29,7 @@ launch:
 
 # Gazebo launch (headless-aware wrapper)
 - include:
-    file: "$(find-pkg-share mapoi_turtlebot3_example)/launch/gazebo_headless_aware.launch.py"
+    file: "$(find-pkg-share mapoi_turtlebot3_example)/launch/gazebo_headless_aware.launch.yaml"
     arg:
       - {name: gazebo_gui, value: "$(var gazebo_gui)"}
       - {name: use_sim_time, value: "$(var use_sim_time)"}
