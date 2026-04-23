@@ -4,9 +4,19 @@ project(mapoi_server)
 find_package(ament_cmake_auto REQUIRED)
 ament_auto_find_build_dependencies()
 
+# yaml-cpp: ament_auto does not reliably propagate the yaml-cpp link library
+# on Jazzy (yaml-cpp 0.8 exports yaml-cpp::yaml-cpp, Humble's 0.7 uses yaml-cpp).
+find_package(yaml-cpp REQUIRED)
+if(TARGET yaml-cpp::yaml-cpp)
+  set(_mapoi_yaml_cpp_target yaml-cpp::yaml-cpp)
+else()
+  set(_mapoi_yaml_cpp_target yaml-cpp)
+endif()
+
 ament_auto_add_executable(mapoi_server
   src/mapoi_server.cpp
 )
+target_link_libraries(mapoi_server ${_mapoi_yaml_cpp_target})
 
 ament_auto_add_executable(mapoi_nav_server
   src/mapoi_nav_server.cpp
@@ -15,6 +25,7 @@ ament_auto_add_executable(mapoi_nav_server
 ament_auto_add_executable(mapoi_rviz2_publisher
   src/mapoi_rviz2_publisher.cpp
 )
+target_link_libraries(mapoi_rviz2_publisher ${_mapoi_yaml_cpp_target})
 
 
 install(
