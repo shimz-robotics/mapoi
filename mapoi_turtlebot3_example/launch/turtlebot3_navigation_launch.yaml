@@ -9,7 +9,7 @@ launch:
 
 - arg:
     name: params_file
-    default: "$(find-pkg-share mapoi_turtlebot3_example)/param/$(env TURTLEBOT3_MODEL).yaml"
+    default: "$(find-pkg-share mapoi_turtlebot3_example)/param/$(env ROS_DISTRO)/$(env TURTLEBOT3_MODEL).yaml"
     description: "Full path to param file to load"
 
 - arg:
