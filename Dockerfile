@@ -25,7 +25,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG USER_NAME=ros
 ARG USER_ID=1000
 ARG GROUP_ID=1000
-RUN groupadd -f -g ${GROUP_ID} ${USER_NAME} \
+# Ubuntu 24.04 (Jazzy ベース) には UID 1000 の ubuntu ユーザーが pre-created
+# されており、そのまま useradd -u 1000 すると exit 4 (UID in use) で落ちる。
+# 目的の UID を既存ユーザーが占有していたら削除してから作り直す。
+RUN existing_user="$(getent passwd ${USER_ID} | cut -d: -f1)" \
+ && if [ -n "${existing_user}" ] && [ "${existing_user}" != "${USER_NAME}" ]; then \
+      userdel -r "${existing_user}" 2>/dev/null || userdel "${existing_user}" ; \
+    fi \
+ && existing_group="$(getent group ${GROUP_ID} | cut -d: -f1)" \
+ && if [ -n "${existing_group}" ] && [ "${existing_group}" != "${USER_NAME}" ]; then \
+      groupdel "${existing_group}" 2>/dev/null || true ; \
+    fi \
+ && groupadd -f -g ${GROUP_ID} ${USER_NAME} \
  && useradd -m -u ${USER_ID} -g ${GROUP_ID} -s /bin/bash ${USER_NAME} \
  && echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /home/${USER_NAME}/.bashrc \
  && echo "[ -f /ros2_ws/install/setup.bash ] && source /ros2_ws/install/setup.bash" >> /home/${USER_NAME}/.bashrc \
