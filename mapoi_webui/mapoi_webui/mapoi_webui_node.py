@@ -392,7 +392,12 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        # launch 経由 SIGINT の場合、rclpy context は既に shutdown 済みで
+        # 二重呼び出しになると RCLError を吐くため吸収する。
+        try:
+            rclpy.shutdown()
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':
