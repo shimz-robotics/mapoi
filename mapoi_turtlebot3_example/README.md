@@ -41,14 +41,14 @@ CI / SSH 接続環境 / 軽量検証用に RViz2・Gazebo GUI を起動しない
 
 ```sh
 ros2 launch mapoi_turtlebot3_example turtlebot3_navigation_launch.yaml \
-  gui:=false gazebo_gui:=false
+  rviz:=false gazebo_gui:=false
 ```
 
 個別制御も可能:
 
 | arg | default | 効果 |
 |---|---|---|
-| `gui` | `true` | RViz2 の起動有無 |
+| `rviz` | `true` | RViz2 の起動有無 |
 | `gazebo_gui` | `true` | Gazebo GUI (`gzclient`) の起動有無。`false` でも `gzserver` は起動し物理シミュレーションは動作 |
 
 ## 地図の作成（SLAM）
