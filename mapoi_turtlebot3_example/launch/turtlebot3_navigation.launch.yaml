@@ -25,7 +25,7 @@ launch:
 - arg:
     name: gazebo_gui
     default: "true"
-    description: "Launch Gazebo GUI (gzclient; set false for headless). gzserver は常時起動"
+    description: "Launch シミュレータ GUI (Humble: gzclient / Jazzy: gz sim -g). false で headless. server は常時起動"
 
 # Gazebo launch (distro 別の headless-aware wrapper を使い分け)
 # - Humble: Gazebo Classic 用 (gazebo_ros gzserver/gzclient を条件化)
