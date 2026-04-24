@@ -303,11 +303,15 @@ class MapoiSimBridge(Node):
                 f'Failed to read robot SDF ({self._robot_sdf_path}): {e}; skipping respawn')
             return False
 
-        # 2. delete (preflight 通過後にのみ実行)
+        # 2. delete (preflight 通過後にのみ実行)。失敗しても spawn には進む。
+        # 理由: 前回試行で delete 成功 + spawn 失敗で robot が既に消えている
+        # ケースを retry する場合、delete が "entity not found" で success=False
+        # を返す。abort すると burger 不在のまま固定化されるため、log だけ残して
+        # spawn を試行する (重複は spawn 側が success=False で検知)。
         if not self._delete_entity(self._robot_name):
-            self.get_logger().warn(
-                'delete robot failed; skipping respawn to avoid duplicate entity')
-            return False
+            self.get_logger().info(
+                'delete robot returned not-success; entity may already be gone. '
+                'will still attempt spawn at new pose (duplicate detected by spawn).')
 
         # 3. spawn
         req = SpawnEntity.Request()
