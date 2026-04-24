@@ -10,6 +10,9 @@ mapoi_sim_bridge:
         uri: model://turtlebot3_dqn_world
         name: turtlebot3_dqn_world
     robot_entity_name: burger
-    # ロボット re-spawn 用 SDF パス (set_entity_state が humble + Classic で
-    # 実用上動かないため、teleport の代わりに delete + spawn する)
-    robot_sdf_path: /opt/ros/humble/share/turtlebot3_gazebo/models/turtlebot3_burger/model.sdf
+    # ロボット re-spawn 用 SDF パス。
+    # ROS params yaml は launch substitution を評価しないため、ここでは default を
+    # 置かず、turtlebot3_navigation.launch.yaml から
+    #   $(find-pkg-share turtlebot3_gazebo)/models/turtlebot3_$(env TURTLEBOT3_MODEL)/model.sdf
+    # を渡す (空文字なら sim_bridge は respawn を skip)。
+    robot_sdf_path: ""

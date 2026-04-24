@@ -15,10 +15,20 @@ ros_gz_interfaces 系の service 名・型に切り替える必要があり、#4
 を使うのが筋だが、Humble + Gazebo Classic では plugin の launch arg load が
 upstream の既知問題で client から呼べない (gazebo_ros_pkgs issue #1526, #1157,
 upstream archived 2025-07)。delete + spawn で代替する。
+
+並列性の扱い: subscribe callback (`_on_config_path`) は受信した msg を queue に
+push するだけで即 return し、別 thread の worker が queue から逐次取り出して
+service call を含む処理を行う。これにより:
+- 連続 switch_map での state 崩れを防ぐ (queue が直列化、lock 不要)
+- callback 内で `spin_until_future_complete` を呼ぶことに伴う ROS 2 executor の
+  ネスト spin 問題を回避 (worker は executor 外の thread で `Future.add_done_callback`
+  + `threading.Event.wait` で結果を待つ)
 """
 
 import math
 import os
+import queue
+import threading
 
 import rclpy
 import yaml
@@ -43,21 +53,29 @@ class MapoiSimBridge(Node):
         self._robot_sdf_path = self.get_parameter(
             'robot_sdf_path').get_parameter_value().string_value
 
-        # 内部状態
+        # 内部状態 (worker thread のみが触る、callback thread は queue.put のみ)
         self._current_map_name = None
         self._current_obstacle_name = None
         self._current_config_path = None
 
-        # 同 callback 内から service call 完了を待つため Reentrant + MultiThreaded
+        # service client は ReentrantCallbackGroup (worker から call_async すれば
+        # done callback は executor の別 thread で呼ばれる)
         self._cb_group = ReentrantCallbackGroup()
         self._spawn_cli = self.create_client(
             SpawnEntity, 'spawn_entity', callback_group=self._cb_group)
         self._delete_cli = self.create_client(
             DeleteEntity, 'delete_entity', callback_group=self._cb_group)
 
+        # subscribe callback は queue に push するだけ
+        self._work_queue = queue.Queue()
         self._config_path_sub = self.create_subscription(
             String, 'mapoi_config_path', self._on_config_path, 10,
             callback_group=self._cb_group)
+
+        # worker thread (queue を直列消費)
+        self._worker_stop = threading.Event()
+        self._worker = threading.Thread(target=self._worker_loop, daemon=True)
+        self._worker.start()
 
         self.get_logger().info(
             f'mapoi_sim_bridge initialized: robot={self._robot_name}, '
@@ -78,6 +96,22 @@ class MapoiSimBridge(Node):
             return {}
 
     def _on_config_path(self, msg):
+        # 軽量。queue に push して即 return。state 操作と service call は worker。
+        self._work_queue.put(msg)
+
+    def _worker_loop(self):
+        while not self._worker_stop.is_set():
+            try:
+                msg = self._work_queue.get(timeout=1.0)
+            except queue.Empty:
+                continue
+            try:
+                self._process_config_path(msg)
+            except Exception as e:
+                self.get_logger().error(
+                    f'sim_bridge worker exception: {e}', exc_info=True)
+
+    def _process_config_path(self, msg):
         path = msg.data
         if path == self._current_config_path:
             return
@@ -146,20 +180,36 @@ class MapoiSimBridge(Node):
 
         self._respawn_robot(x, y, yaw)
 
+    def _call_blocking(self, client, req, timeout_sec=10.0):
+        """worker thread から service を blocking call。
+
+        executor の他 thread が future を resolve する前提なので、Multi+Reentrant
+        が必要。`spin_until_future_complete` を使わず done_callback + Event.wait
+        で待つので、callback thread のネスト spin にならない。
+        """
+        future = client.call_async(req)
+        done_event = threading.Event()
+        future.add_done_callback(lambda _f: done_event.set())
+        if done_event.wait(timeout=timeout_sec):
+            try:
+                return future.result()
+            except Exception as e:
+                self.get_logger().warn(f'service call raised: {e}')
+                return None
+        return None
+
     def _delete_entity(self, name):
         if not self._delete_cli.wait_for_service(timeout_sec=10.0):
             self.get_logger().warn('delete_entity service not available')
             return
         req = DeleteEntity.Request()
         req.name = name
-        future = self._delete_cli.call_async(req)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=5.0)
-        if future.done() and future.result() is not None:
-            res = future.result()
+        res = self._call_blocking(self._delete_cli, req, timeout_sec=5.0)
+        if res is None:
+            self.get_logger().warn(f'delete_entity({name}) timed out')
+        else:
             self.get_logger().info(
                 f'delete_entity({name}): success={res.success}')
-        else:
-            self.get_logger().warn(f'delete_entity({name}) timed out')
 
     def _spawn_entity_from_uri(self, name, uri):
         if not self._spawn_cli.wait_for_service(timeout_sec=10.0):
@@ -174,14 +224,12 @@ class MapoiSimBridge(Node):
         req = SpawnEntity.Request()
         req.name = name
         req.xml = sdf
-        future = self._spawn_cli.call_async(req)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=10.0)
-        if future.done() and future.result() is not None:
-            res = future.result()
+        res = self._call_blocking(self._spawn_cli, req, timeout_sec=10.0)
+        if res is None:
+            self.get_logger().warn(f'spawn_entity({name}) timed out')
+        else:
             self.get_logger().info(
                 f'spawn_entity({name}, {uri}): success={res.success}')
-        else:
-            self.get_logger().warn(f'spawn_entity({name}) timed out')
 
     def _respawn_robot(self, x, y, yaw):
         """ロボットを delete + spawn で新位置に再生成。
@@ -189,26 +237,35 @@ class MapoiSimBridge(Node):
         set_entity_state の代替 (上記 NOTE 参照)。/odom の連続性は失われ、AMCL は
         再 collapse が必要だが、本 PoC のスコープでは許容 (PR #32 の auto initial_pose
         publish が補正する想定)。
-        """
-        # 既存 robot を delete
-        self._delete_entity(self._robot_name)
 
+        preflight (SDF 存在 + spawn service ready + SDF 読込) を delete より先に
+        やる。これにより spawn 不能なときに robot を消したまま復旧不能、を避ける。
+        """
+        # 1. preflight: 失敗するなら delete もしない
         if not self._robot_sdf_path:
             self.get_logger().warn(
-                'robot_sdf_path parameter is empty; skipping robot respawn')
+                'robot_sdf_path parameter is empty; skipping respawn (robot stays at old pose)')
             return
         if not os.path.exists(self._robot_sdf_path):
             self.get_logger().error(
-                f'robot_sdf_path not found: {self._robot_sdf_path}')
+                f'robot_sdf_path not found: {self._robot_sdf_path}; skipping respawn')
             return
-        with open(self._robot_sdf_path, 'r') as f:
-            sdf = f.read()
-
         if not self._spawn_cli.wait_for_service(timeout_sec=10.0):
             self.get_logger().warn(
-                'spawn_entity service not available for robot respawn')
+                'spawn_entity service not available; skipping respawn (robot stays at old pose)')
+            return
+        try:
+            with open(self._robot_sdf_path, 'r') as f:
+                sdf = f.read()
+        except Exception as e:
+            self.get_logger().error(
+                f'Failed to read robot SDF ({self._robot_sdf_path}): {e}; skipping respawn')
             return
 
+        # 2. delete (preflight 通過後にのみ実行)
+        self._delete_entity(self._robot_name)
+
+        # 3. spawn
         req = SpawnEntity.Request()
         req.name = self._robot_name
         req.xml = sdf
@@ -217,17 +274,14 @@ class MapoiSimBridge(Node):
         req.initial_pose.position.z = 0.01
         req.initial_pose.orientation.z = math.sin(yaw / 2.0)
         req.initial_pose.orientation.w = math.cos(yaw / 2.0)
-
-        future = self._spawn_cli.call_async(req)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=10.0)
-        if future.done() and future.result() is not None:
-            res = future.result()
+        res = self._call_blocking(self._spawn_cli, req, timeout_sec=10.0)
+        if res is None:
+            self.get_logger().warn(
+                f'respawn_robot({self._robot_name}) timed out (robot may be deleted)')
+        else:
             self.get_logger().info(
                 f'respawn_robot({self._robot_name}, {x:.2f}, {y:.2f}, yaw={yaw:.2f}): '
                 f'success={res.success}')
-        else:
-            self.get_logger().warn(
-                f'respawn_robot({self._robot_name}) timed out')
 
 
 def main(args=None):
@@ -240,6 +294,8 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
+        node._worker_stop.set()
+        node._worker.join(timeout=2.0)
         executor.shutdown()
         node.destroy_node()
         rclpy.try_shutdown()

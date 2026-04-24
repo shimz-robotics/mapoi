@@ -62,14 +62,17 @@ launch:
     if: $(var rviz)
 
 
-# mapoi_sim_bridge: SwitchMap 時に Gazebo の障害物 entity を入れ替え + ロボット teleport
-# (Gazebo 本体は再起動せず、/clock /tf /odom 等の継続性を保つ)
+# mapoi_sim_bridge: SwitchMap 時に Gazebo の障害物 entity を入れ替え + ロボット再生成
+# (Gazebo 本体は再起動せず、/clock /tf /odom 等の継続性を保つ)。
+# 現状 Humble (Gazebo Classic) 専用。Jazzy (gz-sim) 対応は #42 で別途。
 - node:
     pkg: mapoi_turtlebot3_example
     exec: sim_bridge.py
     output: "screen"
     param:
       - from: "$(find-pkg-share mapoi_turtlebot3_example)/config/sim_bridge.yaml"
+      - {name: robot_sdf_path, value: "$(find-pkg-share turtlebot3_gazebo)/models/turtlebot3_$(env TURTLEBOT3_MODEL)/model.sdf"}
+    if: $(eval "'$(env ROS_DISTRO)' == 'humble'")
 
 # Mapoi core (mapoi_server / mapoi_nav_server / mapoi_rviz2_publisher)
 - include:
