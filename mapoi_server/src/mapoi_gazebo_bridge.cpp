@@ -1,12 +1,12 @@
 // mapoi_gazebo_bridge: SwitchMap 時に Gazebo Classic (gazebo_msgs) の entity を入れ替える。
 //
 // mapoi_config_path topic を購読し、map_name 変化を検知すると:
-// - 旧マップの障害物 entity を /delete_entity で削除
-// - 新マップの障害物 entity を /spawn_entity で生成 (model://... URI で)
+// - 旧マップの world_model entity を /delete_entity で削除
+// - 新マップの world_model entity を /spawn_entity で生成 (model://... URI で)
 // - ロボットも /delete_entity + /spawn_entity で initial_pose POI 座標に再生成
 // Gazebo 本体は無停止で /clock, /tf, /odom, /scan の継続性を保つ。
 //
-// map 依存情報 (障害物 model の URI / name) は各 map の mapoi_config.yaml の
+// map 依存情報 (world_model の URI / name) は各 map の mapoi_config.yaml の
 // gazebo: セクションに置き、mapoi_config_path 受信時に本 node が直接 parse する。
 // ロボット依存情報 (entity_name / SDF path) は launch から parameter で渡す。
 //
@@ -147,7 +147,7 @@ void MapoiGazeboBridge::process_config_path(const std::string & path)
   if (prev_map_name.empty()) {
     // 起動時の最初の通知: launch が既に対応する world で起動済みと仮定。
     // 内部 state のみ更新、entity 入れ替えはしない。
-    current_obstacle_name_ = info.obstacle.name;
+    current_world_model_name_ = info.world_model.name;
     current_map_name_ = map_name;
     current_config_path_ = path;
     RCLCPP_INFO(this->get_logger(),
@@ -171,11 +171,11 @@ ConfigLoadStatus MapoiGazeboBridge::load_gazebo_info(
 {
   try {
     YAML::Node cfg = YAML::LoadFile(config_path);
-    if (cfg["gazebo"] && cfg["gazebo"]["obstacle"]) {
-      const auto & obs = cfg["gazebo"]["obstacle"];
-      out.obstacle.uri = obs["uri"] ? obs["uri"].as<std::string>() : "";
-      out.obstacle.name = obs["name"] ? obs["name"].as<std::string>() : "";
-      out.has_gazebo = !out.obstacle.uri.empty();
+    if (cfg["gazebo"] && cfg["gazebo"]["world_model"]) {
+      const auto & wm = cfg["gazebo"]["world_model"];
+      out.world_model.uri = wm["uri"] ? wm["uri"].as<std::string>() : "";
+      out.world_model.name = wm["name"] ? wm["name"].as<std::string>() : "";
+      out.has_gazebo = !out.world_model.uri.empty();
     }
     if (cfg["poi"] && cfg["poi"].IsSequence()) {
       for (const auto & poi : cfg["poi"]) {
@@ -217,22 +217,22 @@ bool MapoiGazeboBridge::switch_world(
   (void)prev_map;
   (void)new_map;
 
-  // 旧障害物 delete
-  if (!current_obstacle_name_.empty()) {
-    if (!delete_entity(current_obstacle_name_)) {
+  // 旧 world_model delete
+  if (!current_world_model_name_.empty()) {
+    if (!delete_entity(current_world_model_name_)) {
       RCLCPP_WARN(this->get_logger(),
-        "delete obstacle failed; aborting world switch (旧 obstacle stays)");
+        "delete world_model failed; aborting world switch (旧 world_model stays)");
       return false;
     }
-    current_obstacle_name_.clear();
+    current_world_model_name_.clear();
   }
 
   bool all_ok = true;
 
-  // 新障害物 spawn
-  if (!info.obstacle.uri.empty()) {
-    if (spawn_entity_from_uri(info.obstacle.name, info.obstacle.uri)) {
-      current_obstacle_name_ = info.obstacle.name;
+  // 新 world_model spawn
+  if (!info.world_model.uri.empty()) {
+    if (spawn_entity_from_uri(info.world_model.name, info.world_model.uri)) {
+      current_world_model_name_ = info.world_model.name;
     } else {
       all_ok = false;
     }

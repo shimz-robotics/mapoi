@@ -1,0 +1,89 @@
+# mapoi bringup: core 3 nodes + (任意で) シミュレータ連動 bridge を 1 本で起動。
+#
+# 自分のロボットに mapoi を組み込む場合はこの launch を include する想定:
+#
+#   - include:
+#       file: "$(find-pkg-share mapoi_server)/launch/mapoi_bringup.launch.yaml"
+#       arg:
+#         - {name: maps_path,  value: "/path/to/maps"}
+#         - {name: map_name,   value: "initial_map_name"}
+#         - {name: simulator,  value: "gazebo"}              # gazebo|gz|none
+#         - {name: robot_entity_name, value: "burger"}       # simulator=gazebo|gz のみ
+#         - {name: robot_sdf_path,    value: "/path/.../model.sdf"}
+#
+# 設計メモ: シミュレータ bridge は別 launch ファイルにせず本 launch 内に直接 node 定義した。
+# 理由: bridge は mapoi_server の publish に依存するため単体起動の意味がなく、
+# 別 launch にしても include 1 行で済むだけで再利用性が無いため。
+
+launch:
+
+- arg:
+    name: maps_path
+    description: "Full path to maps directory (REQUIRED)"
+
+- arg:
+    name: map_name
+    description: "Initial map name, which is a directory name inside maps_path (REQUIRED)"
+
+- arg:
+    name: config_file
+    default: "mapoi_config.yaml"
+    description: "Config file name inside each map directory"
+
+- arg:
+    name: pub_interval_ms
+    default: "500"
+    description: "mapoi_config_path publish interval (ms)"
+
+- arg:
+    name: simulator
+    default: "none"
+    description: >
+      シミュレータ選択:
+        gazebo = Gazebo Classic (Humble 想定、mapoi_gazebo_bridge を起動)
+        gz     = gz-sim (Jazzy 想定、mapoi_gz_bridge を起動。#42 で実装予定)
+        none   = シミュレータ連動なし (実機)
+
+- arg:
+    name: robot_entity_name
+    default: ""
+    description: "シミュレータ内のロボット entity 名 (simulator=gazebo|gz のときのみ使用)"
+
+- arg:
+    name: robot_sdf_path
+    default: ""
+    description: >
+      ロボット再生成用 SDF ファイルのフルパス (simulator=gazebo のときのみ使用)。
+      空文字なら respawn はスキップ (warn のみ)。
+
+# core 3 nodes (常時起動)
+- node:
+    pkg: mapoi_server
+    exec: mapoi_server
+    param:
+      - {name: maps_path, value: "$(var maps_path)"}
+      - {name: map_name, value: "$(var map_name)"}
+      - {name: config_file, value: "$(var config_file)"}
+      - {name: pub_interval_ms, value: "$(var pub_interval_ms)"}
+
+- node:
+    pkg: mapoi_server
+    exec: mapoi_nav_server
+
+- node:
+    pkg: mapoi_server
+    exec: mapoi_rviz2_publisher
+
+# Gazebo Classic 連動 (Humble): SwitchMap 時に world_model entity を入れ替え +
+# ロボットを initial_pose POI 座標に再生成 (Gazebo 本体は無停止)。
+- node:
+    pkg: mapoi_server
+    exec: mapoi_gazebo_bridge
+    output: "screen"
+    param:
+      - {name: robot_entity_name, value: "$(var robot_entity_name)"}
+      - {name: robot_sdf_path, value: "$(var robot_sdf_path)"}
+    if: $(eval "'$(var simulator)' == 'gazebo'")
+
+# gz-sim 連動 (Jazzy): #42 で mapoi_gz_bridge を実装後に有効化する。
+# 現状 simulator=gz を指定しても bridge は起動しない (sim 自体は動くが SwitchMap 連動なし)。

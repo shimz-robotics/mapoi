@@ -10,9 +10,9 @@ map:
   # - node_name: map_server_localization
   #   map_file: turtlebot3_amcl.yaml
 
-# mapoi_gazebo_bridge が SwitchMap 時に読む (ground_plane / sun は共通)
+# mapoi_gazebo_bridge が SwitchMap 時に読む (ground_plane / sun は共通、world を構成する主モデルのみ swap)
 gazebo:
-  obstacle:
+  world_model:
     uri: model://turtlebot3_dqn_world
     name: turtlebot3_dqn_world
 

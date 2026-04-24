@@ -14,7 +14,7 @@
 #include <gazebo_msgs/srv/delete_entity.hpp>
 
 
-struct GazeboObstacleInfo
+struct GazeboWorldModelInfo
 {
   std::string uri;
   std::string name;
@@ -22,7 +22,7 @@ struct GazeboObstacleInfo
 
 struct MapGazeboInfo
 {
-  GazeboObstacleInfo obstacle;
+  GazeboWorldModelInfo world_model;
   double initial_x = 0.0;
   double initial_y = 0.0;
   double initial_yaw = 0.0;
@@ -62,7 +62,7 @@ private:
 
   // state (worker thread のみが touch)
   std::string current_map_name_;
-  std::string current_obstacle_name_;
+  std::string current_world_model_name_;
   std::string current_config_path_;
 
   // service clients (Reentrant callback group で worker thread から wait_for 可能に)
