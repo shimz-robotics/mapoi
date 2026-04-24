@@ -1,0 +1,31 @@
+# mapoi_gazebo_bridge 起動の最小 launch。
+#
+# mapoi_config_path topic を購読し、SwitchMap 時に Gazebo Classic の entity を
+# 入れ替える + ロボットを initial_pose POI 座標に再生成する。
+# Gazebo 本体は再起動せず、/clock /tf /odom 等の継続性を保つ。
+#
+# 対応: Humble (Gazebo Classic)。Jazzy (gz-sim) 用は別 node (mapoi_gz_bridge)
+# を #42 と統合した別 PR で追加予定。
+
+launch:
+
+- arg:
+    name: robot_entity_name
+    default: ""
+    description: "Gazebo 内のロボット entity 名 (例: burger)"
+
+- arg:
+    name: robot_sdf_path
+    default: ""
+    description: >
+      ロボット再生成用 SDF ファイルのフルパス。
+      例: $(find-pkg-share turtlebot3_gazebo)/models/turtlebot3_burger/model.sdf
+      空文字なら respawn はスキップ (warn のみ)。
+
+- node:
+    pkg: mapoi_server
+    exec: mapoi_gazebo_bridge
+    output: "screen"
+    param:
+      - {name: robot_entity_name, value: "$(var robot_entity_name)"}
+      - {name: robot_sdf_path, value: "$(var robot_sdf_path)"}

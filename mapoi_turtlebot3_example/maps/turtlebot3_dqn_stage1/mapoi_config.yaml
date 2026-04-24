@@ -10,6 +10,12 @@ map:
   # - node_name: map_server_localization
   #   map_file: turtlebot3_amcl.yaml
 
+# mapoi_gazebo_bridge が SwitchMap 時に読む (ground_plane / sun は共通)
+gazebo:
+  obstacle:
+    uri: model://turtlebot3_dqn_world
+    name: turtlebot3_dqn_world
+
 poi:
   - name: elevator_hall
     # pose: {x: 0.0, y: 0.0, yaw: 0.0}

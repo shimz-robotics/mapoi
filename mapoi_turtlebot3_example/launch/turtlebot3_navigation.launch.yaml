@@ -62,6 +62,17 @@ launch:
     if: $(var rviz)
 
 
+# mapoi_gazebo_bridge: SwitchMap 時に Gazebo Classic の entity を入れ替え +
+# ロボットを initial_pose POI 座標に再生成 (Gazebo 本体は無停止)。
+# 現状 Humble (Gazebo Classic) 専用。Jazzy (gz-sim) は mapoi_gz_bridge として
+# #42 と統合した別 PR で対応予定。
+- include:
+    file: "$(find-pkg-share mapoi_server)/launch/mapoi_gazebo_bridge.launch.yaml"
+    arg:
+      - {name: robot_entity_name, value: "$(env TURTLEBOT3_MODEL)"}
+      - {name: robot_sdf_path, value: "$(find-pkg-share turtlebot3_gazebo)/models/turtlebot3_$(env TURTLEBOT3_MODEL)/model.sdf"}
+    if: $(eval "'$(env ROS_DISTRO)' == 'humble'")
+
 # Mapoi core (mapoi_server / mapoi_nav_server / mapoi_rviz2_publisher)
 - include:
     file: "$(find-pkg-share mapoi_server)/launch/mapoi_core.launch.yaml"

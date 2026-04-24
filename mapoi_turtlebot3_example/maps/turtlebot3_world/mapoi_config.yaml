@@ -10,6 +10,12 @@ route:
   waypoints: [elevator_hall, corridor_a, conference_room]
 map:
 - {node_name: /map_server, map_file: turtlebot3.yaml}
+# mapoi_gazebo_bridge が SwitchMap 時に読む。
+# ground_plane / sun は共通なので入れ替え不要、障害物 model のみ swap。
+gazebo:
+  obstacle:
+    uri: model://turtlebot3_world
+    name: turtlebot3_world
 poi:
 - description: エレベーターホール
   name: elevator_hall

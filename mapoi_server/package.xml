@@ -27,6 +27,10 @@
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
 
+  <!-- Humble (Gazebo Classic) で mapoi_gazebo_bridge を build/run するための依存。
+       Jazzy 以降では gazebo_msgs が存在しないため、CMakeLists 側で
+       find_package(gazebo_msgs QUIET) を使い build 時に skip する。-->
+  <depend condition="$ROS_DISTRO == 'humble'">gazebo_msgs</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
