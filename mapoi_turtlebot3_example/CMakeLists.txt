@@ -2,7 +2,11 @@ cmake_minimum_required(VERSION 3.8)
 project(mapoi_turtlebot3_example)
 
 find_package(ament_cmake_auto REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 ament_auto_find_build_dependencies()
+
+# Python サブパッケージ (sim_bridge)
+ament_python_install_package(${PROJECT_NAME})
 
 ament_auto_add_executable(get_maps_info_client
   src/get_maps_info_client.cpp
@@ -29,8 +33,14 @@ ament_auto_add_executable(follow_waypoints_client
 )
 
 
+install(PROGRAMS
+  ${PROJECT_NAME}/sim_bridge.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 install(
   DIRECTORY
+    config
     launch
     maps
     param

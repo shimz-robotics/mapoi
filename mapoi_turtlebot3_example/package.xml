@@ -11,6 +11,7 @@
   <author email="kimura.shunsuke@shimz.co.jp">Shunsuke Kimura</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
   <depend>ament_cmake_auto</depend>
 
   <depend>rclcpp</depend>
@@ -22,6 +23,11 @@
   <exec_depend>mapoi_server</exec_depend>
   <exec_depend>mapoi_webui</exec_depend>
   <exec_depend>mapoi_rviz_plugins</exec_depend>
+
+  <!-- sim_bridge.py (Gazebo entity 入れ替え) 用 -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>gazebo_msgs</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
   <depend>yaml_cpp_vendor</depend>
   <depend>ament_index_cpp</depend>
   <depend>geometry_msgs</depend>

@@ -1,0 +1,15 @@
+# mapoi_sim_bridge の parameter
+# map_name → Gazebo entity (model URI と scene 内 entity 名) のマッピング
+mapoi_sim_bridge:
+  ros__parameters:
+    map_obstacle_table_yaml: |
+      turtlebot3_world:
+        uri: model://turtlebot3_world
+        name: turtlebot3_world
+      turtlebot3_dqn_stage1:
+        uri: model://turtlebot3_dqn_world
+        name: turtlebot3_dqn_world
+    robot_entity_name: burger
+    # ロボット re-spawn 用 SDF パス (set_entity_state が humble + Classic で
+    # 実用上動かないため、teleport の代わりに delete + spawn する)
+    robot_sdf_path: /opt/ros/humble/share/turtlebot3_gazebo/models/turtlebot3_burger/model.sdf

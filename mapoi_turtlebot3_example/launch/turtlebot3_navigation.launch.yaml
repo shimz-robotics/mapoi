@@ -62,6 +62,15 @@ launch:
     if: $(var rviz)
 
 
+# mapoi_sim_bridge: SwitchMap 時に Gazebo の障害物 entity を入れ替え + ロボット teleport
+# (Gazebo 本体は再起動せず、/clock /tf /odom 等の継続性を保つ)
+- node:
+    pkg: mapoi_turtlebot3_example
+    exec: sim_bridge.py
+    output: "screen"
+    param:
+      - from: "$(find-pkg-share mapoi_turtlebot3_example)/config/sim_bridge.yaml"
+
 # Mapoi core (mapoi_server / mapoi_nav_server / mapoi_rviz2_publisher)
 - include:
     file: "$(find-pkg-share mapoi_server)/launch/mapoi_core.launch.yaml"
