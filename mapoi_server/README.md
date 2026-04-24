@@ -24,7 +24,7 @@ mapoi のメインパッケージです。
 
 `simulator` arg はシミュレータ連動 bridge の起動を制御します:
 - `gazebo` (Gazebo Classic / Humble): `mapoi_gazebo_bridge` を起動。SwitchMap 時に Gazebo 内の `world_model` entity を入れ替え + ロボットを `initial_pose` POI 座標に再生成
-- `gz` (gz-sim / Jazzy): `mapoi_gz_bridge` を起動 (#42 で実装予定)
+- `gz` (gz-sim / Jazzy): `mapoi_gz_bridge` を起動する想定 (**#42 で実装予定、現状未対応**)。指定しても launch から WARN が出るのみで bridge は起動せず、SwitchMap は gz-sim 側に伝搬しません
 - `none` (default): bridge 起動なし (実機運用)
 
 Web UI も使う場合は `mapoi_webui.launch.yaml` も併せて include:

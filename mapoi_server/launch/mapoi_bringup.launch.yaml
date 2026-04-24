@@ -87,3 +87,10 @@ launch:
 
 # gz-sim 連動 (Jazzy): #42 で mapoi_gz_bridge を実装後に有効化する。
 # 現状 simulator=gz を指定しても bridge は起動しない (sim 自体は動くが SwitchMap 連動なし)。
+# 暫定として WARN を出して silent no-op を防ぐ (#42 マージ時に削除)。
+- log:
+    message: >
+      [mapoi_bringup] WARNING: simulator=gz is selected but mapoi_gz_bridge is
+      not yet implemented (see #42). SwitchMap will NOT propagate to gz-sim.
+      To suppress this warning, set simulator=none.
+    if: $(eval "'$(var simulator)' == 'gz'")
