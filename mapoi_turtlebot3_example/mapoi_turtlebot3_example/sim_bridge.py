@@ -115,17 +115,17 @@ class MapoiSimBridge(Node):
         path = msg.data
         if path == self._current_config_path:
             return
-        self._current_config_path = path
 
         # path の構造: <maps_path>/<map_name>/<config_file>
         map_name = os.path.basename(os.path.dirname(path))
         self.get_logger().info(f'config_path changed → map_name={map_name}')
 
         if map_name == self._current_map_name:
+            # path だけ変わって map_name は同じ (mapoi_server の周期 re-publish 等)
+            self._current_config_path = path
             return
 
         prev_map_name = self._current_map_name
-        self._current_map_name = map_name
 
         if prev_map_name is None:
             # 起動時の最初の通知: launch がすでに対応する world で起動済みと仮定し、
@@ -133,12 +133,22 @@ class MapoiSimBridge(Node):
             entry = self._table.get(map_name)
             if entry:
                 self._current_obstacle_name = entry.get('name')
+            self._current_map_name = map_name
+            self._current_config_path = path
             self.get_logger().info(
                 f'Initial map={map_name}; assuming Gazebo already loaded matching world')
             return
 
         x, y, yaw = self._extract_initial_pose(path)
-        self._switch_world(prev_map_name, map_name, x, y, yaw)
+        if self._switch_world(prev_map_name, map_name, x, y, yaw):
+            # 全ステップ成功時のみ map_name と config_path を新へ進める。
+            # 失敗時は state 維持 → 次の同 config_path 受信で retry 可能。
+            self._current_map_name = map_name
+            self._current_config_path = path
+        else:
+            self.get_logger().warn(
+                f'switch_world {prev_map_name} → {map_name} failed; '
+                f'keeping internal state at {prev_map_name} for retry')
 
     def _extract_initial_pose(self, config_path):
         """mapoi_config.yaml から initial_pose タグ POI の座標を取得。
@@ -164,21 +174,42 @@ class MapoiSimBridge(Node):
         return 0.0, 0.0, 0.0
 
     def _switch_world(self, prev_map, new_map, x, y, yaw):
+        """全 step 成功時のみ True を返す。
+
+        partial 失敗 (delete 成功・spawn 失敗 等) では `_current_obstacle_name`
+        は事実 (Gazebo 実体の有無) を追跡するように都度更新する。
+        """
         prev_entry = self._table.get(prev_map)
         new_entry = self._table.get(new_map)
+        all_ok = True
 
+        # 旧障害物 delete
         if prev_entry and self._current_obstacle_name:
-            self._delete_entity(self._current_obstacle_name)
-            self._current_obstacle_name = None
+            if self._delete_entity(self._current_obstacle_name):
+                self._current_obstacle_name = None
+            else:
+                all_ok = False
+                # 削除失敗時は _current_obstacle_name そのまま、新 spawn もスキップ
+                self.get_logger().warn(
+                    f'delete failed; aborting world switch (旧 obstacle stays)')
+                return False
 
+        # 新障害物 spawn
         if new_entry:
-            self._spawn_entity_from_uri(new_entry['name'], new_entry['uri'])
-            self._current_obstacle_name = new_entry['name']
+            if self._spawn_entity_from_uri(new_entry['name'], new_entry['uri']):
+                self._current_obstacle_name = new_entry['name']
+            else:
+                all_ok = False
         else:
             self.get_logger().warn(
                 f"No map_obstacle_table entry for '{new_map}'; obstacle not spawned")
+            # 新 entry 不明は config 不足、ここでは all_ok は維持
 
-        self._respawn_robot(x, y, yaw)
+        # robot respawn
+        if not self._respawn_robot(x, y, yaw):
+            all_ok = False
+
+        return all_ok
 
     def _call_blocking(self, client, req, timeout_sec=10.0):
         """worker thread から service を blocking call。
@@ -199,22 +230,28 @@ class MapoiSimBridge(Node):
         return None
 
     def _delete_entity(self, name):
+        """成功時 True を返す。timeout / success=False は False。"""
         if not self._delete_cli.wait_for_service(timeout_sec=10.0):
             self.get_logger().warn('delete_entity service not available')
-            return
+            return False
         req = DeleteEntity.Request()
         req.name = name
         res = self._call_blocking(self._delete_cli, req, timeout_sec=5.0)
         if res is None:
             self.get_logger().warn(f'delete_entity({name}) timed out')
-        else:
-            self.get_logger().info(
-                f'delete_entity({name}): success={res.success}')
+            return False
+        if not res.success:
+            self.get_logger().warn(
+                f'delete_entity({name}) failed: {res.status_message}')
+            return False
+        self.get_logger().info(f'delete_entity({name}): success')
+        return True
 
     def _spawn_entity_from_uri(self, name, uri):
+        """成功時 True を返す。timeout / success=False は False。"""
         if not self._spawn_cli.wait_for_service(timeout_sec=10.0):
             self.get_logger().warn('spawn_entity service not available')
-            return
+            return False
         sdf = (
             '<?xml version="1.0"?>'
             '<sdf version="1.6"><world name="default">'
@@ -227,12 +264,16 @@ class MapoiSimBridge(Node):
         res = self._call_blocking(self._spawn_cli, req, timeout_sec=10.0)
         if res is None:
             self.get_logger().warn(f'spawn_entity({name}) timed out')
-        else:
-            self.get_logger().info(
-                f'spawn_entity({name}, {uri}): success={res.success}')
+            return False
+        if not res.success:
+            self.get_logger().warn(
+                f'spawn_entity({name}) failed: {res.status_message}')
+            return False
+        self.get_logger().info(f'spawn_entity({name}, {uri}): success')
+        return True
 
     def _respawn_robot(self, x, y, yaw):
-        """ロボットを delete + spawn で新位置に再生成。
+        """ロボットを delete + spawn で新位置に再生成。成功時 True。
 
         set_entity_state の代替 (上記 NOTE 参照)。/odom の連続性は失われ、AMCL は
         再 collapse が必要だが、本 PoC のスコープでは許容 (PR #32 の auto initial_pose
@@ -245,25 +286,28 @@ class MapoiSimBridge(Node):
         if not self._robot_sdf_path:
             self.get_logger().warn(
                 'robot_sdf_path parameter is empty; skipping respawn (robot stays at old pose)')
-            return
+            return False
         if not os.path.exists(self._robot_sdf_path):
             self.get_logger().error(
                 f'robot_sdf_path not found: {self._robot_sdf_path}; skipping respawn')
-            return
+            return False
         if not self._spawn_cli.wait_for_service(timeout_sec=10.0):
             self.get_logger().warn(
                 'spawn_entity service not available; skipping respawn (robot stays at old pose)')
-            return
+            return False
         try:
             with open(self._robot_sdf_path, 'r') as f:
                 sdf = f.read()
         except Exception as e:
             self.get_logger().error(
                 f'Failed to read robot SDF ({self._robot_sdf_path}): {e}; skipping respawn')
-            return
+            return False
 
         # 2. delete (preflight 通過後にのみ実行)
-        self._delete_entity(self._robot_name)
+        if not self._delete_entity(self._robot_name):
+            self.get_logger().warn(
+                'delete robot failed; skipping respawn to avoid duplicate entity')
+            return False
 
         # 3. spawn
         req = SpawnEntity.Request()
@@ -278,10 +322,14 @@ class MapoiSimBridge(Node):
         if res is None:
             self.get_logger().warn(
                 f'respawn_robot({self._robot_name}) timed out (robot may be deleted)')
-        else:
-            self.get_logger().info(
-                f'respawn_robot({self._robot_name}, {x:.2f}, {y:.2f}, yaw={yaw:.2f}): '
-                f'success={res.success}')
+            return False
+        if not res.success:
+            self.get_logger().warn(
+                f'respawn_robot({self._robot_name}) failed: {res.status_message}')
+            return False
+        self.get_logger().info(
+            f'respawn_robot({self._robot_name}, {x:.2f}, {y:.2f}, yaw={yaw:.2f}): success')
+        return True
 
 
 def main(args=None):
