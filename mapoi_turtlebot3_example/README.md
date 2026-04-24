@@ -49,9 +49,9 @@ ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml \
 | arg | default | 効果 |
 |---|---|---|
 | `rviz` | `true` | RViz2 の起動有無 |
-| `gazebo_gui` | `true` | Gazebo GUI (`gzclient`) の起動有無。`false` でも `gzserver` は起動し物理シミュレーションは動作 |
+| `gazebo_gui` | `true` | シミュレータ GUI の起動有無。`false` でも server (Humble: `gzserver` / Jazzy: `gz sim -s`) は起動し物理シミュレーションは動作 |
 
-> **⚠️ Distro の制約**: headless モード (`gazebo_gui:=false`) は現状 **Humble (Gazebo Classic) のみ対応**。Jazzy 以降は `turtlebot3_gazebo` 側の launch が `ros_gz_sim` (Harmonic) ベースに変わるため、`gazebo_gui` arg は無視され常に GUI 付きで起動する。Jazzy 対応は別 issue で追加予定。`rviz:=false` は distro によらず動作。
+`gazebo_gui` は Humble (Gazebo Classic) と Jazzy (gz-sim) のどちらでも有効です。distro 別の wrapper (`gazebo_headless_aware.launch.yaml` / `gz_sim_headless_aware.launch.yaml`) を `turtlebot3_navigation.launch.yaml` から `ROS_DISTRO` で使い分けています。`rviz:=false` は distro によらず動作。
 
 ## 地図の作成（SLAM）
 

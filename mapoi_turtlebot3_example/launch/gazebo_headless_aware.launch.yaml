@@ -1,12 +1,9 @@
-# Headless-aware wrapper of turtlebot3_gazebo/launch/turtlebot3_world.launch.py.
+# Headless-aware wrapper of turtlebot3_gazebo/launch/turtlebot3_world.launch.py (Humble / Gazebo Classic 版).
 # 上流の turtlebot3_world.launch.py は gzserver と gzclient を無条件 include するため、
 # gazebo_gui arg で gzclient を条件化したラッパーを用意する。
 #
-# NOTE: この wrapper は Humble (Gazebo Classic) 専用。
-# Jazzy 以降は turtlebot3_gazebo 側の launch が ros_gz_sim (Harmonic) ベースに
-# 変わるため、この wrapper をそのまま流用できない。Jazzy 対応は別 issue で
-# 対応する。turtlebot3_navigation.launch.yaml は ROS_DISTRO で分岐して、
-# Jazzy ではこの wrapper を使わず上流 launch を直接 include する。
+# Jazzy (gz-sim) 用は gz_sim_headless_aware.launch.yaml を参照。
+# turtlebot3_navigation.launch.yaml は ROS_DISTRO で分岐して使い分ける。
 
 launch:
 

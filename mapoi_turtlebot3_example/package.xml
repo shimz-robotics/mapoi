@@ -19,6 +19,9 @@
   <exec_depend>turtlebot3</exec_depend>
   <exec_depend>turtlebot3_gazebo</exec_depend>
   <exec_depend>turtlebot3_navigation2</exec_depend>
+  <!-- gz_sim_headless_aware.launch.yaml が ros_gz_sim/launch/gz_sim.launch.py を直接 include するため、
+       Jazzy 以降では明示的に exec_depend を持たせる。Humble (Gazebo Classic) では不要 -->
+  <exec_depend condition="$ROS_DISTRO != 'humble'">ros_gz_sim</exec_depend>
   <exec_depend>mapoi_server</exec_depend>
   <exec_depend>mapoi_webui</exec_depend>
   <exec_depend>mapoi_rviz_plugins</exec_depend>
