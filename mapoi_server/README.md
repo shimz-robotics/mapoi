@@ -5,19 +5,27 @@ mapoi のメインパッケージです。
 
 ## 自分のロボットへの組み込み方
 
-3 つの core node (`mapoi_server` / `mapoi_nav_server` / `mapoi_rviz2_publisher`) をまとめて起動する最小 launch を提供しています。自前の bringup launch から以下のように include してください:
+3 つの core node (`mapoi_server` / `mapoi_nav_server` / `mapoi_rviz2_publisher`) と、必要に応じてシミュレータ連動 bridge をまとめて起動する bringup launch を提供しています。自前の launch から以下のように include してください:
 
 ```yaml
 - include:
-    file: "$(find-pkg-share mapoi_server)/launch/mapoi_core.launch.yaml"
+    file: "$(find-pkg-share mapoi_server)/launch/mapoi_bringup.launch.yaml"
     arg:
       - {name: maps_path, value: "/path/to/your/maps"}    # REQUIRED
       - {name: map_name, value: "initial_map_name"}        # REQUIRED
       - {name: config_file, value: "mapoi_config.yaml"}    # optional
       - {name: pub_interval_ms, value: "500"}              # optional
+      - {name: simulator, value: "none"}                   # gazebo|gz|none (default: none)
+      - {name: robot_entity_name, value: "burger"}         # simulator=gazebo|gz のとき必要
+      - {name: robot_sdf_path, value: "/path/.../model.sdf"} # simulator=gazebo のとき必要
 ```
 
 `maps_path` と `map_name` は **必須** です (未指定だと `mapoi_server` が config ファイルを解決できず起動失敗します)。
+
+`simulator` arg はシミュレータ連動 bridge の起動を制御します:
+- `gazebo` (Gazebo Classic / Humble): `mapoi_gazebo_bridge` を起動。SwitchMap 時に Gazebo 内の `world_model` entity を入れ替え + ロボットを `initial_pose` POI 座標に再生成
+- `gz` (gz-sim / Jazzy): `mapoi_gz_bridge` を起動する想定 (**#42 で実装予定、現状未対応**)。指定しても launch から WARN が出るのみで bridge は起動せず、SwitchMap は gz-sim 側に伝搬しません
+- `none` (default): bridge 起動なし (実機運用)
 
 Web UI も使う場合は `mapoi_webui.launch.yaml` も併せて include:
 
@@ -212,6 +220,9 @@ route:
 - **route**: ルートの定義
   - `name`: ルート名
   - `waypoints`: 巡回する POI 名のリスト
+- **gazebo** (任意、`mapoi_gazebo_bridge` のみが参照): SwitchMap 時に入れ替える Gazebo Classic 側のモデル定義
+  - `world_model.uri`: モデル URI (例: `model://turtlebot3_world`)
+  - `world_model.name`: Gazebo 内での entity 名 (delete/spawn のキー)
 
 ## ディレクトリ構成
 

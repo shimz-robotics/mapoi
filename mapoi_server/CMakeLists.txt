@@ -27,6 +27,21 @@ ament_auto_add_executable(mapoi_rviz2_publisher
 )
 target_link_libraries(mapoi_rviz2_publisher ${_mapoi_yaml_cpp_target})
 
+# mapoi_gazebo_bridge: Gazebo Classic (gazebo_msgs) 用、Humble で build される。
+# Jazzy では gazebo_msgs が存在しないため find_package QUIET で skip。
+# Jazzy 用 (ros_gz_interfaces ベース) は mapoi_gz_bridge として別途 (#42)。
+find_package(gazebo_msgs QUIET)
+if(gazebo_msgs_FOUND)
+  ament_auto_add_executable(mapoi_gazebo_bridge
+    src/mapoi_gazebo_bridge.cpp
+  )
+  target_link_libraries(mapoi_gazebo_bridge ${_mapoi_yaml_cpp_target})
+  ament_target_dependencies(mapoi_gazebo_bridge gazebo_msgs)
+  message(STATUS "Building mapoi_gazebo_bridge (Gazebo Classic)")
+else()
+  message(STATUS "Skipping mapoi_gazebo_bridge (gazebo_msgs not found)")
+endif()
+
 
 install(
   DIRECTORY
