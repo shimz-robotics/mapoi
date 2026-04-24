@@ -30,6 +30,13 @@ struct MapGazeboInfo
   bool has_initial_pose = false;
 };
 
+enum class ConfigLoadStatus
+{
+  Ok,               // parse 成功 + gazebo section あり
+  NoGazeboSection,  // parse 成功 + gazebo section 無し (legitimate)
+  ParseError,       // YAML parse or file I/O 失敗 (transient、retry すべき)
+};
+
 
 class MapoiGazeboBridge : public rclcpp::Node
 {
@@ -41,7 +48,7 @@ private:
   void on_config_path(const std_msgs::msg::String::SharedPtr msg);
   void worker_loop();
   void process_config_path(const std::string & path);
-  bool load_gazebo_info(const std::string & config_path, MapGazeboInfo & out);
+  ConfigLoadStatus load_gazebo_info(const std::string & config_path, MapGazeboInfo & out);
   bool switch_world(
     const std::string & prev_map, const std::string & new_map,
     const MapGazeboInfo & info);

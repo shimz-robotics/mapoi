@@ -47,8 +47,12 @@ MapoiGazeboBridge::MapoiGazeboBridge()
 
   auto sub_opts = rclcpp::SubscriptionOptions();
   sub_opts.callback_group = cb_group_;
+  // publisher (mapoi_server の config_path_publisher_) は transient_local なので、
+  // subscriber も transient_local にして、bridge が後起動/再起動した時に
+  // 直近の config_path を latched 値として受け取れるようにする。
+  auto sub_qos = rclcpp::QoS(rclcpp::KeepLast(10)).transient_local().reliable();
   config_path_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi_config_path", 10,
+    "mapoi_config_path", sub_qos,
     std::bind(&MapoiGazeboBridge::on_config_path, this, _1),
     sub_opts);
 
@@ -120,15 +124,25 @@ void MapoiGazeboBridge::process_config_path(const std::string & path)
   std::string prev_map_name = current_map_name_;
 
   MapGazeboInfo info;
-  const bool has_info = load_gazebo_info(path, info);
-  if (!has_info) {
+  const auto status = load_gazebo_info(path, info);
+  if (status == ConfigLoadStatus::ParseError) {
+    // transient な失敗 (YAML parse / I/O)。state 進めず、mapoi_server の
+    // 周期 re-publish (500ms) で retry する。
     RCLCPP_WARN(this->get_logger(),
+      "load_gazebo_info parse error for %s; keeping state for retry",
+      path.c_str());
+    return;
+  }
+  if (status == ConfigLoadStatus::NoGazeboSection) {
+    // legitimate: gazebo セクションが無い map (例: 実機用)。entity swap は
+    // skip、state のみ進める (次回 same map_name で早期 return するため)。
+    RCLCPP_INFO(this->get_logger(),
       "No gazebo section in %s; skipping entity swap", path.c_str());
-    // state は進める (次の same map_name で早期 return するため)
     current_map_name_ = map_name;
     current_config_path_ = path;
     return;
   }
+  // status == Ok: 以下通常処理
 
   if (prev_map_name.empty()) {
     // 起動時の最初の通知: launch が既に対応する world で起動済みと仮定。
@@ -152,7 +166,7 @@ void MapoiGazeboBridge::process_config_path(const std::string & path)
   }
 }
 
-bool MapoiGazeboBridge::load_gazebo_info(
+ConfigLoadStatus MapoiGazeboBridge::load_gazebo_info(
   const std::string & config_path, MapGazeboInfo & out)
 {
   try {
@@ -191,9 +205,9 @@ bool MapoiGazeboBridge::load_gazebo_info(
   } catch (const YAML::Exception & e) {
     RCLCPP_ERROR(this->get_logger(),
       "Failed to parse %s: %s", config_path.c_str(), e.what());
-    return false;
+    return ConfigLoadStatus::ParseError;
   }
-  return out.has_gazebo;
+  return out.has_gazebo ? ConfigLoadStatus::Ok : ConfigLoadStatus::NoGazeboSection;
 }
 
 bool MapoiGazeboBridge::switch_world(
