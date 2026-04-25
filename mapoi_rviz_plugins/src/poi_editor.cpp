@@ -571,6 +571,10 @@ void PoiEditorPanel::UpdatePoiTable()
   PopulateTagFilter();
 
   ui_->PoiTable->clear();
+  // Drag による reorder で動いた verticalHeader の visual order は、
+  // 同じ rowCount で setRowCount し直しても reset されない (Qt 既知挙動)。
+  // 一度 0 行にしてから再生成することで visual = logical を強制する。
+  ui_->PoiTable->setRowCount(0);
   ui_->PoiTable->setRowCount(numRows);
   ui_->PoiTable->setColumnCount(5);
   ui_->PoiTable->setHorizontalHeaderLabels( QStringList() << tr("name") << tr("description") << tr("x, y, yaw") << tr("radius") << tr("tags" ) );
