@@ -5,17 +5,18 @@ import math
 import os
 import logging
 import threading
+import time
 
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
-from mapoi_interfaces.srv import GetMapsInfo
+from mapoi_interfaces.srv import GetMapsInfo, GetTagDefinitions
 import tf2_ros
 
 from flask import Flask, jsonify, request, send_from_directory, Response
 
-from mapoi_webui.yaml_handler import load_config, save_pois, save_routes, save_custom_tags, get_pois, get_routes, get_tag_definitions
+from mapoi_webui.yaml_handler import load_config, save_pois, save_routes, save_custom_tags, get_pois, get_routes
 from mapoi_webui.map_image import get_map_metadata, get_map_png
 
 
@@ -43,6 +44,7 @@ class MapoiWebNode(Node):
         # ROS2 service clients
         self.reload_client_ = self.create_client(Trigger, 'reload_map_info')
         self.get_maps_client_ = self.create_client(GetMapsInfo, 'get_maps_info')
+        self.tag_defs_client_ = self.create_client(GetTagDefinitions, 'get_tag_definitions')
 
         # Navigation publishers
         self.goal_poi_pub_ = self.create_publisher(String, 'mapoi_goal_pose_poi', 10)
@@ -68,18 +70,8 @@ class MapoiWebNode(Node):
         self.config_path_sub_ = self.create_subscription(
             String, 'mapoi_config_path', self.config_path_callback, 10)
 
-        # Resolve system tag_definitions.yaml from mapoi_server package
-        self.system_tags_path_ = ''
-        try:
-            from ament_index_python.packages import get_package_share_directory
-            self.system_tags_path_ = os.path.join(
-                get_package_share_directory('mapoi_server'), 'maps', 'tag_definitions.yaml')
-        except Exception:
-            # Fallback: try sibling directory
-            pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            fallback = os.path.join(os.path.dirname(pkg_dir), 'mapoi_server', 'maps', 'tag_definitions.yaml')
-            if os.path.exists(fallback):
-                self.system_tags_path_ = fallback
+        # tag_definitions は mapoi_server の get_tag_definitions service から取得 (#39)。
+        # share/ ファイル直読みを廃止し、ROS 2 service 経由で結合度を下げた。
 
         # If maps_path not set, try to get it from get_maps_info service or use default
         if not self.maps_path_:
@@ -159,6 +151,45 @@ class MapoiWebNode(Node):
         # We don't block here since we're in Flask thread; fire and forget
         self.get_logger().info('Called reload_map_info')
         return True
+
+    def _call_service_sync(self, client, request, service_name, timeout_sec=3.0,
+                           wait_for_service_sec=2.0):
+        """Call ROS 2 service from Flask thread and wait for the response.
+
+        SingleThreadedExecutor で main thread の rclpy.spin が future を resolve するため、
+        Flask thread はここで future.done() を polling する。spin_until_future_complete を
+        Flask thread から呼ぶと main thread の spin と executor を競合させるので避ける。
+
+        実効最長待ち時間 ≒ wait_for_service_sec + timeout_sec (default 5s)。
+        timeout 時は future.cancel() で pending request を解放する (helper の
+        繰り返し呼び出しで cancel 忘れ future が蓄積しないように)。
+
+        Args:
+            client: rclpy service client
+            request: service request message
+            service_name: service name for logging
+            timeout_sec: 全体の wait timeout (default 3.0s)
+            wait_for_service_sec: service discovery の wait timeout (default 2.0s)
+
+        Returns:
+            response object on success, None on timeout / unavailability / exception.
+        """
+        if not client.wait_for_service(timeout_sec=wait_for_service_sec):
+            self.get_logger().warn(f'{service_name} service not available')
+            return None
+        future = client.call_async(request)
+        deadline = time.monotonic() + timeout_sec
+        while not future.done():
+            if time.monotonic() > deadline:
+                future.cancel()
+                self.get_logger().warn(f'{service_name} call timed out after {timeout_sec}s')
+                return None
+            time.sleep(0.05)
+        try:
+            return future.result()
+        except Exception as e:
+            self.get_logger().error(f'{service_name} call exception: {e}')
+            return None
 
     def get_maps_list(self):
         """Get list of available maps from maps_path directory."""
@@ -266,8 +297,15 @@ class MapoiWebNode(Node):
 
         @app.route('/api/tag_definitions')
         def api_tag_definitions():
-            config_path = node.get_config_path()
-            tags = get_tag_definitions(node.system_tags_path_, config_path)
+            # mapoi_server の get_tag_definitions service 経由で system + custom 両方を取得 (#39)
+            response = node._call_service_sync(
+                node.tag_defs_client_, GetTagDefinitions.Request(), 'get_tag_definitions')
+            if response is None:
+                return jsonify({'error': 'get_tag_definitions service unavailable or timed out'}), 503
+            tags = [
+                {'name': d.name, 'description': d.description, 'is_system': d.is_system}
+                for d in response.definitions
+            ]
             return jsonify({'tags': tags})
 
         @app.route('/api/custom_tags', methods=['POST'])
