@@ -147,14 +147,27 @@ void MapoiRviz2Publisher::timer_callback(){
     geometry_msgs::msg::Pose pose = poi.pose;
 
     // POI radius を床面の円で描画 (全 POI 共通)。
-    // primary tag の color を採用 (goal 優先 → event → origin → 該当なしで gray)。
+    // primary tag の color を採用。優先順位は tags 配列の順序ではなく
+    // goal > event > origin で固定 (poi.tags が ["event", "goal"] のような順でも goal が勝つ)。
     if (poi.radius > 0.0) {
-      float cr = 0.5f, cg = 0.5f, cb = 0.5f;  // default gray (custom tag only)
+      const auto has_tag = [&poi](const std::string & target) {
+        for (const auto & t : poi.tags) {
+          if (t == target) return true;
+        }
+        return false;
+      };
+
+      float cr = 0.5f, cg = 0.5f, cb = 0.5f;  // default gray (recognized tag none)
       visualization_msgs::msg::MarkerArray * circle_target = &ma_events;
-      for (const auto & tag : poi.tags) {
-        if (tag == "goal")   { cr = 0.0f; cg = 1.0f; cb = 0.0f; circle_target = &ma_waypoints; break; }
-        if (tag == "event")  { cr = 0.0f; cg = 0.0f; cb = 1.0f; circle_target = &ma_events;    break; }
-        if (tag == "origin") { cr = 1.0f; cg = 0.0f; cb = 0.0f; circle_target = &ma_events;    break; }
+      if (has_tag("goal")) {
+        cr = 0.0f; cg = 1.0f; cb = 0.0f;
+        circle_target = &ma_waypoints;
+      } else if (has_tag("event")) {
+        cr = 0.0f; cg = 0.0f; cb = 1.0f;
+        circle_target = &ma_events;
+      } else if (has_tag("origin")) {
+        cr = 1.0f; cg = 0.0f; cb = 0.0f;
+        circle_target = &ma_events;
       }
       add_radius_circle(pose, poi.radius, cr, cg, cb, id, *circle_target);
       id += 1;
