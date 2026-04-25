@@ -87,6 +87,8 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 | `hysteresis_exit_multiplier` | `double` | `1.15` | EXIT 判定の閾値倍率（チャタリング防止） |
 | `map_frame` | `string` | `map` | TF の親フレーム |
 | `base_frame` | `string` | `base_link` | TF の子フレーム |
+| `initial_pose_topic` | `string` | `/initialpose` | initial_pose の配信先 topic 名 (非 AMCL の localization に対応する場合に変更) |
+| `initial_pose_subscriber_wait_timeout_sec` | `double` | `10.0` | 自動 publish 前に subscriber readiness を待つ秒数 (起動の遅い localization は延長) |
 
 #### サブスクライバー
 
@@ -104,7 +106,7 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 
 | トピック名 | 型 | 説明 |
 | --- | --- | --- |
-| `initialpose` | `geometry_msgs/PoseWithCovarianceStamped` | 初期位置の配信。`mapoi_initialpose_poi` で明示指定された場合に加え、地図ロード/切替時に `initial_pose` タグ付き POI から自動配信 |
+| `initialpose` | `geometry_msgs/PoseWithCovarianceStamped` | 初期位置の配信 (topic 名は `initial_pose_topic` parameter で変更可)。`mapoi_initialpose_poi` で明示指定された場合に加え、地図ロード/切替時に `initial_pose` タグ付き POI から自動配信。自動 publish 前は subscriber readiness を最大 `initial_pose_subscriber_wait_timeout_sec` 秒待つ |
 | `goal_pose` | `geometry_msgs/PoseStamped` | ゴール位置の配信 |
 | `mapoi_nav_status` | `std_msgs/String` | ナビゲーション状態（`navigating`, `succeeded`, `aborted`, `canceled`, `paused`） |
 | `mapoi_poi_events` | `mapoi_interfaces/PoiEvent` | POI 侵入・退出イベント |
@@ -115,6 +117,19 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 | --- | --- | --- |
 | `follow_waypoints` | `nav2_msgs/FollowWaypoints` | ウェイポイント追従 |
 | `navigate_to_pose` | `nav2_msgs/NavigateToPose` | 単一ゴールナビゲーション |
+
+#### 対応 localization パッケージの要件
+
+mapoi_nav_server の自動 initial_pose 配信は、以下を満たす localization パッケージで動作します:
+
+- `geometry_msgs/PoseWithCovarianceStamped` を topic で受信できる (default `/initialpose`)
+- 動的 (起動後の SwitchMap) でも上記 topic 経由で初期位置を受け付ける
+
+**動作確認済み**: Nav2 AMCL (Humble / Jazzy)。
+
+**別 topic を使うパッケージ** (例: 自社実装) は、`initial_pose_topic` parameter で配信先を変更できます。受信 message 型が `PoseWithCovarianceStamped` でない場合は、launch 構成で adapter ノードを介する必要があります (将来的な adapter pattern は別 issue で検討予定)。
+
+**注意**: SwitchMap 経由の map 入替は現状 Nav2 `LoadMap` action 経由のため、Nav2 lifecycle に乗らない localization では map 入替動作の整合は別途検証・対応が必要です。
 
 #### POI 半径イベント検知
 
