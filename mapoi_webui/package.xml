@@ -22,8 +22,10 @@
   <exec_depend>python3-flask</exec_depend>
   <exec_depend>python3-pil</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
-  <!-- mapoi_server への依存は #39 で解消 (tag_definitions を service 経由に変更)。
-       runtime には mapoi_server ノードが起動している必要があるが、package install 依存は不要。 -->
+  <!-- mapoi_editor.launch.yaml が mapoi_server の launch を include する (ament_index で
+       share dir 解決) + runtime に mapoi_server ノードが起動している必要あり
+       (tag_definitions / reload_map_info service の responder として)。 -->
+  <exec_depend>mapoi_server</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

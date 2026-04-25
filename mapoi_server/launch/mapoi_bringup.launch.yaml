@@ -66,6 +66,18 @@ launch:
       呼ぶため、gz_sim 起動時の world 名 (SDF の <world name="..."> 値) と一致する必要がある。
       simulator=gz のときのみ使用。
 
+- arg:
+    name: with_nav_server
+    default: "true"
+    description: >
+      mapoi_nav_server を起動するか。Nav2 連携が不要な構成 (POI/Route 編集のみの editor 用途等) で false。
+
+- arg:
+    name: with_rviz_publisher
+    default: "true"
+    description: >
+      mapoi_rviz2_publisher を起動するか。RViz を使わない構成 (WebUI のみ、headless 編集等) で false。
+
 # core 3 nodes (常時起動)
 - node:
     pkg: mapoi_server
@@ -79,10 +91,12 @@ launch:
 - node:
     pkg: mapoi_server
     exec: mapoi_nav_server
+    if: $(var with_nav_server)
 
 - node:
     pkg: mapoi_server
     exec: mapoi_rviz2_publisher
+    if: $(var with_rviz_publisher)
 
 # Gazebo Classic 連動 (Humble): SwitchMap 時に world_model entity を入れ替え +
 # ロボットを initial_pose POI 座標に再生成 (Gazebo 本体は無停止)。

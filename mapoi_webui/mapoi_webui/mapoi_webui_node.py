@@ -70,9 +70,6 @@ class MapoiWebNode(Node):
         self.config_path_sub_ = self.create_subscription(
             String, 'mapoi_config_path', self.config_path_callback, 10)
 
-        # tag_definitions は mapoi_server の get_tag_definitions service から取得 (#39)。
-        # share/ ファイル直読みを廃止し、ROS 2 service 経由で結合度を下げた。
-
         # If maps_path not set, try to get it from get_maps_info service or use default
         if not self.maps_path_:
             self.get_logger().warn('maps_path parameter not set. Set it to use the web editor.')
@@ -142,15 +139,50 @@ class MapoiWebNode(Node):
         return os.path.join(self.maps_path_, name)
 
     def call_reload_map_info(self):
-        """Call reload_map_info service on mapoi_server."""
-        if not self.reload_client_.wait_for_service(timeout_sec=2.0):
-            self.get_logger().warn('reload_map_info service not available')
+        """Call reload_map_info service and await response.success.
+
+        Returns True only when server reports success; False on
+        unavailable / timeout / server-side failure.
+        """
+        response = self._call_service_sync(
+            self.reload_client_, Trigger.Request(), 'reload_map_info', timeout_sec=3.0)
+        if response is None:
+            return False  # service unavailable / timeout (logged in helper)
+        if not response.success:
+            self.get_logger().warn(f'reload_map_info returned failure: {response.message}')
             return False
-        req = Trigger.Request()
-        future = self.reload_client_.call_async(req)
-        # We don't block here since we're in Flask thread; fire and forget
-        self.get_logger().info('Called reload_map_info')
+        self.get_logger().info('reload_map_info succeeded')
         return True
+
+    def publish_with_subscriber_check(self, pub, msg, topic_name):
+        """Publish with best-effort subscriber-count check.
+
+        ROS 2 `publisher.publish()` は subscriber がいなくても成功扱いになる。
+        UI ボタン経由の publish では subscriber 不在 (相手 node 未起動等) を
+        silent failure にせず warning として user に返したい場面がある。
+
+        **best-effort**: `get_subscription_count()` と `publish()` の間で
+        subscriber 状態が変わる race を排除できない (check 通過後に消える /
+        check 失敗後に直前に現れる)。「明らかな未起動」検出が目的で、厳密な
+        到達確認が必要なら service / action / ack 設計に切り替える。
+
+        Args:
+            pub: rclpy publisher
+            msg: message to publish
+            topic_name: topic name for warning message
+
+        Returns:
+            (published, warning) where warning is None or human-readable string.
+            published is always True since publish itself doesn't fail locally.
+        """
+        sub_count = pub.get_subscription_count()
+        pub.publish(msg)
+        if sub_count == 0:
+            warning = (f"{topic_name} に subscriber が見つかりません "
+                       "(mapoi_nav_server などの listener が起動していない可能性)")
+            self.get_logger().warn(warning)
+            return True, warning
+        return True, None
 
     def _call_service_sync(self, client, request, service_name, timeout_sec=3.0,
                            wait_for_service_sec=2.0):
@@ -289,7 +321,13 @@ class MapoiWebNode(Node):
                 return jsonify({'error': 'Config not found'}), 404
             try:
                 save_pois(config_path, data['pois'])
-                node.call_reload_map_info()
+                reloaded = node.call_reload_map_info()
+                if not reloaded:
+                    return jsonify({
+                        'success': True,
+                        'warning': 'YAML は保存しましたが、mapoi_server の reload_map_info '
+                                   'service が応答しなかったか失敗しました。詳細はログを確認してください'
+                    })
                 return jsonify({'success': True})
             except Exception as e:
                 node.get_logger().error(f'Failed to save POIs: {e}')
@@ -297,7 +335,6 @@ class MapoiWebNode(Node):
 
         @app.route('/api/tag_definitions')
         def api_tag_definitions():
-            # mapoi_server の get_tag_definitions service 経由で system + custom 両方を取得 (#39)
             response = node._call_service_sync(
                 node.tag_defs_client_, GetTagDefinitions.Request(), 'get_tag_definitions')
             if response is None:
@@ -318,7 +355,13 @@ class MapoiWebNode(Node):
                 return jsonify({'error': 'Config not found'}), 404
             try:
                 save_custom_tags(config_path, data['custom_tags'])
-                node.call_reload_map_info()
+                reloaded = node.call_reload_map_info()
+                if not reloaded:
+                    return jsonify({
+                        'success': True,
+                        'warning': 'YAML は保存しましたが、mapoi_server の reload_map_info '
+                                   'service が応答しなかったか失敗しました。詳細はログを確認してください'
+                    })
                 return jsonify({'success': True})
             except Exception as e:
                 node.get_logger().error(f'Failed to save custom tags: {e}')
@@ -342,7 +385,13 @@ class MapoiWebNode(Node):
                 return jsonify({'error': 'Config not found'}), 404
             try:
                 save_routes(config_path, data['routes'])
-                node.call_reload_map_info()
+                reloaded = node.call_reload_map_info()
+                if not reloaded:
+                    return jsonify({
+                        'success': True,
+                        'warning': 'YAML は保存しましたが、mapoi_server の reload_map_info '
+                                   'service が応答しなかったか失敗しました。詳細はログを確認してください'
+                    })
                 return jsonify({'success': True})
             except Exception as e:
                 node.get_logger().error(f'Failed to save routes: {e}')
@@ -355,11 +404,12 @@ class MapoiWebNode(Node):
                 return jsonify({'error': 'poi_name required'}), 400
             msg = String()
             msg.data = data['poi_name']
-            node.goal_poi_pub_.publish(msg)
+            _, warning = node.publish_with_subscriber_check(
+                node.goal_poi_pub_, msg, 'mapoi_goal_pose_poi')
             node.nav_status_ = 'navigating'
             node.nav_status_target_ = data['poi_name']
             node.get_logger().info(f'Nav goal: {data["poi_name"]}')
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
 
         @app.route('/api/nav/route', methods=['POST'])
         def api_nav_route():
@@ -368,36 +418,40 @@ class MapoiWebNode(Node):
                 return jsonify({'error': 'route_name required'}), 400
             msg = String()
             msg.data = data['route_name']
-            node.route_pub_.publish(msg)
+            _, warning = node.publish_with_subscriber_check(
+                node.route_pub_, msg, 'mapoi_route')
             node.nav_status_ = 'navigating'
             node.nav_status_target_ = data['route_name']
             node.get_logger().info(f'Nav route: {data["route_name"]}')
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
 
         @app.route('/api/nav/cancel', methods=['POST'])
         def api_nav_cancel():
             msg = String()
             msg.data = 'cancel'
-            node.cancel_pub_.publish(msg)
+            _, warning = node.publish_with_subscriber_check(
+                node.cancel_pub_, msg, 'mapoi_cancel')
             node.nav_status_ = 'canceled'
             node.get_logger().info('Nav canceled')
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
 
         @app.route('/api/nav/pause', methods=['POST'])
         def api_nav_pause():
             msg = String()
             msg.data = 'webui'
-            node.pause_pub_.publish(msg)
+            _, warning = node.publish_with_subscriber_check(
+                node.pause_pub_, msg, 'mapoi_pause')
             node.get_logger().info('Nav pause requested')
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
 
         @app.route('/api/nav/resume', methods=['POST'])
         def api_nav_resume():
             msg = String()
             msg.data = 'webui'
-            node.resume_pub_.publish(msg)
+            _, warning = node.publish_with_subscriber_check(
+                node.resume_pub_, msg, 'mapoi_resume')
             node.get_logger().info('Nav resume requested')
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
 
         @app.route('/api/nav/status')
         def api_nav_status():
@@ -414,9 +468,10 @@ class MapoiWebNode(Node):
                 return jsonify({'error': 'poi_name required'}), 400
             msg = String()
             msg.data = data['poi_name']
-            node.initialpose_poi_pub_.publish(msg)
+            _, warning = node.publish_with_subscriber_check(
+                node.initialpose_poi_pub_, msg, 'mapoi_initialpose_poi')
             node.get_logger().info(f'Initial pose: {data["poi_name"]}')
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
 
         return app
 
