@@ -38,7 +38,7 @@ Web UI も使う場合は `mapoi_webui.launch.yaml` も併せて include:
       - {name: map_name, value: "initial_map_name"}
 ```
 
-> **NOTE**: `mapoi_webui` は現状 `mapoi_server` の share 配下 `maps/tag_definitions.yaml` を runtime 参照します (システムタグの表示に使用)。そのため `mapoi_webui` 単体を起動する場合も `mapoi_server` パッケージがインストール済みである必要があります。将来的に service 化する予定 (#39)。
+> **NOTE**: `mapoi_webui` はシステムタグを `mapoi_server` の `get_tag_definitions` service 経由で取得します。`mapoi_webui` 単体を起動しても system tags の表示は service 通信になるため、`mapoi_server` の package install 自体は不要 (ただし service responder として `mapoi_server` ノードが起動している必要あり)。
 
 TurtleBot3 を使った動作例は `mapoi_turtlebot3_example` パッケージを参照してください。
 
