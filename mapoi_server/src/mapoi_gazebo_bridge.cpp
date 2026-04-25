@@ -11,7 +11,7 @@
 // ロボット依存情報 (entity_name / SDF path) は launch から parameter で渡す。
 //
 // NOTE: Humble (Gazebo Classic) 専用。Jazzy (gz-sim) 用は別 node
-// mapoi_gz_bridge を参照 (#48)。API が異なるため (gazebo_msgs vs ros_gz_interfaces)
+// mapoi_gz_bridge を参照。API が異なるため (gazebo_msgs vs ros_gz_interfaces)
 // 同一コードでの distro 分岐はせず、別 node に分離している。
 
 #include "mapoi_server/mapoi_gazebo_bridge.hpp"

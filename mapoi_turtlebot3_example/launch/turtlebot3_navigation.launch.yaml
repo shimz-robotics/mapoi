@@ -66,9 +66,8 @@ launch:
     if: $(var rviz)
 
 
-# Mapoi bringup (mapoi_server / mapoi_nav_server / mapoi_rviz2_publisher
-#   + simulator=gazebo の場合は mapoi_gazebo_bridge も起動)
-# Jazzy (gz-sim) 用 bridge は #42 で実装予定。それまで simulator=gz は no-op。
+# Mapoi bringup (mapoi_server / mapoi_nav_server / mapoi_rviz2_publisher +
+# simulator に応じて mapoi_gazebo_bridge (Humble) または mapoi_gz_bridge + parameter_bridge (Jazzy))
 - include:
     file: "$(find-pkg-share mapoi_server)/launch/mapoi_bringup.launch.yaml"
     arg:
