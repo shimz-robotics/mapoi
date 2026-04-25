@@ -48,12 +48,10 @@ launch:
       - {name: with_nav_server, value: "false"}
       - {name: with_rviz_publisher, value: "false"}
 
-# WebUI (POI/Route 編集 UI)
-- node:
-    pkg: mapoi_webui
-    exec: mapoi_webui_node.py
-    output: "screen"
-    param:
+# WebUI (POI/Route 編集 UI) — 既存 mapoi_webui.launch.yaml を include して DRY 化
+- include:
+    file: "$(find-pkg-share mapoi_webui)/launch/mapoi_webui.launch.yaml"
+    arg:
       - {name: maps_path, value: "$(var maps_path)"}
       - {name: map_name, value: "$(var map_name)"}
       - {name: config_file, value: "$(var config_file)"}
