@@ -1,4 +1,4 @@
-#define UNIT_TEST
+// UNIT_TEST マクロは CMakeLists.txt の target_compile_definitions で定義する
 #include <gtest/gtest.h>
 #include <rclcpp/rclcpp.hpp>
 #include "mapoi_server/mapoi_nav_server.hpp"
