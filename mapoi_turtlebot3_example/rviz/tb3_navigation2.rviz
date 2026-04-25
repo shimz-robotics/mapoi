@@ -23,10 +23,6 @@ Panels:
     Splitter Ratio: 0.3333333432674408
   - Class: nav2_rviz_plugins/Navigation 2
     Name: Navigation 2
-  - Class: nav2_rviz_plugins/Selector
-    Name: Selector
-  - Class: nav2_rviz_plugins/Docking
-    Name: Docking
   - Class: mapoi_rviz_plugins/MapoiPanel
     Name: MapoiPanel
   - Class: rviz_common/Help
@@ -608,8 +604,6 @@ Visualization Manager:
 Window Geometry:
   Displays:
     collapsed: false
-  Docking:
-    collapsed: false
   Height: 836
   Help:
     collapsed: false
@@ -625,8 +619,6 @@ Window Geometry:
   RealsenseCamera:
     collapsed: false
   Selection:
-    collapsed: false
-  Selector:
     collapsed: false
   Tool Properties:
     collapsed: false
