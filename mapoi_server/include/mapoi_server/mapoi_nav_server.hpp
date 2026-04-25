@@ -138,6 +138,11 @@ private:
   void publish_initial_pose(
     const geometry_msgs::msg::Pose & pose, const std::string & source);
 
+  // /initialpose subscriber (主に AMCL) が ready になるまで待つ (#33)。
+  // subscriber が既に ready なら即 return。timeout 内に ready にならなければ WARN。
+  // 200ms 間隔の polling で blocking wait する (single-thread executor 前提)。
+  void wait_for_initialpose_subscriber(std::chrono::seconds timeout);
+
   // 同一 config_path への重複 publish 防止
   std::string last_initial_pose_config_path_;
 
