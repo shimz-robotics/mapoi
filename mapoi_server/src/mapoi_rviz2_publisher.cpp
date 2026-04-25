@@ -106,16 +106,72 @@ void MapoiRviz2Publisher::timer_callback(){
   default_text_marker.scale.x = 0.2; default_text_marker.scale.y = 0.2; default_text_marker.scale.z = 0.2;
   default_text_marker.color.r = 0.0; default_text_marker.color.g = 0.0; default_text_marker.color.b = 0.0; default_text_marker.color.a = 1.0;
 
-  visualization_msgs::msg::Marker default_cylinder_marker = default_arrow_marker;
-  default_cylinder_marker.type = visualization_msgs::msg::Marker::CYLINDER;
-  default_cylinder_marker.scale.x = 1.0*2; default_cylinder_marker.scale.y = 1.0*2; default_cylinder_marker.scale.z = 0.1;
-  default_cylinder_marker.color.r = 0.64; default_cylinder_marker.color.g = 0.89; default_cylinder_marker.color.b = 0.85; default_cylinder_marker.color.a = 0.3;
+  // POI radius を床面の円 (LINE_STRIP) で描画する template。
+  // CYLINDER と異なり top-down view で map / costmap と Z 重なりにくく、視界を遮らない。
+  visualization_msgs::msg::Marker default_circle_marker = default_arrow_marker;
+  default_circle_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+  default_circle_marker.scale.x = 0.03;  // line width (m)
+  default_circle_marker.scale.y = 0.0; default_circle_marker.scale.z = 0.0;
+  default_circle_marker.pose.orientation.w = 1.0;  // identity (LINE_STRIP の point は world 座標で指定するため)
 
   visualization_msgs::msg::MarkerArray ma_waypoints;
   visualization_msgs::msg::MarkerArray ma_events;
   int id = 0;
+
+  // 円の頂点数 (滑らかさと marker サイズの trade-off、36 角形 = 10度刻みで十分)
+  constexpr int CIRCLE_SEGMENTS = 36;
+  // 円を描く床面の z (map / costmap よりわずかに上、0.01m)
+  constexpr double CIRCLE_Z = 0.01;
+  // 円の透明度 (薄めにして他 marker や map を遮らない)
+  constexpr float CIRCLE_ALPHA = 0.5f;
+  auto add_radius_circle = [&](const geometry_msgs::msg::Pose & p, double radius,
+                               float r, float g, float b,
+                               int marker_id,
+                               visualization_msgs::msg::MarkerArray & target) {
+    visualization_msgs::msg::Marker m = default_circle_marker;
+    m.id = marker_id;
+    m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = CIRCLE_ALPHA;
+    m.points.reserve(CIRCLE_SEGMENTS + 1);
+    for (int i = 0; i <= CIRCLE_SEGMENTS; ++i) {
+      const double angle = 2.0 * M_PI * static_cast<double>(i) / CIRCLE_SEGMENTS;
+      geometry_msgs::msg::Point pt;
+      pt.x = p.position.x + radius * std::cos(angle);
+      pt.y = p.position.y + radius * std::sin(angle);
+      pt.z = CIRCLE_Z;
+      m.points.push_back(pt);
+    }
+    target.markers.push_back(m);
+  };
+
   for (const auto & poi : pois_list_) {
     geometry_msgs::msg::Pose pose = poi.pose;
+
+    // POI radius を床面の円で描画 (全 POI 共通)。
+    // primary tag の color を採用。優先順位は tags 配列の順序ではなく
+    // goal > event > origin で固定 (poi.tags が ["event", "goal"] のような順でも goal が勝つ)。
+    if (poi.radius > 0.0) {
+      const auto has_tag = [&poi](const std::string & target) {
+        for (const auto & t : poi.tags) {
+          if (t == target) return true;
+        }
+        return false;
+      };
+
+      float cr = 0.5f, cg = 0.5f, cb = 0.5f;  // default gray (recognized tag none)
+      visualization_msgs::msg::MarkerArray * circle_target = &ma_events;
+      if (has_tag("goal")) {
+        cr = 0.0f; cg = 1.0f; cb = 0.0f;
+        circle_target = &ma_waypoints;
+      } else if (has_tag("event")) {
+        cr = 0.0f; cg = 0.0f; cb = 1.0f;
+        circle_target = &ma_events;
+      } else if (has_tag("origin")) {
+        cr = 1.0f; cg = 0.0f; cb = 0.0f;
+        circle_target = &ma_events;
+      }
+      add_radius_circle(pose, poi.radius, cr, cg, cb, id, *circle_target);
+      id += 1;
+    }
 
     for(const auto & tag : poi.tags){
       if(tag == "goal"){
@@ -154,15 +210,6 @@ void MapoiRviz2Publisher::timer_callback(){
         m_event.color.r = 0.0; m_event.color.g = 0.0; m_event.color.b = 1.0; m_event.color.a = 0.7;
         m_event.id = id;
         ma_events.markers.push_back(m_event);
-        id += 1;
-
-        visualization_msgs::msg::Marker m_area = default_cylinder_marker;
-        m_area.pose = pose;
-        m_area.pose.position.z = 0.1;
-        m_area.scale.x = poi.radius * 2;
-        m_area.scale.y = poi.radius * 2;
-        m_area.id = id;
-        ma_events.markers.push_back(m_area);
         id += 1;
 
         visualization_msgs::msg::Marker m_text = default_text_marker;
