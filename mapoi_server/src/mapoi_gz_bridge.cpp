@@ -89,8 +89,14 @@ MapoiGzBridge::~MapoiGzBridge()
 void MapoiGzBridge::on_config_path(const std_msgs::msg::String::SharedPtr msg)
 {
   // 軽量。queue に push して即 return。state 操作と service call は worker。
+  // mapoi_server は config_path を 500ms 周期で re-publish するため、worker が
+  // service 不達などで blocking 中だと queue が際限なく膨らむ。常に latest 1 件のみ
+  // 保持する coalesce 戦略で、stale な path は破棄する。
   {
     std::lock_guard<std::mutex> lock(queue_mutex_);
+    while (!queue_.empty()) {
+      queue_.pop();
+    }
     queue_.push(msg->data);
   }
   queue_cv_.notify_one();
@@ -147,10 +153,24 @@ void MapoiGzBridge::process_config_path(const std::string & path)
     return;
   }
   if (status == ConfigLoadStatus::NoGazeboSection) {
-    // legitimate: gazebo セクションが無い map (例: 実機用)。entity swap は
-    // skip、state のみ進める (次回 same map_name で早期 return するため)。
-    RCLCPP_INFO(this->get_logger(),
-      "No gazebo section in %s; skipping entity swap", path.c_str());
+    // legitimate: gazebo セクション無し map (例: 実機用 map config)。
+    // sim 側に旧 world_model が残っていれば cleanup してから state を進める
+    // (sim 側 state と map state の乖離防止)。delete に失敗したら state を進めず retry。
+    if (!current_world_model_name_.empty()) {
+      RCLCPP_INFO(this->get_logger(),
+        "No gazebo section in %s; cleaning up stale world_model=%s",
+        path.c_str(), current_world_model_name_.c_str());
+      if (!delete_model_entity(current_world_model_name_)) {
+        RCLCPP_WARN(this->get_logger(),
+          "delete world_model failed during NoGazeboSection cleanup; "
+          "keeping state for retry");
+        return;
+      }
+      current_world_model_name_.clear();
+    } else {
+      RCLCPP_INFO(this->get_logger(),
+        "No gazebo section in %s; skipping entity swap", path.c_str());
+    }
     current_map_name_ = map_name;
     current_config_path_ = path;
     return;
