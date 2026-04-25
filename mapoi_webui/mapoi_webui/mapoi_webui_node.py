@@ -168,6 +168,12 @@ class MapoiWebNode(Node):
         subscriber 不在 (mapoi_nav_server 未起動等) を silent failure させずに
         warning として返したい。
 
+        **best-effort**: `get_subscription_count()` と `publish()` の間で
+        subscriber 状態が変わる可能性 (race) があり、check 通過後に subscriber が
+        消える / check 失敗後に publish 直前に subscriber が現れる、を完全に
+        排除はできない。「明らかな未起動」を検出する目的のみで、厳密な到達
+        確認が必要な場合は service / action / ack 設計に切り替えること。
+
         Args:
             pub: rclpy publisher
             msg: message to publish
@@ -323,7 +329,13 @@ class MapoiWebNode(Node):
                 return jsonify({'error': 'Config not found'}), 404
             try:
                 save_pois(config_path, data['pois'])
-                node.call_reload_map_info()
+                reloaded = node.call_reload_map_info()
+                if not reloaded:
+                    return jsonify({
+                        'success': True,
+                        'warning': 'YAML は保存しましたが、mapoi_server の reload_map_info '
+                                   'service が応答しなかったか失敗しました。詳細はログを確認してください'
+                    })
                 return jsonify({'success': True})
             except Exception as e:
                 node.get_logger().error(f'Failed to save POIs: {e}')
@@ -352,7 +364,13 @@ class MapoiWebNode(Node):
                 return jsonify({'error': 'Config not found'}), 404
             try:
                 save_custom_tags(config_path, data['custom_tags'])
-                node.call_reload_map_info()
+                reloaded = node.call_reload_map_info()
+                if not reloaded:
+                    return jsonify({
+                        'success': True,
+                        'warning': 'YAML は保存しましたが、mapoi_server の reload_map_info '
+                                   'service が応答しなかったか失敗しました。詳細はログを確認してください'
+                    })
                 return jsonify({'success': True})
             except Exception as e:
                 node.get_logger().error(f'Failed to save custom tags: {e}')
@@ -376,7 +394,13 @@ class MapoiWebNode(Node):
                 return jsonify({'error': 'Config not found'}), 404
             try:
                 save_routes(config_path, data['routes'])
-                node.call_reload_map_info()
+                reloaded = node.call_reload_map_info()
+                if not reloaded:
+                    return jsonify({
+                        'success': True,
+                        'warning': 'YAML は保存しましたが、mapoi_server の reload_map_info '
+                                   'service が応答しなかったか失敗しました。詳細はログを確認してください'
+                    })
                 return jsonify({'success': True})
             except Exception as e:
                 node.get_logger().error(f'Failed to save routes: {e}')
