@@ -247,17 +247,28 @@ maps/
 
 ### 3. AMCL パラメータの設定
 
-初期位置の自動設定や地図切り替え機能を利用する場合は、AMCL のパラメータに以下を追加します。
+初期位置は `mapoi_config.yaml` の `initial_pose` タグ付き POI を **single source of truth** として `mapoi_nav_server` が `/initialpose` topic に自動配信します。AMCL の `set_initial_pose` (Nav2 native の self-init) と二重管理にならないよう、AMCL 側はそれを無効化し、地図切り替えは `first_map_only_` を `False` にしてください。
 
 ```yaml
 amcl:
   ros__parameters:
-    # 初期位置の自動設定
-    set_initial_pose: True
-    initial_pose: {x: -2.0, y: -0.5, yaw: 0.0}
+    # 初期位置は mapoi_nav_server から /initialpose topic 経由で配信される
+    # POI single source of truth 化のため AMCL native の self-init は使わない
+    set_initial_pose: False
     # 地図切り替えの有効化
     first_map_only_: False
 ```
+
+initial_pose は `mapoi_config.yaml` 側で:
+
+```yaml
+poi:
+  - name: elevator_hall
+    pose: {x: -2.0, y: -0.5, yaw: 0.0}
+    tags: [goal, initial_pose]
+```
+
+別 topic 名・別 message 型を使う localization パッケージへの対応については [`mapoi_server/README.md`](./mapoi_server/README.md) の「対応 localization パッケージの要件」節を参照してください。
 
 ### 4. POI 半径イベントの利用（オプション）
 
