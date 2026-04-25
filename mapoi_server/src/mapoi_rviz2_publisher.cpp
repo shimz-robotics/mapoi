@@ -7,6 +7,11 @@ using std::placeholders::_2;
 
 MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
   id_buf_ = 0;
+
+  // POI 矢印の大きさを radius に対する比率で指定する (arrow_size = radius × ratio)。
+  // default 1.0 = radius と同じ長さ。Route 矢印 (waypoint 間) は radius 概念を持たないので対象外。
+  this->declare_parameter<double>("arrow_size_ratio", 1.0);
+
   marker_waypoints_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_goal_marks", 10);
   marker_events_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_event_marks", 10);
 
@@ -97,9 +102,24 @@ void MapoiRviz2Publisher::timer_callback(){
   default_arrow_marker.header.stamp = rclcpp::Clock().now();
   default_arrow_marker.action = visualization_msgs::msg::Marker::ADD;
   default_arrow_marker.type = visualization_msgs::msg::Marker::ARROW;
+  // Default scale (radius が無い / 0 の POI 用 fallback)。比率 (length:shaft:head) = 0.3:0.2:0.1
   default_arrow_marker.scale.x = 0.3; default_arrow_marker.scale.y = 0.2; default_arrow_marker.scale.z = 0.1;
   default_arrow_marker.color.r = 0.0; default_arrow_marker.color.g = 1.0; default_arrow_marker.color.b = 0.0; default_arrow_marker.color.a = 0.7;
   default_arrow_marker.lifetime.sec = 2.0;
+
+  // POI radius に基づく arrow scale 適用 helper。
+  // 既存 default 比率 (length:shaft:head = 0.3:0.2:0.1) を保ち、length を radius × ratio に。
+  const double arrow_size_ratio =
+    this->get_parameter("arrow_size_ratio").as_double();
+  auto apply_radius_scale = [&](visualization_msgs::msg::Marker & m, double radius) {
+    if (radius <= 0.0 || arrow_size_ratio <= 0.0) {
+      return;  // default scale を維持
+    }
+    const double length = radius * arrow_size_ratio;
+    m.scale.x = length;
+    m.scale.y = length * (0.2 / 0.3);  // shaft diameter
+    m.scale.z = length * (0.1 / 0.3);  // head diameter
+  };
 
   visualization_msgs::msg::Marker default_text_marker = default_arrow_marker;
   default_text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
@@ -178,6 +198,7 @@ void MapoiRviz2Publisher::timer_callback(){
         visualization_msgs::msg::Marker m_waypoint = default_arrow_marker;
         m_waypoint.pose = pose;
         m_waypoint.pose.position.z = 0.1;
+        apply_radius_scale(m_waypoint, poi.radius);
         {
           bool is_goal = highlighted_goal_names_.count(poi.name) > 0;
           if (is_goal) {
@@ -207,6 +228,7 @@ void MapoiRviz2Publisher::timer_callback(){
         visualization_msgs::msg::Marker m_event = default_arrow_marker;
         m_event.pose = pose;
         m_event.pose.position.z = 0.1;
+        apply_radius_scale(m_event, poi.radius);
         m_event.color.r = 0.0; m_event.color.g = 0.0; m_event.color.b = 1.0; m_event.color.a = 0.7;
         m_event.id = id;
         ma_events.markers.push_back(m_event);
@@ -224,6 +246,7 @@ void MapoiRviz2Publisher::timer_callback(){
         visualization_msgs::msg::Marker m_event = default_arrow_marker;
         m_event.pose = pose;
         m_event.pose.position.z = 0.1;
+        apply_radius_scale(m_event, poi.radius);
         m_event.color.r = 1.0; m_event.color.g = 0.0; m_event.color.b = 0.0; m_event.color.a = 0.7;
         m_event.id = id;
         ma_events.markers.push_back(m_event);
