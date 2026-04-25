@@ -41,7 +41,7 @@ launch:
     description: >
       シミュレータ選択:
         gazebo = Gazebo Classic (Humble 想定、mapoi_gazebo_bridge を起動)
-        gz     = gz-sim (Jazzy 想定、mapoi_gz_bridge を起動。#42 で実装予定)
+        gz     = gz-sim (Jazzy 想定、mapoi_gz_bridge + parameter_bridge を起動)
         none   = シミュレータ連動なし (実機)
 
 - arg:
@@ -55,6 +55,16 @@ launch:
     description: >
       ロボット再生成用 SDF ファイルのフルパス (simulator=gazebo のときのみ使用)。
       空文字なら respawn はスキップ (warn のみ)。
+      simulator=gz では SetEntityPose で teleport するため SDF 不要。
+
+- arg:
+    name: init_world_name
+    default: "default"
+    description: >
+      gz-sim で起動済みの world 名 (起動時固定、bridge ライフタイム中は不変)。
+      mapoi_gz_bridge は /world/<init_world_name>/{create,remove,set_pose} サービスを
+      呼ぶため、gz_sim 起動時の world 名 (SDF の <world name="..."> 値) と一致する必要がある。
+      simulator=gz のときのみ使用。
 
 # core 3 nodes (常時起動)
 - node:
@@ -85,12 +95,21 @@ launch:
       - {name: robot_sdf_path, value: "$(var robot_sdf_path)"}
     if: $(eval "'$(var simulator)' == 'gazebo'")
 
-# gz-sim 連動 (Jazzy): #42 で mapoi_gz_bridge を実装後に有効化する。
-# 現状 simulator=gz を指定しても bridge は起動しない (sim 自体は動くが SwitchMap 連動なし)。
-# 暫定として WARN を出して silent no-op を防ぐ (#42 マージ時に削除)。
-- log:
-    message: >
-      [mapoi_bringup] WARNING: simulator=gz is selected but mapoi_gz_bridge is
-      not yet implemented (see #42). SwitchMap will NOT propagate to gz-sim.
-      To suppress this warning, set simulator=none.
+# gz-sim 連動 (Jazzy): SwitchMap 時に world_model entity を入れ替え +
+# ロボットを SetEntityPose で initial_pose POI 座標に teleport (gz-sim 本体は無停止)。
+# parameter_bridge で gz native service (gz transport) を ROS 2 service として bridge する。
+- node:
+    pkg: mapoi_server
+    exec: mapoi_gz_bridge
+    output: "screen"
+    param:
+      - {name: robot_entity_name, value: "$(var robot_entity_name)"}
+      - {name: init_world_name, value: "$(var init_world_name)"}
+    if: $(eval "'$(var simulator)' == 'gz'")
+
+- node:
+    pkg: ros_gz_bridge
+    exec: parameter_bridge
+    output: "screen"
+    args: "/world/$(var init_world_name)/create@ros_gz_interfaces/srv/SpawnEntity /world/$(var init_world_name)/remove@ros_gz_interfaces/srv/DeleteEntity /world/$(var init_world_name)/set_pose@ros_gz_interfaces/srv/SetEntityPose"
     if: $(eval "'$(var simulator)' == 'gz'")

@@ -32,6 +32,13 @@
        find_package(gazebo_msgs QUIET) を使い build 時に skip する。-->
   <depend condition="$ROS_DISTRO == 'humble'">gazebo_msgs</depend>
 
+  <!-- Jazzy 以降 (gz-sim) で mapoi_gz_bridge を build/run するための依存。
+       Humble では ros_gz_interfaces が存在しないため、CMakeLists 側で
+       find_package(ros_gz_interfaces QUIET) を使い build 時に skip する。
+       ros_gz_bridge は launch から parameter_bridge を起動するために exec_depend。-->
+  <depend condition="$ROS_DISTRO != 'humble'">ros_gz_interfaces</depend>
+  <exec_depend condition="$ROS_DISTRO != 'humble'">ros_gz_bridge</exec_depend>
+
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
   <test_depend>ament_cmake_gtest</test_depend>
