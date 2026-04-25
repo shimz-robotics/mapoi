@@ -42,6 +42,16 @@ private:
    */
   void on_poi_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future);
 
+  /**
+   * @brief get_pois_info service を呼び出して pois_list_ を更新する共通処理
+   */
+  void request_pois_list();
+
+  /**
+   * @brief mapoi_config_path topic の変化検出時に POI list を再取得する
+   */
+  void on_config_path_changed(const std_msgs::msg::String::SharedPtr msg);
+
   // --- Member Variables ---
 
   // マーカーID管理用
@@ -57,8 +67,12 @@ private:
   // Subscribers
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr highlight_goal_sub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr highlight_route_sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr config_path_sub_;
   void on_highlight_goal_received(const std_msgs::msg::String::SharedPtr msg);
   void on_highlight_route_received(const std_msgs::msg::String::SharedPtr msg);
+
+  // Config path tracking (mapoi_nav_server と同じ idempotent guard)
+  std::string last_config_path_;
 
   // Timers
   rclcpp::TimerBase::SharedPtr init_timer_;

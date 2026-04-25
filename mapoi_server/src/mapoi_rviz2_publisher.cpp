@@ -29,6 +29,12 @@ MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
     "mapoi_highlight_route", 10,
     std::bind(&MapoiRviz2Publisher::on_highlight_route_received, this, _1));
 
+  // mapoi_config_path 変化検出で POI list を再取得 (WebUI / Panel 並び替え保存 / SwitchMap 対応)。
+  // QoS は mapoi_nav_server と同じ transient_local。後起動でも latched 値を受信できる。
+  config_path_sub_ = this->create_subscription<std_msgs::msg::String>(
+    "mapoi_config_path", rclcpp::QoS(1).transient_local(),
+    std::bind(&MapoiRviz2Publisher::on_config_path_changed, this, _1));
+
   // 初期化シーケンスをデッドロック回避のため少し遅延させて開始
   this->init_timer_ = this->create_wall_timer(100ms, std::bind(&MapoiRviz2Publisher::start_sequence, this));
 
@@ -50,11 +56,33 @@ void MapoiRviz2Publisher::start_sequence()
     return;
   }
 
-  auto request = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
   RCLCPP_INFO(this->get_logger(), "Requesting POI Info...");
-  
+  request_pois_list();
+}
+
+void MapoiRviz2Publisher::request_pois_list()
+{
+  auto request = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
   poi_client_->async_send_request(
     request, std::bind(&MapoiRviz2Publisher::on_poi_received, this, _1));
+}
+
+void MapoiRviz2Publisher::on_config_path_changed(const std_msgs::msg::String::SharedPtr msg)
+{
+  // 同じ path なら skip (起動時 latched 値の二重 fetch + 無関係な再 publish の抑止)
+  if (msg->data == last_config_path_) {
+    return;
+  }
+  last_config_path_ = msg->data;
+  RCLCPP_INFO(this->get_logger(), "Map config changed: %s — refreshing POI list.", msg->data.c_str());
+
+  // 起動直後は service が未起動の場合があるため非ブロッキングで判定。
+  // skip しても次回の config_path 通知 (Save / SwitchMap) で再 fetch される。
+  if (!poi_client_->service_is_ready()) {
+    RCLCPP_WARN(this->get_logger(), "get_pois_info service not ready, skipping refresh.");
+    return;
+  }
+  request_pois_list();
 }
 
 void MapoiRviz2Publisher::on_poi_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future)
