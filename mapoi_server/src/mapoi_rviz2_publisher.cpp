@@ -12,6 +12,11 @@ MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
   // default 1.0 = radius と同じ長さ。Route 矢印 (waypoint 間) は radius 概念を持たないので対象外。
   this->declare_parameter<double>("arrow_size_ratio", 1.0);
 
+  // POI label の表示形式: "index" (POI Editor 行番号、1-based) / "name" / "both" (= "<index>: <name>") / "none"。
+  // default "index" は WebUI 上の行と RViz label を直接対応させ、文字長を抑えて重なりを減らす。
+  // ("off" は ros2 param CLI で bool として解釈されるため "none" を採用)
+  this->declare_parameter<std::string>("poi_label_format", "index");
+
   marker_waypoints_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_goal_marks", 10);
   marker_events_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_event_marks", 10);
 
@@ -121,6 +126,18 @@ void MapoiRviz2Publisher::timer_callback(){
     m.scale.z = length * (0.1 / 0.3);  // head diameter
   };
 
+  // POI label の format ("index" / "name" / "both" / "none") を runtime parameter で切替。
+  // 空文字列を返した場合は label を生成しない (none モード)。
+  const std::string label_format =
+    this->get_parameter("poi_label_format").as_string();
+  auto build_label = [&label_format](size_t index_one_based, const std::string & name) -> std::string {
+    if (label_format == "none") return "";
+    if (label_format == "name") return name;
+    if (label_format == "both") return std::to_string(index_one_based) + ": " + name;
+    // default "index" (および未知の値)
+    return std::to_string(index_one_based);
+  };
+
   visualization_msgs::msg::Marker default_text_marker = default_arrow_marker;
   default_text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
   default_text_marker.scale.x = 0.2; default_text_marker.scale.y = 0.2; default_text_marker.scale.z = 0.2;
@@ -163,7 +180,9 @@ void MapoiRviz2Publisher::timer_callback(){
     target.markers.push_back(m);
   };
 
+  size_t poi_index_one_based = 0;
   for (const auto & poi : pois_list_) {
+    poi_index_one_based += 1;  // POI Editor (mapoi_config.yaml の poi: 順) 行番号、1-based、tag フィルタ非依存
     geometry_msgs::msg::Pose pose = poi.pose;
 
     // POI radius を床面の円で描画 (全 POI 共通)。
@@ -209,20 +228,16 @@ void MapoiRviz2Publisher::timer_callback(){
         ma_waypoints.markers.push_back(m_waypoint);
         id += 1;
 
-        visualization_msgs::msg::Marker m_text = default_text_marker;
-        {
-          auto it = highlighted_route_names_.find(poi.name);
-          if (it != highlighted_route_names_.end()) {
-            m_text.text = "[" + std::to_string(it->second) + "] " + poi.name;
-          } else {
-            m_text.text = poi.name;
-          }
+        const std::string label_text = build_label(poi_index_one_based, poi.name);
+        if (!label_text.empty()) {
+          visualization_msgs::msg::Marker m_text = default_text_marker;
+          m_text.text = label_text;
+          m_text.pose = pose;
+          m_text.pose.position.z = 0.1;
+          m_text.id = id;
+          ma_waypoints.markers.push_back(m_text);
+          id += 1;
         }
-        m_text.pose = pose;
-        m_text.pose.position.z = 0.1;
-        m_text.id = id;
-        ma_waypoints.markers.push_back(m_text);
-        id += 1;
       }
       else if(tag == "event"){
         visualization_msgs::msg::Marker m_event = default_arrow_marker;
@@ -234,13 +249,16 @@ void MapoiRviz2Publisher::timer_callback(){
         ma_events.markers.push_back(m_event);
         id += 1;
 
-        visualization_msgs::msg::Marker m_text = default_text_marker;
-        m_text.text = poi.name;
-        m_text.pose = pose;
-        m_text.pose.position.z = 0.1;
-        m_text.id = id;
-        ma_events.markers.push_back(m_text);
-        id += 1;
+        const std::string label_text = build_label(poi_index_one_based, poi.name);
+        if (!label_text.empty()) {
+          visualization_msgs::msg::Marker m_text = default_text_marker;
+          m_text.text = label_text;
+          m_text.pose = pose;
+          m_text.pose.position.z = 0.1;
+          m_text.id = id;
+          ma_events.markers.push_back(m_text);
+          id += 1;
+        }
       }
       else if(tag == "origin"){
         visualization_msgs::msg::Marker m_event = default_arrow_marker;

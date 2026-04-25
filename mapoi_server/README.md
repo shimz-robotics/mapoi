@@ -150,6 +150,7 @@ RViz2 上に POI のマーカーを表示するためのノードです。
 | パラメータ名 | 型 | デフォルト | 説明 |
 | --- | --- | --- | --- |
 | `arrow_size_ratio` | `double` | `1.0` | POI 矢印の scale を radius に対する比率で指定 (`arrow_length = radius × ratio`)。Route 矢印 (waypoint 間) は radius 概念を持たないので対象外。`ros2 param set` で runtime 変更も次周期に反映 |
+| `poi_label_format` | `string` | `"index"` | POI label の表示形式: `"index"` = POI Editor 行番号 (1-based 通し、tag フィルタ非依存) / `"name"` = POI 名 / `"both"` = `"<index>: <name>"` / `"none"` = 非表示 |
 
 #### サブスクライバー
 
