@@ -70,15 +70,13 @@ launch:
     name: with_nav_server
     default: "true"
     description: >
-      mapoi_nav_server の起動制御 (#60)。default true で従来通り起動。
-      editor 用途 (POI/Route 編集のみ) など、Nav2 連携が不要な場合は false で起動を抑止。
+      mapoi_nav_server を起動するか。Nav2 連携が不要な構成 (POI/Route 編集のみの editor 用途等) で false。
 
 - arg:
     name: with_rviz_publisher
     default: "true"
     description: >
-      mapoi_rviz2_publisher の起動制御 (#60)。default true で従来通り起動。
-      RViz を使わない (例: WebUI のみ、headless 編集) 場合は false で marker publish を抑止。
+      mapoi_rviz2_publisher を起動するか。RViz を使わない構成 (WebUI のみ、headless 編集等) で false。
 
 # core 3 nodes (常時起動)
 - node:

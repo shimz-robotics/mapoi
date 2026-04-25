@@ -1,4 +1,4 @@
-# mapoi editor: デスクトップで POI / Route / CustomTags を編集する用途の standalone launch (#60)。
+# mapoi editor: デスクトップで POI / Route / CustomTags を編集する用途の standalone launch。
 # mapoi_bringup を minimal config (nav_server / rviz_publisher / sim 全て off) で include +
 # mapoi_webui を起動する。ロボット動作 / ナビゲーション系は起動しない。
 #
@@ -37,7 +37,6 @@ launch:
     description: "HTTP server bind address"
 
 # mapoi_server を minimal で起動 (nav_server / rviz_publisher / sim bridge は起動しない)。
-# graceful service handling は mapoi_webui 側 (#60) で実装済み。
 - include:
     file: "$(find-pkg-share mapoi_server)/launch/mapoi_bringup.launch.yaml"
     arg:
@@ -48,7 +47,7 @@ launch:
       - {name: with_nav_server, value: "false"}
       - {name: with_rviz_publisher, value: "false"}
 
-# WebUI (POI/Route 編集 UI) — 既存 mapoi_webui.launch.yaml を include して DRY 化
+# WebUI (POI/Route 編集 UI)
 - include:
     file: "$(find-pkg-share mapoi_webui)/launch/mapoi_webui.launch.yaml"
     arg:

@@ -70,9 +70,6 @@ class MapoiWebNode(Node):
         self.config_path_sub_ = self.create_subscription(
             String, 'mapoi_config_path', self.config_path_callback, 10)
 
-        # tag_definitions は mapoi_server の get_tag_definitions service から取得 (#39)。
-        # share/ ファイル直読みを廃止し、ROS 2 service 経由で結合度を下げた。
-
         # If maps_path not set, try to get it from get_maps_info service or use default
         if not self.maps_path_:
             self.get_logger().warn('maps_path parameter not set. Set it to use the web editor.')
@@ -142,13 +139,10 @@ class MapoiWebNode(Node):
         return os.path.join(self.maps_path_, name)
 
     def call_reload_map_info(self):
-        """Call reload_map_info service on mapoi_server, awaiting response.
+        """Call reload_map_info service and await response.success.
 
-        #60: 旧実装は call_async fire-and-forget で response を見ていなかったため、
-        server reload 失敗 (YAML 破損等) が silent failure になっていた。
-        _call_service_sync で response.success を確認するように改修。
-
-        Returns: True on server-side success, False on unavailable/timeout/server failure.
+        Returns True only when server reports success; False on
+        unavailable / timeout / server-side failure.
         """
         response = self._call_service_sync(
             self.reload_client_, Trigger.Request(), 'reload_map_info', timeout_sec=3.0)
@@ -161,18 +155,16 @@ class MapoiWebNode(Node):
         return True
 
     def publish_with_subscriber_check(self, pub, msg, topic_name):
-        """Publish a message with subscriber-count check (#60).
+        """Publish with best-effort subscriber-count check.
 
-        ROS 2 publisher.publish() は subscriber がいなくても成功扱い。
-        webui のような UI から「ボタン押した結果」を user に返すケースでは、
-        subscriber 不在 (mapoi_nav_server 未起動等) を silent failure させずに
-        warning として返したい。
+        ROS 2 `publisher.publish()` は subscriber がいなくても成功扱いになる。
+        UI ボタン経由の publish では subscriber 不在 (相手 node 未起動等) を
+        silent failure にせず warning として user に返したい場面がある。
 
         **best-effort**: `get_subscription_count()` と `publish()` の間で
-        subscriber 状態が変わる可能性 (race) があり、check 通過後に subscriber が
-        消える / check 失敗後に publish 直前に subscriber が現れる、を完全に
-        排除はできない。「明らかな未起動」を検出する目的のみで、厳密な到達
-        確認が必要な場合は service / action / ack 設計に切り替えること。
+        subscriber 状態が変わる race を排除できない (check 通過後に消える /
+        check 失敗後に直前に現れる)。「明らかな未起動」検出が目的で、厳密な
+        到達確認が必要なら service / action / ack 設計に切り替える。
 
         Args:
             pub: rclpy publisher
@@ -343,7 +335,6 @@ class MapoiWebNode(Node):
 
         @app.route('/api/tag_definitions')
         def api_tag_definitions():
-            # mapoi_server の get_tag_definitions service 経由で system + custom 両方を取得 (#39)
             response = node._call_service_sync(
                 node.tag_defs_client_, GetTagDefinitions.Request(), 'get_tag_definitions')
             if response is None:
