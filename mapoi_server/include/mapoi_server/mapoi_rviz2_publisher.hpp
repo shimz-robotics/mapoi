@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cmath>
 #include <mutex>
+#include <filesystem>
 
 #include <rclcpp/rclcpp.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
@@ -71,8 +72,12 @@ private:
   void on_highlight_goal_received(const std_msgs::msg::String::SharedPtr msg);
   void on_highlight_route_received(const std_msgs::msg::String::SharedPtr msg);
 
-  // Config path tracking (mapoi_nav_server と同じ idempotent guard)
+  // Config path + mtime guard。
+  // path だけ覚えると周期 publish に対して常に skip する一方、WebUI/Panel Save (内容のみ変更で path 不変)
+  // も skip してしまう。mtime も併せて見ることで SwitchMap (path 変更) と Save (mtime 変更) の両方を検出。
+  // single-thread executor 前提で書き込みは callback context のみ。MultiThreadedExecutor 移行時は mutex が必要。
   std::string last_config_path_;
+  std::filesystem::file_time_type last_config_mtime_{};
 
   // Timers
   rclcpp::TimerBase::SharedPtr init_timer_;

@@ -69,19 +69,32 @@ void MapoiRviz2Publisher::request_pois_list()
 
 void MapoiRviz2Publisher::on_config_path_changed(const std_msgs::msg::String::SharedPtr msg)
 {
-  // 同じ path なら skip (起動時 latched 値の二重 fetch + 無関係な再 publish の抑止)
-  if (msg->data == last_config_path_) {
-    return;
+  // mapoi_server は config path 文字列を周期 publish (default 5s) する。path だけで dedup すると
+  // SwitchMap (path 変更) は拾えるが、WebUI/Panel Save (path 不変、内容のみ変更) を取りこぼす。
+  // YAML ファイルの mtime も併せて比較し、両 case を検出する。
+  const std::string & current_path = msg->data;
+  std::filesystem::file_time_type current_mtime{};
+  std::error_code ec;
+  auto stat_mtime = std::filesystem::last_write_time(current_path, ec);
+  if (!ec) {
+    current_mtime = stat_mtime;
+    if (current_path == last_config_path_ && current_mtime == last_config_mtime_) {
+      return;  // 周期 publish (path も内容も不変) → skip
+    }
   }
-  last_config_path_ = msg->data;
-  RCLCPP_INFO(this->get_logger(), "Map config changed: %s — refreshing POI list.", msg->data.c_str());
+  // stat 失敗時は dedup 不能とみなし fetch を試みる (起動 race などで一時的に発生し得る)
 
-  // 起動直後は service が未起動の場合があるため非ブロッキングで判定。
-  // skip しても次回の config_path 通知 (Save / SwitchMap) で再 fetch される。
+  RCLCPP_INFO(this->get_logger(), "Map config changed: %s — refreshing POI list.", current_path.c_str());
+
+  // 起動直後は service が未起動の場合がある。guard 値は更新前に readiness 判定して、未起動なら skip。
+  // last_config_path_ / last_config_mtime_ を未更新のまま return するため、次回 publish で再試行される。
   if (!poi_client_->service_is_ready()) {
     RCLCPP_WARN(this->get_logger(), "get_pois_info service not ready, skipping refresh.");
     return;
   }
+
+  last_config_path_ = current_path;
+  last_config_mtime_ = current_mtime;
   request_pois_list();
 }
 
