@@ -16,7 +16,12 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   // initialpose subscriber and publisher
   mapoi_initialpose_poi_sub_ = this->create_subscription<std_msgs::msg::String>(
     "mapoi_initialpose_poi", 1, std::bind(&MapoiNavServer::mapoi_initialpose_poi_cb, this, std::placeholders::_1));
-  nav2_initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("initialpose", 1);
+  // /initialpose は transient_local + KeepLast(1) で publish する。
+  // mapoi_nav_server が AMCL より先に起動するケースで、初回の自動 publish が
+  // AMCL subscription readiness 前に行われて取りこぼされる race を回避する
+  // (#33)。AMCL 側 subscriber は volatile + reliable で互換性あり。
+  nav2_initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
+    "initialpose", rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
 
   // goal_pose subscriber and publisher
   mapoi_goal_pose_poi_sub_ = this->create_subscription<std_msgs::msg::String>(
