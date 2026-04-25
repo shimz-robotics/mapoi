@@ -257,6 +257,12 @@ void PoiEditorPanel::SaveButton()
   auto request_reload_map_info = std::make_shared<std_srvs::srv::Trigger::Request>();
   auto result_reload_map_info = reload_map_info_client_->async_send_request(request_reload_map_info);
   rclcpp::spin_until_future_complete(service_node_, result_reload_map_info);
+
+  // Drag による reorder は Qt の visual order だけ変えるため、Save 後も verticalHeader の
+  // 番号は元の logical order のまま (例: [3, 1, 2] のように見える)。
+  // saved YAML を fetch し直して table を再構築することで visual = logical を揃え、
+  // 番号が 1, 2, 3, ... に並ぶようにする。drag 中の background highlight (Qt::green) も解除。
+  UpdatePoiTable();
 }
 
 // Subscription Callback
