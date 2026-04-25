@@ -75,13 +75,69 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 | POST | `/api/nav/cancel` | ナビゲーションの停止 |
 | POST | `/api/nav/initialpose` | 自己位置推定のリセット |
 
-## 起動方法
+## 起動方法 (3 つのシナリオ)
+
+利用目的に応じて 3 つの起動方法を使い分けてください。いずれもブラウザで `http://<ホスト>:8765` にアクセスします。
+
+### A. webui のみ起動 (オペレーター用、`mapoi_server` を別プロセスで起動済み)
+
+ロボットが既に動いている (`mapoi_server` / `mapoi_nav_server` 等が別プロセスで稼働) 状態で、RViz の代替 UI として webui を後付けする用途。
 
 ```bash
 ros2 launch mapoi_webui mapoi_webui.launch.yaml maps_path:=/path/to/maps map_name:=your_map
 ```
 
-ブラウザで `http://<ホスト>:8765` にアクセスしてください。
+### B. webui + mapoi_server を一緒に起動 (エディター用)
+
+PC でデスクトップ上の POI/Route/CustomTags 編集だけ行いたい用途 (ロボット動作 / Nav2 / RViz は不要)。`mapoi_bringup` を minimal config (`with_nav_server=false`, `with_rviz_publisher=false`, `simulator=none`) で include する。
+
+```bash
+ros2 launch mapoi_webui mapoi_editor.launch.yaml maps_path:=/path/to/maps map_name:=your_map
+```
+
+### C. 統合運用 / デモ (Nav2 + sim + webui を全部)
+
+`mapoi_turtlebot3_example` の `turtlebot3_navigation.launch.yaml` のような bringup + webui 統合 launch を使う。詳細はそのパッケージの README を参照。
+
+## REST API と server 依存
+
+各 endpoint が `mapoi_server` (or `mapoi_nav_server`) の起動を必要とするかの早見表:
+
+| endpoint | server 必要 | 理由 |
+|---|---|---|
+| `GET /api/maps` `/maps/<name>/image\|metadata` | 不要 | `maps_path` を直 ls / YAML/PNG 直読み |
+| `GET /api/pois` `/api/routes` | 不要 | YAML 直読み |
+| `POST /api/pois` `/api/routes` `/api/custom_tags` | **必要** | YAML 書き込み後に `reload_map_info` service を呼ぶ |
+| `GET /api/tag_definitions` | **必要** | `get_tag_definitions` service 経由 |
+| `POST /api/nav/{goal,route,cancel,pause,resume,initialpose}` | **必要 (mapoi_nav_server)** | publisher → nav_server が listener、subscriber 0 件なら warning を返す |
+| `GET /api/nav/status` | 不要 (subscriber 経由で受信値返却) | nav_server がいなければ default 値 |
+
+server / nav_server 不在時の挙動:
+- service 必須 endpoint: `503 Service Unavailable` を返す (timeout)
+- publisher 系 endpoint: `200 OK` だが `warning` フィールドに「subscriber 不在」を含める
+
+## 開発者規約
+
+### Flask thread から ROS 2 service を呼ぶ場合
+
+**必ず `MapoiWebNode._call_service_sync()` 経由で呼ぶ**。直接 `client.call_async()` を fire-and-forget したり、`spin_until_future_complete()` を Flask thread から呼ぶのは禁止 (前者は silent failure、後者は main thread の `rclpy.spin` と executor 競合)。
+
+```python
+response = node._call_service_sync(
+    node.some_client_, SomeReq(), 'some_service', timeout_sec=3.0)
+if response is None:
+    return jsonify({'error': 'service unavailable'}), 503
+```
+
+### Flask thread から ROS 2 publish する場合
+
+**必ず `MapoiWebNode.publish_with_subscriber_check()` 経由で publish する**。subscriber 0 件 (例: `mapoi_nav_server` 未起動) の silent failure を避けるため。
+
+```python
+_, warning = node.publish_with_subscriber_check(
+    node.some_pub_, msg, 'some_topic')
+return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
+```
 
 ## 依存パッケージ
 

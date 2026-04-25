@@ -142,15 +142,49 @@ class MapoiWebNode(Node):
         return os.path.join(self.maps_path_, name)
 
     def call_reload_map_info(self):
-        """Call reload_map_info service on mapoi_server."""
-        if not self.reload_client_.wait_for_service(timeout_sec=2.0):
-            self.get_logger().warn('reload_map_info service not available')
+        """Call reload_map_info service on mapoi_server, awaiting response.
+
+        #60: 旧実装は call_async fire-and-forget で response を見ていなかったため、
+        server reload 失敗 (YAML 破損等) が silent failure になっていた。
+        _call_service_sync で response.success を確認するように改修。
+
+        Returns: True on server-side success, False on unavailable/timeout/server failure.
+        """
+        response = self._call_service_sync(
+            self.reload_client_, Trigger.Request(), 'reload_map_info', timeout_sec=3.0)
+        if response is None:
+            return False  # service unavailable / timeout (logged in helper)
+        if not response.success:
+            self.get_logger().warn(f'reload_map_info returned failure: {response.message}')
             return False
-        req = Trigger.Request()
-        future = self.reload_client_.call_async(req)
-        # We don't block here since we're in Flask thread; fire and forget
-        self.get_logger().info('Called reload_map_info')
+        self.get_logger().info('reload_map_info succeeded')
         return True
+
+    def publish_with_subscriber_check(self, pub, msg, topic_name):
+        """Publish a message with subscriber-count check (#60).
+
+        ROS 2 publisher.publish() は subscriber がいなくても成功扱い。
+        webui のような UI から「ボタン押した結果」を user に返すケースでは、
+        subscriber 不在 (mapoi_nav_server 未起動等) を silent failure させずに
+        warning として返したい。
+
+        Args:
+            pub: rclpy publisher
+            msg: message to publish
+            topic_name: topic name for warning message
+
+        Returns:
+            (published, warning) where warning is None or human-readable string.
+            published is always True since publish itself doesn't fail locally.
+        """
+        sub_count = pub.get_subscription_count()
+        pub.publish(msg)
+        if sub_count == 0:
+            warning = (f"{topic_name} に subscriber が見つかりません "
+                       "(mapoi_nav_server などの listener が起動していない可能性)")
+            self.get_logger().warn(warning)
+            return True, warning
+        return True, None
 
     def _call_service_sync(self, client, request, service_name, timeout_sec=3.0,
                            wait_for_service_sec=2.0):
@@ -355,11 +389,12 @@ class MapoiWebNode(Node):
                 return jsonify({'error': 'poi_name required'}), 400
             msg = String()
             msg.data = data['poi_name']
-            node.goal_poi_pub_.publish(msg)
+            _, warning = node.publish_with_subscriber_check(
+                node.goal_poi_pub_, msg, 'mapoi_goal_pose_poi')
             node.nav_status_ = 'navigating'
             node.nav_status_target_ = data['poi_name']
             node.get_logger().info(f'Nav goal: {data["poi_name"]}')
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
 
         @app.route('/api/nav/route', methods=['POST'])
         def api_nav_route():
@@ -368,36 +403,40 @@ class MapoiWebNode(Node):
                 return jsonify({'error': 'route_name required'}), 400
             msg = String()
             msg.data = data['route_name']
-            node.route_pub_.publish(msg)
+            _, warning = node.publish_with_subscriber_check(
+                node.route_pub_, msg, 'mapoi_route')
             node.nav_status_ = 'navigating'
             node.nav_status_target_ = data['route_name']
             node.get_logger().info(f'Nav route: {data["route_name"]}')
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
 
         @app.route('/api/nav/cancel', methods=['POST'])
         def api_nav_cancel():
             msg = String()
             msg.data = 'cancel'
-            node.cancel_pub_.publish(msg)
+            _, warning = node.publish_with_subscriber_check(
+                node.cancel_pub_, msg, 'mapoi_cancel')
             node.nav_status_ = 'canceled'
             node.get_logger().info('Nav canceled')
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
 
         @app.route('/api/nav/pause', methods=['POST'])
         def api_nav_pause():
             msg = String()
             msg.data = 'webui'
-            node.pause_pub_.publish(msg)
+            _, warning = node.publish_with_subscriber_check(
+                node.pause_pub_, msg, 'mapoi_pause')
             node.get_logger().info('Nav pause requested')
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
 
         @app.route('/api/nav/resume', methods=['POST'])
         def api_nav_resume():
             msg = String()
             msg.data = 'webui'
-            node.resume_pub_.publish(msg)
+            _, warning = node.publish_with_subscriber_check(
+                node.resume_pub_, msg, 'mapoi_resume')
             node.get_logger().info('Nav resume requested')
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
 
         @app.route('/api/nav/status')
         def api_nav_status():
@@ -414,9 +453,10 @@ class MapoiWebNode(Node):
                 return jsonify({'error': 'poi_name required'}), 400
             msg = String()
             msg.data = data['poi_name']
-            node.initialpose_poi_pub_.publish(msg)
+            _, warning = node.publish_with_subscriber_check(
+                node.initialpose_poi_pub_, msg, 'mapoi_initialpose_poi')
             node.get_logger().info(f'Initial pose: {data["poi_name"]}')
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
 
         return app
 
