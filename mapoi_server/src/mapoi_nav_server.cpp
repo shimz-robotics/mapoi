@@ -14,10 +14,17 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
 {
   this->get_logger().set_level(rclcpp::Logger::Level::Info);
 
+  // localization-agnostic 化のための parameter (#57):
+  // - initial_pose_topic: 配信先 topic 名 (default `/initialpose`、AMCL/slam_toolbox 等の de-facto standard)
+  // - initial_pose_subscriber_wait_timeout_sec: subscriber readiness 待ちの上限秒数 (起動の遅い localization 対応)
+  this->declare_parameter<std::string>("initial_pose_topic", "/initialpose");
+  this->declare_parameter<double>("initial_pose_subscriber_wait_timeout_sec", 10.0);
+
   // initialpose subscriber and publisher
   mapoi_initialpose_poi_sub_ = this->create_subscription<std_msgs::msg::String>(
     "mapoi_initialpose_poi", 1, std::bind(&MapoiNavServer::mapoi_initialpose_poi_cb, this, std::placeholders::_1));
-  nav2_initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("initialpose", 1);
+  nav2_initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
+    this->get_parameter("initial_pose_topic").as_string(), 1);
 
   // goal_pose subscriber and publisher
   mapoi_goal_pose_poi_sub_ = this->create_subscription<std_msgs::msg::String>(
@@ -254,10 +261,13 @@ void MapoiNavServer::auto_publish_initial_pose()
     return;
   }
 
-  // AMCL より早く起動した場合の subscription readiness race を回避するため、
-  // /initialpose subscriber を一定時間 wait してから publish する (#33)。
-  // SwitchMap 等で AMCL が既に起動している経路では即時 return するので overhead なし。
-  wait_for_initialpose_subscriber(std::chrono::seconds(10));
+  // localization (主に AMCL) より早く起動した場合の subscription readiness race を
+  // 回避するため、/initialpose subscriber を一定時間 wait してから publish する (#33)。
+  // SwitchMap 等で localization が既に起動している経路では即時 return するので overhead なし。
+  // timeout は parameter 化 (#57)、起動の遅い localization にも調整可能。
+  const double timeout_sec =
+    this->get_parameter("initial_pose_subscriber_wait_timeout_sec").as_double();
+  wait_for_initialpose_subscriber(timeout_sec);
 
   publish_initial_pose(matched[0].pose, "auto from POI '" + matched[0].name + "'");
   last_initial_pose_config_path_ = last_config_path_;
@@ -277,28 +287,28 @@ void MapoiNavServer::publish_initial_pose(
   RCLCPP_INFO(this->get_logger(), "Published initial pose (%s).", source.c_str());
 }
 
-void MapoiNavServer::wait_for_initialpose_subscriber(std::chrono::seconds timeout)
+void MapoiNavServer::wait_for_initialpose_subscriber(double timeout_sec)
 {
-  // 既に subscriber がいれば即 return (SwitchMap 等の AMCL 起動済み経路)
+  // 既に subscriber がいれば即 return (SwitchMap 等の localization 起動済み経路)
   if (nav2_initialpose_pub_->get_subscription_count() > 0) {
     return;
   }
   RCLCPP_INFO(this->get_logger(),
-    "Waiting for /initialpose subscriber (e.g. AMCL) up to %lds...",
-    static_cast<long>(timeout.count()));
+    "Waiting for initialpose subscriber (e.g. AMCL) up to %.1fs...", timeout_sec);
 
-  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  const auto deadline = std::chrono::steady_clock::now() +
+    std::chrono::milliseconds(static_cast<int>(timeout_sec * 1000));
   while (rclcpp::ok() && std::chrono::steady_clock::now() < deadline) {
     if (nav2_initialpose_pub_->get_subscription_count() > 0) {
-      RCLCPP_INFO(this->get_logger(), "/initialpose subscriber detected; proceeding to publish.");
+      RCLCPP_INFO(this->get_logger(), "initialpose subscriber detected; proceeding to publish.");
       return;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
   }
   RCLCPP_WARN(this->get_logger(),
-    "/initialpose subscriber not detected within %lds; publishing anyway "
-    "(AMCL may miss the message; user can re-publish via WebUI/RViz/mapoi_initialpose_poi).",
-    static_cast<long>(timeout.count()));
+    "initialpose subscriber not detected within %.1fs; publishing anyway "
+    "(localization may miss the message; user can re-publish via WebUI/RViz/mapoi_initialpose_poi).",
+    timeout_sec);
 }
 
 void MapoiNavServer::on_route_received(rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future)

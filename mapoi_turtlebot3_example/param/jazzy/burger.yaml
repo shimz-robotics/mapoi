@@ -38,16 +38,12 @@ amcl:
     z_short: 0.05
     scan_topic: scan
     map_topic: map
-    # Enabled for mapoi initial pose auto-setting
-    set_initial_pose: true
+    # initial_pose は mapoi_nav_server から /initialpose topic で配信される (#57)
+    # POI single source of truth 化のため AMCL native の self-init は使わない
+    set_initial_pose: false
     always_reset_initial_pose: false
     # Enabled for mapoi map switching
     first_map_only: false
-    initial_pose:
-      x: -2.0
-      y: -0.5
-      z: 0.0
-      yaw: 0.0
 
 bt_navigator:
   ros__parameters:
