@@ -14,7 +14,7 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
 {
   this->get_logger().set_level(rclcpp::Logger::Level::Info);
 
-  // localization-agnostic 化のための parameter (#57):
+  // localization-agnostic 化のための parameter:
   // - initial_pose_topic: 配信先 topic 名 (default `/initialpose`、AMCL/slam_toolbox 等の de-facto standard)
   // - initial_pose_subscriber_wait_timeout_sec: subscriber readiness 待ちの上限秒数 (起動の遅い localization 対応)
   this->declare_parameter<std::string>("initial_pose_topic", "/initialpose");
@@ -262,9 +262,8 @@ void MapoiNavServer::auto_publish_initial_pose()
   }
 
   // localization (主に AMCL) より早く起動した場合の subscription readiness race を
-  // 回避するため、/initialpose subscriber を一定時間 wait してから publish する (#33)。
+  // 回避するため、initialpose subscriber を一定時間 wait してから publish する。
   // SwitchMap 等で localization が既に起動している経路では即時 return するので overhead なし。
-  // timeout は parameter 化 (#57)、起動の遅い localization にも調整可能。
   const double timeout_sec =
     this->get_parameter("initial_pose_subscriber_wait_timeout_sec").as_double();
   wait_for_initialpose_subscriber(timeout_sec);
