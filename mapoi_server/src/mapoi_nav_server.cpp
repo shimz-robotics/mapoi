@@ -3,6 +3,7 @@
 #include <chrono>
 #include <functional>
 #include <cmath>
+#include <thread>
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -253,6 +254,11 @@ void MapoiNavServer::auto_publish_initial_pose()
     return;
   }
 
+  // AMCL より早く起動した場合の subscription readiness race を回避するため、
+  // /initialpose subscriber を一定時間 wait してから publish する (#33)。
+  // SwitchMap 等で AMCL が既に起動している経路では即時 return するので overhead なし。
+  wait_for_initialpose_subscriber(std::chrono::seconds(10));
+
   publish_initial_pose(matched[0].pose, "auto from POI '" + matched[0].name + "'");
   last_initial_pose_config_path_ = last_config_path_;
 }
@@ -269,6 +275,30 @@ void MapoiNavServer::publish_initial_pose(
   msg.pose.covariance[35] = 0.06853891945200942;
   nav2_initialpose_pub_->publish(msg);
   RCLCPP_INFO(this->get_logger(), "Published initial pose (%s).", source.c_str());
+}
+
+void MapoiNavServer::wait_for_initialpose_subscriber(std::chrono::seconds timeout)
+{
+  // 既に subscriber がいれば即 return (SwitchMap 等の AMCL 起動済み経路)
+  if (nav2_initialpose_pub_->get_subscription_count() > 0) {
+    return;
+  }
+  RCLCPP_INFO(this->get_logger(),
+    "Waiting for /initialpose subscriber (e.g. AMCL) up to %lds...",
+    static_cast<long>(timeout.count()));
+
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (rclcpp::ok() && std::chrono::steady_clock::now() < deadline) {
+    if (nav2_initialpose_pub_->get_subscription_count() > 0) {
+      RCLCPP_INFO(this->get_logger(), "/initialpose subscriber detected; proceeding to publish.");
+      return;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  }
+  RCLCPP_WARN(this->get_logger(),
+    "/initialpose subscriber not detected within %lds; publishing anyway "
+    "(AMCL may miss the message; user can re-publish via WebUI/RViz/mapoi_initialpose_poi).",
+    static_cast<long>(timeout.count()));
 }
 
 void MapoiNavServer::on_route_received(rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future)
