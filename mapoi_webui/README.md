@@ -112,9 +112,10 @@ ros2 launch mapoi_webui mapoi_editor.launch.yaml maps_path:=/path/to/maps map_na
 | `POST /api/nav/{goal,route,cancel,pause,resume,initialpose}` | **必要 (mapoi_nav_server)** | publisher → nav_server が listener、subscriber 0 件なら warning を返す |
 | `GET /api/nav/status` | 不要 (subscriber 経由で受信値返却) | nav_server がいなければ default 値 |
 
-server / nav_server 不在時の挙動:
-- service 必須 endpoint: `503 Service Unavailable` を返す (timeout)
-- publisher 系 endpoint: `200 OK` だが `warning` フィールドに「subscriber 不在」を含める
+server / nav_server 不在時の挙動 (endpoint カテゴリ別):
+- `GET /api/tag_definitions`: `503 Service Unavailable` (service 必須、unavailable / timeout 時)
+- `POST /api/pois` / `/api/routes` / `/api/custom_tags`: `200 OK` + `warning` フィールド (YAML 書き込み自体は成功するため、`reload_map_info` の unavailable / timeout / failure は warning として通知)
+- `POST /api/nav/{goal,route,cancel,pause,resume,initialpose}`: `200 OK` + `warning` フィールド (publish 自体は成功扱い、subscriber 不在を best-effort で検出して通知)
 
 ## 開発者規約
 
