@@ -1,49 +1,63 @@
-// mapoi_gazebo_bridge: SwitchMap 時に Gazebo Classic (gazebo_msgs) の entity を入れ替える。
+// mapoi_gz_bridge: SwitchMap 時に gz-sim (ros_gz_interfaces) の entity を入れ替える。
 //
 // mapoi_config_path topic を購読し、map_name 変化を検知すると:
-// - 旧マップの world_model entity を /delete_entity で削除
-// - 新マップの world_model entity を /spawn_entity で生成 (model://... URI で)
-// - ロボットも /delete_entity + /spawn_entity で initial_pose POI 座標に再生成
-// Gazebo 本体は無停止で /clock, /tf, /odom, /scan の継続性を保つ。
+// - 旧マップの world_model entity を /world/<init_world>/remove で削除
+// - 新マップの world_model entity を /world/<init_world>/create で生成 (model:// URI で)
+// - ロボットは /world/<init_world>/set_pose で initial_pose POI 座標に teleport
+//   (gz-sim は SetEntityPose が実装されているため delete + spawn は不要)
+// gz-sim 本体は無停止で /clock, /tf, /odom, /scan の継続性を保つ。
 //
 // map 依存情報 (world_model の URI / name) は各 map の mapoi_config.yaml の
 // gazebo: セクションに置き、mapoi_config_path 受信時に本 node が直接 parse する。
-// ロボット依存情報 (entity_name / SDF path) は launch から parameter で渡す。
+// ロボット依存情報 (entity_name) と gz-sim の world 名 (init_world_name) は
+// launch から parameter で渡す。
 //
-// NOTE: Humble (Gazebo Classic) 専用。Jazzy (gz-sim) 用は別 node
-// mapoi_gz_bridge を参照 (#48)。API が異なるため (gazebo_msgs vs ros_gz_interfaces)
+// NOTE: Jazzy 以降 (gz-sim) 専用。Humble (Gazebo Classic) 用は別 node
+// mapoi_gazebo_bridge を参照。API が異なるため (gazebo_msgs vs ros_gz_interfaces)
 // 同一コードでの distro 分岐はせず、別 node に分離している。
+//
+// gz-sim の native service (gz transport) を ROS 2 service として使うために、
+// launch から parameter_bridge を同時起動する想定 (mapoi_bringup.launch.yaml 参照)。
 
-#include "mapoi_server/mapoi_gazebo_bridge.hpp"
+#include "mapoi_server/mapoi_gz_bridge.hpp"
 
 #include <chrono>
 #include <cmath>
 #include <filesystem>
-#include <fstream>
 #include <sstream>
 
 #include <yaml-cpp/yaml.h>
+#include <ros_gz_interfaces/msg/entity.hpp>
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
 
 
-MapoiGazeboBridge::MapoiGazeboBridge()
-: Node("mapoi_gazebo_bridge")
+MapoiGzBridge::MapoiGzBridge()
+: Node("mapoi_gz_bridge")
 {
   this->declare_parameter<std::string>("robot_entity_name", "burger");
-  this->declare_parameter<std::string>("robot_sdf_path", "");
+  this->declare_parameter<std::string>("init_world_name", "default");
 
   robot_name_ = this->get_parameter("robot_entity_name").as_string();
-  robot_sdf_path_ = this->get_parameter("robot_sdf_path").as_string();
+  init_world_name_ = this->get_parameter("init_world_name").as_string();
+
+  // gz-sim native service 名 (parameter_bridge で同名 ROS 2 service として bridge される想定)
+  const std::string spawn_srv = "/world/" + init_world_name_ + "/create";
+  const std::string remove_srv = "/world/" + init_world_name_ + "/remove";
+  const std::string set_pose_srv = "/world/" + init_world_name_ + "/set_pose";
 
   // Reentrant callback group + MultiThreadedExecutor で worker thread から
   // async_send_request().future.wait_for() が executor の別 thread で resolve される。
   cb_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
-  spawn_client_ = this->create_client<gazebo_msgs::srv::SpawnEntity>(
-    "spawn_entity", rmw_qos_profile_services_default, cb_group_);
-  delete_client_ = this->create_client<gazebo_msgs::srv::DeleteEntity>(
-    "delete_entity", rmw_qos_profile_services_default, cb_group_);
+  // Jazzy: create_client(name, rmw_qos_profile_t, group) は deprecated、
+  // rclcpp::ServicesQoS() を使う。
+  spawn_client_ = this->create_client<ros_gz_interfaces::srv::SpawnEntity>(
+    spawn_srv, rclcpp::ServicesQoS(), cb_group_);
+  delete_client_ = this->create_client<ros_gz_interfaces::srv::DeleteEntity>(
+    remove_srv, rclcpp::ServicesQoS(), cb_group_);
+  set_pose_client_ = this->create_client<ros_gz_interfaces::srv::SetEntityPose>(
+    set_pose_srv, rclcpp::ServicesQoS(), cb_group_);
 
   auto sub_opts = rclcpp::SubscriptionOptions();
   sub_opts.callback_group = cb_group_;
@@ -53,18 +67,17 @@ MapoiGazeboBridge::MapoiGazeboBridge()
   auto sub_qos = rclcpp::QoS(rclcpp::KeepLast(10)).transient_local().reliable();
   config_path_sub_ = this->create_subscription<std_msgs::msg::String>(
     "mapoi_config_path", sub_qos,
-    std::bind(&MapoiGazeboBridge::on_config_path, this, _1),
+    std::bind(&MapoiGzBridge::on_config_path, this, _1),
     sub_opts);
 
-  worker_ = std::thread(&MapoiGazeboBridge::worker_loop, this);
+  worker_ = std::thread(&MapoiGzBridge::worker_loop, this);
 
   RCLCPP_INFO(this->get_logger(),
-    "mapoi_gazebo_bridge initialized: robot=%s, sdf=%s",
-    robot_name_.c_str(),
-    robot_sdf_path_.empty() ? "(not set)" : robot_sdf_path_.c_str());
+    "mapoi_gz_bridge initialized: robot=%s, init_world_name=%s",
+    robot_name_.c_str(), init_world_name_.c_str());
 }
 
-MapoiGazeboBridge::~MapoiGazeboBridge()
+MapoiGzBridge::~MapoiGzBridge()
 {
   stop_worker_ = true;
   queue_cv_.notify_all();
@@ -73,17 +86,23 @@ MapoiGazeboBridge::~MapoiGazeboBridge()
   }
 }
 
-void MapoiGazeboBridge::on_config_path(const std_msgs::msg::String::SharedPtr msg)
+void MapoiGzBridge::on_config_path(const std_msgs::msg::String::SharedPtr msg)
 {
   // 軽量。queue に push して即 return。state 操作と service call は worker。
+  // mapoi_server は config_path を 500ms 周期で re-publish するため、worker が
+  // service 不達などで blocking 中だと queue が際限なく膨らむ。常に latest 1 件のみ
+  // 保持する coalesce 戦略で、stale な path は破棄する。
   {
     std::lock_guard<std::mutex> lock(queue_mutex_);
+    while (!queue_.empty()) {
+      queue_.pop();
+    }
     queue_.push(msg->data);
   }
   queue_cv_.notify_one();
 }
 
-void MapoiGazeboBridge::worker_loop()
+void MapoiGzBridge::worker_loop()
 {
   while (!stop_worker_) {
     std::string path;
@@ -104,7 +123,7 @@ void MapoiGazeboBridge::worker_loop()
   }
 }
 
-void MapoiGazeboBridge::process_config_path(const std::string & path)
+void MapoiGzBridge::process_config_path(const std::string & path)
 {
   if (path == current_config_path_) {
     return;
@@ -123,7 +142,7 @@ void MapoiGazeboBridge::process_config_path(const std::string & path)
 
   std::string prev_map_name = current_map_name_;
 
-  MapGazeboInfo info;
+  MapGzInfo info;
   const auto status = load_gazebo_info(path, info);
   if (status == ConfigLoadStatus::ParseError) {
     // transient な失敗 (YAML parse / I/O)。state 進めず、mapoi_server の
@@ -134,10 +153,24 @@ void MapoiGazeboBridge::process_config_path(const std::string & path)
     return;
   }
   if (status == ConfigLoadStatus::NoGazeboSection) {
-    // legitimate: gazebo セクションが無い map (例: 実機用)。entity swap は
-    // skip、state のみ進める (次回 same map_name で早期 return するため)。
-    RCLCPP_INFO(this->get_logger(),
-      "No gazebo section in %s; skipping entity swap", path.c_str());
+    // legitimate: gazebo セクション無し map (例: 実機用 map config)。
+    // sim 側に旧 world_model が残っていれば cleanup してから state を進める
+    // (sim 側 state と map state の乖離防止)。delete に失敗したら state を進めず retry。
+    if (!current_world_model_name_.empty()) {
+      RCLCPP_INFO(this->get_logger(),
+        "No gazebo section in %s; cleaning up stale world_model=%s",
+        path.c_str(), current_world_model_name_.c_str());
+      if (!delete_model_entity(current_world_model_name_)) {
+        RCLCPP_WARN(this->get_logger(),
+          "delete world_model failed during NoGazeboSection cleanup; "
+          "keeping state for retry");
+        return;
+      }
+      current_world_model_name_.clear();
+    } else {
+      RCLCPP_INFO(this->get_logger(),
+        "No gazebo section in %s; skipping entity swap", path.c_str());
+    }
     current_map_name_ = map_name;
     current_config_path_ = path;
     return;
@@ -151,7 +184,7 @@ void MapoiGazeboBridge::process_config_path(const std::string & path)
     current_map_name_ = map_name;
     current_config_path_ = path;
     RCLCPP_INFO(this->get_logger(),
-      "Initial map=%s; assuming Gazebo already loaded matching world",
+      "Initial map=%s; assuming gz-sim already loaded matching world model",
       map_name.c_str());
     return;
   }
@@ -166,8 +199,8 @@ void MapoiGazeboBridge::process_config_path(const std::string & path)
   }
 }
 
-ConfigLoadStatus MapoiGazeboBridge::load_gazebo_info(
-  const std::string & config_path, MapGazeboInfo & out)
+ConfigLoadStatus MapoiGzBridge::load_gazebo_info(
+  const std::string & config_path, MapGzInfo & out)
 {
   try {
     YAML::Node cfg = YAML::LoadFile(config_path);
@@ -210,16 +243,16 @@ ConfigLoadStatus MapoiGazeboBridge::load_gazebo_info(
   return out.has_gazebo ? ConfigLoadStatus::Ok : ConfigLoadStatus::NoGazeboSection;
 }
 
-bool MapoiGazeboBridge::switch_world(
+bool MapoiGzBridge::switch_world(
   const std::string & prev_map, const std::string & new_map,
-  const MapGazeboInfo & info)
+  const MapGzInfo & info)
 {
   (void)prev_map;
   (void)new_map;
 
   // 旧 world_model delete
   if (!current_world_model_name_.empty()) {
-    if (!delete_entity(current_world_model_name_)) {
+    if (!delete_model_entity(current_world_model_name_)) {
       RCLCPP_WARN(this->get_logger(),
         "delete world_model failed; aborting world switch (旧 world_model stays)");
       return false;
@@ -231,145 +264,120 @@ bool MapoiGazeboBridge::switch_world(
 
   // 新 world_model spawn
   if (!info.world_model.uri.empty()) {
-    if (spawn_entity_from_uri(info.world_model.name, info.world_model.uri)) {
+    if (spawn_model_from_uri(info.world_model.name, info.world_model.uri)) {
       current_world_model_name_ = info.world_model.name;
     } else {
       all_ok = false;
     }
   }
 
-  // robot respawn (initial_pose POI がある場合のみ)
+  // robot teleport (gz-sim は SetEntityPose で 1 回。delete+spawn は不要)
   if (info.has_initial_pose) {
-    if (!respawn_robot(info.initial_x, info.initial_y, info.initial_yaw)) {
+    if (!teleport_robot(info.initial_x, info.initial_y, info.initial_yaw)) {
       all_ok = false;
     }
   } else {
     RCLCPP_WARN(this->get_logger(),
-      "No initial_pose POI for %s; skipping robot respawn", new_map.c_str());
+      "No initial_pose POI for %s; skipping robot teleport", new_map.c_str());
   }
 
   return all_ok;
 }
 
-bool MapoiGazeboBridge::delete_entity(const std::string & name)
+bool MapoiGzBridge::delete_model_entity(const std::string & name)
 {
   if (!delete_client_->wait_for_service(10s)) {
-    RCLCPP_WARN(this->get_logger(), "delete_entity service not available");
+    RCLCPP_WARN(this->get_logger(),
+      "delete service not available (/world/%s/remove)",
+      init_world_name_.c_str());
     return false;
   }
-  auto req = std::make_shared<gazebo_msgs::srv::DeleteEntity::Request>();
-  req->name = name;
+  auto req = std::make_shared<ros_gz_interfaces::srv::DeleteEntity::Request>();
+  req->entity.name = name;
+  req->entity.type = ros_gz_interfaces::msg::Entity::MODEL;
   auto future = delete_client_->async_send_request(req);
   if (future.wait_for(5s) != std::future_status::ready) {
     RCLCPP_WARN(this->get_logger(),
-      "delete_entity(%s) timed out", name.c_str());
+      "delete_model_entity(%s) timed out", name.c_str());
     return false;
   }
   auto res = future.get();
   if (!res->success) {
     RCLCPP_WARN(this->get_logger(),
-      "delete_entity(%s) failed: %s",
-      name.c_str(), res->status_message.c_str());
+      "delete_model_entity(%s) failed (gz returned success=false)", name.c_str());
     return false;
   }
-  RCLCPP_INFO(this->get_logger(), "delete_entity(%s): success", name.c_str());
+  RCLCPP_INFO(this->get_logger(), "delete_model_entity(%s): success", name.c_str());
   return true;
 }
 
-bool MapoiGazeboBridge::spawn_entity_from_uri(
+bool MapoiGzBridge::spawn_model_from_uri(
   const std::string & name, const std::string & uri)
 {
   if (!spawn_client_->wait_for_service(10s)) {
-    RCLCPP_WARN(this->get_logger(), "spawn_entity service not available");
+    RCLCPP_WARN(this->get_logger(),
+      "spawn service not available (/world/%s/create)",
+      init_world_name_.c_str());
     return false;
   }
+  // gz-sim の EntityFactory.sdf に inline SDF を渡す。
+  // model:// URI は gz-sim 側 (gz_sim プロセス) の GZ_SIM_RESOURCE_PATH で解決される。
   std::ostringstream sdf;
   sdf << "<?xml version=\"1.0\"?>"
-      << "<sdf version=\"1.6\"><world name=\"default\">"
+      << "<sdf version=\"1.9\">"
       << "<include><uri>" << uri << "</uri></include>"
-      << "</world></sdf>";
-  auto req = std::make_shared<gazebo_msgs::srv::SpawnEntity::Request>();
-  req->name = name;
-  req->xml = sdf.str();
+      << "</sdf>";
+  auto req = std::make_shared<ros_gz_interfaces::srv::SpawnEntity::Request>();
+  req->entity_factory.name = name;
+  req->entity_factory.sdf = sdf.str();
   auto future = spawn_client_->async_send_request(req);
   if (future.wait_for(10s) != std::future_status::ready) {
     RCLCPP_WARN(this->get_logger(),
-      "spawn_entity(%s) timed out", name.c_str());
+      "spawn_model_from_uri(%s) timed out", name.c_str());
     return false;
   }
   auto res = future.get();
   if (!res->success) {
     RCLCPP_WARN(this->get_logger(),
-      "spawn_entity(%s) failed: %s",
-      name.c_str(), res->status_message.c_str());
+      "spawn_model_from_uri(%s, %s) failed (gz returned success=false)",
+      name.c_str(), uri.c_str());
     return false;
   }
   RCLCPP_INFO(this->get_logger(),
-    "spawn_entity(%s, %s): success", name.c_str(), uri.c_str());
+    "spawn_model_from_uri(%s, %s): success", name.c_str(), uri.c_str());
   return true;
 }
 
-bool MapoiGazeboBridge::respawn_robot(double x, double y, double yaw)
+bool MapoiGzBridge::teleport_robot(double x, double y, double yaw)
 {
-  // preflight: 失敗するなら delete もしない
-  if (robot_sdf_path_.empty()) {
+  if (!set_pose_client_->wait_for_service(10s)) {
     RCLCPP_WARN(this->get_logger(),
-      "robot_sdf_path is empty; skipping respawn (robot stays at old pose)");
+      "set_pose service not available (/world/%s/set_pose)",
+      init_world_name_.c_str());
     return false;
   }
-  if (!std::filesystem::exists(robot_sdf_path_)) {
-    RCLCPP_ERROR(this->get_logger(),
-      "robot_sdf_path not found: %s", robot_sdf_path_.c_str());
-    return false;
-  }
-  if (!spawn_client_->wait_for_service(10s)) {
-    RCLCPP_WARN(this->get_logger(),
-      "spawn_entity service not available; skipping robot respawn");
-    return false;
-  }
-  std::ifstream f(robot_sdf_path_);
-  if (!f.is_open()) {
-    RCLCPP_ERROR(this->get_logger(),
-      "Failed to open robot SDF: %s", robot_sdf_path_.c_str());
-    return false;
-  }
-  std::stringstream buf;
-  buf << f.rdbuf();
-  const std::string sdf = buf.str();
-
-  // delete は失敗しても spawn を試みる
-  // (前回 delete 成功 + spawn 失敗で robot 不在の状態からの retry 対応。
-  // 重複があれば spawn 側が success=false で検知)
-  if (!delete_entity(robot_name_)) {
-    RCLCPP_INFO(this->get_logger(),
-      "delete robot returned not-success; entity may already be gone. "
-      "will still attempt spawn at new pose");
-  }
-
-  auto req = std::make_shared<gazebo_msgs::srv::SpawnEntity::Request>();
-  req->name = robot_name_;
-  req->xml = sdf;
-  req->initial_pose.position.x = x;
-  req->initial_pose.position.y = y;
-  req->initial_pose.position.z = 0.01;
-  req->initial_pose.orientation.z = std::sin(yaw / 2.0);
-  req->initial_pose.orientation.w = std::cos(yaw / 2.0);
-  auto future = spawn_client_->async_send_request(req);
+  auto req = std::make_shared<ros_gz_interfaces::srv::SetEntityPose::Request>();
+  req->entity.name = robot_name_;
+  req->entity.type = ros_gz_interfaces::msg::Entity::MODEL;
+  req->pose.position.x = x;
+  req->pose.position.y = y;
+  req->pose.position.z = 0.01;
+  req->pose.orientation.z = std::sin(yaw / 2.0);
+  req->pose.orientation.w = std::cos(yaw / 2.0);
+  auto future = set_pose_client_->async_send_request(req);
   if (future.wait_for(10s) != std::future_status::ready) {
     RCLCPP_WARN(this->get_logger(),
-      "respawn_robot(%s) timed out (robot may be deleted)",
-      robot_name_.c_str());
+      "teleport_robot(%s) timed out", robot_name_.c_str());
     return false;
   }
   auto res = future.get();
   if (!res->success) {
     RCLCPP_WARN(this->get_logger(),
-      "respawn_robot(%s) failed: %s",
-      robot_name_.c_str(), res->status_message.c_str());
+      "teleport_robot(%s) failed (gz returned success=false)", robot_name_.c_str());
     return false;
   }
   RCLCPP_INFO(this->get_logger(),
-    "respawn_robot(%s, %.2f, %.2f, yaw=%.2f): success",
+    "teleport_robot(%s, %.2f, %.2f, yaw=%.2f): success",
     robot_name_.c_str(), x, y, yaw);
   return true;
 }
@@ -378,7 +386,7 @@ bool MapoiGazeboBridge::respawn_robot(double x, double y, double yaw)
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
-  auto node = std::make_shared<MapoiGazeboBridge>();
+  auto node = std::make_shared<MapoiGzBridge>();
   rclcpp::executors::MultiThreadedExecutor executor;
   executor.add_node(node);
   executor.spin();

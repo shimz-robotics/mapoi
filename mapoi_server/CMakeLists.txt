@@ -29,7 +29,6 @@ target_link_libraries(mapoi_rviz2_publisher ${_mapoi_yaml_cpp_target})
 
 # mapoi_gazebo_bridge: Gazebo Classic (gazebo_msgs) 用、Humble で build される。
 # Jazzy では gazebo_msgs が存在しないため find_package QUIET で skip。
-# Jazzy 用 (ros_gz_interfaces ベース) は mapoi_gz_bridge として別途 (#42)。
 find_package(gazebo_msgs QUIET)
 if(gazebo_msgs_FOUND)
   ament_auto_add_executable(mapoi_gazebo_bridge
@@ -40,6 +39,24 @@ if(gazebo_msgs_FOUND)
   message(STATUS "Building mapoi_gazebo_bridge (Gazebo Classic)")
 else()
   message(STATUS "Skipping mapoi_gazebo_bridge (gazebo_msgs not found)")
+endif()
+
+# mapoi_gz_bridge: gz-sim (ros_gz_interfaces) 用、Jazzy 以降で build される。
+# Humble の image にも ros_gz_interfaces が含まれている場合があるが、
+# Humble の rclcpp は create_client(name, rclcpp::QoS, group) シグネチャを持たないため、
+# find_package が成功しても build は skip する必要がある。
+# package.xml の condition と揃え、ROS_DISTRO != humble のときのみ build する。
+find_package(ros_gz_interfaces QUIET)
+if(ros_gz_interfaces_FOUND AND NOT "$ENV{ROS_DISTRO}" STREQUAL "humble")
+  ament_auto_add_executable(mapoi_gz_bridge
+    src/mapoi_gz_bridge.cpp
+  )
+  target_link_libraries(mapoi_gz_bridge ${_mapoi_yaml_cpp_target})
+  ament_target_dependencies(mapoi_gz_bridge ros_gz_interfaces)
+  message(STATUS "Building mapoi_gz_bridge (gz-sim, ROS_DISTRO=$ENV{ROS_DISTRO})")
+else()
+  message(STATUS "Skipping mapoi_gz_bridge "
+    "(ros_gz_interfaces_FOUND=${ros_gz_interfaces_FOUND}, ROS_DISTRO=$ENV{ROS_DISTRO})")
 endif()
 
 

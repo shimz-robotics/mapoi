@@ -18,13 +18,14 @@ mapoi のメインパッケージです。
       - {name: simulator, value: "none"}                   # gazebo|gz|none (default: none)
       - {name: robot_entity_name, value: "burger"}         # simulator=gazebo|gz のとき必要
       - {name: robot_sdf_path, value: "/path/.../model.sdf"} # simulator=gazebo のとき必要
+      - {name: init_world_name, value: "default"}          # simulator=gz のとき必要 (gz_sim 起動時の world 名)
 ```
 
 `maps_path` と `map_name` は **必須** です (未指定だと `mapoi_server` が config ファイルを解決できず起動失敗します)。
 
 `simulator` arg はシミュレータ連動 bridge の起動を制御します:
-- `gazebo` (Gazebo Classic / Humble): `mapoi_gazebo_bridge` を起動。SwitchMap 時に Gazebo 内の `world_model` entity を入れ替え + ロボットを `initial_pose` POI 座標に再生成
-- `gz` (gz-sim / Jazzy): `mapoi_gz_bridge` を起動する想定 (**#42 で実装予定、現状未対応**)。指定しても launch から WARN が出るのみで bridge は起動せず、SwitchMap は gz-sim 側に伝搬しません
+- `gazebo` (Gazebo Classic / Humble): `mapoi_gazebo_bridge` を起動。SwitchMap 時に Gazebo 内の `world_model` entity を入れ替え + ロボットを delete + spawn で `initial_pose` POI 座標に再生成
+- `gz` (gz-sim / Jazzy): `mapoi_gz_bridge` + `parameter_bridge` (`ros_gz_bridge`) を起動。SwitchMap 時に gz-sim 内の `world_model` entity を入れ替え + ロボットを `SetEntityPose` で `initial_pose` POI 座標に teleport (gz-sim では Classic と異なり set_pose service が使えるため delete + spawn は不要)
 - `none` (default): bridge 起動なし (実機運用)
 
 Web UI も使う場合は `mapoi_webui.launch.yaml` も併せて include:
