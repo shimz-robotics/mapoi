@@ -160,6 +160,10 @@ class MapoiWebNode(Node):
         Flask thread はここで future.done() を polling する。spin_until_future_complete を
         Flask thread から呼ぶと main thread の spin と executor を競合させるので避ける。
 
+        実効最長待ち時間 ≒ wait_for_service_sec + timeout_sec (default 5s)。
+        timeout 時は future.cancel() で pending request を解放する (helper の
+        繰り返し呼び出しで cancel 忘れ future が蓄積しないように)。
+
         Args:
             client: rclpy service client
             request: service request message
@@ -177,6 +181,7 @@ class MapoiWebNode(Node):
         deadline = time.monotonic() + timeout_sec
         while not future.done():
             if time.monotonic() > deadline:
+                future.cancel()
                 self.get_logger().warn(f'{service_name} call timed out after {timeout_sec}s')
                 return None
             time.sleep(0.05)
