@@ -25,7 +25,7 @@ gazebo:
 poi:
 - name: start_zone
   description: DQN 学習開始地点
-  pose: {x: 0.2, y: 0.1, yaw: 0.0}
+  pose: {x: 0.0, y: 0.0, yaw: 0.0}
   radius: 0.2
   tags: [goal, initial_pose]
 - name: checkpoint_west
