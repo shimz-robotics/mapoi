@@ -1,41 +1,48 @@
 custom_tags:
-  - name: audio_info
-    description: "Audio guide trigger"
-
-map:
-    path_planning: path_planning_map
-    localization: localization_map
-
-poi:
-  - name: elevator_hall
-    # pose: {x: 0.0, y: 0.0, yaw: 0.0}
-    pose: {x: -2.0, y: -0.5, yaw: 0.0}
-    radius: 0.5
-    tags: [goal, initial_pose]
-    description: エレベーターホール
-  - name: meeting_room_a
-    pose: {x: -0.5, y: -0.5, yaw: 0.0}
-    radius: 0.5
-    tags: [goal]
-    description: 会議室A
-  - name: conference_room
-    pose: {x: 0.5, y: -0.5, yaw: 1.57}
-    radius: 0.5
-    tags: [goal]
-    description: 大会議室
-  - name: corridor_a
-    pose: {x: 0.5, y: 0.5, yaw: -3.14}
-    radius: 0.5
-    tags: [goal]
-    description: 廊下
-  - name: model_exhibit
-    pose: {x: -0.5, y: 0.5, yaw: -1.57}
-    radius: 0.5
-    tags: [goal, audio_info]
-    description: 模型展示
-
+- {name: event, description: Event trigger area}
+- {name: destination, description: General destination point}
+- {name: landmark, description: Landmark for guidance}
+- {name: audio_info, description: Audio guide trigger}
 route:
-  - name: route_1
-    waypoints: [elevator_hall, meeting_room_a, conference_room]
-  - name: route_2
-    waypoints: [elevator_hall, corridor_a, conference_room]
+- name: route_1
+  waypoints: [meeting_room_a, conference_room, corridor_a, model_exhibit]
+- name: route_2
+  waypoints: [elevator_hall, corridor_a, conference_room]
+map:
+- {node_name: /map_server, map_file: turtlebot3.yaml}
+# mapoi_gazebo_bridge が SwitchMap 時に読む。
+# ground_plane / sun は共通なので入れ替え不要、world を構成する主モデルのみ swap。
+gazebo:
+  world_model:
+    uri: model://turtlebot3_world
+    name: turtlebot3_world
+# elevator_hall は initial_pose タグ付きで、Gazebo robot spawn のデフォルト位置 (-2, -0.5) と一致。
+# その他 4 POI は元の office グリッド配置 (±0.5) を踏襲しつつ、半径と yaw を不均一化:
+# - 半径を 0.5 均一から 0.10〜0.20 に縮小、各部屋の規模感に合わせて差を付ける
+# - 位置も grid 的整列 (-0.5 / 0.5) を少し崩して non-uniform に散らす
+poi:
+- description: エレベーターホール
+  name: elevator_hall
+  pose: {x: -2.0, y: -0.5, yaw: 0.0}
+  radius: 0.20
+  tags: [goal, initial_pose]
+- description: 会議室A
+  name: meeting_room_a
+  pose: {x: -0.6, y: -0.6, yaw: 0.0}
+  radius: 0.15
+  tags: [goal]
+- description: 大会議室
+  name: conference_room
+  pose: {x: 0.7, y: -0.4, yaw: 1.57}
+  radius: 0.18
+  tags: [goal]
+- description: 廊下
+  name: corridor_a
+  pose: {x: 0.4, y: 0.6, yaw: -3.14}
+  radius: 0.12
+  tags: [goal, pause]
+- description: 模型展示
+  name: model_exhibit
+  pose: {x: -0.5, y: 0.5, yaw: -1.57}
+  radius: 0.10
+  tags: [goal, audio_info]
