@@ -172,6 +172,14 @@ void MapoiRviz2Publisher::on_config_path_changed(const std_msgs::msg::String::Sh
 
   RCLCPP_INFO(this->get_logger(), "Map config changed: %s — refreshing POI list.", current_path.c_str());
 
+  // config 変更を検出したら fan-out 実行可否に関わらず routes_fetch_generation_ を進めて
+  // 旧 fan-out の pending callback を全て stale 化する (Codex round 2 high 対策: service 未 ready で
+  // 早期 return する経路で gen が進まないと、旧 config の callback が my_gen == current_gen を満たして
+  // 旧 route set を swap してしまう窓が残る)。
+  // request_routes_info() 側でも increment するため fan-out 成功時は double increment になるが、
+  // 単調増加のため意味的には正しく、無害。
+  ++routes_fetch_generation_;
+
   // 起動直後は service が未起動の場合がある。POI / routes_info / route_pois 全てが ready の時のみ
   // guard を更新して fan-out 開始する (Codex round 1 medium 対策: route 系 service だけ未 ready の
   // 状態で guard が進むと、同じ path+mtime が dedup で skip され route fetch の自然 retry が無くなる)。
