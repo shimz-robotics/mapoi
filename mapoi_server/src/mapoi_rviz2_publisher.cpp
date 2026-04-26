@@ -17,10 +17,17 @@ MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
   // ("off" は ros2 param CLI で bool として解釈されるため "none" を採用)
   this->declare_parameter<std::string>("poi_label_format", "index");
 
+  // Route polyline の表示形式: "all" (全 route 表示、active は強調) / "selected" (active のみ) / "none"。
+  // default "all" は WebUI で route 一覧を見せている場合と整合。
+  this->declare_parameter<std::string>("route_display_mode", "all");
+
   marker_waypoints_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_goal_marks", 10);
   marker_events_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_event_marks", 10);
+  marker_routes_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_route_marks", 10);
 
   this->poi_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
+  this->routes_info_client_ = this->create_client<mapoi_interfaces::srv::GetRoutesInfo>("get_routes_info");
+  this->route_pois_client_ = this->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
 
   highlight_goal_sub_ = this->create_subscription<std_msgs::msg::String>(
     "mapoi_highlight_goal", 10,
@@ -58,6 +65,7 @@ void MapoiRviz2Publisher::start_sequence()
 
   RCLCPP_INFO(this->get_logger(), "Requesting POI Info...");
   request_pois_list();
+  request_routes_info();
 }
 
 void MapoiRviz2Publisher::request_pois_list()
@@ -65,6 +73,63 @@ void MapoiRviz2Publisher::request_pois_list()
   auto request = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
   poi_client_->async_send_request(
     request, std::bind(&MapoiRviz2Publisher::on_poi_received, this, _1));
+}
+
+void MapoiRviz2Publisher::request_routes_info()
+{
+  // get_routes_info で route 名一覧を取得 → 各 route について get_route_pois を非同期に発行する。
+  // service 未起動なら skip (config_path 通知の度に再試行されるので自然回復)。
+  if (!routes_info_client_->service_is_ready()) {
+    RCLCPP_WARN(this->get_logger(), "get_routes_info service not ready, skipping route fetch.");
+    return;
+  }
+  auto request = std::make_shared<mapoi_interfaces::srv::GetRoutesInfo::Request>();
+  routes_info_client_->async_send_request(
+    request, std::bind(&MapoiRviz2Publisher::on_routes_info_received, this, _1));
+}
+
+void MapoiRviz2Publisher::on_routes_info_received(
+  rclcpp::Client<mapoi_interfaces::srv::GetRoutesInfo>::SharedFuture future)
+{
+  auto result = future.get();
+  if (!result) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to get Routes Info.");
+    return;
+  }
+  {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    all_routes_.clear();  // 新 list で置換 (削除された route の取り残し防止)
+  }
+  RCLCPP_INFO(this->get_logger(), "Received %zu route names.", result->routes_list.size());
+  for (const auto & route_name : result->routes_list) {
+    if (!route_pois_client_->service_is_ready()) {
+      RCLCPP_WARN(this->get_logger(), "get_route_pois service not ready, skipping '%s'.", route_name.c_str());
+      continue;
+    }
+    auto req = std::make_shared<mapoi_interfaces::srv::GetRoutePois::Request>();
+    req->route_name = route_name;
+    route_pois_client_->async_send_request(
+      req,
+      [this, route_name](rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture f) {
+        on_route_pois_received(route_name, f);
+      });
+  }
+}
+
+void MapoiRviz2Publisher::on_route_pois_received(
+  const std::string & route_name,
+  rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future)
+{
+  auto result = future.get();
+  if (!result) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to get route pois for '%s'.", route_name.c_str());
+    return;
+  }
+  {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    all_routes_[route_name] = result->pois_list;
+  }
+  RCLCPP_INFO(this->get_logger(), "Route '%s': %zu waypoints.", route_name.c_str(), result->pois_list.size());
 }
 
 void MapoiRviz2Publisher::on_config_path_changed(const std_msgs::msg::String::SharedPtr msg)
@@ -96,6 +161,7 @@ void MapoiRviz2Publisher::on_config_path_changed(const std_msgs::msg::String::Sh
   last_config_path_ = current_path;
   last_config_mtime_ = current_mtime;
   request_pois_list();
+  request_routes_info();  // POI と同様、SwitchMap / Save で route 構成も変わる可能性あり
 }
 
 void MapoiRviz2Publisher::on_poi_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future)
@@ -370,6 +436,71 @@ void MapoiRviz2Publisher::timer_callback(){
 
   marker_waypoints_pub_->publish(ma_waypoints);
   marker_events_pub_->publish(ma_events);
+
+  // Route LINE_STRIP markers (mapoi_route_marks topic)。
+  // route_display_mode parameter で表示制御:
+  //   "all"      : 全 route 表示、active route (highlighted_route_names_ に含む) は太線+不透明で強調
+  //   "selected" : active route のみ表示
+  //   "none"     : 表示しない (DELETEALL で既存も消す)
+  // POI marker (goal=green / event=blue / origin=red / gray) と被らない palette を使う。
+  static constexpr std::array<std::array<float, 3>, 6> ROUTE_PALETTE = {{
+    {1.0f, 0.5f, 0.0f},   // orange
+    {1.0f, 0.0f, 1.0f},   // magenta
+    {0.0f, 1.0f, 1.0f},   // cyan
+    {1.0f, 1.0f, 0.0f},   // yellow
+    {0.7f, 0.3f, 1.0f},   // purple
+    {0.0f, 0.7f, 0.3f},   // teal
+  }};
+  auto pick_route_color = [](const std::string & name) {
+    std::hash<std::string> h;
+    return ROUTE_PALETTE[h(name) % ROUTE_PALETTE.size()];
+  };
+
+  const std::string route_mode = this->get_parameter("route_display_mode").as_string();
+  visualization_msgs::msg::MarkerArray ma_routes;
+  int route_id = 0;
+
+  if (route_mode != "none") {
+    constexpr double ROUTE_LINE_Z = 0.05;  // map / costmap よりわずかに上
+    for (const auto & [name, waypoints] : all_routes_) {
+      if (waypoints.size() < 2) continue;  // 1 点だけの route は polyline にできない
+      const bool is_active = highlighted_route_names_.count(name) > 0;
+      if (route_mode == "selected" && !is_active) continue;
+
+      const auto color = pick_route_color(name);
+      visualization_msgs::msg::Marker m;
+      m.header.frame_id = "map";
+      m.header.stamp = rclcpp::Clock().now();
+      m.action = visualization_msgs::msg::Marker::ADD;
+      m.type = visualization_msgs::msg::Marker::LINE_STRIP;
+      m.id = route_id++;
+      m.lifetime.sec = 2.0;
+      m.pose.orientation.w = 1.0;  // identity (LINE_STRIP の point は world 座標)
+      m.scale.x = is_active ? 0.08 : 0.04;  // active を太く (line width)
+      m.color.r = color[0]; m.color.g = color[1]; m.color.b = color[2];
+      m.color.a = is_active ? 0.9f : 0.4f;  // active を不透明、他は薄く
+
+      m.points.reserve(waypoints.size());
+      for (const auto & wp : waypoints) {
+        geometry_msgs::msg::Point p;
+        p.x = wp.pose.position.x;
+        p.y = wp.pose.position.y;
+        p.z = ROUTE_LINE_Z;
+        m.points.push_back(p);
+      }
+      ma_routes.markers.push_back(m);
+    }
+  }
+
+  if (route_id_buf_ > route_id) {
+    visualization_msgs::msg::Marker m_del;
+    m_del.action = visualization_msgs::msg::Marker::DELETEALL;
+    visualization_msgs::msg::MarkerArray ma_del;
+    ma_del.markers.push_back(m_del);
+    marker_routes_pub_->publish(ma_del);
+  }
+  route_id_buf_ = route_id;
+  marker_routes_pub_->publish(ma_routes);
 }
 
 int main(int argc, char **argv)
