@@ -213,16 +213,18 @@ void MapoiNavServer::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv:
   }
   RCLCPP_INFO(this->get_logger(), "Received %zu Tagged POIs.", pois_list_.size());
   rebuild_event_pois();
-  auto_publish_initial_pose();
 
   // config_path 由来の fetch (on_config_path_changed → get_pois_list) が成功した時のみ guard を確定。
   // start_sequence 経由の初回 fetch では pending_guard_active_ が false で、ここは no-op。
   // fetch 失敗 (result == nullptr) で早期 return した場合も pending を残し、次回 publish で retry する。
+  // auto_publish_initial_pose() は last_config_path_ を見て二重発火判定するため、guard 確定を先に行う。
   if (pending_guard_active_) {
     last_config_path_ = pending_config_path_;
     last_config_mtime_ = pending_config_mtime_;
     pending_guard_active_ = false;
   }
+
+  auto_publish_initial_pose();
 }
 
 std::vector<mapoi_interfaces::msg::PointOfInterest> MapoiNavServer::select_initial_pose_pois(
