@@ -58,13 +58,15 @@ private:
   void on_config_path_changed(const std_msgs::msg::String::SharedPtr msg);
 
   /**
-   * @brief get_routes_info service を呼び出し、各 route の waypoint を順次 fetch する
+   * @brief get_routes_info service を呼び出し、各 route の waypoint を順次 fetch する。
+   * 各 fan-out は generation 番号で識別し、後続 fan-out が始まったら旧世代の callback は捨てる
+   * (stale callback による partial state / route 混在防止)。fetch 完了 (全 route 集約済み) になった
+   * 時点で all_routes_ に lock 下で swap する (timer_callback への部分公開を防ぐ)。
    */
   void request_routes_info();
-  void on_routes_info_received(rclcpp::Client<mapoi_interfaces::srv::GetRoutesInfo>::SharedFuture future);
-  void on_route_pois_received(
-    const std::string & route_name,
-    rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future);
+  void on_routes_info_received(
+    size_t my_generation,
+    rclcpp::Client<mapoi_interfaces::srv::GetRoutesInfo>::SharedFuture future);
 
   // --- Member Variables ---
 
@@ -107,8 +109,12 @@ private:
   std::vector<std::string> highlighted_route_ordered_;
 
   // route 名 → waypoint POI 列。get_routes_info で名前一覧を取得後、
-  // 各 route について get_route_pois を非同期に呼び結果を蓄積する。
+  // 各 route について get_route_pois を非同期に呼び、全 route 揃った時点で lock 下で swap される。
   std::map<std::string, std::vector<mapoi_interfaces::msg::PointOfInterest>> all_routes_;
+  // route fetch fan-out の世代番号。on_routes_info_received / per-route callback の lambda が
+  // capture した値と現値が異なれば stale (= 後続 fan-out が走った) として捨てる。
+  // single-thread executor 前提で書き込みは callback context のみ。
+  size_t routes_fetch_generation_ = 0;
   // 前回 publish 時の route marker max id (DELETEALL 判定用、id_buf_ と独立)
   int route_id_buf_ = 0;
 };

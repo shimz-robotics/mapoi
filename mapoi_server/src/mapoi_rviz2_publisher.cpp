@@ -77,59 +77,80 @@ void MapoiRviz2Publisher::request_pois_list()
 
 void MapoiRviz2Publisher::request_routes_info()
 {
-  // get_routes_info で route 名一覧を取得 → 各 route について get_route_pois を非同期に発行する。
+  // get_routes_info → 各 route について get_route_pois の 2 段 fetch。
+  // 世代番号 (routes_fetch_generation_) を increment して capture することで、後続 fan-out が始まった
+  // 時点で旧世代の callback を stale 判定し all_routes_ への書き込みを drop する
+  // (Codex round 1 high 対策: stale callback による旧 map / 新 map の route 混在防止)。
   // service 未起動なら skip (config_path 通知の度に再試行されるので自然回復)。
   if (!routes_info_client_->service_is_ready()) {
     RCLCPP_WARN(this->get_logger(), "get_routes_info service not ready, skipping route fetch.");
     return;
   }
+  const size_t my_gen = ++routes_fetch_generation_;
   auto request = std::make_shared<mapoi_interfaces::srv::GetRoutesInfo::Request>();
   routes_info_client_->async_send_request(
-    request, std::bind(&MapoiRviz2Publisher::on_routes_info_received, this, _1));
+    request,
+    [this, my_gen](rclcpp::Client<mapoi_interfaces::srv::GetRoutesInfo>::SharedFuture f) {
+      on_routes_info_received(my_gen, f);
+    });
 }
 
 void MapoiRviz2Publisher::on_routes_info_received(
+  size_t my_generation,
   rclcpp::Client<mapoi_interfaces::srv::GetRoutesInfo>::SharedFuture future)
 {
+  // stale check: 後続 fan-out が走っていたら旧世代の応答を捨てる
+  if (my_generation != routes_fetch_generation_) {
+    return;
+  }
   auto result = future.get();
   if (!result) {
     RCLCPP_ERROR(this->get_logger(), "Failed to get Routes Info.");
     return;
   }
-  {
+  RCLCPP_INFO(this->get_logger(), "Received %zu route names (gen=%zu).",
+    result->routes_list.size(), my_generation);
+
+  // 空 route list は all_routes_ を即時 clear (削除された route の取り残し防止)
+  if (result->routes_list.empty()) {
     std::lock_guard<std::mutex> lock(data_mutex_);
-    all_routes_.clear();  // 新 list で置換 (削除された route の取り残し防止)
+    all_routes_.clear();
+    return;
   }
-  RCLCPP_INFO(this->get_logger(), "Received %zu route names.", result->routes_list.size());
+
+  // pending map に集約してから lock 下で all_routes_ に swap (timer_callback への部分公開を防ぐ)。
+  // shared_ptr で per-route lambda 間で共有、最後の callback で swap する。
+  using RouteMap = std::map<std::string, std::vector<mapoi_interfaces::msg::PointOfInterest>>;
+  auto pending = std::make_shared<RouteMap>();
+  auto remaining = std::make_shared<size_t>(result->routes_list.size());
+
   for (const auto & route_name : result->routes_list) {
-    if (!route_pois_client_->service_is_ready()) {
-      RCLCPP_WARN(this->get_logger(), "get_route_pois service not ready, skipping '%s'.", route_name.c_str());
-      continue;
-    }
     auto req = std::make_shared<mapoi_interfaces::srv::GetRoutePois::Request>();
     req->route_name = route_name;
     route_pois_client_->async_send_request(
       req,
-      [this, route_name](rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture f) {
-        on_route_pois_received(route_name, f);
+      [this, route_name, my_generation, pending, remaining]
+      (rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture f) {
+        // stale check (per-route): 後続 fan-out が走っていたら結果を捨てる
+        if (my_generation != routes_fetch_generation_) {
+          return;
+        }
+        auto r = f.get();
+        if (r) {
+          (*pending)[route_name] = r->pois_list;
+          RCLCPP_INFO(this->get_logger(), "Route '%s': %zu waypoints (gen=%zu).",
+            route_name.c_str(), r->pois_list.size(), my_generation);
+        } else {
+          RCLCPP_ERROR(this->get_logger(), "Failed to get route pois for '%s' (gen=%zu).",
+            route_name.c_str(), my_generation);
+        }
+        // 全 route 集約済みになったら lock 下で all_routes_ に swap
+        if (--(*remaining) == 0) {
+          std::lock_guard<std::mutex> lock(data_mutex_);
+          all_routes_ = std::move(*pending);
+        }
       });
   }
-}
-
-void MapoiRviz2Publisher::on_route_pois_received(
-  const std::string & route_name,
-  rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future)
-{
-  auto result = future.get();
-  if (!result) {
-    RCLCPP_ERROR(this->get_logger(), "Failed to get route pois for '%s'.", route_name.c_str());
-    return;
-  }
-  {
-    std::lock_guard<std::mutex> lock(data_mutex_);
-    all_routes_[route_name] = result->pois_list;
-  }
-  RCLCPP_INFO(this->get_logger(), "Route '%s': %zu waypoints.", route_name.c_str(), result->pois_list.size());
 }
 
 void MapoiRviz2Publisher::on_config_path_changed(const std_msgs::msg::String::SharedPtr msg)
@@ -151,10 +172,18 @@ void MapoiRviz2Publisher::on_config_path_changed(const std_msgs::msg::String::Sh
 
   RCLCPP_INFO(this->get_logger(), "Map config changed: %s — refreshing POI list.", current_path.c_str());
 
-  // 起動直後は service が未起動の場合がある。guard 値は更新前に readiness 判定して、未起動なら skip。
-  // last_config_path_ / last_config_mtime_ を未更新のまま return するため、次回 publish で再試行される。
-  if (!poi_client_->service_is_ready()) {
-    RCLCPP_WARN(this->get_logger(), "get_pois_info service not ready, skipping refresh.");
+  // 起動直後は service が未起動の場合がある。POI / routes_info / route_pois 全てが ready の時のみ
+  // guard を更新して fan-out 開始する (Codex round 1 medium 対策: route 系 service だけ未 ready の
+  // 状態で guard が進むと、同じ path+mtime が dedup で skip され route fetch の自然 retry が無くなる)。
+  // 一つでも未 ready なら guard 据え置き → 次回 publish で再試行。
+  if (!poi_client_->service_is_ready() ||
+      !routes_info_client_->service_is_ready() ||
+      !route_pois_client_->service_is_ready()) {
+    RCLCPP_WARN(this->get_logger(),
+      "Some service not ready (poi=%d, routes_info=%d, route_pois=%d), skipping refresh.",
+      poi_client_->service_is_ready(),
+      routes_info_client_->service_is_ready(),
+      route_pois_client_->service_is_ready());
     return;
   }
 
