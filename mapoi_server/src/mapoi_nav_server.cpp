@@ -625,11 +625,24 @@ void MapoiNavServer::on_system_tags_received(
 
 void MapoiNavServer::on_config_path_changed(const std_msgs::msg::String::SharedPtr msg)
 {
-  if (msg->data == last_config_path_) {
-    return;
+  // mapoi_server は config path 文字列を周期 publish (default 5s) する。path だけで dedup すると
+  // SwitchMap (path 変更) は拾えるが、WebUI/Panel Save (path 不変、内容のみ変更) を取りこぼし、
+  // event_pois_ が古いまま radius event 監視が外れる。YAML mtime も併せて比較する (PR #78 と同 pattern)。
+  const std::string & current_path = msg->data;
+  std::filesystem::file_time_type current_mtime{};
+  std::error_code ec;
+  auto stat_mtime = std::filesystem::last_write_time(current_path, ec);
+  if (!ec) {
+    current_mtime = stat_mtime;
+    if (current_path == last_config_path_ && current_mtime == last_config_mtime_) {
+      return;  // 周期 publish (path も内容も不変) → skip
+    }
   }
-  last_config_path_ = msg->data;
-  RCLCPP_INFO(this->get_logger(), "Map config changed: %s — refreshing POI list.", msg->data.c_str());
+  // stat 失敗時は dedup 不能とみなし refresh を試みる (起動 race などで一時的に発生し得る)
+
+  last_config_path_ = current_path;
+  last_config_mtime_ = current_mtime;
+  RCLCPP_INFO(this->get_logger(), "Map config changed: %s — refreshing POI list.", current_path.c_str());
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
     poi_inside_state_.clear();

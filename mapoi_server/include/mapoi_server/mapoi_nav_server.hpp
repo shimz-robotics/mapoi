@@ -13,6 +13,7 @@
 #include <unordered_set>
 #include <cmath>
 #include <mutex>
+#include <filesystem>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
@@ -112,7 +113,10 @@ private:
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr config_path_sub_;
   rclcpp::Client<mapoi_interfaces::srv::GetTagDefinitions>::SharedPtr tag_defs_client_;
 
+  // path だけだと WebUI/Panel Save (path 不変、内容のみ変更) を取りこぼすため、mtime も併用。
+  // single-thread executor 前提で書き込みは callback context のみ。詳細は PR #78 (#75) と issue #80。
   std::string last_config_path_;
+  std::filesystem::file_time_type last_config_mtime_{};
   std::unordered_set<std::string> system_tags_;
   bool system_tags_loaded_ = false;
   std::unordered_map<std::string, bool> poi_inside_state_;  // key: poi.name
