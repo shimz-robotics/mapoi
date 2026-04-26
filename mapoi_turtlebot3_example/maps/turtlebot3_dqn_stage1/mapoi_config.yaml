@@ -17,34 +17,34 @@ gazebo:
     uri: model://turtlebot3_dqn_world
     name: turtlebot3_dqn_world
 
-# turtlebot3_world (office テーマ、5 POI 全て radius 0.5 で均一) との視覚的区別を明確にするため、
-# DQN 学習コースのメタファで配置・半径ともに不均一にする。
-# - 中央の start_zone はやや余裕、東西 checkpoint は半径違いで非対称、南 hazard は広めの危険ゾーン、
-#   北 training_goal は最も狭い精密目標。turtlebot3_dqn_stage1 world (~5x5m、obstacle 多数) で robot
-#   navigation の精度が要求されるシーンに合わせ、office テーマの 0.5 から大幅に小さくバラした半径に。
+# turtlebot3_world (office テーマ) と視覚的区別を明確にするため、DQN 学習コースのメタファで
+# 配置・半径ともに不均一にする。半径は Nav2 controller の xy_goal_tolerance (0.25) より大きく
+# 取る (Nav2 が POI radius 内に入る前にゴール判定で停止し、radius event が発火しないため)。
+# 最小 0.30 (5cm 余裕)、最大 0.45 で意味付け (中央 start_zone やや余裕、東 checkpoint は wall
+# 制約で最狭、南 hazard は最も広い危険ゾーン、北 training_goal は精密目標)。
 poi:
 - name: start_zone
   description: DQN 学習開始地点
   pose: {x: 0.0, y: 0.0, yaw: 0.0}
-  radius: 0.2
+  radius: 0.40
   tags: [goal, initial_pose]
 - name: checkpoint_west
   description: 西側中継点
   pose: {x: -1.6, y: 0.5, yaw: 1.57}
-  radius: 0.12
+  radius: 0.35
   tags: [goal, checkpoint]
 - name: checkpoint_east
   description: 東側中継点
   pose: {x: 1.4, y: -0.3, yaw: -1.6}
-  radius: 0.18
+  radius: 0.30
   tags: [goal, checkpoint]
 - name: hazard_south
   description: 南側ハザード (回避対象)
   pose: {x: 0.5, y: -1.3, yaw: 0.0}
-  radius: 0.35
+  radius: 0.45
   tags: [event, hazard]
 - name: training_goal
   description: DQN 目標地点
   pose: {x: 0.4, y: 1.7, yaw: -2.0}
-  radius: 0.1
+  radius: 0.30
   tags: [goal]
