@@ -214,6 +214,15 @@ void MapoiNavServer::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv:
   RCLCPP_INFO(this->get_logger(), "Received %zu Tagged POIs.", pois_list_.size());
   rebuild_event_pois();
   auto_publish_initial_pose();
+
+  // config_path 由来の fetch (on_config_path_changed → get_pois_list) が成功した時のみ guard を確定。
+  // start_sequence 経由の初回 fetch では pending_guard_active_ が false で、ここは no-op。
+  // fetch 失敗 (result == nullptr) で早期 return した場合も pending を残し、次回 publish で retry する。
+  if (pending_guard_active_) {
+    last_config_path_ = pending_config_path_;
+    last_config_mtime_ = pending_config_mtime_;
+    pending_guard_active_ = false;
+  }
 }
 
 std::vector<mapoi_interfaces::msg::PointOfInterest> MapoiNavServer::select_initial_pose_pois(
@@ -640,8 +649,12 @@ void MapoiNavServer::on_config_path_changed(const std_msgs::msg::String::SharedP
   }
   // stat 失敗時は dedup 不能とみなし refresh を試みる (起動 race などで一時的に発生し得る)
 
-  last_config_path_ = current_path;
-  last_config_mtime_ = current_mtime;
+  // guard は fetch 成功時 (on_pois_info_received) に確定。失敗時は pending のまま、
+  // 次回 publish (周期 5s) で path/mtime が同じでも guard が前回値のままなので retry される。
+  pending_config_path_ = current_path;
+  pending_config_mtime_ = current_mtime;
+  pending_guard_active_ = true;
+
   RCLCPP_INFO(this->get_logger(), "Map config changed: %s — refreshing POI list.", current_path.c_str());
   {
     std::lock_guard<std::mutex> lock(data_mutex_);

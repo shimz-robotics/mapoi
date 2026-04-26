@@ -114,9 +114,15 @@ private:
   rclcpp::Client<mapoi_interfaces::srv::GetTagDefinitions>::SharedPtr tag_defs_client_;
 
   // path だけだと WebUI/Panel Save (path 不変、内容のみ変更) を取りこぼすため、mtime も併用。
-  // single-thread executor 前提で書き込みは callback context のみ。詳細は PR #78 (#75) と issue #80。
+  // guard は fetch 成功 callback (on_pois_info_received) で確定し、失敗時は pending のまま
+  // 次回 publish で retry する。pending_guard_active_ が false の時 (start_sequence 経由の初回 fetch)
+  // は guard 確定処理を skip。single-thread executor 前提で書き込みは callback context のみ。
+  // 詳細は PR #78 (#75) と issue #80。
   std::string last_config_path_;
   std::filesystem::file_time_type last_config_mtime_{};
+  std::string pending_config_path_;
+  std::filesystem::file_time_type pending_config_mtime_{};
+  bool pending_guard_active_ = false;
   std::unordered_set<std::string> system_tags_;
   bool system_tags_loaded_ = false;
   std::unordered_map<std::string, bool> poi_inside_state_;  // key: poi.name
