@@ -135,6 +135,8 @@ void PoiEditorPanel::onInitialize()
   arrow_size_spin_->setSingleStep(0.1);
   arrow_size_spin_->setDecimals(2);
   arrow_size_spin_->setValue(1.0);  // default in mapoi_rviz2_publisher
+  // keyboard 入力中は valueChanged を発火させず、Enter / focus loss / stepper 操作のみで反応 (Codex round 1 低)
+  arrow_size_spin_->setKeyboardTracking(false);
   display_form->addRow("Arrow size:", arrow_size_spin_);
 
   // Display Settings group を verticalLayout に append (Save 行の下)
@@ -184,6 +186,51 @@ void PoiEditorPanel::onInitialize()
   // arrow_size_ratio
   connect(arrow_size_spin_, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
     [send_double_param](double value) { send_double_param("arrow_size_ratio", value); });
+
+  // 初期同期: publisher から現在の parameter 値を読んで UI に反映 (Codex round 1 中)
+  // CLI で先に変更されていた場合や、Panel 起動時の publisher 状態に UI を寄せる目的。
+  // 失敗時 (publisher 未起動など) は default のまま (warning ログのみ)。
+  // service ready check + 200ms wait_for_service で起動待ち。
+  if (rviz2_pub_param_client_->wait_for_service(200ms)) {
+    auto fut = rviz2_pub_param_client_->get_parameters(
+      {"route_display_mode", "poi_label_format", "arrow_size_ratio"});
+    if (rclcpp::spin_until_future_complete(service_node_, fut, 500ms) ==
+        rclcpp::FutureReturnCode::SUCCESS) {
+      auto params = fut.get();
+      if (params.size() >= 3) {
+        const std::string route_mode = params[0].as_string();
+        const std::string label_fmt = params[1].as_string();
+        const double arrow_size = params[2].as_double();
+
+        // QSignalBlocker で setChecked / setValue が SetParameters を再発火させないようにする
+        QSignalBlocker b1(route_radio_all_);
+        QSignalBlocker b2(route_radio_selected_);
+        QSignalBlocker b3(route_radio_none_);
+        QSignalBlocker b4(label_radio_index_);
+        QSignalBlocker b5(label_radio_name_);
+        QSignalBlocker b6(label_radio_both_);
+        QSignalBlocker b7(label_radio_none_);
+        QSignalBlocker b8(arrow_size_spin_);
+
+        if (route_mode == "all") route_radio_all_->setChecked(true);
+        else if (route_mode == "none") route_radio_none_->setChecked(true);
+        else route_radio_selected_->setChecked(true);  // default fallback
+
+        if (label_fmt == "name") label_radio_name_->setChecked(true);
+        else if (label_fmt == "both") label_radio_both_->setChecked(true);
+        else if (label_fmt == "none") label_radio_none_->setChecked(true);
+        else label_radio_index_->setChecked(true);  // default fallback
+
+        arrow_size_spin_->setValue(arrow_size);
+      }
+    } else {
+      RCLCPP_WARN(LOGGER, "Initial sync of Display Settings parameters timed out");
+    }
+  } else {
+    RCLCPP_INFO(LOGGER,
+      "mapoi_rviz2_publisher parameter service not ready at panel init, "
+      "Display Settings UI starts with defaults");
+  }
 }
 
 void PoiEditorPanel::onEnable()
