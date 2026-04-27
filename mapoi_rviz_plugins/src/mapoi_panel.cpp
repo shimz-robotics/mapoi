@@ -344,7 +344,12 @@ void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
       if (current_nav_mode_ == "route") {
         ui_->NavStatusLabel->setText(
             QString::fromStdString("ルート走行中: " + current_nav_target_));
+      } else if (current_nav_mode_ == "idle") {
+        // 後起動 panel / 外部ノードが発行した nav の latched 状態:
+        // target/mode が不明なため汎用表示にフォールバック。
+        ui_->NavStatusLabel->setText(QString::fromStdString("走行中"));
       }
+      // goal mode は RunGoalButton で即時表示済みのため何もしない
     } else if (status == "succeeded") {
       current_nav_mode_ = "idle";
       ui_->NavStatusLabel->setText(QString::fromStdString("到着"));
