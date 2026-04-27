@@ -6,6 +6,11 @@
 #include <QFileDialog>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QGroupBox>
+#include <QFormLayout>
+#include <QHBoxLayout>
+#include <QButtonGroup>
+#include <QVBoxLayout>
 
 #include "ui_poi_editor.h"
 
@@ -75,6 +80,110 @@ void PoiEditorPanel::onInitialize()
   config_path_sub_ = node_->create_subscription<std_msgs::msg::String>(
     "mapoi_config_path", 10,
     std::bind(&PoiEditorPanel::ConfigPathCallback, this, std::placeholders::_1));
+
+  // Display Settings group: mapoi_rviz2_publisher の表示系 parameter を Panel から制御 (#99)
+  // - route_display_mode (all / selected / none): RadioButton
+  // - poi_label_format (index / name / both / none): RadioButton
+  // - arrow_size_ratio (double 0.0〜5.0): DoubleSpinBox
+  rviz2_pub_param_client_ =
+    std::make_shared<rclcpp::AsyncParametersClient>(service_node_, "/mapoi_rviz2_publisher");
+
+  auto * display_group = new QGroupBox("Display Settings", this);
+  auto * display_form = new QFormLayout(display_group);
+  display_form->setContentsMargins(8, 8, 8, 8);
+
+  // Route display mode
+  auto * route_h = new QHBoxLayout();
+  route_radio_all_ = new QRadioButton("all", this);
+  route_radio_selected_ = new QRadioButton("selected", this);
+  route_radio_none_ = new QRadioButton("none", this);
+  route_radio_selected_->setChecked(true);  // default in mapoi_rviz2_publisher
+  auto * route_group = new QButtonGroup(this);
+  route_group->setExclusive(true);
+  route_group->addButton(route_radio_all_);
+  route_group->addButton(route_radio_selected_);
+  route_group->addButton(route_radio_none_);
+  route_h->addWidget(route_radio_all_);
+  route_h->addWidget(route_radio_selected_);
+  route_h->addWidget(route_radio_none_);
+  route_h->addStretch();
+  display_form->addRow("Route:", route_h);
+
+  // POI label format
+  auto * label_h = new QHBoxLayout();
+  label_radio_index_ = new QRadioButton("index", this);
+  label_radio_name_ = new QRadioButton("name", this);
+  label_radio_both_ = new QRadioButton("both", this);
+  label_radio_none_ = new QRadioButton("none", this);
+  label_radio_index_->setChecked(true);  // default in mapoi_rviz2_publisher
+  auto * label_group = new QButtonGroup(this);
+  label_group->setExclusive(true);
+  label_group->addButton(label_radio_index_);
+  label_group->addButton(label_radio_name_);
+  label_group->addButton(label_radio_both_);
+  label_group->addButton(label_radio_none_);
+  label_h->addWidget(label_radio_index_);
+  label_h->addWidget(label_radio_name_);
+  label_h->addWidget(label_radio_both_);
+  label_h->addWidget(label_radio_none_);
+  label_h->addStretch();
+  display_form->addRow("POI label:", label_h);
+
+  // Arrow size ratio
+  arrow_size_spin_ = new QDoubleSpinBox(this);
+  arrow_size_spin_->setRange(0.0, 5.0);
+  arrow_size_spin_->setSingleStep(0.1);
+  arrow_size_spin_->setDecimals(2);
+  arrow_size_spin_->setValue(1.0);  // default in mapoi_rviz2_publisher
+  display_form->addRow("Arrow size:", arrow_size_spin_);
+
+  // Display Settings group を verticalLayout に append (Save 行の下)
+  if (auto * panel_layout = qobject_cast<QVBoxLayout *>(this->layout())) {
+    panel_layout->addWidget(display_group);
+  }
+
+  // Connect signals → set_parameters service call.
+  // 100ms timeout で軽く spin、UI を block しすぎないようにする (失敗時は warning ログ)。
+  auto send_string_param = [this](const std::string & name, const std::string & value) {
+    if (!rviz2_pub_param_client_->service_is_ready()) {
+      RCLCPP_WARN(LOGGER, "mapoi_rviz2_publisher parameter service not ready, skipping set %s",
+        name.c_str());
+      return;
+    }
+    auto fut = rviz2_pub_param_client_->set_parameters({rclcpp::Parameter(name, value)});
+    rclcpp::spin_until_future_complete(service_node_, fut, 100ms);
+  };
+  auto send_double_param = [this](const std::string & name, double value) {
+    if (!rviz2_pub_param_client_->service_is_ready()) {
+      RCLCPP_WARN(LOGGER, "mapoi_rviz2_publisher parameter service not ready, skipping set %s",
+        name.c_str());
+      return;
+    }
+    auto fut = rviz2_pub_param_client_->set_parameters({rclcpp::Parameter(name, value)});
+    rclcpp::spin_until_future_complete(service_node_, fut, 100ms);
+  };
+
+  // route_display_mode: toggled(checked=true) のみ反応 (false 側 toggle で重複 send しない)
+  connect(route_radio_all_, &QRadioButton::toggled,
+    [send_string_param](bool checked) { if (checked) send_string_param("route_display_mode", "all"); });
+  connect(route_radio_selected_, &QRadioButton::toggled,
+    [send_string_param](bool checked) { if (checked) send_string_param("route_display_mode", "selected"); });
+  connect(route_radio_none_, &QRadioButton::toggled,
+    [send_string_param](bool checked) { if (checked) send_string_param("route_display_mode", "none"); });
+
+  // poi_label_format
+  connect(label_radio_index_, &QRadioButton::toggled,
+    [send_string_param](bool checked) { if (checked) send_string_param("poi_label_format", "index"); });
+  connect(label_radio_name_, &QRadioButton::toggled,
+    [send_string_param](bool checked) { if (checked) send_string_param("poi_label_format", "name"); });
+  connect(label_radio_both_, &QRadioButton::toggled,
+    [send_string_param](bool checked) { if (checked) send_string_param("poi_label_format", "both"); });
+  connect(label_radio_none_, &QRadioButton::toggled,
+    [send_string_param](bool checked) { if (checked) send_string_param("poi_label_format", "none"); });
+
+  // arrow_size_ratio
+  connect(arrow_size_spin_, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    [send_double_param](double value) { send_double_param("arrow_size_ratio", value); });
 }
 
 void PoiEditorPanel::onEnable()

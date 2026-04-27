@@ -2,6 +2,7 @@
 
 #ifndef Q_MOC_RUN
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp/parameter_client.hpp>
 #include <filesystem>
 #include <set>
 
@@ -25,6 +26,8 @@
 
 #include <QMessageBox>
 #include <QLabel>
+#include <QRadioButton>
+#include <QDoubleSpinBox>
 
 namespace Ui {
 class PoiEditorUi;
@@ -82,6 +85,19 @@ protected:
   rclcpp::Client<mapoi_interfaces::srv::GetMapsInfo>::SharedPtr get_maps_info_client_;
   rclcpp::Client<mapoi_interfaces::srv::GetTagDefinitions>::SharedPtr get_tag_defs_client_;
   rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr reload_map_info_client_;
+
+  // Parameter client for /mapoi_rviz2_publisher (Display Settings UI が制御する)
+  rclcpp::AsyncParametersClient::SharedPtr rviz2_pub_param_client_;
+
+  // Display Settings widgets (programmatically created in constructor)
+  QRadioButton * route_radio_all_ = nullptr;
+  QRadioButton * route_radio_selected_ = nullptr;
+  QRadioButton * route_radio_none_ = nullptr;
+  QRadioButton * label_radio_index_ = nullptr;
+  QRadioButton * label_radio_name_ = nullptr;
+  QRadioButton * label_radio_both_ = nullptr;
+  QRadioButton * label_radio_none_ = nullptr;
+  QDoubleSpinBox * arrow_size_spin_ = nullptr;
 
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr poi_pose_sub_;
   void PoiPoseCallback(geometry_msgs::msg::PoseStamped::SharedPtr msg);
