@@ -2,6 +2,9 @@
 .github
 .vscode
 .idea
+
+# host UID 等の host 環境固有値を runtime image に焼き込まない (#97)
+.env
 build/
 install/
 log/

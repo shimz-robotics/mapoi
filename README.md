@@ -149,11 +149,25 @@ ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml
 
 ### 権限（UID/GID）の調整
 
-bind mount 時の所有者ずれを避けるため、ホストの UID/GID に合わせてビルドできます:
+container 内 `ros` user (default UID 1000) と host user の UID/GID が一致しないと、bind mount (`./:/ros2_ws/src/mapoi`) 越しの **書き込み操作で permission denied** が発生します。代表ケース:
+
+- POI Editor Panel の **Save** クリック (mapoi_config.yaml に書き込み)
+- container 内 `colcon build` の install/build/log 出力 (host にも残る場合)
+- container 内で source ファイルを編集
+
+**host UID が 1000 と異なる場合は必須** の手順 (UID 1000 の host では default のまま動作):
 
 ```sh
+# 推奨: .env を生成して docker compose に自動 inject (.gitignore + .dockerignore 済)
+echo "USER_ID=$(id -u)"   > .env
+echo "GROUP_ID=$(id -g)" >> .env
+docker compose build dev    # .env が自動で読み込まれる
+
+# あるいは都度 prefix:
 USER_ID=$(id -u) GROUP_ID=$(id -g) docker compose build dev
 ```
+
+`.env` 作成後は build / run / up すべての compose コマンドで自動的に host UID が反映されます。各 key の意味とコメントは [.env.example](.env.example) を参照。distro 別 image (mapoi:dev-${ROS_DISTRO}) ごとに UID は build 時に焼き込まれるため、UID 変更時は対象 distro の image を rebuild してください。
 
 ### GPU (NVIDIA) で加速する
 
