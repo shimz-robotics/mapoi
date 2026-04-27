@@ -113,6 +113,10 @@ protected:
   bool ValidatePois();
   double calcYaw(geometry_msgs::msg::Pose pose);
 
+  // Display Settings UI を mapoi_rviz2_publisher の現在 parameter 値に同期する。
+  // onInitialize 末尾の初期同期と、SetParameters 失敗時の UI rollback の両方で使う。
+  void SyncDisplaySettingsFromPublisher();
+
   std::string join(const std::vector<std::string>& v, const char* delim);
   std::vector<std::string> SplitSentence(std::string sentence,
                                          std::string delimiter);
