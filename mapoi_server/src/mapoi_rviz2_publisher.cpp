@@ -17,10 +17,18 @@ MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
   // ("off" は ros2 param CLI で bool として解釈されるため "none" を採用)
   this->declare_parameter<std::string>("poi_label_format", "index");
 
+  // Route polyline の表示形式: "all" (全 route 表示、active は強調) / "selected" (active のみ) / "none"。
+  // default "selected": RViz 起動時の clutter を抑え、user が選択した route だけを示す。
+  // 全 route を見たい場合は ros2 param set /mapoi_rviz2_publisher route_display_mode all で切替。
+  this->declare_parameter<std::string>("route_display_mode", "selected");
+
   marker_waypoints_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_goal_marks", 10);
   marker_events_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_event_marks", 10);
+  marker_routes_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_route_marks", 10);
 
   this->poi_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
+  this->routes_info_client_ = this->create_client<mapoi_interfaces::srv::GetRoutesInfo>("get_routes_info");
+  this->route_pois_client_ = this->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
 
   highlight_goal_sub_ = this->create_subscription<std_msgs::msg::String>(
     "mapoi_highlight_goal", 10,
@@ -58,6 +66,7 @@ void MapoiRviz2Publisher::start_sequence()
 
   RCLCPP_INFO(this->get_logger(), "Requesting POI Info...");
   request_pois_list();
+  request_routes_info();
 }
 
 void MapoiRviz2Publisher::request_pois_list()
@@ -65,6 +74,84 @@ void MapoiRviz2Publisher::request_pois_list()
   auto request = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
   poi_client_->async_send_request(
     request, std::bind(&MapoiRviz2Publisher::on_poi_received, this, _1));
+}
+
+void MapoiRviz2Publisher::request_routes_info()
+{
+  // get_routes_info → 各 route について get_route_pois の 2 段 fetch。
+  // 世代番号 (routes_fetch_generation_) を increment して capture することで、後続 fan-out が始まった
+  // 時点で旧世代の callback を stale 判定し all_routes_ への書き込みを drop する
+  // (Codex round 1 high 対策: stale callback による旧 map / 新 map の route 混在防止)。
+  // service 未起動なら skip (config_path 通知の度に再試行されるので自然回復)。
+  if (!routes_info_client_->service_is_ready()) {
+    RCLCPP_WARN(this->get_logger(), "get_routes_info service not ready, skipping route fetch.");
+    return;
+  }
+  const size_t my_gen = ++routes_fetch_generation_;
+  auto request = std::make_shared<mapoi_interfaces::srv::GetRoutesInfo::Request>();
+  routes_info_client_->async_send_request(
+    request,
+    [this, my_gen](rclcpp::Client<mapoi_interfaces::srv::GetRoutesInfo>::SharedFuture f) {
+      on_routes_info_received(my_gen, f);
+    });
+}
+
+void MapoiRviz2Publisher::on_routes_info_received(
+  size_t my_generation,
+  rclcpp::Client<mapoi_interfaces::srv::GetRoutesInfo>::SharedFuture future)
+{
+  // stale check: 後続 fan-out が走っていたら旧世代の応答を捨てる
+  if (my_generation != routes_fetch_generation_) {
+    return;
+  }
+  auto result = future.get();
+  if (!result) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to get Routes Info.");
+    return;
+  }
+  RCLCPP_INFO(this->get_logger(), "Received %zu route names (gen=%zu).",
+    result->routes_list.size(), my_generation);
+
+  // 空 route list は all_routes_ を即時 clear (削除された route の取り残し防止)
+  if (result->routes_list.empty()) {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    all_routes_.clear();
+    return;
+  }
+
+  // pending map に集約してから lock 下で all_routes_ に swap (timer_callback への部分公開を防ぐ)。
+  // shared_ptr で per-route lambda 間で共有、最後の callback で swap する。
+  using RouteMap = std::map<std::string, std::vector<mapoi_interfaces::msg::PointOfInterest>>;
+  auto pending = std::make_shared<RouteMap>();
+  auto remaining = std::make_shared<size_t>(result->routes_list.size());
+
+  for (const auto & route_name : result->routes_list) {
+    auto req = std::make_shared<mapoi_interfaces::srv::GetRoutePois::Request>();
+    req->route_name = route_name;
+    route_pois_client_->async_send_request(
+      req,
+      [this, route_name, my_generation, pending, remaining]
+      (rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture f) {
+        // stale check (per-route): 後続 fan-out が走っていたら結果を捨てる
+        if (my_generation != routes_fetch_generation_) {
+          return;
+        }
+        auto r = f.get();
+        if (r) {
+          (*pending)[route_name] = r->pois_list;
+          RCLCPP_INFO(this->get_logger(), "Route '%s': %zu waypoints (gen=%zu).",
+            route_name.c_str(), r->pois_list.size(), my_generation);
+        } else {
+          RCLCPP_ERROR(this->get_logger(), "Failed to get route pois for '%s' (gen=%zu).",
+            route_name.c_str(), my_generation);
+        }
+        // 全 route 集約済みになったら lock 下で all_routes_ に swap
+        if (--(*remaining) == 0) {
+          std::lock_guard<std::mutex> lock(data_mutex_);
+          all_routes_ = std::move(*pending);
+        }
+      });
+  }
 }
 
 void MapoiRviz2Publisher::on_config_path_changed(const std_msgs::msg::String::SharedPtr msg)
@@ -86,16 +173,33 @@ void MapoiRviz2Publisher::on_config_path_changed(const std_msgs::msg::String::Sh
 
   RCLCPP_INFO(this->get_logger(), "Map config changed: %s — refreshing POI list.", current_path.c_str());
 
-  // 起動直後は service が未起動の場合がある。guard 値は更新前に readiness 判定して、未起動なら skip。
-  // last_config_path_ / last_config_mtime_ を未更新のまま return するため、次回 publish で再試行される。
-  if (!poi_client_->service_is_ready()) {
-    RCLCPP_WARN(this->get_logger(), "get_pois_info service not ready, skipping refresh.");
+  // config 変更を検出したら fan-out 実行可否に関わらず routes_fetch_generation_ を進めて
+  // 旧 fan-out の pending callback を全て stale 化する (Codex round 2 high 対策: service 未 ready で
+  // 早期 return する経路で gen が進まないと、旧 config の callback が my_gen == current_gen を満たして
+  // 旧 route set を swap してしまう窓が残る)。
+  // request_routes_info() 側でも increment するため fan-out 成功時は double increment になるが、
+  // 単調増加のため意味的には正しく、無害。
+  ++routes_fetch_generation_;
+
+  // 起動直後は service が未起動の場合がある。POI / routes_info / route_pois 全てが ready の時のみ
+  // guard を更新して fan-out 開始する (Codex round 1 medium 対策: route 系 service だけ未 ready の
+  // 状態で guard が進むと、同じ path+mtime が dedup で skip され route fetch の自然 retry が無くなる)。
+  // 一つでも未 ready なら guard 据え置き → 次回 publish で再試行。
+  if (!poi_client_->service_is_ready() ||
+      !routes_info_client_->service_is_ready() ||
+      !route_pois_client_->service_is_ready()) {
+    RCLCPP_WARN(this->get_logger(),
+      "Some service not ready (poi=%d, routes_info=%d, route_pois=%d), skipping refresh.",
+      poi_client_->service_is_ready(),
+      routes_info_client_->service_is_ready(),
+      route_pois_client_->service_is_ready());
     return;
   }
 
   last_config_path_ = current_path;
   last_config_mtime_ = current_mtime;
   request_pois_list();
+  request_routes_info();  // POI と同様、SwitchMap / Save で route 構成も変わる可能性あり
 }
 
 void MapoiRviz2Publisher::on_poi_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future)
@@ -370,6 +474,71 @@ void MapoiRviz2Publisher::timer_callback(){
 
   marker_waypoints_pub_->publish(ma_waypoints);
   marker_events_pub_->publish(ma_events);
+
+  // Route LINE_STRIP markers (mapoi_route_marks topic)。
+  // route_display_mode parameter で表示制御:
+  //   "all"      : 全 route 表示、active route (highlighted_route_names_ に含む) は太線+不透明で強調
+  //   "selected" : active route のみ表示
+  //   "none"     : 表示しない (DELETEALL で既存も消す)
+  // POI marker (goal=green / event=blue / origin=red / gray) と被らない palette を使う。
+  static constexpr std::array<std::array<float, 3>, 6> ROUTE_PALETTE = {{
+    {1.0f, 0.5f, 0.0f},   // orange
+    {1.0f, 0.0f, 1.0f},   // magenta
+    {0.0f, 1.0f, 1.0f},   // cyan
+    {1.0f, 1.0f, 0.0f},   // yellow
+    {0.7f, 0.3f, 1.0f},   // purple
+    {0.0f, 0.7f, 0.3f},   // teal
+  }};
+  auto pick_route_color = [](const std::string & name) {
+    std::hash<std::string> h;
+    return ROUTE_PALETTE[h(name) % ROUTE_PALETTE.size()];
+  };
+
+  const std::string route_mode = this->get_parameter("route_display_mode").as_string();
+  visualization_msgs::msg::MarkerArray ma_routes;
+  int route_id = 0;
+
+  if (route_mode != "none") {
+    constexpr double ROUTE_LINE_Z = 0.05;  // map / costmap よりわずかに上
+    for (const auto & [name, waypoints] : all_routes_) {
+      if (waypoints.size() < 2) continue;  // 1 点だけの route は polyline にできない
+      const bool is_active = highlighted_route_names_.count(name) > 0;
+      if (route_mode == "selected" && !is_active) continue;
+
+      const auto color = pick_route_color(name);
+      visualization_msgs::msg::Marker m;
+      m.header.frame_id = "map";
+      m.header.stamp = rclcpp::Clock().now();
+      m.action = visualization_msgs::msg::Marker::ADD;
+      m.type = visualization_msgs::msg::Marker::LINE_STRIP;
+      m.id = route_id++;
+      m.lifetime.sec = 2.0;
+      m.pose.orientation.w = 1.0;  // identity (LINE_STRIP の point は world 座標)
+      m.scale.x = is_active ? 0.08 : 0.04;  // active を太く (line width)
+      m.color.r = color[0]; m.color.g = color[1]; m.color.b = color[2];
+      m.color.a = is_active ? 0.9f : 0.4f;  // active を不透明、他は薄く
+
+      m.points.reserve(waypoints.size());
+      for (const auto & wp : waypoints) {
+        geometry_msgs::msg::Point p;
+        p.x = wp.pose.position.x;
+        p.y = wp.pose.position.y;
+        p.z = ROUTE_LINE_Z;
+        m.points.push_back(p);
+      }
+      ma_routes.markers.push_back(m);
+    }
+  }
+
+  if (route_id_buf_ > route_id) {
+    visualization_msgs::msg::Marker m_del;
+    m_del.action = visualization_msgs::msg::Marker::DELETEALL;
+    visualization_msgs::msg::MarkerArray ma_del;
+    ma_del.markers.push_back(m_del);
+    marker_routes_pub_->publish(ma_del);
+  }
+  route_id_buf_ = route_id;
+  marker_routes_pub_->publish(ma_routes);
 }
 
 int main(int argc, char **argv)
