@@ -176,6 +176,8 @@ ROS_DISTRO=jazzy docker compose build
 ROS_DISTRO=jazzy docker compose up demo
 ```
 
+ローカル image は `mapoi:dev-${ROS_DISTRO}` / `mapoi:demo-${ROS_DISTRO}` の形 (例: `mapoi:dev-jazzy` / `mapoi:demo-humble`) で distro 別に保存されます。Humble と Jazzy を同時に保持・並行実行可能で、distro 切替時の rebuild も不要です。
+
 pull 済みイメージを使う場合は `ghcr.io/shimz-robotics/mapoi:jazzy` を直接 `docker run` する方が手軽です（上の「ビルド済みイメージから試す」節を参照）。Jazzy は Nav2 lifecycle 立ち上げに 30〜60 秒かかるので起動直後に kill しないでください。
 
 ## 主な機能
