@@ -38,12 +38,13 @@ services:
       # 初回起動時に gazebosim.org へアクセスしに行って spawn_entity が 30s timeout で
       # 死ぬのを防ぐ。turtlebot3 world は apt の turtlebot3_gazebo のローカルモデルで動く。
       - GAZEBO_MODEL_DATABASE_URI=
-      # DDS isolation: container 側で固定して host shell や別 workspace の値が leak しないようにする。
-      # network_mode: host + ipc: host で host とリソースを共有するため、host 側が異なる RMW
-      # (例: cyclonedds) や custom CYCLONEDDS_URI を持っていると discovery が壊れる事例がある。
-      # override する場合は本ファイル編集または `docker compose run --env <var>=<value>` で個別指定。
-      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-      - ROS_DOMAIN_ID=0
+      # DDS 環境: 真の leak 問題は host の custom CYCLONEDDS_URI が container に継承されること
+      # (例: opera_shimz_ws の cyclonedds.conf) なので URI のみ空で hardcode 無効化。
+      # RMW / DOMAIN_ID は host と一致しないと container <-> host 間の discovery が成立しない
+      # (network_mode: host + ipc: host でリソース共有するため両端が一致する必要あり)。
+      # よって RMW / DOMAIN_ID は host 値を継承、未設定時のみ fallback default。
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - CYCLONEDDS_URI=
     volumes:
       - ./:/ros2_ws/src/mapoi
@@ -71,9 +72,9 @@ services:
       - QT_X11_NO_MITSHM=1
       - TURTLEBOT3_MODEL=${TURTLEBOT3_MODEL:-burger}
       - GAZEBO_MODEL_DATABASE_URI=
-      # DDS isolation (dev と同じ理由、詳細は dev 側コメント参照)
-      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-      - ROS_DOMAIN_ID=0
+      # DDS 環境 (dev と同じ理由、詳細は dev 側コメント参照): URI のみ空で leak block、RMW/DOMAIN_ID は host 継承
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - CYCLONEDDS_URI=
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
