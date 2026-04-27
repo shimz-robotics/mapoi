@@ -6,3 +6,6 @@ log
 # Python bytecode cache
 __pycache__/
 *.py[cod]
+
+# docker compose 環境変数 (host UID/GID は user 環境固有、.env.example をテンプレート参照)
+.env
