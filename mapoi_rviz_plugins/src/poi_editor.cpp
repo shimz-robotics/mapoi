@@ -157,12 +157,14 @@ void PoiEditorPanel::onInitialize()
     RevertDisplaySettingsUiFromCache();
   };
   auto send_param = [this, fail_recovery](const std::string & name, const rclcpp::ParameterValue & value) {
-    if (!rviz2_pub_param_client_->service_is_ready()) {
-      fail_recovery(name, "service not ready");
+    // service_is_ready() は cached state を返すだけで、AsyncParametersClient が
+    // 一度も spin されていないと stale で false を返す。wait_for_service で短い spin を挟む。
+    if (!rviz2_pub_param_client_->wait_for_service(100ms)) {
+      fail_recovery(name, "service not ready after 100ms wait");
       return;
     }
     auto fut = rviz2_pub_param_client_->set_parameters({rclcpp::Parameter(name, value)});
-    auto rc = rclcpp::spin_until_future_complete(service_node_, fut, 100ms);
+    auto rc = rclcpp::spin_until_future_complete(service_node_, fut, 500ms);
     if (rc != rclcpp::FutureReturnCode::SUCCESS) {
       fail_recovery(name, "spin timeout");
       return;
