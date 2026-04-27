@@ -4,12 +4,12 @@
 #   xhost +local:docker
 #
 # 開発用 (bind mount + bash):
-#   docker compose run --rm dev                   # default Humble (Gazebo Classic)
-#   ROS_DISTRO=jazzy docker compose run --rm dev  # Jazzy (gz-sim)
+#   ROS_DISTRO=humble docker compose run --rm dev  # Humble (Gazebo Classic)
+#   ROS_DISTRO=jazzy  docker compose run --rm dev  # Jazzy (gz-sim)
 #
 # お試し/デモ (Turtlebot3 + Gazebo + mapoi):
-#   docker compose up demo
-#   ROS_DISTRO=jazzy docker compose up demo
+#   ROS_DISTRO=humble docker compose up demo
+#   ROS_DISTRO=jazzy  docker compose up demo
 #
 # image タグは ROS_DISTRO を含む形 (例: mapoi:dev-humble / mapoi:dev-jazzy) で
 # distro 別に保持される。distro 切替時の rebuild は不要、両方を同時並行で持てる。
