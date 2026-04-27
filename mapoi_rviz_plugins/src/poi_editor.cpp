@@ -268,7 +268,17 @@ void PoiEditorPanel::SaveButton()
   // 即時 rebuild だと UpdatePoiTable() が text/style を即 reset するため、Save 成功 feedback が
   // ほぼ見えない (reload service が高速なほど顕著)。QTimer::singleShot で Qt event loop に戻して
   // SAVED + green の paint を保証してから 1.5 秒後に rebuild。
-  QTimer::singleShot(1500, this, [this]() { UpdatePoiTable(); });
+  //
+  // 同じ 1.5 秒の間に再 Save 連打されると pending rebuild と新 Save flow が race するため、
+  // SaveButton を disable して連打防止。timer 完了時に setEnabled(true) で復帰。
+  // 注: 1.5 秒間に Reset / MapCombo 等の他 UpdatePoiTable 呼び出しが入ると順序競合あり得るが、
+  // 短い窓 + Save 直後の操作頻度低さから許容。必要なら future PR で member QTimer + cancel
+  // pattern に拡張可能。
+  ui_->SaveButton->setEnabled(false);
+  QTimer::singleShot(1500, this, [this]() {
+    UpdatePoiTable();
+    ui_->SaveButton->setEnabled(true);
+  });
 }
 
 // Subscription Callback
