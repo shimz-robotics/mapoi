@@ -525,7 +525,7 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
-      Name: MarkerArray
+      Name: POI Goals
       Namespaces:
         "": true
       Topic:
@@ -537,7 +537,7 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
-      Name: MarkerArray
+      Name: POI Events
       Namespaces:
         {}
       Topic:
@@ -549,7 +549,7 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
-      Name: MarkerArray
+      Name: Routes
       Namespaces:
         {}
       Topic:
@@ -557,7 +557,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /mapoi_waypoint_marks
+        Value: /mapoi_route_marks
       Value: true
   Enabled: true
   Global Options:
