@@ -145,27 +145,40 @@ void PoiEditorPanel::onInitialize()
   }
 
   // Connect signals → set_parameters service call.
-  // service 未起動・spin timeout・SetParametersResult unsuccessful のいずれかで失敗した場合は
-  // UI を publisher の現在状態に rollback (UI/publisher state ズレ防止、Codex round 1 中)。
-  auto send_param = [this](const std::string & name, const rclcpp::ParameterValue & value) {
+  // 失敗 (service 未起動 / spin timeout / SetParametersResult unsuccessful) いずれの場合も:
+  //   1. SyncDisplaySettingsFromPublisher() で publisher 真値で UI 更新を試みる (sync 成功なら
+  //      UI = publisher で cache も更新される)
+  //   2. それも失敗 (= service 完全 down) なら RevertDisplaySettingsUiFromCache() で
+  //      最後に publisher と一致が確認できた値 (cached_*) に UI を戻す
+  // これで UI/publisher state ズレ問題は service 状態に関わらず必ず収束 (Codex round 1-3 中)。
+  auto fail_recovery = [this](const std::string & name, const std::string & reason) {
+    RCLCPP_WARN(LOGGER, "SetParameters failed for %s (%s), reverting UI", name.c_str(), reason.c_str());
+    SyncDisplaySettingsFromPublisher();
+    RevertDisplaySettingsUiFromCache();
+  };
+  auto send_param = [this, fail_recovery](const std::string & name, const rclcpp::ParameterValue & value) {
     if (!rviz2_pub_param_client_->service_is_ready()) {
-      RCLCPP_WARN(LOGGER, "mapoi_rviz2_publisher parameter service not ready (%s), syncing UI",
-        name.c_str());
-      SyncDisplaySettingsFromPublisher();
+      fail_recovery(name, "service not ready");
       return;
     }
     auto fut = rviz2_pub_param_client_->set_parameters({rclcpp::Parameter(name, value)});
     auto rc = rclcpp::spin_until_future_complete(service_node_, fut, 100ms);
     if (rc != rclcpp::FutureReturnCode::SUCCESS) {
-      RCLCPP_WARN(LOGGER, "SetParameters timeout for %s, syncing UI", name.c_str());
-      SyncDisplaySettingsFromPublisher();
+      fail_recovery(name, "spin timeout");
       return;
     }
     auto results = fut.get();
     if (results.empty() || !results[0].successful) {
-      RCLCPP_WARN(LOGGER, "SetParameters rejected for %s: %s, syncing UI",
-        name.c_str(), results.empty() ? "no result" : results[0].reason.c_str());
-      SyncDisplaySettingsFromPublisher();
+      fail_recovery(name, results.empty() ? "no result" : results[0].reason);
+      return;
+    }
+    // 成功: cache 更新 (publisher が受理した値 = 確定値、次回失敗時の revert 元として記憶)
+    if (name == "route_display_mode") {
+      cached_route_mode_ = value.get<std::string>();
+    } else if (name == "poi_label_format") {
+      cached_label_fmt_ = value.get<std::string>();
+    } else if (name == "arrow_size_ratio") {
+      cached_arrow_size_ = value.get<double>();
     }
   };
   auto send_string_param = [send_param](const std::string & name, const std::string & value) {
@@ -205,6 +218,7 @@ void PoiEditorPanel::SyncDisplaySettingsFromPublisher()
 {
   // CLI で先に変更されていた場合や SetParameters 失敗時に、UI を publisher の真値に寄せる。
   // 失敗時 (publisher 未起動 / timeout) は何もしない (UI は変えない、log は呼び出し側で出力)。
+  // 成功時は cache (cached_*) も同時に publisher 真値で更新する。
   if (!rviz2_pub_param_client_->wait_for_service(50ms)) {
     return;  // 短い wait、ready でなければ skip
   }
@@ -222,6 +236,11 @@ void PoiEditorPanel::SyncDisplaySettingsFromPublisher()
   const std::string route_mode = params[0].as_string();
   const std::string label_fmt = params[1].as_string();
   const double arrow_size = params[2].as_double();
+
+  // cache 更新 (publisher 真値が記憶される、次回 SetParameters 失敗時の revert 元として使用)
+  cached_route_mode_ = route_mode;
+  cached_label_fmt_ = label_fmt;
+  cached_arrow_size_ = arrow_size;
 
   // QSignalBlocker で setChecked / setValue が SetParameters を再発火させないようにする
   QSignalBlocker b1(route_radio_all_);
@@ -243,6 +262,33 @@ void PoiEditorPanel::SyncDisplaySettingsFromPublisher()
   else label_radio_index_->setChecked(true);  // default fallback
 
   arrow_size_spin_->setValue(arrow_size);
+}
+
+void PoiEditorPanel::RevertDisplaySettingsUiFromCache()
+{
+  // service 完全 down 等で SyncDisplaySettingsFromPublisher が no-op だった場合のフォールバック。
+  // cached_* は最後に publisher と一致が確認できた値 (初期同期 or 直前の SetParameters 成功時)。
+  // 通常は呼び出し側 (fail_recovery) で必ず Sync を試みた直後に呼ぶため、Sync 成功時は
+  // cache が UI と一致していて revert は no-op になる。
+  QSignalBlocker b1(route_radio_all_);
+  QSignalBlocker b2(route_radio_selected_);
+  QSignalBlocker b3(route_radio_none_);
+  QSignalBlocker b4(label_radio_index_);
+  QSignalBlocker b5(label_radio_name_);
+  QSignalBlocker b6(label_radio_both_);
+  QSignalBlocker b7(label_radio_none_);
+  QSignalBlocker b8(arrow_size_spin_);
+
+  if (cached_route_mode_ == "all") route_radio_all_->setChecked(true);
+  else if (cached_route_mode_ == "none") route_radio_none_->setChecked(true);
+  else route_radio_selected_->setChecked(true);
+
+  if (cached_label_fmt_ == "name") label_radio_name_->setChecked(true);
+  else if (cached_label_fmt_ == "both") label_radio_both_->setChecked(true);
+  else if (cached_label_fmt_ == "none") label_radio_none_->setChecked(true);
+  else label_radio_index_->setChecked(true);
+
+  arrow_size_spin_->setValue(cached_arrow_size_);
 }
 
 void PoiEditorPanel::onEnable()

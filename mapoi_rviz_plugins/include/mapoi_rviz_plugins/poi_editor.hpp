@@ -99,6 +99,12 @@ protected:
   QRadioButton * label_radio_none_ = nullptr;
   QDoubleSpinBox * arrow_size_spin_ = nullptr;
 
+  // 最後に publisher と一致が確認できた値の cache。SetParameters 失敗時に UI を revert する元になる。
+  // 初期値は publisher の declare_parameter default と一致 (sync 成功すればその値で更新される)。
+  std::string cached_route_mode_ = "selected";
+  std::string cached_label_fmt_ = "index";
+  double cached_arrow_size_ = 1.0;
+
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr poi_pose_sub_;
   void PoiPoseCallback(geometry_msgs::msg::PoseStamped::SharedPtr msg);
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr config_path_sub_;
@@ -115,7 +121,12 @@ protected:
 
   // Display Settings UI を mapoi_rviz2_publisher の現在 parameter 値に同期する。
   // onInitialize 末尾の初期同期と、SetParameters 失敗時の UI rollback の両方で使う。
+  // 成功時は cached_* を更新する。
   void SyncDisplaySettingsFromPublisher();
+
+  // service down 等で sync が失敗した場合、cached_* に基づいて UI を revert する。
+  // SyncDisplaySettingsFromPublisher() で sync を試みた後 (cache 未更新) のフォールバック用。
+  void RevertDisplaySettingsUiFromCache();
 
   std::string join(const std::vector<std::string>& v, const char* delim);
   std::vector<std::string> SplitSentence(std::string sentence,
