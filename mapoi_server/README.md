@@ -108,7 +108,7 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 | --- | --- | --- |
 | `initialpose` | `geometry_msgs/PoseWithCovarianceStamped` | 初期位置の配信 (topic 名は `initial_pose_topic` parameter で変更可)。`mapoi_initialpose_poi` で明示指定された場合に加え、地図ロード/切替時に `initial_pose` タグ付き POI から自動配信。自動 publish 前は subscriber readiness を最大 `initial_pose_subscriber_wait_timeout_sec` 秒待つ |
 | `goal_pose` | `geometry_msgs/PoseStamped` | ゴール位置の配信 |
-| `mapoi_nav_status` | `std_msgs/String` | ナビゲーション状態（`navigating`, `succeeded`, `aborted`, `canceled`, `paused`） |
+| `mapoi_nav_status` | `std_msgs/String` | ナビゲーション状態（`navigating`, `succeeded`, `aborted`, `canceled`, `paused`）。transient_local QoS で配信され、後起動 subscriber も最後の状態を取得可能 |
 | `mapoi_poi_events` | `mapoi_interfaces/PoiEvent` | POI 侵入・退出イベント |
 
 #### アクションクライアント
