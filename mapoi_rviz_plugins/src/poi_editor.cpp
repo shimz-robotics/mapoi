@@ -5,6 +5,7 @@
 
 #include <QFileDialog>
 #include <QStandardPaths>
+#include <QTimer>
 
 #include "ui_poi_editor.h"
 
@@ -262,7 +263,22 @@ void PoiEditorPanel::SaveButton()
   // 番号は元の logical order のまま (例: [3, 1, 2] のように見える)。
   // saved YAML を fetch し直して table を再構築することで visual = logical を揃え、
   // 番号が 1, 2, 3, ... に並ぶようにする。drag 中の background highlight (Qt::green) も解除。
-  UpdatePoiTable();
+  //
+  // delay を入れて SAVED + green を 1.5 秒見せてから rebuild する (issue #77)。
+  // 即時 rebuild だと UpdatePoiTable() が text/style を即 reset するため、Save 成功 feedback が
+  // ほぼ見えない (reload service が高速なほど顕著)。QTimer::singleShot で Qt event loop に戻して
+  // SAVED + green の paint を保証してから 1.5 秒後に rebuild。
+  //
+  // 同じ 1.5 秒の間に再 Save 連打されると pending rebuild と新 Save flow が race するため、
+  // SaveButton を disable して連打防止。timer 完了時に setEnabled(true) で復帰。
+  // 注: 1.5 秒間に Reset / MapCombo 等の他 UpdatePoiTable 呼び出しが入ると順序競合あり得るが、
+  // 短い窓 + Save 直後の操作頻度低さから許容。必要なら future PR で member QTimer + cancel
+  // pattern に拡張可能。
+  ui_->SaveButton->setEnabled(false);
+  QTimer::singleShot(1500, this, [this]() {
+    UpdatePoiTable();
+    ui_->SaveButton->setEnabled(true);
+  });
 }
 
 // Subscription Callback
@@ -594,6 +610,9 @@ void PoiEditorPanel::UpdatePoiTable()
   }
   is_table_color_ = true;
   ui_->SaveButton->setText("save");
+  // 空 list (numRows == 0) では setItem 由来の cellChanged 副作用が発火せず、SAVED 時の
+  // green stylesheet が残ったままになる症状 (issue #77 症状 2) を明示リセットで防ぐ。
+  ui_->SaveButton->setStyleSheet("QPushButton {background-color: white; color: black;}");
   UpdatePoiCount();
 }
 
