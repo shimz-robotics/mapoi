@@ -8,6 +8,10 @@ ENV ROS_DISTRO=${ROS_DISTRO}
 ENV DEBIAN_FRONTEND=noninteractive
 
 # 共通 apt 依存
+# ros-${ROS_DISTRO}-rmw-cyclonedds-cpp: container は host の RMW_IMPLEMENTATION を継承する
+# (docker-compose.yml の environment 参照)。host が cyclonedds を使っている場合に
+# librmw_cyclonedds_cpp.so がないと ROS node 起動失敗するため、両 RMW を image に含める。
+# fastrtps は ros-${ROS_DISTRO}-desktop-full に既定で含まれているので追加不要。
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     python3-colcon-common-extensions \
@@ -15,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-flask \
     python3-pil \
     python3-yaml \
+    ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
     ros-${ROS_DISTRO}-turtlebot3 \
     ros-${ROS_DISTRO}-turtlebot3-gazebo \
     ros-${ROS_DISTRO}-turtlebot3-navigation2 \
