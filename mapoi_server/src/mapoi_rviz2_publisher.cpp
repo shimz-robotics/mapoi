@@ -18,8 +18,9 @@ MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
   this->declare_parameter<std::string>("poi_label_format", "index");
 
   // Route polyline の表示形式: "all" (全 route 表示、active は強調) / "selected" (active のみ) / "none"。
-  // default "all" は WebUI で route 一覧を見せている場合と整合。
-  this->declare_parameter<std::string>("route_display_mode", "all");
+  // default "selected": RViz 起動時の clutter を抑え、user が選択した route だけを示す。
+  // 全 route を見たい場合は ros2 param set /mapoi_rviz2_publisher route_display_mode all で切替。
+  this->declare_parameter<std::string>("route_display_mode", "selected");
 
   marker_waypoints_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_goal_marks", 10);
   marker_events_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_event_marks", 10);
