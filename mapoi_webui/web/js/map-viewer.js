@@ -22,7 +22,7 @@ class MapViewer {
     this.onPoiClick = null;      // callback(index)
     this.onRouteClick = null;    // callback(routeIndex)
     this._poseTool = null;       // pose tool state
-    this._routePolylines = [];   // { line, hitLine, routeIdx, color } for click & highlight
+    this._routePolylines = [];   // { line, hitLine, arrowMarkers, labelMarkers, routeIdx, color, latlngs } for click & highlight
 
     this.map.on('click', (e) => {
       if (this._poseTool) {
@@ -510,14 +510,17 @@ class MapViewer {
    * 複数 route が同じ POI を経由して polyline が重なる視認性問題への (d) active highlight 対策。
    */
   highlightRoute(routeIdx) {
-    const hasActive = routeIdx >= 0;
+    // 描画済みの _routePolylines に対象 routeIdx が実在する時のみ active state に入る。
+    // 非表示 / 未描画 / waypoint 不足等で対象 entry がない場合に全 route を dim にしない (Codex review medium #105)。
+    const activeExists = routeIdx >= 0
+      && this._routePolylines.some((item) => item.routeIdx === routeIdx);
     this._routePolylines.forEach((item) => {
       const isActive = item.routeIdx === routeIdx;
-      if (hasActive && isActive) {
+      if (activeExists && isActive) {
         item.line.setStyle({ weight: 5, opacity: 1.0, dashArray: null });
         this._setMarkersOpacity(item.arrowMarkers, 1.0);
         this._setMarkersOpacity(item.labelMarkers, 1.0);
-      } else if (hasActive && !isActive) {
+      } else if (activeExists && !isActive) {
         item.line.setStyle({ weight: 2, opacity: 0.25, dashArray: '8, 6' });
         this._setMarkersOpacity(item.arrowMarkers, 0.25);
         this._setMarkersOpacity(item.labelMarkers, 0.25);
