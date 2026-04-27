@@ -11,11 +11,9 @@
 #   ROS_DISTRO=humble docker compose up demo
 #   ROS_DISTRO=jazzy  docker compose up demo
 #
-# ROS_DISTRO 環境変数の挙動: docker compose の image / build は ${ROS_DISTRO:-humble} で
-# distro を切り替える。host shell に ROS_DISTRO が source 済みならそれを継承、未設定なら
-# fallback default は humble。別 distro を試す時は ROS_DISTRO=<distro> 前置で一時上書き。
-# image タグは distro 別 (例: mapoi:dev-humble / mapoi:dev-jazzy)、切替時 rebuild 不要、
-# 両方並行運用可。初回 build は ROS_DISTRO=<distro> docker compose build dev (or demo)。
+# distro 選択: ${ROS_DISTRO:-humble} (shell / .env で非空ならその値、空または未設定なら humble)
+# image: mapoi:<service>-${ROS_DISTRO} で distro 別保存、並行運用可、切替時 rebuild 不要
+# 詳細: README "ソースから docker compose build" 節
 services:
   dev:
     build:
