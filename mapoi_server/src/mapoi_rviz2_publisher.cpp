@@ -22,7 +22,7 @@ MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
   // 全 route を見たい場合は ros2 param set /mapoi_rviz2_publisher route_display_mode all で切替。
   this->declare_parameter<std::string>("route_display_mode", "selected");
 
-  marker_waypoints_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_goal_marks", 10);
+  marker_goals_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_goal_marks", 10);
   marker_events_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_event_marks", 10);
   marker_routes_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_route_marks", 10);
 
@@ -467,12 +467,12 @@ void MapoiRviz2Publisher::timer_callback(){
     m_del.action = visualization_msgs::msg::Marker::DELETEALL;
     visualization_msgs::msg::MarkerArray ma_del;
     ma_del.markers.push_back(m_del);
-    marker_waypoints_pub_->publish(ma_del);
+    marker_goals_pub_->publish(ma_del);
     marker_events_pub_->publish(ma_del);
   }
   id_buf_ = id;
 
-  marker_waypoints_pub_->publish(ma_waypoints);
+  marker_goals_pub_->publish(ma_waypoints);
   marker_events_pub_->publish(ma_events);
 
   // Route LINE_STRIP markers (mapoi_route_marks topic)。

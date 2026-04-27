@@ -74,7 +74,7 @@ private:
   int id_buf_;
 
   // Publishers
-  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_waypoints_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_goals_pub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_events_pub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_routes_pub_;
 
