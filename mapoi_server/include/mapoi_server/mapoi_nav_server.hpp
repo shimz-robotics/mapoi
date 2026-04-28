@@ -76,13 +76,18 @@ private:
   void get_pois_list();
 
   // Action Callbacks (FollowWaypoints — routes)
-  void goal_response_callback(const GoalHandleFollowWaypoints::SharedPtr & goal_handle);
+  // target は #104 race fix のため goal 固有の target を bind 経由で受け取る。
+  // callback 内で publish_nav_status はこの引数を使い、共有 current_target_name_
+  // を読まない (concurrent request で別 nav の target が混入するのを防ぐ)。
+  // current_target_name_ は acceptance 時に更新し、pause 等で active nav の
+  // target として参照される用途のみ。
+  void goal_response_callback(std::string target, const GoalHandleFollowWaypoints::SharedPtr & goal_handle);
   void feedback_callback(GoalHandleFollowWaypoints::SharedPtr, const std::shared_ptr<const FollowWaypoints::Feedback> feedback);
-  void result_callback(const GoalHandleFollowWaypoints::WrappedResult & result);
+  void result_callback(std::string target, const GoalHandleFollowWaypoints::WrappedResult & result);
 
   // Action Callbacks (NavigateToPose — single POI)
-  void ntp_goal_response_callback(const GoalHandleNavigateToPose::SharedPtr & goal_handle);
-  void ntp_result_callback(const GoalHandleNavigateToPose::WrappedResult & result);
+  void ntp_goal_response_callback(std::string target, const GoalHandleNavigateToPose::SharedPtr & goal_handle);
+  void ntp_result_callback(std::string target, const GoalHandleNavigateToPose::WrappedResult & result);
 
   // Clients
   rclcpp_action::Client<FollowWaypoints>::SharedPtr action_client_;
@@ -111,10 +116,12 @@ private:
   // subscriber 側 (mapoi_panel / mapoi_webui_node) は : split で target を復元する。
   void publish_nav_status(const std::string & status, const std::string & target = "");
 
-  // 現在 nav の target POI 名 / route 名 (mapoi_goal_pose_poi_cb / mapoi_route_cb で
-  // 更新)。reset_nav_state では clear せず、次の nav 開始で必ず上書きされる前提で
-  // 終端 status (succeeded / aborted / canceled) でも target を含めて publish できる
-  // ようにする (#104)。
+  // 現在 nav の target POI 名 / route 名。Acceptance 時 (goal_response_callback /
+  // ntp_goal_response_callback) に更新され、pause / resume が active nav の target
+  // として参照する用途のみ。
+  // 終端 status (succeeded / aborted / canceled) は callback に lambda capture で
+  // bind された goal 固有の target を使うので、ここを読まない (#104 race fix)。
+  // reset_nav_state では clear せず、次の acceptance で上書きされる前提。
   std::string current_target_name_;
 
   // --- POI radius event detection ---
