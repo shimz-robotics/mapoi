@@ -401,13 +401,17 @@ class MapViewer {
       const latlngs = [];
       const resolved = []; // { latlng, order }
       let firstWaypointName = '';
+      let firstPoiRadius = 0;
       waypoints.forEach((wpName, i) => {
         const poi = poiByName[wpName];
         if (poi && poi.pose) {
           const ll = this.worldToLatLng(poi.pose.x, poi.pose.y);
           latlngs.push(ll);
           resolved.push({ latlng: ll, order: i + 1 });
-          if (!firstWaypointName) firstWaypointName = wpName;
+          if (!firstWaypointName) {
+            firstWaypointName = wpName;
+            firstPoiRadius = (typeof poi.radius === 'number') ? poi.radius : 0;
+          }
         }
       });
 
@@ -490,7 +494,7 @@ class MapViewer {
       this._routePolylines.push({
         line, hitLine, arrowMarkers, labelMarkers,
         routeIdx, routeName: route.name || '', firstWaypointName,
-        color, latlngs,
+        firstPoiRadius, color, latlngs,
       });
     });
   }
@@ -728,16 +732,19 @@ class MapViewer {
    *     再生成された等のケースは signature が変わるため fresh 評価される
    *     (Codex round 3 medium 対応)
    *
-   * 距離が ARRIVAL_THRESHOLD_M 未満になった瞬間に signature を Set に登録し、
+   * 距離が `arrivalThreshold` (先頭 POI radius、#108) 未満になった瞬間に
+   * signature を Set に登録し、
    * 以降同 signature の間は描画しない (page 内 sticky)。
    *
    * polyline は active route と同色 + dashed (本線 polyline と差別化) で、
    * 中点に既存の route 矢印 SVG を再利用して方向を示す。
    */
   _updateRobotConnector() {
-    // 先頭 POI に「到達」と見なす世界距離 (m)。MVP として hardcoded。
-    // TODO(#108): 先頭 POI radius または Nav2 xy_goal_tolerance に置き換え検討。
-    const ARRIVAL_THRESHOLD_M = 0.1;
+    // 先頭 POI radius を到達閾値として使う (#108 対応)。mapoi の PoiEvent
+    // (mapoi_nav_server::PoiEventDetector) と同じ意味論で「この POI に
+    // 到達」を判定し、connector の sticky-hide タイミングを揃える。
+    // POI に radius が設定されていない / 値が 0 や負の場合は fallback default。
+    const FALLBACK_THRESHOLD_M = 0.1;
 
     this._clearRobotConnector();
     if (this._activeRouteIdx < 0) return;
@@ -748,6 +755,8 @@ class MapViewer {
     if (!item || !item.latlngs || item.latlngs.length === 0) return;
     const signature = this._routeSignature(item);
     if (signature && this._reachedRouteSignatures.has(signature)) return;
+    const arrivalThreshold = (item.firstPoiRadius > 0)
+      ? item.firstPoiRadius : FALLBACK_THRESHOLD_M;
 
     const robotLatLng = this.worldToLatLng(
       this._lastRobotPose.x, this._lastRobotPose.y,
@@ -758,7 +767,7 @@ class MapViewer {
     const firstWorld = this.latLngToWorld(firstLatLng);
     const dx = this._lastRobotPose.x - firstWorld.x;
     const dy = this._lastRobotPose.y - firstWorld.y;
-    if (Math.hypot(dx, dy) < ARRIVAL_THRESHOLD_M) {
+    if (Math.hypot(dx, dy) < arrivalThreshold) {
       if (signature) {
         this._reachedRouteSignatures.add(signature);
       }
