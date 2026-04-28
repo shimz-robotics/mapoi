@@ -102,9 +102,12 @@ class RouteEditor {
 
       const nameSpan = document.createElement('span');
       nameSpan.className = 'route-item-name';
-      nameSpan.textContent = route.name;
-      // ellipsis 切り捨てに備え hover tooltip で full text 確認可能に (#122 PR-3)。
-      nameSpan.title = route.name || '';
+      // textContent と title を同じ正規化値で揃える (POI 側 pattern と一貫、
+      // Codex PR #125 round 1 medium 対応)。空 / undefined の route 名は
+      // "(unnamed)" として表示され tooltip も同値、ずれを防ぐ。
+      const nameText = route.name || '(unnamed)';
+      nameSpan.textContent = nameText;
+      nameSpan.title = nameText;
 
       const wpSpan = document.createElement('span');
       wpSpan.className = 'route-item-detail';
