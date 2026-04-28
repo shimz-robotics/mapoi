@@ -723,6 +723,37 @@ bool PoiEditorPanel::ValidatePois()
     return false;
   }
 
+  // Hard validation: landmark の排他 (#85)。
+  // goal+landmark は意味矛盾 (Nav2 goal にできない reference 点)、
+  // initial_pose+landmark は到達不可な POI を起点に置く矛盾。
+  QStringList exclusivity_warnings;
+  for (int row = 0; row < numRows; row++) {
+    int logical_row = ui_->PoiTable->verticalHeader()->logicalIndex(row);
+    auto* tags_item = ui_->PoiTable->item(logical_row, 4);
+    std::string tags_str = tags_item ? tags_item->text().toStdString() : "";
+    if (tags_str.empty()) continue;
+
+    auto tags = this->SplitSentence(tags_str, ", ");
+    bool has_goal = false, has_landmark = false, has_initial_pose = false;
+    for (const auto& t : tags) {
+      if (t == "goal") has_goal = true;
+      else if (t == "landmark") has_landmark = true;
+      else if (t == "initial_pose") has_initial_pose = true;
+    }
+    if (has_goal && has_landmark) {
+      exclusivity_warnings.append(
+        tr("Row %1: \"goal\" と \"landmark\" は併用できません (landmark は Nav2 goal 不可)").arg(row + 1));
+    }
+    if (has_initial_pose && has_landmark) {
+      exclusivity_warnings.append(
+        tr("Row %1: \"initial_pose\" と \"landmark\" は併用できません").arg(row + 1));
+    }
+  }
+  if (!exclusivity_warnings.isEmpty()) {
+    QMessageBox::warning(this, tr("Tag Exclusivity Errors"), exclusivity_warnings.join("\n"));
+    return false;
+  }
+
   // Soft validation: warn about undefined tags (non-blocking)
   QStringList tag_warnings;
   for (int row = 0; row < numRows; row++) {

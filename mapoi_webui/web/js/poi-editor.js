@@ -358,6 +358,12 @@ class PoiEditor {
       alert('POI name "' + poi.name + '" already exists.');
       return;
     }
+    // landmark 排他 check (#85): goal+landmark / initial_pose+landmark は不可。
+    const tagValidation = MapoiPoiFilter.validatePoiTags(poi);
+    if (!tagValidation.ok) {
+      alert(tagValidation.error);
+      return;
+    }
     if (this.editingIndex === -2) {
       // New POI
       this.pois.push(poi);

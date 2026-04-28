@@ -17,6 +17,7 @@ const {
   filterGoalCandidates,
   filterInitialPoseCandidates,
   filterRouteWaypointCandidates,
+  validatePoiTags,
 } = filter;
 
 const poi = (name, tags) => ({ name, tags });
@@ -115,5 +116,38 @@ describe('filterRouteWaypointCandidates', () => {
     expect(filterRouteWaypointCandidates(null)).toEqual([]);
     expect(filterRouteWaypointCandidates(undefined)).toEqual([]);
     expect(filterRouteWaypointCandidates([])).toEqual([]);
+  });
+});
+
+describe('validatePoiTags', () => {
+  it('accepts non-conflicting combinations', () => {
+    expect(validatePoiTags(poi('a', ['goal'])).ok).toBe(true);
+    expect(validatePoiTags(poi('b', ['landmark'])).ok).toBe(true);
+    expect(validatePoiTags(poi('c', ['event', 'landmark', 'hazard'])).ok).toBe(true);
+    expect(validatePoiTags(poi('d', ['initial_pose', 'goal'])).ok).toBe(true);
+    expect(validatePoiTags(poi('e', [])).ok).toBe(true);
+  });
+
+  it('rejects goal + landmark combination', () => {
+    const result = validatePoiTags(poi('a', ['goal', 'landmark']));
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/goal.*landmark/);
+  });
+
+  it('rejects initial_pose + landmark combination', () => {
+    const result = validatePoiTags(poi('a', ['initial_pose', 'landmark']));
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/initial_pose.*landmark/);
+  });
+
+  it('matches case-insensitively for both system tags', () => {
+    expect(validatePoiTags(poi('a', ['GOAL', 'Landmark'])).ok).toBe(false);
+    expect(validatePoiTags(poi('b', ['Initial_Pose', 'LANDMARK'])).ok).toBe(false);
+  });
+
+  it('handles missing / null poi gracefully', () => {
+    expect(validatePoiTags(null).ok).toBe(true);
+    expect(validatePoiTags(undefined).ok).toBe(true);
+    expect(validatePoiTags({}).ok).toBe(true);
   });
 });

@@ -32,11 +32,37 @@
     return (pois || []).filter((p) => !hasLandmarkTag(p));
   }
 
+  /**
+   * POI tag combination 排他 check (#85)。
+   * `goal+landmark` / `initial_pose+landmark` は仕様上排他。save 前に
+   * 弾くことで mapoi_config.yaml に invalid な POI が永続化するのを防ぐ。
+   *
+   * @returns {{ ok: boolean, error?: string }}
+   */
+  function validatePoiTags(poi) {
+    const tags = (poi && poi.tags ? poi.tags : []).map((t) => String(t).toLowerCase());
+    const has = (n) => tags.includes(n);
+    if (has('goal') && has('landmark')) {
+      return {
+        ok: false,
+        error: '"goal" と "landmark" は併用できません (landmark は Nav2 navigation goal 不可な reference 専用)。',
+      };
+    }
+    if (has('initial_pose') && has('landmark')) {
+      return {
+        ok: false,
+        error: '"initial_pose" と "landmark" は併用できません (landmark は到達不可な reference 点)。',
+      };
+    }
+    return { ok: true };
+  }
+
   const api = {
     hasLandmarkTag,
     filterGoalCandidates,
     filterInitialPoseCandidates,
     filterRouteWaypointCandidates,
+    validatePoiTags,
   };
 
   if (typeof window !== 'undefined') {
