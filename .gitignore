@@ -9,3 +9,6 @@ __pycache__/
 
 # docker compose 環境変数 (host UID/GID は user 環境固有、.env.example をテンプレート参照)
 .env
+
+# Codex CLI 作業ディレクトリ印 (各セッションで自動生成される空ファイル)
+.codex

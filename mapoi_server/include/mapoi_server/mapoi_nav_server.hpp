@@ -162,8 +162,13 @@ private:
 
   // POI リストから initial_pose タグ付き候補を返す純関数（test 容易化のため分離）。
   // 複数あれば WARN を出し先頭、0 個なら空ベクタ。
+  // landmark タグ併用 POI は initial_pose 排他のため候補から除外する (#85)。
   std::vector<mapoi_interfaces::msg::PointOfInterest> select_initial_pose_pois(
     const std::vector<mapoi_interfaces::msg::PointOfInterest> & pois);
+
+  // landmark system tag を持つかを判定する純関数 (#85)。
+  // landmark POI は Nav2 navigation goal / initial_pose に使えない reference 専用。
+  static bool has_landmark_tag(const mapoi_interfaces::msg::PointOfInterest & poi);
 
   // /initialpose 配信の単一エントリポイント（手動経路 / 自動経路で共通化）。
   void publish_initial_pose(
@@ -187,6 +192,8 @@ private:
   FRIEND_TEST(NavServerTestFixture, SelectInitialPosePoisEmpty);
   FRIEND_TEST(NavServerTestFixture, SelectInitialPosePoisSingle);
   FRIEND_TEST(NavServerTestFixture, SelectInitialPosePoisMultiple);
+  FRIEND_TEST(NavServerTestFixture, SelectInitialPosePoisExcludesLandmark);
+  FRIEND_TEST(NavServerTestFixture, HasLandmarkTagDetection);
 #endif
 };
 

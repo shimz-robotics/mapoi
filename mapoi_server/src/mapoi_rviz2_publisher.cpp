@@ -415,6 +415,29 @@ void MapoiRviz2Publisher::timer_callback(){
         ma_events.markers.push_back(m_event);
         id += 1;
       }
+      else if(tag == "landmark"){
+        // landmark POI も矢印 + label を描画する (#85)。reference 専用なので
+        // ma_events 側に置く。color は default gray、tag 別 color の整理は #70 で扱う。
+        visualization_msgs::msg::Marker m_landmark = default_arrow_marker;
+        m_landmark.pose = pose;
+        m_landmark.pose.position.z = 0.1;
+        apply_radius_scale(m_landmark, poi.radius);
+        m_landmark.color.r = 0.5; m_landmark.color.g = 0.5; m_landmark.color.b = 0.5; m_landmark.color.a = 0.7;
+        m_landmark.id = id;
+        ma_events.markers.push_back(m_landmark);
+        id += 1;
+
+        const std::string label_text = build_label(poi_index_one_based, poi.name);
+        if (!label_text.empty()) {
+          visualization_msgs::msg::Marker m_text = default_text_marker;
+          m_text.text = label_text;
+          m_text.pose = pose;
+          m_text.pose.position.z = 0.1;
+          m_text.id = id;
+          ma_events.markers.push_back(m_text);
+          id += 1;
+        }
+      }
     }
   }
 

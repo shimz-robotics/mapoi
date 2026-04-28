@@ -1,7 +1,6 @@
 custom_tags:
 - {name: event, description: Event trigger area}
 - {name: destination, description: General destination point}
-- {name: landmark, description: Landmark for guidance}
 - {name: audio_info, description: Audio guide trigger}
 route:
 - name: route_1
