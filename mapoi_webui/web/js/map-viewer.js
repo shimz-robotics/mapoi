@@ -546,6 +546,11 @@ class MapViewer {
     });
     this._activeRouteIdx = routeIdx;
     this._updateRobotConnector();
+    // route 切替で marker 色も追従させる (pose 未受信時は updateRobotMarker が
+    // early return するので safe)。
+    if (this._lastRobotPose) {
+      this.updateRobotMarker(this._lastRobotPose);
+    }
   }
 
   _setMarkersOpacity(markers, opacity) {
@@ -643,12 +648,14 @@ class MapViewer {
   }
 
   /**
-   * Create an SVG icon for the robot marker (red circle with direction arrow).
+   * Create an SVG icon for the robot marker (colored circle with direction arrow).
+   * @param {number} yaw - heading in radians
+   * @param {string} color - circle fill color (default cyan); 内側の方向矢印は白固定
    */
-  createRobotIcon(yaw) {
+  createRobotIcon(yaw, color = '#00bcd4') {
     const rotDeg = 90 - (yaw * 180 / Math.PI);
     const svg = `<svg width="36" height="36" viewBox="0 0 36 36" style="transform: rotate(${rotDeg}deg);">` +
-      `<circle cx="18" cy="18" r="12" fill="#00bcd4" fill-opacity="0.7" stroke="#fff" stroke-width="2"/>` +
+      `<circle cx="18" cy="18" r="12" fill="${color}" fill-opacity="0.7" stroke="#fff" stroke-width="2"/>` +
       `<path d="M18 8 L24 24 L18 19 L12 24 Z" fill="#fff" fill-opacity="0.9" stroke="none"/>` +
       `</svg>`;
     return L.divIcon({
@@ -657,6 +664,21 @@ class MapViewer {
       iconSize: [36, 36],
       iconAnchor: [18, 18],
     });
+  }
+
+  /**
+   * Resolve the marker color to use based on the current active route selection.
+   * - active route が選択されていてかつ entry が `_routePolylines` に実在する場合は
+   *   その色 (route 色と marker 色を揃える)
+   * - 未選択 / entry 不在 (waypoint <2 / 非表示等) は default cyan
+   *   PR #105 の `activeExists` ガードと同じ趣旨
+   */
+  _resolveRobotMarkerColor() {
+    if (this._activeRouteIdx < 0) return '#00bcd4';
+    const item = this._routePolylines.find(
+      (it) => it.routeIdx === this._activeRouteIdx,
+    );
+    return item ? item.color : '#00bcd4';
   }
 
   /**
@@ -674,7 +696,7 @@ class MapViewer {
       return;
     }
     const latlng = this.worldToLatLng(pose.x, pose.y);
-    const icon = this.createRobotIcon(pose.yaw || 0);
+    const icon = this.createRobotIcon(pose.yaw || 0, this._resolveRobotMarkerColor());
     if (this.robotMarker) {
       this.robotMarker.setLatLng(latlng);
       this.robotMarker.setIcon(icon);
