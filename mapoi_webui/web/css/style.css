@@ -377,14 +377,16 @@ main {
   border-bottom: 1px solid #ddd;
 }
 
-#poi-section {
+#poi-section,
+#route-section {
   flex-shrink: 1;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
-#poi-body {
+#poi-body,
+#route-body {
   flex: 1;
   overflow: hidden;
   display: flex;
