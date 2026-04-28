@@ -273,6 +273,15 @@
   // Route editing state change — redraw routes with editing preview
   routeEditor.onEditingChange = () => {
     redrawRoutes();
+    // editRoute / copyRoute は selectedIndex を直接変えるが onSelectionChange を
+    // 発火しないため、ここで highlightRoute を再適用して MapViewer 側の
+    // _activeRouteIdx と同期する。これがないと「route A 選択 → route B Edit →
+    // Cancel」で sidebar は B selected でも _activeRouteIdx は A のままになり、
+    // robot connector が古い route の先頭 POI を指し続ける (PR #107 Codex round
+    // 2/3 medium 残課題)。
+    if (routeEditor.selectedIndex >= 0) {
+      mapViewer.highlightRoute(routeEditor.selectedIndex);
+    }
   };
 
   // Route visibility toggle
