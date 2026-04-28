@@ -24,3 +24,22 @@ jobs:
 
       - name: Check robot_radius drift between WebUI launch and Nav2 yaml
         run: python3 scripts/check_robot_radius_drift.py
+
+  webui_js_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: mapoi_webui/tests/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: mapoi_webui/tests/web
+
+      - name: Run vitest
+        run: npm test
+        working-directory: mapoi_webui/tests/web

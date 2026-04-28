@@ -1,0 +1,14 @@
+{
+  "name": "mapoi-webui-tests",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Vitest unit tests for mapoi_webui frontend pure helpers (#129).",
+  "license": "MIT",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8"
+  }
+}
