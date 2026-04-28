@@ -103,16 +103,23 @@ describe('offsetPointsPx', () => {
   });
 
   it('caps the offset magnitude at 4 * |offsetPx| for sharp corners', () => {
-    // 鋭角な V 字: (0,0) → (10, 0.01) → (0, 0.02)
-    // 入射と射出の角度が極端に近い → bisector が短くなり factor が blow up
-    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0.01 }, { x: 0, y: 0.02 }];
+    // canonical 法線が大きく異なる入力で bisector を短くする V 字: 縦長の山
+    // (0,0) → (1,1000) → (2,0)。
+    // canonical seg0: (0,0)→(1,1000) で normal ≈ (1, -1e-3)
+    // canonical seg1: (1,1000)→(2,0)   で normal ≈ (-1, -1e-3) (canonical は lex order で
+    //   (1,1000) → (2,0)、direction (1,-1000)/|·| → normal (-1000,-1)/|·| ≈ (-1, -1e-3))
+    // bisector ≈ (0, -2e-3) → bLen ≈ 2e-3、uncapped factor = 2*offsetPx/bLen² ≈ 1.5e6
+    // → uncapped offset 距離は ~3000、これを 4*|offsetPx|=12 にキャップする branch が走る。
+    const pts = [{ x: 0, y: 0 }, { x: 1, y: 1000 }, { x: 2, y: 0 }];
     const offsetPx = 3;
     const out = offsetPointsPx(pts, offsetPx);
-    // corner vertex (i=1) の offset 距離 (元 vertex からの距離) が cap 内に収まる
     const dx = out[1].x - pts[1].x;
     const dy = out[1].y - pts[1].y;
     const cornerOffset = Math.hypot(dx, dy);
-    expect(cornerOffset).toBeLessThanOrEqual(4 * Math.abs(offsetPx) + 1e-6);
+    const cap = 4 * Math.abs(offsetPx);
+    // cap が無いと ~3000 になる。cap=12 に張り付く (epsilon は数値誤差用)
+    expect(cornerOffset).toBeLessThanOrEqual(cap + 1e-6);
+    expect(cornerOffset).toBeGreaterThan(cap - 1e-6);
   });
 
   it('falls back to neighbor normal when a segment is degenerate', () => {
@@ -138,6 +145,32 @@ describe('offsetPointsPx', () => {
     out.forEach((p) => {
       expect(nearlyEqual(p.x, 1)).toBe(true);
       expect(nearlyEqual(p.y, 1)).toBe(true);
+    });
+  });
+
+  it('treats segments shorter than epsilon (1e-3) as degenerate, not above', () => {
+    // epsilon = 1e-3 は内部 const。境界条件を仕様として固定する。
+    //
+    // (a) 1e-4 の超短い segment を中央に挟む: (0,0) → (5,0) → (5+1e-4, 0) → (10,0)
+    //   pts[1]→pts[2] は length=1e-4 で degenerate 扱いになるため、中央 vertex の
+    //   normal は隣接 (有効) normal にフォールバックして、全体は直線として offset
+    //   される (前後の segment はどちらも y=0 軸の水平線で同じ canonical normal)。
+    const ptsDegen = [
+      { x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5 + 1e-4, y: 0 }, { x: 10, y: 0 },
+    ];
+    const outDegen = offsetPointsPx(ptsDegen, 4);
+    outDegen.forEach((p) => {
+      expect(nearlyEqual(p.y, -4, 1e-3)).toBe(true);
+    });
+
+    // (b) 1e-2 の segment は通常の normal として扱われる (epsilon = 1e-3 を超える)。
+    //   3 vertex が collinear 水平 → 直線扱いで offset。
+    const ptsAbove = [
+      { x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5 + 1e-2, y: 0 }, { x: 10, y: 0 },
+    ];
+    const outAbove = offsetPointsPx(ptsAbove, 4);
+    outAbove.forEach((p) => {
+      expect(nearlyEqual(p.y, -4, 1e-3)).toBe(true);
     });
   });
 
