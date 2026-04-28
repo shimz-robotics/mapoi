@@ -97,6 +97,20 @@ class MapViewer {
 
     const m = this.metadata;
 
+    // Map 切替時は robot pose / connector / 到達履歴 / active 選択を全 reset。
+    // 直後の fitBounds() で zoomend hook が走るため、旧 map の latlng 基準で
+    // updateRobotMarker / _updateRobotConnector が実行されると、新 map 側で
+    // 誤座標描画 + 旧 signature の sticky 引継ぎが起こる (Codex PR #118 round 1
+    // medium)。
+    this._lastRobotPose = null;
+    this._reachedRouteSignatures.clear();
+    this._activeRouteIdx = -1;
+    if (this.robotMarker) {
+      this.map.removeLayer(this.robotMarker);
+      this.robotMarker = null;
+    }
+    this._clearRobotConnector();
+
     // Remove old overlay
     if (this.imageOverlay) {
       this.map.removeLayer(this.imageOverlay);
@@ -688,6 +702,14 @@ class MapViewer {
    * `worldToLatLng` + `latLngToContainerPoint` で 1m が今の zoom で何 pixel
    * になるかを実測する。CRS / resolution に依存せず robust。低 zoom で
    * marker が点になるのを防ぐため下限 16px を入れる。
+   *
+   * Note: 戻り値は icon の **outer width/height (= bounding box)** で、
+   * 内部の見える circle は viewBox の `r=12 / 36 ≒ 2/3` の比率になる
+   * (矢印 path 含む余白のため)。outer = robot diameter として扱うので
+   * 見える円自体は実 robot より少し小さく描かれるが、heading 矢印を含めた
+   * 総占有面積として robot 実寸に揃う設計 (Codex PR #118 round 1 low の
+   * 意図明示)。見える円を robot 実寸に厳密に合わせる場合は別 PR で sizePx
+   * を 1.5 倍するか、SVG 内部を r=18 に書き換える。
    *
    * pose / metadata 未受信時は default 36px (constructor 時 marker のため)。
    */
