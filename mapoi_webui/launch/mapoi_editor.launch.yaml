@@ -36,6 +36,11 @@ launch:
     default: "0.0.0.0"
     description: "HTTP server bind address"
 
+- arg:
+    name: robot_radius
+    default: "0.15"
+    description: "Robot radius in meters (frontend connector / marker size; default tuned for TurtleBot3)"
+
 # mapoi_server を minimal で起動 (nav_server / rviz_publisher / sim bridge は起動しない)。
 - include:
     file: "$(find-pkg-share mapoi_server)/launch/mapoi_bringup.launch.yaml"
@@ -56,3 +61,4 @@ launch:
       - {name: config_file, value: "$(var config_file)"}
       - {name: web_port, value: "$(var web_port)"}
       - {name: web_host, value: "$(var web_host)"}
+      - {name: robot_radius, value: "$(var robot_radius)"}

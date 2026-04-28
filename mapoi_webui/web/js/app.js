@@ -435,6 +435,11 @@
       try {
         const data = await MapoiApi.navStatus();
         updateNavStatus(data.status, data.target);
+        // robot_radius は launch param 由来 (#117)。古い backend では key
+        // 不在になるが setRobotRadius が型 check で no-op にする。値が来る
+        // 前に updateRobotMarker が走っても map-viewer の default 0.15 で
+        // 描画されるので safe。
+        mapViewer.setRobotRadius(data.robot_radius);
         mapViewer.updateRobotMarker(data.robot_pose);
       } catch (e) {
         // ignore fetch errors
