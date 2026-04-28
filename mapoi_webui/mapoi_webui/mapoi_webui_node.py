@@ -28,8 +28,12 @@ def _validate_unique_names(items, label):
     yaml 直編集や別 client からの POST に対する保険として backend でも reject。
     return: エラーメッセージ文字列 (issue あり) または None (OK)。case-sensitive 判定。
     """
+    # Top-level 型 check: list でないと {"pois": null} や数値が validate を
+    # 素通りして save_* で 500 になる (Codex PR #120 round 1 medium)。
+    if not isinstance(items, list):
+        return f'{label} list must be an array'
     seen = set()
-    for i, it in enumerate(items or []):
+    for i, it in enumerate(items):
         name = (it.get('name') if isinstance(it, dict) else None)
         if not name or not isinstance(name, str) or not name.strip():
             return f'{label} #{i} has empty name'
