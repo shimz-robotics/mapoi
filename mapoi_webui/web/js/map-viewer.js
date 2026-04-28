@@ -26,7 +26,7 @@ class MapViewer {
     this._activeRouteIdx = -1;   // 現在 active な route index (highlightRoute で更新)
     this._lastRobotPose = null;  // 最新 pose (updateRobotMarker で更新)
     this._robotConnectorLayers = []; // 現在のロボット位置 → active route 先頭 POI への connector
-    this._reachedRouteIndices = new Set(); // 先頭 POI に一度到達した route の index 集合 (sticky、clearRoutes でリセット)
+    this._reachedRouteNames = new Set(); // 先頭 POI に一度到達した route 名の集合 (page 内 sticky)
 
     this.map.on('click', (e) => {
       if (this._poseTool) {
@@ -487,7 +487,7 @@ class MapViewer {
 
       this._routePolylines.push({
         line, hitLine, arrowMarkers, labelMarkers,
-        routeIdx, color, latlngs,
+        routeIdx, routeName: route.name || '', color, latlngs,
       });
     });
   }
@@ -503,8 +503,11 @@ class MapViewer {
     this._routePolylines = [];
     this.clearEditingRoutePreview();
     this._clearRobotConnector();
-    // route データ refresh で waypoint 構成が変わり得るため到達履歴もリセット。
-    this._reachedRouteIndices.clear();
+    // 到達履歴 (_reachedRouteNames) は clearRoutes では reset しない。
+    // clearRoutes は visibility toggle / 編集 preview 出入り等の表示再描画でも
+    // 呼ばれるため、ここで reset すると sticky 性が壊れる (Codex round 2 medium)。
+    // route 名は人間が決めた安定 ID なので、リネーム / 削除があっても stale entry
+    // は無害。新しい waypoint 構成が必要なら route 名を変えるのが期待される運用。
   }
 
   /**
@@ -691,14 +694,14 @@ class MapViewer {
    * - robot pose 未取得 (`_lastRobotPose === null`)
    * - active route の polyline entry が `_routePolylines` に無い
    *   (waypoint 不足 / 非表示等。PR #105 の activeExists と同じガード)
-   * - 当 route が `_reachedRouteIndices` に登録済み (一度先頭 POI に到達)
+   * - 当 route 名が `_reachedRouteNames` に登録済み (一度先頭 POI に到達)
    *   route 走行中は connector が冗長で、後続 POI に向かって距離が再び
-   *   開いた時の再描画暴発を防ぐ。route 切替でも維持し、走行中に他 route
-   *   を覗いて戻った場合も再描画しない。clearRoutes (route データ refresh)
-   *   でのみリセット。
+   *   開いた時の再描画暴発を防ぐ。Set のキーは route 名 (安定 ID) なので、
+   *   表示再描画 (clearRoutes / visibility toggle / 編集 cancel 等) でも
+   *   sticky 性を維持。route リネームは新規 identity として扱う。
    *
    * 距離が ARRIVAL_THRESHOLD_M 未満になった瞬間に Set に登録し、以降同じ
-   * active route の間は描画しない (sticky)。
+   * route 名の間は描画しない (page 内 sticky)。
    *
    * polyline は active route と同色 + dashed (本線 polyline と差別化) で、
    * 中点に既存の route 矢印 SVG を再利用して方向を示す。
@@ -710,12 +713,12 @@ class MapViewer {
 
     this._clearRobotConnector();
     if (this._activeRouteIdx < 0) return;
-    if (this._reachedRouteIndices.has(this._activeRouteIdx)) return;
     if (!this._lastRobotPose || !this.metadata) return;
     const item = this._routePolylines.find(
       (it) => it.routeIdx === this._activeRouteIdx,
     );
     if (!item || !item.latlngs || item.latlngs.length === 0) return;
+    if (item.routeName && this._reachedRouteNames.has(item.routeName)) return;
 
     const robotLatLng = this.worldToLatLng(
       this._lastRobotPose.x, this._lastRobotPose.y,
@@ -727,7 +730,9 @@ class MapViewer {
     const dx = this._lastRobotPose.x - firstWorld.x;
     const dy = this._lastRobotPose.y - firstWorld.y;
     if (Math.hypot(dx, dy) < ARRIVAL_THRESHOLD_M) {
-      this._reachedRouteIndices.add(this._activeRouteIdx);
+      if (item.routeName) {
+        this._reachedRouteNames.add(item.routeName);
+      }
       return;
     }
 
