@@ -23,6 +23,9 @@ class MapViewer {
     this.onRouteClick = null;    // callback(routeIndex)
     this._poseTool = null;       // pose tool state
     this._routePolylines = [];   // { line, hitLine, arrowMarkers, labelMarkers, routeIdx, color, latlngs } for click & highlight
+    this._activeRouteIdx = -1;   // 現在 active な route index (highlightRoute で更新)
+    this._lastRobotPose = null;  // 最新 pose (updateRobotMarker で更新)
+    this._robotConnectorLayers = []; // 現在のロボット位置 → active route 先頭 POI への connector
 
     this.map.on('click', (e) => {
       if (this._poseTool) {
@@ -498,6 +501,7 @@ class MapViewer {
     this.routeLayers = [];
     this._routePolylines = [];
     this.clearEditingRoutePreview();
+    this._clearRobotConnector();
   }
 
   /**
@@ -530,6 +534,8 @@ class MapViewer {
         this._setMarkersOpacity(item.labelMarkers, 1.0);
       }
     });
+    this._activeRouteIdx = routeIdx;
+    this._updateRobotConnector();
   }
 
   _setMarkersOpacity(markers, opacity) {
@@ -653,6 +659,8 @@ class MapViewer {
         this.map.removeLayer(this.robotMarker);
         this.robotMarker = null;
       }
+      this._lastRobotPose = null;
+      this._updateRobotConnector();
       return;
     }
     const latlng = this.worldToLatLng(pose.x, pose.y);
@@ -667,5 +675,71 @@ class MapViewer {
         zIndexOffset: 2000,
       }).addTo(this.map);
     }
+    this._lastRobotPose = pose;
+    this._updateRobotConnector();
+  }
+
+  /**
+   * Draw or refresh a directional connector from the current robot position
+   * to the first waypoint of the active route.
+   *
+   * Guards (no-op の条件):
+   * - active route が選択されていない (`_activeRouteIdx === -1`)
+   * - robot pose 未取得 (`_lastRobotPose === null`)
+   * - active route の polyline entry が `_routePolylines` に無い
+   *   (waypoint 不足 / 非表示等。PR #105 の activeExists と同じガード)
+   *
+   * polyline は active route と同色 + dashed (本線 polyline と差別化) で、
+   * 中点に既存の route 矢印 SVG を再利用して方向を示す。
+   */
+  _updateRobotConnector() {
+    this._clearRobotConnector();
+    if (this._activeRouteIdx < 0) return;
+    if (!this._lastRobotPose || !this.metadata) return;
+    const item = this._routePolylines.find(
+      (it) => it.routeIdx === this._activeRouteIdx,
+    );
+    if (!item || !item.latlngs || item.latlngs.length === 0) return;
+
+    const robotLatLng = this.worldToLatLng(
+      this._lastRobotPose.x, this._lastRobotPose.y,
+    );
+    const firstLatLng = item.latlngs[0];
+
+    // ロボットが先頭 POI と同位置 (到着済み等) なら矢印が degenerate になるので skip。
+    if (robotLatLng.equals(firstLatLng)) return;
+
+    const line = L.polyline([robotLatLng, firstLatLng], {
+      color: item.color,
+      weight: 3,
+      opacity: 0.8,
+      dashArray: '4, 6',
+      interactive: false,
+    }).addTo(this.map);
+    line.bringToBack();
+    this._robotConnectorLayers.push(line);
+
+    const midLat = (robotLatLng.lat + firstLatLng.lat) / 2;
+    const midLng = (robotLatLng.lng + firstLatLng.lng) / 2;
+    const rotDeg = this.routeDirectionDeg(robotLatLng, firstLatLng);
+    const arrowIcon = L.divIcon({
+      className: 'route-arrow',
+      html: this.createRouteDirectionSvg(item.color, rotDeg, 18),
+      iconSize: [18, 18],
+      iconAnchor: [9, 9],
+    });
+    const arrowMarker = L.marker([midLat, midLng], {
+      icon: arrowIcon,
+      interactive: false,
+    }).addTo(this.map);
+    this._robotConnectorLayers.push(arrowMarker);
+  }
+
+  _clearRobotConnector() {
+    if (!this._robotConnectorLayers) return;
+    this._robotConnectorLayers.forEach((layer) => {
+      this.map.removeLayer(layer);
+    });
+    this._robotConnectorLayers = [];
   }
 }
