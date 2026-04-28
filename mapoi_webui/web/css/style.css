@@ -217,6 +217,12 @@ main {
 .poi-card-name {
   font-weight: 600;
   font-size: 0.95rem;
+  /* 長い POI 名は 1 行 ellipsis、JS 側で title 属性に full name を入れて
+     hover tooltip で確認可能 (#122 PR-3)。親 .poi-card-info に min-width: 0
+     が設定済なので flex 内で縮む。 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .poi-card-detail {
@@ -514,6 +520,12 @@ main {
 .route-item-name {
   font-weight: 600;
   font-size: 0.85rem;
+  /* 長い route 名は 1 行 ellipsis、JS 側で title 属性に full name を入れて
+     hover tooltip で確認可能 (#122 PR-3)。親 .route-item-text に
+     min-width: 0 が設定済なので flex 内で縮む。 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .route-item-detail {

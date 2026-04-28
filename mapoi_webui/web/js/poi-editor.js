@@ -89,7 +89,10 @@ class PoiEditor {
 
       const name = document.createElement('div');
       name.className = 'poi-card-name';
-      name.textContent = poi.name || '(unnamed)';
+      const nameText = poi.name || '(unnamed)';
+      name.textContent = nameText;
+      // ellipsis 切り捨てに備え hover tooltip で full text 確認可能に (#122 PR-3)。
+      name.title = nameText;
       info.appendChild(name);
 
       const detail = document.createElement('div');
@@ -97,7 +100,9 @@ class PoiEditor {
       const pose = poi.pose || {};
       const tags = (poi.tags || []).join(', ');
       const desc = poi.description || '';
-      detail.textContent = `(${(pose.x||0).toFixed(2)}, ${(pose.y||0).toFixed(2)}) yaw=${(pose.yaw||0).toFixed(2)} ${tags} ${desc}`;
+      const detailText = `(${(pose.x||0).toFixed(2)}, ${(pose.y||0).toFixed(2)}) yaw=${(pose.yaw||0).toFixed(2)} ${tags} ${desc}`;
+      detail.textContent = detailText;
+      detail.title = detailText;
       info.appendChild(detail);
 
       card.appendChild(info);
