@@ -239,6 +239,7 @@
     } else {
       mapViewer.disablePoseTool();
     }
+    syncNavGoalSelect();
   };
 
   // POI visibility toggle
@@ -268,6 +269,7 @@
   // Route selection change — highlight on map
   routeEditor.onSelectionChange = (index) => {
     mapViewer.highlightRoute(index);
+    syncNavRouteSelect();
   };
 
   // Route editing state change — redraw routes with editing preview
@@ -282,6 +284,7 @@
     if (routeEditor.selectedIndex >= 0) {
       mapViewer.highlightRoute(routeEditor.selectedIndex);
     }
+    syncNavRouteSelect();
   };
 
   // Route visibility toggle
@@ -300,6 +303,9 @@
     }
     if (!isDirty) {
       populateNavRouteSelect(routeEditor.routes);
+      // populate で options が rebuild されるが、選択中なら value を再同期して
+      // ユーザーの選択 state を保持する。
+      syncNavRouteSelect();
     }
   };
 
@@ -361,6 +367,26 @@
       opt.textContent = r.name;
       navRouteSelect.appendChild(opt);
     });
+  }
+
+  // Nav dropdowns auto-fill from POI/route selection (#111)。
+  // 選択中の route 名 / POI 名を Navigation グループの dropdown に反映し、
+  // 「選択 → 再選択 → Run/Go」の重複操作を 1 ステップ減らす。
+  // 選択解除 (-1) では dropdown を維持する (再 nav 時の再利用性のため)。
+  // 該当 name が dropdown options に無い場合 (例: goal タグ無し POI) は
+  // .value の代入が silent no-op になり、dropdown は前値を保持する。
+  function syncNavRouteSelect() {
+    const idx = routeEditor.selectedIndex;
+    if (idx < 0) return;
+    const name = routeEditor.routes[idx]?.name;
+    if (name) navRouteSelect.value = name;
+  }
+
+  function syncNavGoalSelect() {
+    const idx = poiEditor.selectedIndex;
+    if (idx < 0) return;
+    const name = poiEditor.pois[idx]?.name;
+    if (name) navGoalSelect.value = name;
   }
 
   function populateInitialPoseSelect(pois) {
