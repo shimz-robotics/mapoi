@@ -39,8 +39,11 @@ launch:
       - {name: config_file, value: "$(var config_file)"}
       - {name: web_port, value: "$(var web_port)"}
       - {name: web_host, value: "$(var web_host)"}
-      # type: double を明示。CLI override `robot_radius:=1` のような整数表記が
+      # type: float を明示。CLI override `robot_radius:=1` のような整数表記が
       # int として coerce されると declare_parameter (DOUBLE) と型不一致になる
-      # (Codex PR #126 round 1 medium)。double 指定で launch_ros が float coercion する。
-      - {name: robot_radius, value: "$(var robot_radius)", type: "double"}
+      # (Codex PR #126 round 1 medium → round 2 high で identifier 修正)。
+      # launch frontend (humble/jazzy 共通) の有効識別子は "float" のみで
+      # "double" は ValueError で parse 失敗する点に注意。Python float = C++ double
+      # で ROS parameter 上は double param として渡る。
+      - {name: robot_radius, value: "$(var robot_radius)", type: "float"}
     output: "screen"
