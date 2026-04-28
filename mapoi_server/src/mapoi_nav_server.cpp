@@ -210,10 +210,15 @@ void MapoiNavServer::mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg)
   auto route_request = std::make_shared<mapoi_interfaces::srv::GetRoutePois::Request>();
   route_request->route_name = msg->data;
 
-  // route_name を bind で渡し、send_goal 直前に target 更新できるようにする。
+  // route_name を lambda capture で渡す。std::bind は rclcpp Jazzy の
+  // function_traits::same_arguments テンプレート制約をパスせず compile error
+  // になるので lambda を使う (PR #119 regression fix)。
   this->route_client_->async_send_request(
     route_request,
-    std::bind(&MapoiNavServer::on_route_received, this, msg->data, _1));
+    [this, route_name = msg->data](
+      rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future) {
+        this->on_route_received(route_name, future);
+    });
 }
 
 void MapoiNavServer::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future)
