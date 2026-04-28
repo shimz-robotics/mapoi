@@ -338,29 +338,47 @@ void MapoiPanel::SetMapoiRouteComboBox()
 
 void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
 {
-  const auto & status = msg->data;
-  QMetaObject::invokeMethod(this, [this, status]() {
+  // payload は "status" または "status:target" 形式 (#104)。
+  // : split で target を抽出し、有れば後起動 panel / 外部ノード発行 nav でも
+  // target 復元できるようにする。
+  const auto & raw = msg->data;
+  const auto colon = raw.find(':');
+  const std::string status = (colon == std::string::npos) ? raw : raw.substr(0, colon);
+  const std::string target = (colon == std::string::npos) ? std::string{} : raw.substr(colon + 1);
+  QMetaObject::invokeMethod(this, [this, status, target]() {
     if (status == "navigating") {
-      if (current_nav_mode_ == "route") {
+      if (!target.empty() && current_nav_mode_ == "idle") {
+        // 後起動 panel / 外部ノード発行 nav: payload の target を復元して表示。
+        current_nav_target_ = target;
+        ui_->NavStatusLabel->setText(
+            QString::fromStdString("走行中: " + target));
+      } else if (current_nav_mode_ == "route") {
         ui_->NavStatusLabel->setText(
             QString::fromStdString("ルート走行中: " + current_nav_target_));
       } else if (current_nav_mode_ == "idle") {
-        // 後起動 panel / 外部ノードが発行した nav の latched 状態:
-        // target/mode が不明なため汎用表示にフォールバック。
+        // target も無い (旧 publisher 等) → 汎用表示にフォールバック。
         ui_->NavStatusLabel->setText(QString::fromStdString("走行中"));
       }
       // goal mode は RunGoalButton で即時表示済みのため何もしない
     } else if (status == "succeeded") {
       current_nav_mode_ = "idle";
-      ui_->NavStatusLabel->setText(QString::fromStdString("到着"));
+      ui_->NavStatusLabel->setText(
+          target.empty() ? QString::fromStdString("到着")
+                         : QString::fromStdString("到着: " + target));
     } else if (status == "aborted") {
       current_nav_mode_ = "idle";
-      ui_->NavStatusLabel->setText(QString::fromStdString("走行失敗"));
+      ui_->NavStatusLabel->setText(
+          target.empty() ? QString::fromStdString("走行失敗")
+                         : QString::fromStdString("走行失敗: " + target));
     } else if (status == "canceled") {
       current_nav_mode_ = "idle";
-      ui_->NavStatusLabel->setText(QString::fromStdString("走行キャンセル"));
+      ui_->NavStatusLabel->setText(
+          target.empty() ? QString::fromStdString("走行キャンセル")
+                         : QString::fromStdString("走行キャンセル: " + target));
     } else if (status == "paused") {
-      ui_->NavStatusLabel->setText(QString::fromStdString("一時停止中"));
+      ui_->NavStatusLabel->setText(
+          target.empty() ? QString::fromStdString("一時停止中")
+                         : QString::fromStdString("一時停止中: " + target));
     }
   }, Qt::QueuedConnection);
 }

@@ -134,6 +134,8 @@ void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedP
 {
   std::string poi_name = msg->data;
   RCLCPP_INFO(this->get_logger(), "Received POI name for goal pose: %s", poi_name.c_str());
+  // Save target for nav_status payload (#104)。後の publish_nav_status で再利用。
+  current_target_name_ = poi_name;
 
   // Fetch POI list asynchronously, then navigate in the callback
   if (!this->pois_info_client_->wait_for_service(2s)) {
@@ -193,6 +195,8 @@ void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedP
 void MapoiNavServer::mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg)
 {
   RCLCPP_INFO(this->get_logger(), "Received route name: %s", msg->data.c_str());
+  // Save target for nav_status payload (#104)。後の publish_nav_status で再利用。
+  current_target_name_ = msg->data;
 
   auto route_request = std::make_shared<mapoi_interfaces::srv::GetRoutePois::Request>();
   route_request->route_name = msg->data;
@@ -386,7 +390,7 @@ void MapoiNavServer::goal_response_callback(const GoalHandleFollowWaypoints::Sha
     RCLCPP_ERROR(this->get_logger(), "Goal was rejected by server");
   } else {
     current_goal_handle_ = goal_handle;
-    publish_nav_status("navigating");
+    publish_nav_status("navigating", current_target_name_);
     RCLCPP_INFO(this->get_logger(), "Goal accepted by server, waiting for result");
   }
 }
@@ -404,12 +408,12 @@ void MapoiNavServer::result_callback(const GoalHandleFollowWaypoints::WrappedRes
   switch (result.code) {
     case rclcpp_action::ResultCode::SUCCEEDED:
       reset_nav_state();
-      publish_nav_status("succeeded");
+      publish_nav_status("succeeded", current_target_name_);
       RCLCPP_INFO(this->get_logger(), "Navigation SUCCEEDED!");
       break;
     case rclcpp_action::ResultCode::ABORTED:
       reset_nav_state();
-      publish_nav_status("aborted");
+      publish_nav_status("aborted", current_target_name_);
       RCLCPP_ERROR(this->get_logger(), "Navigation ABORTED");
       break;
     case rclcpp_action::ResultCode::CANCELED:
@@ -417,7 +421,7 @@ void MapoiNavServer::result_callback(const GoalHandleFollowWaypoints::WrappedRes
         RCLCPP_INFO(this->get_logger(), "Cancel confirmed (pause triggered). Waiting for resume.");
       } else {
         reset_nav_state();
-        publish_nav_status("canceled");
+        publish_nav_status("canceled", current_target_name_);
         RCLCPP_WARN(this->get_logger(), "Navigation CANCELED");
       }
       break;
@@ -433,7 +437,7 @@ void MapoiNavServer::ntp_goal_response_callback(const GoalHandleNavigateToPose::
     RCLCPP_ERROR(this->get_logger(), "NavigateToPose goal was rejected by server");
   } else {
     current_ntp_goal_handle_ = goal_handle;
-    publish_nav_status("navigating");
+    publish_nav_status("navigating", current_target_name_);
     RCLCPP_INFO(this->get_logger(), "NavigateToPose goal accepted, waiting for result");
   }
 }
@@ -444,12 +448,12 @@ void MapoiNavServer::ntp_result_callback(const GoalHandleNavigateToPose::Wrapped
   switch (result.code) {
     case rclcpp_action::ResultCode::SUCCEEDED:
       reset_nav_state();
-      publish_nav_status("succeeded");
+      publish_nav_status("succeeded", current_target_name_);
       RCLCPP_INFO(this->get_logger(), "NavigateToPose SUCCEEDED!");
       break;
     case rclcpp_action::ResultCode::ABORTED:
       reset_nav_state();
-      publish_nav_status("aborted");
+      publish_nav_status("aborted", current_target_name_);
       RCLCPP_ERROR(this->get_logger(), "NavigateToPose ABORTED");
       break;
     case rclcpp_action::ResultCode::CANCELED:
@@ -457,7 +461,7 @@ void MapoiNavServer::ntp_result_callback(const GoalHandleNavigateToPose::Wrapped
         RCLCPP_INFO(this->get_logger(), "Cancel confirmed (pause triggered). Waiting for resume.");
       } else {
         reset_nav_state();
-        publish_nav_status("canceled");
+        publish_nav_status("canceled", current_target_name_);
         RCLCPP_WARN(this->get_logger(), "NavigateToPose CANCELED");
       }
       break;
@@ -467,10 +471,14 @@ void MapoiNavServer::ntp_result_callback(const GoalHandleNavigateToPose::Wrapped
   }
 }
 
-void MapoiNavServer::publish_nav_status(const std::string & status)
+void MapoiNavServer::publish_nav_status(const std::string & status, const std::string & target)
 {
   std_msgs::msg::String msg;
-  msg.data = status;
+  // target 空なら "status" のみ、有りなら "status:target" 形式で送る (#104)。
+  // subscriber 側 (mapoi_panel / mapoi_webui_node) は : split で target を復元。
+  // 後方互換: 旧 "status" 単独 payload しか読まない subscriber は target 部を
+  // 読まないだけで従来通り動く。
+  msg.data = target.empty() ? status : status + ':' + target;
   nav_status_pub_->publish(msg);
 }
 
@@ -517,7 +525,7 @@ void MapoiNavServer::mapoi_pause_cb(const std_msgs::msg::String::SharedPtr msg)
     RCLCPP_INFO(this->get_logger(), "Pausing NavigateToPose goal.");
     nav_to_pose_client_->async_cancel_goal(current_ntp_goal_handle_);
     is_paused_ = true;
-    publish_nav_status("paused");
+    publish_nav_status("paused", current_target_name_);
 
   } else if (nav_mode_ == NavMode::ROUTE && current_goal_handle_) {
     uint32_t from = std::min(
@@ -531,7 +539,7 @@ void MapoiNavServer::mapoi_pause_cb(const std_msgs::msg::String::SharedPtr msg)
       paused_waypoints_.size(), from);
     action_client_->async_cancel_goal(current_goal_handle_);
     is_paused_ = true;
-    publish_nav_status("paused");
+    publish_nav_status("paused", current_target_name_);
 
   } else {
     RCLCPP_WARN(this->get_logger(), "mapoi_pause received but no active navigation.");

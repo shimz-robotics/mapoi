@@ -102,7 +102,15 @@ private:
 
   // Nav status publisher
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr nav_status_pub_;
-  void publish_nav_status(const std::string & status);
+  // payload は target 空なら "status"、target 有りなら "status:target" を送る (#104)。
+  // subscriber 側 (mapoi_panel / mapoi_webui_node) は : split で target を復元する。
+  void publish_nav_status(const std::string & status, const std::string & target = "");
+
+  // 現在 nav の target POI 名 / route 名 (mapoi_goal_pose_poi_cb / mapoi_route_cb で
+  // 更新)。reset_nav_state では clear せず、次の nav 開始で必ず上書きされる前提で
+  // 終端 status (succeeded / aborted / canceled) でも target を含めて publish できる
+  // ようにする (#104)。
+  std::string current_target_name_;
 
   // --- POI radius event detection ---
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
