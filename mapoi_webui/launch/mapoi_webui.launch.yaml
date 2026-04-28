@@ -39,5 +39,8 @@ launch:
       - {name: config_file, value: "$(var config_file)"}
       - {name: web_port, value: "$(var web_port)"}
       - {name: web_host, value: "$(var web_host)"}
-      - {name: robot_radius, value: "$(var robot_radius)"}
+      # type: double を明示。CLI override `robot_radius:=1` のような整数表記が
+      # int として coerce されると declare_parameter (DOUBLE) と型不一致になる
+      # (Codex PR #126 round 1 medium)。double 指定で launch_ros が float coercion する。
+      - {name: robot_radius, value: "$(var robot_radius)", type: "double"}
     output: "screen"

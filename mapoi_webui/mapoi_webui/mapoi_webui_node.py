@@ -70,8 +70,19 @@ class MapoiWebNode(Node):
         self.web_host_ = self.get_parameter('web_host').get_parameter_value().string_value
         self.map_frame_ = self.get_parameter('map_frame').get_parameter_value().string_value
         self.base_frame_ = self.get_parameter('base_frame').get_parameter_value().string_value
-        self.robot_radius_ = float(
+        # 値検証: 設定ミス (typo / yaml で `0` / 負値) を silent に飲み込まないよう
+        # finite かつ正値を要求する。invalid なら warn して default 0.15 に fallback
+        # (frontend 側 `setRobotRadius` ガードと defense in depth、
+        #  Codex PR #126 round 1 low)。
+        raw_radius = float(
             self.get_parameter('robot_radius').get_parameter_value().double_value)
+        if not math.isfinite(raw_radius) or raw_radius <= 0.0:
+            self.get_logger().warn(
+                f'robot_radius={raw_radius!r} は不正値です。default 0.15m を使います。'
+                ' (連動する Nav2 robot_radius と一致するように launch param を見直してください)')
+            self.robot_radius_ = 0.15
+        else:
+            self.robot_radius_ = raw_radius
 
         # ROS2 service clients
         self.reload_client_ = self.create_client(Trigger, 'reload_map_info')
