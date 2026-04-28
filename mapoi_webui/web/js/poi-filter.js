@@ -33,6 +33,22 @@
   }
 
   /**
+   * POI form の tolerance round-trip を保つ純関数 (#87)。
+   * `||` だと xy=0 / yaw=0 の意図的な値も default で上書きされるので
+   * Number.isFinite ベースで判定する (Codex review #137 medium 対応)。
+   *
+   * @param {string|number} rawXyValue input value から読んだ生 (string for `<input>`)
+   * @param {number|undefined} originalYaw fillForm 時の yaw 元値 (UI 入力欄が無いため保持専用)
+   * @returns {{xy: number, yaw: number}}
+   */
+  function parseTolerance(rawXyValue, originalYaw) {
+    const xyVal = parseFloat(rawXyValue);
+    const xy = Number.isFinite(xyVal) ? xyVal : 0.5;
+    const yaw = Number.isFinite(originalYaw) ? originalYaw : 0.0;
+    return { xy, yaw };
+  }
+
+  /**
    * POI tag combination 排他 check (#85)。
    * `goal+landmark` / `initial_pose+landmark` は仕様上排他。save 前に
    * 弾くことで mapoi_config.yaml に invalid な POI が永続化するのを防ぐ。
@@ -63,6 +79,7 @@
     filterInitialPoseCandidates,
     filterRouteWaypointCandidates,
     validatePoiTags,
+    parseTolerance,
   };
 
   if (typeof window !== 'undefined') {

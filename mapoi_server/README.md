@@ -136,8 +136,8 @@ mapoi_nav_server の自動 initial_pose 配信は、以下を満たす localizat
 POI の半径内にロボットが侵入/退出した際に `mapoi_poi_events` トピックにイベントを発行します。全 POI がタグに関わらず検知対象です。
 
 - TF lookup (`map` -> `base_link`) でロボット位置を取得（デフォルト 5Hz）
-- **侵入判定**: 距離 <= `radius`
-- **退出判定**: 距離 > `radius * hysteresis_exit_multiplier`（デフォルト 1.15）
+- **侵入判定**: 距離 <= `tolerance.xy`
+- **退出判定**: 距離 > `tolerance.xy * hysteresis_exit_multiplier`（デフォルト 1.15）
 - `pause` タグ付き POI では侵入時に走行を自動一時停止（併せてイベントも発行）
 - マップ切替時は内部状態をリセットし、新しい POI リストで監視を再開
 
@@ -149,7 +149,7 @@ RViz2 上に POI のマーカーを表示するためのノードです。
 
 | パラメータ名 | 型 | デフォルト | 説明 |
 | --- | --- | --- | --- |
-| `arrow_size_ratio` | `double` | `1.0` | POI 矢印の scale を radius に対する比率で指定 (`arrow_length = radius × ratio`)。Route 矢印 (waypoint 間) は radius 概念を持たないので対象外。`ros2 param set` で runtime 変更も次周期に反映 |
+| `arrow_size_ratio` | `double` | `1.0` | POI 矢印の scale を tolerance.xy に対する比率で指定 (`arrow_length = tolerance.xy × ratio`)。Route 矢印 (waypoint 間) は tolerance 概念を持たないので対象外。`ros2 param set` で runtime 変更も次周期に反映 |
 | `poi_label_format` | `string` | `"index"` | POI label の表示形式: `"index"` = POI Editor 行番号 (1-based 通し、tag フィルタ非依存) / `"name"` = POI 名 / `"both"` = `"<index>: <name>"` / `"none"` = 非表示 |
 
 #### サブスクライバー
@@ -207,17 +207,17 @@ map:
 poi:
   - name: elevator_hall
     pose: {x: -2.0, y: -0.5, yaw: 0.0}
-    radius: 0.5
+    tolerance: {xy: 0.5, yaw: 0.0}
     tags: [goal, initial_pose]
     description: エレベーターホール
   - name: checkpoint_a
     pose: {x: 0.5, y: 0.5, yaw: 0.0}
-    radius: 0.5
-    tags: [goal, pause]       # 半径内に入ると自動一時停止
+    tolerance: {xy: 0.5, yaw: 0.0}
+    tags: [goal, pause]       # tolerance.xy 半径内に入ると自動一時停止
     description: 中間チェックポイント
   - name: info_point_a
     pose: {x: 1.0, y: 2.0, yaw: 1.57}
-    radius: 1.0
+    tolerance: {xy: 1.0, yaw: 0.0}
     tags: [audio_info]
     description: 音声案内ポイントA
 
@@ -237,7 +237,9 @@ route:
 - **poi**: POI の定義
   - `name`: POI の名前（トピックで指定する際に使用）
   - `pose`: 位置（`x`, `y`, `yaw`）
-  - `radius`: 半径（到達判定・イベント検知に使用）
+  - `tolerance`: Nav2 align tolerance struct
+    - `xy`: Euclidean tolerance (m)。POI 進入判定半径としても使用される
+    - `yaw`: Angular tolerance (rad)。`0` = 未指定として Nav2 default にフォールバック
   - `tags`: タグのリスト
   - `description`: 説明文
 - **route**: ルートの定義

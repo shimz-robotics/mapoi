@@ -13,6 +13,37 @@ For releases prior to v0.2.0, see the
 `GitHub Releases page <https://github.com/shimz-robotics/mapoi/releases>`_.
 
 
+Unreleased
+==========
+
+Breaking changes
+----------------
+
+* ``PointOfInterest.msg``: ``float64 radius`` field removed in favor of the
+  new ``mapoi_interfaces/Tolerance tolerance`` struct (``xy`` + ``yaw``,
+  Nav2 ``SimpleGoalChecker`` align). YAML ``poi.radius`` keys must be
+  migrated to ``poi.tolerance: {xy, yaw}``. Old configs without
+  ``tolerance`` will WARN and fall back to default ``xy=0.5, yaw=0.0``.
+  (#87)
+
+Interfaces
+----------
+
+* New ``mapoi_interfaces/msg/Tolerance.msg`` (``xy`` / ``yaw``). (#87)
+* ``PoiEvent.msg``: new constants ``EVENT_STOPPED=3`` and
+  ``EVENT_RESUMED=4``. Publish logic for these events is deferred to a
+  follow-up issue. (#87)
+
+WebUI / rviz_plugins
+--------------------
+
+* POI Editor (WebUI form / rviz_plugins POI Editor table) replaces the
+  ``Radius`` input / column with ``tolerance.xy``. ``tolerance.yaw`` input
+  UI is intentionally deferred to a follow-up issue; existing
+  ``tolerance.yaw`` values in YAML are preserved through the WebUI form
+  but are reset to ``0.0`` when saving from the rviz Panel. (#87)
+
+
 0.2.0 (2026-04-29)
 ==================
 

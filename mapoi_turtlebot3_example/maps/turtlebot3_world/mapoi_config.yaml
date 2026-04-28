@@ -16,32 +16,33 @@ gazebo:
     uri: model://turtlebot3_world
     name: turtlebot3_world
 # elevator_hall は initial_pose タグ付きで、Gazebo robot spawn のデフォルト位置 (-2, -0.5) と一致。
-# 半径は Nav2 controller の xy_goal_tolerance (0.25) より大きく取らないと、Nav2 が POI radius
-# 内に入る前にゴール判定で停止し radius event が発火しない。最小 0.30 (5cm 余裕) で各部屋の
-# 規模感に合わせ 0.30〜0.50 にバラす。位置も grid 的整列 (-0.5 / 0.5) を少し崩して非対称に。
+# tolerance.xy は Nav2 controller の xy_goal_tolerance (0.25) より大きく取らないと、Nav2 が POI
+# tolerance.xy 内に入る前にゴール判定で停止し radius event が発火しない。最小 0.30 (5cm 余裕) で
+# 各部屋の規模感に合わせ 0.30〜0.50 にバラす。位置も grid 的整列 (-0.5 / 0.5) を少し崩して非対称に。
+# tolerance.yaw は 0 = 未指定で Nav2 yaw_goal_tolerance default にフォールバック。
 poi:
 - description: エレベーターホール
   name: elevator_hall
   pose: {x: -2.0, y: -0.5, yaw: 0.0}
-  radius: 0.50
+  tolerance: {xy: 0.50, yaw: 0.0}
   tags: [goal, initial_pose]
 - description: 会議室A
   name: meeting_room_a
   pose: {x: -0.6, y: -0.6, yaw: 0.0}
-  radius: 0.35
+  tolerance: {xy: 0.35, yaw: 0.0}
   tags: [goal]
 - description: 大会議室
   name: conference_room
   pose: {x: 0.7, y: -0.4, yaw: 1.57}
-  radius: 0.45
+  tolerance: {xy: 0.45, yaw: 0.0}
   tags: [goal]
 - description: 廊下
   name: corridor_a
   pose: {x: 0.4, y: 0.6, yaw: -3.14}
-  radius: 0.30
+  tolerance: {xy: 0.30, yaw: 0.0}
   tags: [goal, pause]
 - description: 模型展示
   name: model_exhibit
   pose: {x: -0.5, y: 0.5, yaw: -1.57}
-  radius: 0.40
+  tolerance: {xy: 0.40, yaw: 0.0}
   tags: [goal, audio_info]
