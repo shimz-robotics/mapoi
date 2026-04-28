@@ -22,7 +22,7 @@ class MapViewer {
     this.onPoiClick = null;      // callback(index)
     this.onRouteClick = null;    // callback(routeIndex)
     this._poseTool = null;       // pose tool state
-    this._routePolylines = [];   // { line, hitLine, routeIdx, color } for click & highlight
+    this._routePolylines = [];   // { line, hitLine, arrowMarkers, labelMarkers, routeIdx, color, latlngs } for click & highlight
 
     this.map.on('click', (e) => {
       if (this._poseTool) {
@@ -439,7 +439,9 @@ class MapViewer {
 
       hitLine.bringToBack();
       this.routeLayers.push(hitLine);
-      this._routePolylines.push({ line, hitLine, routeIdx, color, latlngs });
+
+      const arrowMarkers = [];
+      const labelMarkers = [];
 
       // Draw teardrop direction markers along segments
       for (let i = 0; i < latlngs.length - 1; i++) {
@@ -460,6 +462,7 @@ class MapViewer {
           interactive: false,
         }).addTo(this.map);
         this.routeLayers.push(arrowMarker);
+        arrowMarkers.push(arrowMarker);
       }
 
       // Draw order labels at each waypoint
@@ -475,6 +478,12 @@ class MapViewer {
           interactive: false,
         }).addTo(this.map);
         this.routeLayers.push(labelMarker);
+        labelMarkers.push(labelMarker);
+      });
+
+      this._routePolylines.push({
+        line, hitLine, arrowMarkers, labelMarkers,
+        routeIdx, color, latlngs,
       });
     });
   }
@@ -492,15 +501,42 @@ class MapViewer {
   }
 
   /**
-   * Highlight a specific route on the map (solid, thicker line).
-   * Pass -1 to clear highlight.
+   * Highlight a specific route on the map.
+   *
+   * - routeIdx >= 0: active route を太線・実線・不透明にし、他 route は dim (薄い + 細線 + dashed)
+   *   にして焦点を作る。矢印・順序ラベルにも opacity を適用。
+   * - routeIdx === -1: 全 route を default 表示 (中程度の太さ + dashed + 通常 opacity) に戻す。
+   *
+   * 複数 route が同じ POI を経由して polyline が重なる視認性問題への (d) active highlight 対策。
    */
   highlightRoute(routeIdx) {
+    // 描画済みの _routePolylines に対象 routeIdx が実在する時のみ active state に入る。
+    // 非表示 / 未描画 / waypoint 不足等で対象 entry がない場合に全 route を dim にしない (Codex review medium #105)。
+    const activeExists = routeIdx >= 0
+      && this._routePolylines.some((item) => item.routeIdx === routeIdx);
     this._routePolylines.forEach((item) => {
-      if (item.routeIdx === routeIdx) {
+      const isActive = item.routeIdx === routeIdx;
+      if (activeExists && isActive) {
         item.line.setStyle({ weight: 5, opacity: 1.0, dashArray: null });
+        this._setMarkersOpacity(item.arrowMarkers, 1.0);
+        this._setMarkersOpacity(item.labelMarkers, 1.0);
+      } else if (activeExists && !isActive) {
+        item.line.setStyle({ weight: 2, opacity: 0.25, dashArray: '8, 6' });
+        this._setMarkersOpacity(item.arrowMarkers, 0.25);
+        this._setMarkersOpacity(item.labelMarkers, 0.25);
       } else {
         item.line.setStyle({ weight: 3, opacity: 0.7, dashArray: '8, 6' });
+        this._setMarkersOpacity(item.arrowMarkers, 1.0);
+        this._setMarkersOpacity(item.labelMarkers, 1.0);
+      }
+    });
+  }
+
+  _setMarkersOpacity(markers, opacity) {
+    if (!markers) return;
+    markers.forEach((m) => {
+      if (m && typeof m.setOpacity === 'function') {
+        m.setOpacity(opacity);
       }
     });
   }
