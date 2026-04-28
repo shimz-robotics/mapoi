@@ -339,6 +339,20 @@ class PoiEditor {
    */
   formOk() {
     const poi = this.readForm();
+    // name required + uniqueness check (#109)。route-editor の formOk と同 pattern。
+    // editingIndex === -2 (new POI) は全 POI と比較、editingIndex >= 0 (edit) は
+    // 自分以外と比較する。trim 済 (readForm 内) を前提、case-sensitive 判定。
+    if (!poi.name) {
+      alert('POI name is required.');
+      return;
+    }
+    const dupIndex = this.pois.findIndex(
+      (p, i) => p.name === poi.name && i !== this.editingIndex,
+    );
+    if (dupIndex >= 0) {
+      alert('POI name "' + poi.name + '" already exists.');
+      return;
+    }
     if (this.editingIndex === -2) {
       // New POI
       this.pois.push(poi);

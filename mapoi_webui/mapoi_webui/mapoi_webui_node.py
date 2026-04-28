@@ -21,6 +21,29 @@ from mapoi_webui.yaml_handler import load_config, save_pois, save_routes, save_c
 from mapoi_webui.map_image import get_map_metadata, get_map_png
 
 
+def _validate_unique_names(items, label):
+    """POI / route の name list が空 / 重複を含まないか検査する (#109)。
+
+    frontend (poi-editor / route-editor) は formOk で同じ check を持つが、
+    yaml 直編集や別 client からの POST に対する保険として backend でも reject。
+    return: エラーメッセージ文字列 (issue あり) または None (OK)。case-sensitive 判定。
+    """
+    # Top-level 型 check: list でないと {"pois": null} や数値が validate を
+    # 素通りして save_* で 500 になる (Codex PR #120 round 1 medium)。
+    if not isinstance(items, list):
+        return f'{label} list must be an array'
+    seen = set()
+    for i, it in enumerate(items):
+        name = (it.get('name') if isinstance(it, dict) else None)
+        if not name or not isinstance(name, str) or not name.strip():
+            return f'{label} #{i} has empty name'
+        name = name.strip()
+        if name in seen:
+            return f'{label} name "{name}" is duplicated'
+        seen.add(name)
+    return None
+
+
 class MapoiWebNode(Node):
     def __init__(self):
         super().__init__('mapoi_webui_node')
@@ -319,6 +342,12 @@ class MapoiWebNode(Node):
             data = request.get_json()
             if data is None or 'pois' not in data:
                 return jsonify({'error': 'Invalid request body'}), 400
+            # name の uniqueness / 空 を backend でも validate (#109)。
+            # frontend 経由なら poi-editor が reject 済みだが、yaml 直編集や
+            # 別 client からの POST に対する保険として 400 で reject する。
+            err = _validate_unique_names(data['pois'], 'POI')
+            if err:
+                return jsonify({'error': err}), 400
             config_path = node.get_config_path()
             if not os.path.exists(config_path):
                 return jsonify({'error': 'Config not found'}), 404
@@ -383,6 +412,9 @@ class MapoiWebNode(Node):
             data = request.get_json()
             if data is None or 'routes' not in data:
                 return jsonify({'error': 'Invalid request body'}), 400
+            err = _validate_unique_names(data['routes'], 'Route')
+            if err:
+                return jsonify({'error': err}), 400
             config_path = node.get_config_path()
             if not os.path.exists(config_path):
                 return jsonify({'error': 'Config not found'}), 404
