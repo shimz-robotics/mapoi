@@ -26,7 +26,7 @@ class MapViewer {
     this._activeRouteIdx = -1;   // 現在 active な route index (highlightRoute で更新)
     this._lastRobotPose = null;  // 最新 pose (updateRobotMarker で更新)
     this._robotConnectorLayers = []; // 現在のロボット位置 → active route 先頭 POI への connector
-    this._reachedRouteNames = new Set(); // 先頭 POI に一度到達した route 名の集合 (page 内 sticky)
+    this._reachedRouteSignatures = new Set(); // 到達済み route の "name|firstWaypoint" signature 集合 (page 内 sticky)
 
     this.map.on('click', (e) => {
       if (this._poseTool) {
@@ -400,12 +400,14 @@ class MapViewer {
       // Resolve waypoint names to LatLng positions
       const latlngs = [];
       const resolved = []; // { latlng, order }
+      let firstWaypointName = '';
       waypoints.forEach((wpName, i) => {
         const poi = poiByName[wpName];
         if (poi && poi.pose) {
           const ll = this.worldToLatLng(poi.pose.x, poi.pose.y);
           latlngs.push(ll);
           resolved.push({ latlng: ll, order: i + 1 });
+          if (!firstWaypointName) firstWaypointName = wpName;
         }
       });
 
@@ -487,7 +489,8 @@ class MapViewer {
 
       this._routePolylines.push({
         line, hitLine, arrowMarkers, labelMarkers,
-        routeIdx, routeName: route.name || '', color, latlngs,
+        routeIdx, routeName: route.name || '', firstWaypointName,
+        color, latlngs,
       });
     });
   }
@@ -503,11 +506,12 @@ class MapViewer {
     this._routePolylines = [];
     this.clearEditingRoutePreview();
     this._clearRobotConnector();
-    // 到達履歴 (_reachedRouteNames) は clearRoutes では reset しない。
+    // 到達履歴 (_reachedRouteSignatures) は clearRoutes では reset しない。
     // clearRoutes は visibility toggle / 編集 preview 出入り等の表示再描画でも
     // 呼ばれるため、ここで reset すると sticky 性が壊れる (Codex round 2 medium)。
-    // route 名は人間が決めた安定 ID なので、リネーム / 削除があっても stale entry
-    // は無害。新しい waypoint 構成が必要なら route 名を変えるのが期待される運用。
+    // signature は "routeName|firstWaypoint" 複合 ID で、先頭 POI 変更や
+    // map 切替で別 route が同名で再生成された場合は signature が変わる
+    // ため、自動的に fresh 評価される (Codex round 3 medium 対応)。
   }
 
   /**
@@ -694,14 +698,16 @@ class MapViewer {
    * - robot pose 未取得 (`_lastRobotPose === null`)
    * - active route の polyline entry が `_routePolylines` に無い
    *   (waypoint 不足 / 非表示等。PR #105 の activeExists と同じガード)
-   * - 当 route 名が `_reachedRouteNames` に登録済み (一度先頭 POI に到達)
-   *   route 走行中は connector が冗長で、後続 POI に向かって距離が再び
-   *   開いた時の再描画暴発を防ぐ。Set のキーは route 名 (安定 ID) なので、
-   *   表示再描画 (clearRoutes / visibility toggle / 編集 cancel 等) でも
-   *   sticky 性を維持。route リネームは新規 identity として扱う。
+   * - 当 route の signature (`routeName|firstWaypointName`) が
+   *   `_reachedRouteSignatures` に登録済み。複合 ID にすることで
+   *   - 表示再描画 (clearRoutes / visibility toggle / 編集 cancel 等) では
+   *     sticky 性を維持
+   *   - 同名のまま先頭 waypoint を変更した、map 切替で別 route が同名で
+   *     再生成された等のケースは signature が変わるため fresh 評価される
+   *     (Codex round 3 medium 対応)
    *
-   * 距離が ARRIVAL_THRESHOLD_M 未満になった瞬間に Set に登録し、以降同じ
-   * route 名の間は描画しない (page 内 sticky)。
+   * 距離が ARRIVAL_THRESHOLD_M 未満になった瞬間に signature を Set に登録し、
+   * 以降同 signature の間は描画しない (page 内 sticky)。
    *
    * polyline は active route と同色 + dashed (本線 polyline と差別化) で、
    * 中点に既存の route 矢印 SVG を再利用して方向を示す。
@@ -718,7 +724,8 @@ class MapViewer {
       (it) => it.routeIdx === this._activeRouteIdx,
     );
     if (!item || !item.latlngs || item.latlngs.length === 0) return;
-    if (item.routeName && this._reachedRouteNames.has(item.routeName)) return;
+    const signature = this._routeSignature(item);
+    if (signature && this._reachedRouteSignatures.has(signature)) return;
 
     const robotLatLng = this.worldToLatLng(
       this._lastRobotPose.x, this._lastRobotPose.y,
@@ -730,8 +737,8 @@ class MapViewer {
     const dx = this._lastRobotPose.x - firstWorld.x;
     const dy = this._lastRobotPose.y - firstWorld.y;
     if (Math.hypot(dx, dy) < ARRIVAL_THRESHOLD_M) {
-      if (item.routeName) {
-        this._reachedRouteNames.add(item.routeName);
+      if (signature) {
+        this._reachedRouteSignatures.add(signature);
       }
       return;
     }
@@ -768,5 +775,17 @@ class MapViewer {
       this.map.removeLayer(layer);
     });
     this._robotConnectorLayers = [];
+  }
+
+  /**
+   * route の到達履歴 sticky 用の identity signature。
+   * routeName 単独だと「同名のまま先頭 waypoint 差替え / map 切替で別 route 再生成」
+   * で stale entry が残る (Codex round 3 medium)。先頭 waypoint 名を加えた複合 ID
+   * にすることで、これらの identity 変化で signature が変わり fresh 評価される。
+   * routeName / firstWaypointName のいずれかが空なら identity 確定不可で空返し。
+   */
+  _routeSignature(item) {
+    if (!item || !item.routeName || !item.firstWaypointName) return '';
+    return `${item.routeName}|${item.firstWaypointName}`;
   }
 }
