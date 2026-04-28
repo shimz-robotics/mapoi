@@ -31,7 +31,7 @@ class PoiEditor {
     this.inputX = document.getElementById('poi-x');
     this.inputY = document.getElementById('poi-y');
     this.inputYaw = document.getElementById('poi-yaw');
-    this.inputRadius = document.getElementById('poi-radius');
+    this.inputToleranceXy = document.getElementById('poi-tolerance-xy');
     this.inputTags = document.getElementById('poi-tags');
     this.inputDescription = document.getElementById('poi-description');
 
@@ -242,7 +242,7 @@ class PoiEditor {
     const newPoi = {
       name: `poi_${this.pois.length}`,
       pose: { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100, yaw: 0.0 },
-      radius: 0.5,
+      tolerance: { xy: 0.5, yaw: 0.0 },
       tags: ['goal'],
       description: '',
     };
@@ -316,7 +316,7 @@ class PoiEditor {
     this.inputX.value = pose.x || 0;
     this.inputY.value = pose.y || 0;
     this.inputYaw.value = pose.yaw || 0;
-    this.inputRadius.value = poi.radius || 0.5;
+    this.inputToleranceXy.value = (poi.tolerance && poi.tolerance.xy) || 0.5;
     this.inputTags.value = (poi.tags || []).join(', ');
     this.inputDescription.value = poi.description || '';
     this.renderTagChips();
@@ -333,7 +333,15 @@ class PoiEditor {
         y: parseFloat(this.inputY.value) || 0,
         yaw: parseFloat(this.inputYaw.value) || 0,
       },
-      radius: parseFloat(this.inputRadius.value) || 0.5,
+      // tolerance.yaw は本 PR では UI 入力欄を持たない。既存 yaml の yaw 値を保存時に
+      // 引き継ぐため、editingIndex >= 0 (既存 POI 編集) の場合は元の yaw を保持する。
+      // 新規 POI (-2) や未保存の dirty 等で元値が無いケースは default 0.0 を埋める。
+      tolerance: {
+        xy: parseFloat(this.inputToleranceXy.value) || 0.5,
+        yaw: (this.editingIndex >= 0 && this.pois[this.editingIndex]
+              && this.pois[this.editingIndex].tolerance
+              && this.pois[this.editingIndex].tolerance.yaw) || 0.0,
+      },
       tags: this.inputTags.value.split(',').map(t => t.trim()).filter(t => t),
       description: this.inputDescription.value.trim(),
     };

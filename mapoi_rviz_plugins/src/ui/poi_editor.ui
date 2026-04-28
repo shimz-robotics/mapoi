@@ -91,7 +91,7 @@
      </column>
      <column>
       <property name="text">
-       <string>radius</string>
+       <string>tolerance.xy</string>
       </property>
      </column>
      <column>

@@ -18,33 +18,35 @@ gazebo:
     name: turtlebot3_dqn_world
 
 # turtlebot3_world (office テーマ) と視覚的区別を明確にするため、obstacle 多数の sandbox world で
-# navigation 精度が要求されるシーンに合わせて配置・半径ともに不均一化。半径は Nav2 controller の
-# xy_goal_tolerance (0.25) より大きく取る (Nav2 が POI radius 内に入る前にゴール判定で停止し、
-# radius event が発火しないため)。最小 0.30 (5cm 余裕)、最大 0.45 で意味付け (中央 start_zone は
-# 余裕、東 checkpoint は wall 制約で最狭、南 hazard は最も広い回避ゾーン、北 north_goal は精密目標)。
+# navigation 精度が要求されるシーンに合わせて配置・tolerance.xy ともに不均一化。tolerance.xy は
+# Nav2 controller の xy_goal_tolerance (0.25) より大きく取る (Nav2 が POI tolerance.xy 内に入る前
+# にゴール判定で停止し、radius event が発火しないため)。最小 0.30 (5cm 余裕)、最大 0.45 で意味付け
+# (中央 start_zone は余裕、東 checkpoint は wall 制約で最狭、南 hazard は最も広い回避ゾーン、
+# 北 north_goal は精密目標)。tolerance.yaw は 0 = 未指定で Nav2 yaw_goal_tolerance default に
+# フォールバック。yaw を厳密制御したい POI は tolerance.yaw に 0.05〜0.10 (rad) を指定する。
 poi:
 - name: start_zone
   description: 開始地点
   pose: {x: 0.0, y: 0.0, yaw: 0.0}
-  radius: 0.40
+  tolerance: {xy: 0.40, yaw: 0.0}
   tags: [goal, initial_pose]
 - name: checkpoint_west
   description: 西側中継点
   pose: {x: -1.6, y: 0.5, yaw: 1.57}
-  radius: 0.35
+  tolerance: {xy: 0.35, yaw: 0.0}
   tags: [goal, checkpoint]
 - name: checkpoint_east
   description: 東側中継点
   pose: {x: 1.4, y: -0.3, yaw: -1.6}
-  radius: 0.30
+  tolerance: {xy: 0.30, yaw: 0.0}
   tags: [goal, checkpoint]
 - name: hazard_south
   description: 南側ハザード (回避対象、Nav2 goal 不可)
   pose: {x: 0.5, y: -1.3, yaw: 0.0}
-  radius: 0.45
+  tolerance: {xy: 0.45, yaw: 0.0}
   tags: [event, landmark, hazard]
 - name: north_goal
   description: 北側目標地点
   pose: {x: 0.4, y: 1.7, yaw: -2.0}
-  radius: 0.30
+  tolerance: {xy: 0.30, yaw: 0.0}
   tags: [goal]

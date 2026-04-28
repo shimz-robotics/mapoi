@@ -437,7 +437,10 @@ void PoiEditorPanel::SaveButton()
         tr("Failed to parse pose at row %1: %2").arg(row + 1).arg(e.what()));
       return;
     }
-    poi["radius"] = ui_->PoiTable->item(logical_row, 3)->text().toDouble();
+    // tolerance struct (#87): yaw は本 PR では UI 入力欄を持たないため、yaw 値を持つ POI を
+    // Panel から save すると yaw が 0 にリセットされる挙動。tolerance.yaw 入力 UI は別 PR で追加予定。
+    poi["tolerance"]["xy"] = ui_->PoiTable->item(logical_row, 3)->text().toDouble();
+    poi["tolerance"]["yaw"] = 0.0;
     auto tags_str  = ui_->PoiTable->item(logical_row, 4)->text().toStdString();
     poi["tags"] = this->SplitSentence(tags_str, ", ");
     pois_list.push_back(poi);
@@ -560,7 +563,7 @@ void PoiEditorPanel::TagFilterChanged(int index)
       ui_->PoiTable->setItem(row, 0, new QTableWidgetItem(QString::fromStdString(p.name)));
       ui_->PoiTable->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(p.description)));
       ui_->PoiTable->setItem(row, 2, new QTableWidgetItem(tr("%1, %2, %3").arg(p.pose.position.x).arg(p.pose.position.y).arg(this->calcYaw(p.pose))));
-      ui_->PoiTable->setItem(row, 3, new QTableWidgetItem(tr("%1").arg(p.radius)));
+      ui_->PoiTable->setItem(row, 3, new QTableWidgetItem(tr("%1").arg(p.tolerance.xy)));
       ui_->PoiTable->setItem(row, 4, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
       row++;
     }
@@ -705,16 +708,16 @@ bool PoiEditorPanel::ValidatePois()
       }
     }
 
-    // Check radius
-    auto* radius_item = ui_->PoiTable->item(logical_row, 3);
-    std::string radius_str = radius_item ? radius_item->text().toStdString() : "";
+    // Check tolerance.xy
+    auto* tolerance_xy_item = ui_->PoiTable->item(logical_row, 3);
+    std::string tolerance_xy_str = tolerance_xy_item ? tolerance_xy_item->text().toStdString() : "";
     try {
-      double r = stod(radius_str);
+      double r = stod(tolerance_xy_str);
       if (r < 0) {
-        warnings.append(tr("Row %1: radius is negative").arg(row + 1));
+        warnings.append(tr("Row %1: tolerance.xy is negative").arg(row + 1));
       }
     } catch (...) {
-      warnings.append(tr("Row %1: invalid radius \"%2\"").arg(row + 1).arg(QString::fromStdString(radius_str)));
+      warnings.append(tr("Row %1: invalid tolerance.xy \"%2\"").arg(row + 1).arg(QString::fromStdString(tolerance_xy_str)));
     }
   }
 
@@ -840,7 +843,7 @@ void PoiEditorPanel::UpdatePoiTable()
   ui_->PoiTable->setRowCount(0);
   ui_->PoiTable->setRowCount(numRows);
   ui_->PoiTable->setColumnCount(5);
-  ui_->PoiTable->setHorizontalHeaderLabels( QStringList() << tr("name") << tr("description") << tr("x, y, yaw") << tr("radius") << tr("tags" ) );
+  ui_->PoiTable->setHorizontalHeaderLabels( QStringList() << tr("name") << tr("description") << tr("x, y, yaw") << tr("tolerance.xy") << tr("tags" ) );
   ui_->PoiTable->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
   ui_->PoiTable->verticalHeader()->setSectionsMovable(true);
   ui_->PoiTable->horizontalHeader()->setSortIndicatorShown(true);
@@ -852,7 +855,7 @@ void PoiEditorPanel::UpdatePoiTable()
     ui_->PoiTable->setItem(row, 0, new QTableWidgetItem(QString::fromStdString(p.name)));
     ui_->PoiTable->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(p.description)));
     ui_->PoiTable->setItem(row, 2, new QTableWidgetItem(tr("%1, %2, %3").arg(p.pose.position.x).arg(p.pose.position.y).arg(this->calcYaw(p.pose))));
-    ui_->PoiTable->setItem(row, 3, new QTableWidgetItem(tr("%1").arg(p.radius)));
+    ui_->PoiTable->setItem(row, 3, new QTableWidgetItem(tr("%1").arg(p.tolerance.xy)));
     ui_->PoiTable->setItem(row, 4, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
   }
   is_table_color_ = true;

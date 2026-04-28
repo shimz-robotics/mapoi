@@ -61,7 +61,21 @@ mapoi_interfaces::msg::PointOfInterest MapoiServer::yaml_to_poi_msg(const YAML::
   auto yaw = poi["pose"]["yaw"].as<double>(0.0);
   msg.pose.orientation.z = std::sin(yaw / 2.0);
   msg.pose.orientation.w = std::cos(yaw / 2.0);
-  msg.radius = poi["radius"].as<double>(0.5);
+  // tolerance struct (Nav2 align、xy / yaw 同時に指定可能)。v0.3.0 で旧 `radius` フィールドから
+  // 破壊変更で移行 (#87)。tolerance.xy は POI radius (進入判定距離) としても使われる。
+  // tolerance.yaw == 0 は「未指定」扱いで Nav2 yaw_goal_tolerance default にフォールバック。
+  if (poi["tolerance"]) {
+    msg.tolerance.xy = poi["tolerance"]["xy"].as<double>(0.5);
+    msg.tolerance.yaw = poi["tolerance"]["yaw"].as<double>(0.0);
+  } else {
+    // tolerance struct 未指定 POI は default 値で進行 (radius 概念の互換 ENtry も無し)。
+    msg.tolerance.xy = 0.5;
+    msg.tolerance.yaw = 0.0;
+    RCLCPP_WARN(this->get_logger(),
+      "POI '%s': 'tolerance' field missing; using default (xy=0.5, yaw=0.0). "
+      "Old 'radius' field is no longer supported (#87).",
+      msg.name.c_str());
+  }
   msg.tags = poi["tags"].as<std::vector<std::string>>(std::vector<std::string>{});
   msg.description = poi["description"].as<std::string>("");
   return msg;

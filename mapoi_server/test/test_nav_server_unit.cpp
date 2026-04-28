@@ -20,13 +20,14 @@ protected:
 
   mapoi_interfaces::msg::PointOfInterest make_poi(
     const std::string & name, double x, double y,
-    double radius, const std::vector<std::string> & tags)
+    double tolerance_xy, const std::vector<std::string> & tags)
   {
     mapoi_interfaces::msg::PointOfInterest poi;
     poi.name = name;
     poi.pose.position.x = x;
     poi.pose.position.y = y;
-    poi.radius = radius;
+    poi.tolerance.xy = tolerance_xy;
+    poi.tolerance.yaw = 0.0;
     poi.tags = tags;
     return poi;
   }

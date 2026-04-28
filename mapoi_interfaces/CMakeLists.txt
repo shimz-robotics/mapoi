@@ -10,6 +10,7 @@ find_package(builtin_interfaces REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/Tolerance.msg"
   "msg/PointOfInterest.msg"
   "msg/PoiEvent.msg"
   "msg/TagDefinition.msg"

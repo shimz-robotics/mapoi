@@ -333,7 +333,7 @@ void MapoiRviz2Publisher::timer_callback(){
     // POI radius を床面の円で描画 (全 POI 共通)。
     // primary tag の color を採用。優先順位は tags 配列の順序ではなく
     // goal > event > origin で固定 (poi.tags が ["event", "goal"] のような順でも goal が勝つ)。
-    if (poi.radius > 0.0) {
+    if (poi.tolerance.xy > 0.0) {
       const auto has_tag = [&poi](const std::string & target) {
         for (const auto & t : poi.tags) {
           if (t == target) return true;
@@ -353,7 +353,7 @@ void MapoiRviz2Publisher::timer_callback(){
         cr = 1.0f; cg = 0.0f; cb = 0.0f;
         circle_target = &ma_events;
       }
-      add_radius_circle(pose, poi.radius, cr, cg, cb, id, *circle_target);
+      add_radius_circle(pose, poi.tolerance.xy, cr, cg, cb, id, *circle_target);
       id += 1;
     }
 
@@ -362,7 +362,7 @@ void MapoiRviz2Publisher::timer_callback(){
         visualization_msgs::msg::Marker m_waypoint = default_arrow_marker;
         m_waypoint.pose = pose;
         m_waypoint.pose.position.z = 0.1;
-        apply_radius_scale(m_waypoint, poi.radius);
+        apply_radius_scale(m_waypoint, poi.tolerance.xy);
         {
           bool is_goal = highlighted_goal_names_.count(poi.name) > 0;
           if (is_goal) {
@@ -388,7 +388,7 @@ void MapoiRviz2Publisher::timer_callback(){
         visualization_msgs::msg::Marker m_event = default_arrow_marker;
         m_event.pose = pose;
         m_event.pose.position.z = 0.1;
-        apply_radius_scale(m_event, poi.radius);
+        apply_radius_scale(m_event, poi.tolerance.xy);
         m_event.color.r = 0.0; m_event.color.g = 0.0; m_event.color.b = 1.0; m_event.color.a = 0.7;
         m_event.id = id;
         ma_events.markers.push_back(m_event);
@@ -409,7 +409,7 @@ void MapoiRviz2Publisher::timer_callback(){
         visualization_msgs::msg::Marker m_event = default_arrow_marker;
         m_event.pose = pose;
         m_event.pose.position.z = 0.1;
-        apply_radius_scale(m_event, poi.radius);
+        apply_radius_scale(m_event, poi.tolerance.xy);
         m_event.color.r = 1.0; m_event.color.g = 0.0; m_event.color.b = 0.0; m_event.color.a = 0.7;
         m_event.id = id;
         ma_events.markers.push_back(m_event);
@@ -421,7 +421,7 @@ void MapoiRviz2Publisher::timer_callback(){
         visualization_msgs::msg::Marker m_landmark = default_arrow_marker;
         m_landmark.pose = pose;
         m_landmark.pose.position.z = 0.1;
-        apply_radius_scale(m_landmark, poi.radius);
+        apply_radius_scale(m_landmark, poi.tolerance.xy);
         m_landmark.color.r = 0.5; m_landmark.color.g = 0.5; m_landmark.color.b = 0.5; m_landmark.color.a = 0.7;
         m_landmark.id = id;
         ma_events.markers.push_back(m_landmark);
