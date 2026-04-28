@@ -31,6 +31,7 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 | `web_host` | `string` | `0.0.0.0` | HTTP サーバーのバインドアドレス |
 | `map_frame` | `string` | `map` | TF の親フレーム |
 | `base_frame` | `string` | `base_link` | TF の子フレーム |
+| `robot_radius` | `double` | `0.15` | ロボットの実寸 (m)。frontend の robot marker サイズ・active route connector の到達閾値に使う。Nav2 の `robot_radius` と意味は同じだが本 node は Nav2 非依存運用も想定するため独立 param とした。Nav2 を併用する場合は両者の値を一致させる (#117) |
 
 #### パブリッシャー
 
@@ -67,7 +68,7 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 | POST | `/api/pois` | POI の保存 |
 | GET | `/api/routes` | ルート一覧 |
 | GET | `/api/tag_definitions` | タグ定義一覧 |
-| GET | `/api/nav/status` | ナビゲーション状態・ロボット位置 |
+| GET | `/api/nav/status` | ナビゲーション状態・ロボット位置・`robot_radius` (m) |
 | POST | `/api/nav/goal` | POI へのゴール走行 |
 | POST | `/api/nav/route` | ルート走行の開始 |
 | POST | `/api/nav/pause` | ナビゲーションの一時停止 |

@@ -56,6 +56,12 @@ class MapoiWebNode(Node):
         self.declare_parameter('web_host', '0.0.0.0')
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('base_frame', 'base_link')
+        # ロボットの実寸 (m)。frontend が connector 到達閾値 / robot marker サイズ
+        # に使う (#116, #117)。Nav2 の `robot_radius` と意味は同じだが、本 node
+        # は Nav2 非依存運用 (Editor mode 等) も想定するため、launch param で
+        # 個別に渡す。Nav2 と必ずセットで使う場合は controller_server 側を
+        # 直接 pull する案 (#117 案 B) を別途検討。
+        self.declare_parameter('robot_radius', 0.15)
 
         self.maps_path_ = self.get_parameter('maps_path').get_parameter_value().string_value
         self.map_name_ = self.get_parameter('map_name').get_parameter_value().string_value
@@ -64,6 +70,8 @@ class MapoiWebNode(Node):
         self.web_host_ = self.get_parameter('web_host').get_parameter_value().string_value
         self.map_frame_ = self.get_parameter('map_frame').get_parameter_value().string_value
         self.base_frame_ = self.get_parameter('base_frame').get_parameter_value().string_value
+        self.robot_radius_ = float(
+            self.get_parameter('robot_radius').get_parameter_value().double_value)
 
         # ROS2 service clients
         self.reload_client_ = self.create_client(Trigger, 'reload_map_info')
@@ -494,6 +502,10 @@ class MapoiWebNode(Node):
                 'status': node.nav_status_,
                 'target': node.nav_status_target_,
                 'robot_pose': node.robot_pose_,
+                # robot_radius は launch 起動時固定だが、frontend が boot 時に
+                # 別 endpoint を叩かなくて済むよう poll 結果に相乗りさせる。
+                # 値は float (m)、payload size 影響は無視できる (#117)。
+                'robot_radius': node.robot_radius_,
             })
 
         @app.route('/api/nav/initialpose', methods=['POST'])

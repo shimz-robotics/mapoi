@@ -80,6 +80,9 @@ launch:
       - {name: robot_sdf_path, value: "$(find-pkg-share turtlebot3_gazebo)/models/turtlebot3_$(env TURTLEBOT3_MODEL)/model.sdf"}
 
 # Mapoi Web UI
+# robot_radius は Nav2 param (param/$(ROS_DISTRO)/burger.yaml の `robot_radius: 0.1`)
+# と意図的に揃える。両者がずれると「marker は当たっていないのに Nav2 は当たり判定」
+# のような UX の不整合になる (#117)。
 - include:
     file: "$(find-pkg-share mapoi_webui)/launch/mapoi_webui.launch.yaml"
     arg:
@@ -88,3 +91,4 @@ launch:
       - {name: config_file, value: "mapoi_config.yaml"}
       - {name: web_port, value: "8765"}
       - {name: web_host, value: "0.0.0.0"}
+      - {name: robot_radius, value: "0.1"}

@@ -29,8 +29,10 @@ class MapViewer {
     this._reachedRouteSignatures = new Set(); // 到達済み route の "name|firstWaypoint" signature 集合 (page 内 sticky)
 
     // ロボットの実寸 (m)。connector 到達閾値とロボットマーカーサイズの両方に
-    // 使う共通定数 (#116)。MVP として hardcoded、将来 launch param / Nav2 pull
-    // へ移行 (#117)。値は TurtleBot3 burger (~0.105m) に余裕を持たせた一般値。
+    // 使う (#116)。default は TurtleBot3 burger (~0.105m) に余裕を持たせた値。
+    // backend (`/api/nav/status` payload の `robot_radius`) が起動時 launch
+    // param 由来の値を返すので、app.js が `setRobotRadius` で上書きする (#117)。
+    // backend が古い (key 不在) 場合や上書き前の初回描画はこの default を使う。
     this.robotRadiusM = 0.15;
 
     this.map.on('click', (e) => {
@@ -693,6 +695,25 @@ class MapViewer {
       iconSize: [sizePx, sizePx],
       iconAnchor: [half, half],
     });
+  }
+
+  /**
+   * Update `robotRadiusM` from backend (`/api/nav/status` の `robot_radius`)。
+   *
+   * 値は launch param `robot_radius` 由来で起動後は変わらない想定だが、
+   * polling 経路で来るので idempotent に書く。次の `updateRobotMarker` で
+   * marker サイズと connector 閾値が新値で再計算される。
+   *
+   * 不正値 (NaN / 非有限 / 0以下) は ignore して default / 前回値を維持する。
+   * connector 到達判定で `< robotRadiusM` を使うため 0 以下を許すと到達認識が
+   * 永久に立たない。
+   */
+  setRobotRadius(meters) {
+    if (typeof meters !== 'number' || !Number.isFinite(meters) || meters <= 0) {
+      return;
+    }
+    if (this.robotRadiusM === meters) return;
+    this.robotRadiusM = meters;
   }
 
   /**
