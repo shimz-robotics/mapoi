@@ -78,8 +78,9 @@ void MapoiPanel::onInitialize()
       "mapoi_config_path", 10,
       std::bind(&MapoiPanel::ConfigPathCallback, this, std::placeholders::_1));
 
+  // QoS は mapoi_nav_server と同じ transient_local。後起動 panel でも latched 値を受信できる。
   nav_status_sub_ = node_->create_subscription<std_msgs::msg::String>(
-      "mapoi_nav_status", 10,
+      "mapoi_nav_status", rclcpp::QoS(1).transient_local(),
       std::bind(&MapoiPanel::NavStatusCallback, this, std::placeholders::_1));
 
   current_nav_mode_ = "idle";
@@ -343,7 +344,12 @@ void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
       if (current_nav_mode_ == "route") {
         ui_->NavStatusLabel->setText(
             QString::fromStdString("ルート走行中: " + current_nav_target_));
+      } else if (current_nav_mode_ == "idle") {
+        // 後起動 panel / 外部ノードが発行した nav の latched 状態:
+        // target/mode が不明なため汎用表示にフォールバック。
+        ui_->NavStatusLabel->setText(QString::fromStdString("走行中"));
       }
+      // goal mode は RunGoalButton で即時表示済みのため何もしない
     } else if (status == "succeeded") {
       current_nav_mode_ = "idle";
       ui_->NavStatusLabel->setText(QString::fromStdString("到着"));

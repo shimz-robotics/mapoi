@@ -9,6 +9,7 @@ import time
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, DurabilityPolicy
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from mapoi_interfaces.srv import GetMapsInfo, GetTagDefinitions
@@ -61,10 +62,12 @@ class MapoiWebNode(Node):
         self.create_timer(0.2, self.update_robot_pose)
 
         # Navigation status
+        # QoS は mapoi_nav_server と同じ transient_local。後起動 webui でも latched 値を受信できる。
         self.nav_status_ = 'idle'
         self.nav_status_target_ = ''
+        nav_status_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.nav_status_sub_ = self.create_subscription(
-            String, 'mapoi_nav_status', self.nav_status_callback, 10)
+            String, 'mapoi_nav_status', self.nav_status_callback, nav_status_qos)
 
         # Subscribe to mapoi_config_path for external map switches
         self.config_path_sub_ = self.create_subscription(

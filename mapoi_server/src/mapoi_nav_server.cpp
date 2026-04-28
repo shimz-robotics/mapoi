@@ -49,7 +49,9 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   this->nav_to_pose_client_ = rclcpp_action::create_client<NavigateToPose>(this, "navigate_to_pose");
 
   // Nav status publisher
-  nav_status_pub_ = this->create_publisher<std_msgs::msg::String>("mapoi_nav_status", 10);
+  // transient_local: 後起動 subscriber でも最後の状態を受信できる (mapoi_config_path と同 pattern)
+  nav_status_pub_ = this->create_publisher<std_msgs::msg::String>(
+    "mapoi_nav_status", rclcpp::QoS(1).transient_local());
 
   this->pois_info_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
   this->route_client_ = this->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
