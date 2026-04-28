@@ -75,6 +75,24 @@ main {
   pointer-events: none;
 }
 
+/* Sidebar drag-resize handle (#122 PR-2)。
+   #map-container と #poi-panel の間に置く 6px 幅のスプリッタ。drag で
+   #poi-panel 幅を変更し、localStorage に永続化する (sidebar-resizer.js)。
+   mobile (<768px) では panel が full-width column になるため非表示。 */
+#sidebar-resizer {
+  width: 6px;
+  flex-shrink: 0;
+  cursor: ew-resize;
+  background: #ddd;
+  user-select: none;
+  transition: background 0.15s;
+}
+
+#sidebar-resizer:hover,
+#sidebar-resizer.dragging {
+  background: #3498db;
+}
+
 /* POI Panel */
 #poi-panel {
   width: 350px;
@@ -1085,6 +1103,12 @@ main {
     border-left: none;
     border-top: 1px solid #ddd;
     padding: 8px;
+  }
+
+  /* Mobile では panel が full-width column 配置になり drag-resize の意味が
+     無いので handle を非表示にする (#122 PR-2)。 */
+  #sidebar-resizer {
+    display: none;
   }
 
   header {
