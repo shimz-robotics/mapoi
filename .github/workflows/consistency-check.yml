@@ -1,0 +1,26 @@
+name: Consistency Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  robot_radius_drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install pyyaml
+        run: pip install --no-cache-dir pyyaml
+
+      - name: Check robot_radius drift between WebUI launch and Nav2 yaml
+        run: python3 scripts/check_robot_radius_drift.py
