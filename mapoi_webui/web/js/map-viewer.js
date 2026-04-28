@@ -23,6 +23,10 @@ class MapViewer {
     this.onRouteClick = null;    // callback(routeIndex)
     this._poseTool = null;       // pose tool state
     this._routePolylines = [];   // { line, hitLine, arrowMarkers, labelMarkers, routeIdx, color, latlngs } for click & highlight
+    this._activeRouteIdx = -1;   // 現在 active な route index (highlightRoute で更新)
+    this._lastRobotPose = null;  // 最新 pose (updateRobotMarker で更新)
+    this._robotConnectorLayers = []; // 現在のロボット位置 → active route 先頭 POI への connector
+    this._reachedRouteSignatures = new Set(); // 到達済み route の "name|firstWaypoint" signature 集合 (page 内 sticky)
 
     this.map.on('click', (e) => {
       if (this._poseTool) {
@@ -396,12 +400,14 @@ class MapViewer {
       // Resolve waypoint names to LatLng positions
       const latlngs = [];
       const resolved = []; // { latlng, order }
+      let firstWaypointName = '';
       waypoints.forEach((wpName, i) => {
         const poi = poiByName[wpName];
         if (poi && poi.pose) {
           const ll = this.worldToLatLng(poi.pose.x, poi.pose.y);
           latlngs.push(ll);
           resolved.push({ latlng: ll, order: i + 1 });
+          if (!firstWaypointName) firstWaypointName = wpName;
         }
       });
 
@@ -483,7 +489,8 @@ class MapViewer {
 
       this._routePolylines.push({
         line, hitLine, arrowMarkers, labelMarkers,
-        routeIdx, color, latlngs,
+        routeIdx, routeName: route.name || '', firstWaypointName,
+        color, latlngs,
       });
     });
   }
@@ -498,6 +505,13 @@ class MapViewer {
     this.routeLayers = [];
     this._routePolylines = [];
     this.clearEditingRoutePreview();
+    this._clearRobotConnector();
+    // 到達履歴 (_reachedRouteSignatures) は clearRoutes では reset しない。
+    // clearRoutes は visibility toggle / 編集 preview 出入り等の表示再描画でも
+    // 呼ばれるため、ここで reset すると sticky 性が壊れる (Codex round 2 medium)。
+    // signature は "routeName|firstWaypoint" 複合 ID で、先頭 POI 変更や
+    // map 切替で別 route が同名で再生成された場合は signature が変わる
+    // ため、自動的に fresh 評価される (Codex round 3 medium 対応)。
   }
 
   /**
@@ -530,6 +544,8 @@ class MapViewer {
         this._setMarkersOpacity(item.labelMarkers, 1.0);
       }
     });
+    this._activeRouteIdx = routeIdx;
+    this._updateRobotConnector();
   }
 
   _setMarkersOpacity(markers, opacity) {
@@ -653,6 +669,8 @@ class MapViewer {
         this.map.removeLayer(this.robotMarker);
         this.robotMarker = null;
       }
+      this._lastRobotPose = null;
+      this._updateRobotConnector();
       return;
     }
     const latlng = this.worldToLatLng(pose.x, pose.y);
@@ -667,5 +685,107 @@ class MapViewer {
         zIndexOffset: 2000,
       }).addTo(this.map);
     }
+    this._lastRobotPose = pose;
+    this._updateRobotConnector();
+  }
+
+  /**
+   * Draw or refresh a directional connector from the current robot position
+   * to the first waypoint of the active route.
+   *
+   * Guards (no-op の条件):
+   * - active route が選択されていない (`_activeRouteIdx === -1`)
+   * - robot pose 未取得 (`_lastRobotPose === null`)
+   * - active route の polyline entry が `_routePolylines` に無い
+   *   (waypoint 不足 / 非表示等。PR #105 の activeExists と同じガード)
+   * - 当 route の signature (`routeName|firstWaypointName`) が
+   *   `_reachedRouteSignatures` に登録済み。複合 ID にすることで
+   *   - 表示再描画 (clearRoutes / visibility toggle / 編集 cancel 等) では
+   *     sticky 性を維持
+   *   - 同名のまま先頭 waypoint を変更した、map 切替で別 route が同名で
+   *     再生成された等のケースは signature が変わるため fresh 評価される
+   *     (Codex round 3 medium 対応)
+   *
+   * 距離が ARRIVAL_THRESHOLD_M 未満になった瞬間に signature を Set に登録し、
+   * 以降同 signature の間は描画しない (page 内 sticky)。
+   *
+   * polyline は active route と同色 + dashed (本線 polyline と差別化) で、
+   * 中点に既存の route 矢印 SVG を再利用して方向を示す。
+   */
+  _updateRobotConnector() {
+    // 先頭 POI に「到達」と見なす世界距離 (m)。MVP として hardcoded。
+    // TODO(#108): 先頭 POI radius または Nav2 xy_goal_tolerance に置き換え検討。
+    const ARRIVAL_THRESHOLD_M = 0.1;
+
+    this._clearRobotConnector();
+    if (this._activeRouteIdx < 0) return;
+    if (!this._lastRobotPose || !this.metadata) return;
+    const item = this._routePolylines.find(
+      (it) => it.routeIdx === this._activeRouteIdx,
+    );
+    if (!item || !item.latlngs || item.latlngs.length === 0) return;
+    const signature = this._routeSignature(item);
+    if (signature && this._reachedRouteSignatures.has(signature)) return;
+
+    const robotLatLng = this.worldToLatLng(
+      this._lastRobotPose.x, this._lastRobotPose.y,
+    );
+    const firstLatLng = item.latlngs[0];
+
+    // 先頭 POI に到達済みなら Set に登録して以降描かない。
+    const firstWorld = this.latLngToWorld(firstLatLng);
+    const dx = this._lastRobotPose.x - firstWorld.x;
+    const dy = this._lastRobotPose.y - firstWorld.y;
+    if (Math.hypot(dx, dy) < ARRIVAL_THRESHOLD_M) {
+      if (signature) {
+        this._reachedRouteSignatures.add(signature);
+      }
+      return;
+    }
+
+    const line = L.polyline([robotLatLng, firstLatLng], {
+      color: item.color,
+      weight: 3,
+      opacity: 0.8,
+      dashArray: '4, 6',
+      interactive: false,
+    }).addTo(this.map);
+    line.bringToBack();
+    this._robotConnectorLayers.push(line);
+
+    const midLat = (robotLatLng.lat + firstLatLng.lat) / 2;
+    const midLng = (robotLatLng.lng + firstLatLng.lng) / 2;
+    const rotDeg = this.routeDirectionDeg(robotLatLng, firstLatLng);
+    const arrowIcon = L.divIcon({
+      className: 'route-arrow',
+      html: this.createRouteDirectionSvg(item.color, rotDeg, 18),
+      iconSize: [18, 18],
+      iconAnchor: [9, 9],
+    });
+    const arrowMarker = L.marker([midLat, midLng], {
+      icon: arrowIcon,
+      interactive: false,
+    }).addTo(this.map);
+    this._robotConnectorLayers.push(arrowMarker);
+  }
+
+  _clearRobotConnector() {
+    if (!this._robotConnectorLayers) return;
+    this._robotConnectorLayers.forEach((layer) => {
+      this.map.removeLayer(layer);
+    });
+    this._robotConnectorLayers = [];
+  }
+
+  /**
+   * route の到達履歴 sticky 用の identity signature。
+   * routeName 単独だと「同名のまま先頭 waypoint 差替え / map 切替で別 route 再生成」
+   * で stale entry が残る (Codex round 3 medium)。先頭 waypoint 名を加えた複合 ID
+   * にすることで、これらの identity 変化で signature が変わり fresh 評価される。
+   * routeName / firstWaypointName のいずれかが空なら identity 確定不可で空返し。
+   */
+  _routeSignature(item) {
+    if (!item || !item.routeName || !item.firstWaypointName) return '';
+    return `${item.routeName}|${item.firstWaypointName}`;
   }
 }
