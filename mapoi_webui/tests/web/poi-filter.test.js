@@ -18,6 +18,7 @@ const {
   filterInitialPoseCandidates,
   filterRouteWaypointCandidates,
   validatePoiTags,
+  parseTolerance,
 } = filter;
 
 const poi = (name, tags) => ({ name, tags });
@@ -116,6 +117,35 @@ describe('filterRouteWaypointCandidates', () => {
     expect(filterRouteWaypointCandidates(null)).toEqual([]);
     expect(filterRouteWaypointCandidates(undefined)).toEqual([]);
     expect(filterRouteWaypointCandidates([])).toEqual([]);
+  });
+});
+
+describe('parseTolerance', () => {
+  it('preserves xy=0 as a finite value (not default 0.5)', () => {
+    // Codex review #137 medium: `||` だと意図的な 0 が 0.5 に化けるため
+    expect(parseTolerance('0', 0.1)).toEqual({ xy: 0, yaw: 0.1 });
+  });
+
+  it('falls back to xy=0.5 when input is empty / non-numeric', () => {
+    expect(parseTolerance('', undefined)).toEqual({ xy: 0.5, yaw: 0.0 });
+    expect(parseTolerance('abc', undefined)).toEqual({ xy: 0.5, yaw: 0.0 });
+    expect(parseTolerance(NaN, undefined)).toEqual({ xy: 0.5, yaw: 0.0 });
+  });
+
+  it('preserves originalYaw including 0 when finite', () => {
+    expect(parseTolerance('0.3', 0)).toEqual({ xy: 0.3, yaw: 0 });
+    expect(parseTolerance('0.3', 0.15)).toEqual({ xy: 0.3, yaw: 0.15 });
+  });
+
+  it('defaults yaw to 0 when originalYaw is missing / null / NaN', () => {
+    expect(parseTolerance('0.3', undefined)).toEqual({ xy: 0.3, yaw: 0 });
+    expect(parseTolerance('0.3', null)).toEqual({ xy: 0.3, yaw: 0 });
+    expect(parseTolerance('0.3', NaN)).toEqual({ xy: 0.3, yaw: 0 });
+  });
+
+  it('parses numeric input alongside string input', () => {
+    expect(parseTolerance(0.42, 0)).toEqual({ xy: 0.42, yaw: 0 });
+    expect(parseTolerance('0.42', 0)).toEqual({ xy: 0.42, yaw: 0 });
   });
 });
 

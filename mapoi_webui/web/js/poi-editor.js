@@ -316,7 +316,10 @@ class PoiEditor {
     this.inputX.value = pose.x || 0;
     this.inputY.value = pose.y || 0;
     this.inputYaw.value = pose.yaw || 0;
-    this.inputToleranceXy.value = (poi.tolerance && poi.tolerance.xy) || 0.5;
+    // tolerance.xy = 0 を「未指定 = Nav2 default fallback」として保持するため、`||` ではなく
+    // Number.isFinite ベースで判定する (Codex review #137 medium 対応)。
+    const xyVal = poi.tolerance && poi.tolerance.xy;
+    this.inputToleranceXy.value = Number.isFinite(xyVal) ? xyVal : 0.5;
     this.inputTags.value = (poi.tags || []).join(', ');
     this.inputDescription.value = poi.description || '';
     this.renderTagChips();
@@ -336,12 +339,12 @@ class PoiEditor {
       // tolerance.yaw は本 PR では UI 入力欄を持たない。既存 yaml の yaw 値を保存時に
       // 引き継ぐため、editingIndex >= 0 (既存 POI 編集) の場合は元の yaw を保持する。
       // 新規 POI (-2) や未保存の dirty 等で元値が無いケースは default 0.0 を埋める。
-      tolerance: {
-        xy: parseFloat(this.inputToleranceXy.value) || 0.5,
-        yaw: (this.editingIndex >= 0 && this.pois[this.editingIndex]
-              && this.pois[this.editingIndex].tolerance
-              && this.pois[this.editingIndex].tolerance.yaw) || 0.0,
-      },
+      tolerance: MapoiPoiFilter.parseTolerance(
+        this.inputToleranceXy.value,
+        this.editingIndex >= 0 && this.pois[this.editingIndex]
+          && this.pois[this.editingIndex].tolerance
+          && this.pois[this.editingIndex].tolerance.yaw,
+      ),
       tags: this.inputTags.value.split(',').map(t => t.trim()).filter(t => t),
       description: this.inputDescription.value.trim(),
     };

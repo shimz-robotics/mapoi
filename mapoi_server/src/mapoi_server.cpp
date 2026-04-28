@@ -64,17 +64,34 @@ mapoi_interfaces::msg::PointOfInterest MapoiServer::yaml_to_poi_msg(const YAML::
   // tolerance struct (Nav2 align、xy / yaw 同時に指定可能)。v0.3.0 で旧 `radius` フィールドから
   // 破壊変更で移行 (#87)。tolerance.xy は POI radius (進入判定距離) としても使われる。
   // tolerance.yaw == 0 は「未指定」扱いで Nav2 yaw_goal_tolerance default にフォールバック。
-  if (poi["tolerance"]) {
-    msg.tolerance.xy = poi["tolerance"]["xy"].as<double>(0.5);
-    msg.tolerance.yaw = poi["tolerance"]["yaw"].as<double>(0.0);
-  } else {
-    // tolerance struct 未指定 POI は default 値で進行 (radius 概念の互換 ENtry も無し)。
-    msg.tolerance.xy = 0.5;
-    msg.tolerance.yaw = 0.0;
+  // tolerance struct の schema 検査 (Codex review #137 medium 対応):
+  //   - 不在: default + WARN
+  //   - non-map: default + WARN (yaml が `tolerance: 0.5` のような scalar 形式の場合等)
+  //   - xy 欠落: default 0.5 + WARN (`tolerance: {yaw: 0.2}` だけ書いた場合の silent fallback を防ぐ)
+  //   - yaw 欠落: default 0.0 で進行 (0 = 未指定として valid)
+  msg.tolerance.xy = 0.5;
+  msg.tolerance.yaw = 0.0;
+  if (!poi["tolerance"]) {
     RCLCPP_WARN(this->get_logger(),
       "POI '%s': 'tolerance' field missing; using default (xy=0.5, yaw=0.0). "
       "Old 'radius' field is no longer supported (#87).",
       msg.name.c_str());
+  } else if (!poi["tolerance"].IsMap()) {
+    RCLCPP_WARN(this->get_logger(),
+      "POI '%s': 'tolerance' must be a mapping {xy, yaw}; using default (xy=0.5, yaw=0.0).",
+      msg.name.c_str());
+  } else {
+    const auto & tol = poi["tolerance"];
+    if (tol["xy"]) {
+      msg.tolerance.xy = tol["xy"].as<double>(0.5);
+    } else {
+      RCLCPP_WARN(this->get_logger(),
+        "POI '%s': 'tolerance.xy' missing; using default (0.5).",
+        msg.name.c_str());
+    }
+    if (tol["yaw"]) {
+      msg.tolerance.yaw = tol["yaw"].as<double>(0.0);
+    }
   }
   msg.tags = poi["tags"].as<std::vector<std::string>>(std::vector<std::string>{});
   msg.description = poi["description"].as<std::string>("");
