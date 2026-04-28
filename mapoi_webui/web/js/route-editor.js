@@ -103,10 +103,14 @@ class RouteEditor {
       const nameSpan = document.createElement('span');
       nameSpan.className = 'route-item-name';
       nameSpan.textContent = route.name;
+      // ellipsis 切り捨てに備え hover tooltip で full text 確認可能に (#122 PR-3)。
+      nameSpan.title = route.name || '';
 
       const wpSpan = document.createElement('span');
       wpSpan.className = 'route-item-detail';
-      wpSpan.textContent = (route.waypoints || []).join(' \u2192 ');
+      const wpText = (route.waypoints || []).join(' \u2192 ');
+      wpSpan.textContent = wpText;
+      wpSpan.title = wpText;
 
       textWrap.appendChild(nameSpan);
       textWrap.appendChild(wpSpan);
