@@ -65,17 +65,16 @@ class MapViewer {
     // _activeRouteIdx に基づいて highlight も再適用する (clearRoutes は active
     // index を保持するので、新規 _routePolylines に対して再 paint すれば良い)。
     //
-    // perf 最適化: 表示中 route が 1 本以下なら offsetPx は必ず 0 で displayLatlngs
-    // === latlngs (世界座標) なので、Leaflet が zoom 変換を自前でやれば足りる。
-    // この場合は redraw skip して DOM/SVG layer の全削除→全作成コストを避ける
-    // (#69 round 1 low 対応)。
+    // perf 最適化: 直近の showRoutes で実際に描画された route 数 (= drawable 数) が
+    // 1 本以下なら offsetPx は必ず 0 で displayLatlngs === latlngs (世界座標)。
+    // Leaflet の zoom 変換に任せれば足りるので redraw skip して DOM/SVG layer
+    // の全削除→全作成コストを避ける (#69 round 2 low 対応)。
+    // visibleNames で filter された結果でも、POI 未解決で drawable=0/1 になる
+    // ケースに正しく対応する。
     this.map.on('zoomend', () => {
       if (!this._cachedRoutesArgs) return;
+      if (this._routePolylines.length <= 1) return;
       const { routes, pois, visibleNames } = this._cachedRoutesArgs;
-      const visibleCount = visibleNames
-        ? routes.reduce((acc, r) => acc + (visibleNames.has(r.name) ? 1 : 0), 0)
-        : routes.length;
-      if (visibleCount <= 1) return;
       const prevActive = this._activeRouteIdx;
       this.showRoutes(routes, pois, visibleNames);
       if (prevActive >= 0) {
@@ -453,11 +452,13 @@ class MapViewer {
    * 端点 (i=0 / i=last) は片側 segment のみで normal を直接使う。退化 segment
    * (length < epsilon) は normal を null とし、隣接 normal にフォールバック。
    *
-   * **180° 折り返し** (A→B→A 等で nIn と nOut が anti-parallel、|bisector|≈0):
-   * 折り返し vertex で `nOut` 単独に fallback するため、incoming 側 segment の
-   * offset polyline が元 segment を斜めに横切る視覚アーティファクトが残る。
-   * 厳密に対応するなら vertex 複製 + cap 描画が必要だが、route が同 POI で
-   * 折り返すケースは稀なため許容している (#69 round 1 medium 認知済み)。
+   * **anti-parallel fallback** (`bLen < epsilon`): canonical normal 化以降は
+   * 両 segment が共通端点を持つ通常の vertex で nIn = -nOut になる組み合わせは
+   * 構築できない (lex-order canonical 方向は片方の端点を起点にするため、両
+   * segment の canonical 方向が完全反転する case は collinear-foldback 含めて
+   * 発生しない)。fallback コードは degenerate な数値誤差や将来の normal 計算
+   * 仕様変更に対する保険として残すのみで、現実装では実質到達しない (#69 round 2
+   * low 対応、Codex review)。
    *
    * pixel 計算なので zoom 変化で再計算が必要 → showRoutes は zoomend で cached
    * args を使って呼び直す (#69 PR-2)。
@@ -539,34 +540,36 @@ class MapViewer {
     });
 
     // 共通区間で polyline が完全重複する視認性問題への (b) parallel offset 対策 (#69 PR-2)。
-    // 表示対象 route 数を先に数えて、各 route に中心揃えの offset index を付与する。
-    // 例: 表示中 3 route → offset index は -1, 0, +1 → offsetPx は -STEP, 0, +STEP。
-    // route 数 1 のみだと offset 0 で _offsetLatLngs は no-op、原点描画と完全一致。
-    const visibleEntries = [];
+    //
+    // 1) drawable な route (rawLatlngs.length >= 2、つまり POI 2 点以上に解決でき
+    //    実際に描画される route) を先に列挙する。
+    //    visible だが waypoint 不足 / POI 未解決で描画されない route を offset lane
+    //    数に含めると、画面上の route 数 1 でも offsetPx > 0 で route が中心から
+    //    ずれる + zoomend skip 条件が崩れる (Codex round 2 low 対応)。
+    // 2) drawable 数で中心揃え offset index を付与し、各 route に offsetPx を割り当てる。
+    //    表示中 3 route → offset index は -1, 0, +1 → offsetPx は -STEP, 0, +STEP。
+    //    route 数 1 のみだと offset 0 で _offsetLatLngs は no-op、原点描画と完全一致。
+    const drawableEntries = [];
     routes.forEach((route, routeIdx) => {
       if (visibleNames && !visibleNames.has(route.name)) return;
-      visibleEntries.push({ route, routeIdx });
-    });
-    const totalVisible = visibleEntries.length;
-    const OFFSET_STEP_PX = 6;
-
-    visibleEntries.forEach(({ route, routeIdx }, visibleIdx) => {
-      const offsetPx = (visibleIdx - (totalVisible - 1) / 2) * OFFSET_STEP_PX;
-      const color = this.getRouteColor(routeIdx);
-      const waypoints = route.waypoints || [];
-
-      // Resolve waypoint names to LatLng positions (raw, POI 物理座標)
       const rawLatlngs = [];
       let firstWaypointName = '';
-      waypoints.forEach((wpName) => {
+      (route.waypoints || []).forEach((wpName) => {
         const poi = poiByName[wpName];
         if (poi && poi.pose) {
           rawLatlngs.push(this.worldToLatLng(poi.pose.x, poi.pose.y));
           if (!firstWaypointName) firstWaypointName = wpName;
         }
       });
-
       if (rawLatlngs.length < 2) return;
+      drawableEntries.push({ route, routeIdx, rawLatlngs, firstWaypointName });
+    });
+    const totalDrawable = drawableEntries.length;
+    const OFFSET_STEP_PX = 6;
+
+    drawableEntries.forEach(({ route, routeIdx, rawLatlngs, firstWaypointName }, visibleIdx) => {
+      const offsetPx = (visibleIdx - (totalDrawable - 1) / 2) * OFFSET_STEP_PX;
+      const color = this.getRouteColor(routeIdx);
 
       // 表示用に offset を適用 (offsetPx === 0 なら同じ配列参照が返る)
       const displayLatlngs = this._offsetLatLngs(rawLatlngs, offsetPx);
