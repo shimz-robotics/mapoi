@@ -4,6 +4,8 @@
 tags:
   - name: goal
     description: "Navigation goal destination"
+  - name: landmark
+    description: "Reference point on the map (excluded from Nav2 navigation goal)"
   - name: origin
     description: "Map origin reference point"
   - name: pause

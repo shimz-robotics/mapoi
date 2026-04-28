@@ -39,10 +39,10 @@ poi:
   radius: 0.30
   tags: [goal, checkpoint]
 - name: hazard_south
-  description: 南側ハザード (回避対象)
+  description: 南側ハザード (回避対象、Nav2 goal 不可)
   pose: {x: 0.5, y: -1.3, yaw: 0.0}
   radius: 0.45
-  tags: [event, hazard]
+  tags: [event, landmark, hazard]
 - name: north_goal
   description: 北側目標地点
   pose: {x: 0.4, y: 1.7, yaw: -2.0}

@@ -122,6 +122,13 @@ void MapoiNavServer::mapoi_initialpose_poi_cb(const std_msgs::msg::String::Share
 
       for (const auto &poi : result->pois_list) {
         if (poi.name == poi_name) {
+          // landmark + initial_pose は排他 (#85)。explicit POI 指定でも reject する。
+          if (has_landmark_tag(poi)) {
+            RCLCPP_ERROR(this->get_logger(),
+              "POI '%s' has 'landmark' tag; cannot be used as initial pose.",
+              poi_name.c_str());
+            return;
+          }
           publish_initial_pose(poi.pose, "explicit POI '" + poi_name + "'");
           return;
         }
@@ -160,6 +167,14 @@ void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedP
 
       for (const auto &poi : result->pois_list) {
         if (poi.name == poi_name) {
+          // landmark POI は Nav2 navigation goal にできない reference 専用 (#85)。
+          // goal+landmark 併用も同様に弾く。
+          if (has_landmark_tag(poi)) {
+            RCLCPP_ERROR(this->get_logger(),
+              "POI '%s' has 'landmark' tag; cannot be set as Nav2 goal.",
+              poi_name.c_str());
+            return;
+          }
           geometry_msgs::msg::PoseStamped goal_pose;
           goal_pose.header.frame_id = "map";
           goal_pose.header.stamp = this->now();
@@ -254,6 +269,10 @@ std::vector<mapoi_interfaces::msg::PointOfInterest> MapoiNavServer::select_initi
 {
   std::vector<mapoi_interfaces::msg::PointOfInterest> matched;
   for (const auto & poi : pois) {
+    // landmark + initial_pose は排他 (#85)。auto-publish 候補からも除外する。
+    if (has_landmark_tag(poi)) {
+      continue;
+    }
     for (const auto & tag : poi.tags) {
       if (tag == "initial_pose") {
         matched.push_back(poi);
@@ -303,6 +322,16 @@ void MapoiNavServer::auto_publish_initial_pose()
 
   publish_initial_pose(matched[0].pose, "auto from POI '" + matched[0].name + "'");
   last_initial_pose_config_path_ = last_config_path_;
+}
+
+bool MapoiNavServer::has_landmark_tag(const mapoi_interfaces::msg::PointOfInterest & poi)
+{
+  for (const auto & tag : poi.tags) {
+    if (tag == "landmark") {
+      return true;
+    }
+  }
+  return false;
 }
 
 void MapoiNavServer::publish_initial_pose(

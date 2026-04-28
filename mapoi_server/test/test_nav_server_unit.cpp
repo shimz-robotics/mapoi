@@ -119,6 +119,31 @@ TEST_F(NavServerTestFixture, SelectInitialPosePoisMultiple)
   EXPECT_EQ(matched[1].name, "second");
 }
 
+TEST_F(NavServerTestFixture, SelectInitialPosePoisExcludesLandmark)
+{
+  // landmark + initial_pose は排他なので auto-publish 候補から除外される (#85)。
+  std::vector<mapoi_interfaces::msg::PointOfInterest> pois;
+  pois.push_back(make_poi("ip_only", 1.0, 1.0, 0.5, {"initial_pose"}));
+  pois.push_back(make_poi("landmark_ip", 2.0, 2.0, 0.5, {"initial_pose", "landmark"}));
+  pois.push_back(make_poi("ip_with_other", 3.0, 3.0, 0.5, {"initial_pose", "goal"}));
+  auto matched = node_->select_initial_pose_pois(pois);
+  ASSERT_EQ(matched.size(), 2u);
+  EXPECT_EQ(matched[0].name, "ip_only");
+  EXPECT_EQ(matched[1].name, "ip_with_other");
+}
+
+TEST_F(NavServerTestFixture, HasLandmarkTagDetection)
+{
+  EXPECT_FALSE(MapoiNavServer::has_landmark_tag(
+    make_poi("goal_only", 0.0, 0.0, 0.5, {"goal"})));
+  EXPECT_FALSE(MapoiNavServer::has_landmark_tag(
+    make_poi("no_tags", 0.0, 0.0, 0.5, {})));
+  EXPECT_TRUE(MapoiNavServer::has_landmark_tag(
+    make_poi("landmark_only", 0.0, 0.0, 0.5, {"landmark"})));
+  EXPECT_TRUE(MapoiNavServer::has_landmark_tag(
+    make_poi("landmark_combo", 0.0, 0.0, 0.5, {"event", "landmark", "hazard"})));
+}
+
 int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

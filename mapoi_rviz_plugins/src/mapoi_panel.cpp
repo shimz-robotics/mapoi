@@ -296,13 +296,13 @@ void MapoiPanel::SetNav2GoalComboBox()
 
     for(const auto & p : pois_all){
       bool is_goal = false;
+      bool is_landmark = false;
       for(const auto & tag : p.tags){
-        if(tag == "goal"){
-          is_goal = true;
-          break;
-        }
+        if(tag == "goal") is_goal = true;
+        else if(tag == "landmark") is_landmark = true;
       }
-      if(is_goal){
+      // goal+landmark 併用は意味矛盾だが万一 config に混入しても candidate には載せない (#85)。
+      if(is_goal && !is_landmark){
         pois_.push_back(p);
         ui_->Nav2GoalComboBox->addItem(QString::fromStdString(p.name));
       }

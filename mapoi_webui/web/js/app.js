@@ -138,7 +138,10 @@
   }
 
   function updateRouteEditorPoiNames() {
-    routeEditor.setPoiNames(poiEditor.pois.map((p) => p.name));
+    // landmark POI は Nav2 navigation goal にできない reference 専用 (#85)。
+    // route waypoint candidate からも除外する。
+    const navigablePois = MapoiPoiFilter.filterRouteWaypointCandidates(poiEditor.pois);
+    routeEditor.setPoiNames(navigablePois.map((p) => p.name));
   }
 
   // --- Load routes ---
@@ -346,17 +349,13 @@
   // --- Navigation controls ---
   function populateNavGoalSelect(pois) {
     navGoalSelect.innerHTML = '<option value="">-- Select POI --</option>';
-    pois
-      .filter((p) => {
-        const tags = (p.tags || []).map((t) => t.toLowerCase());
-        return tags.includes('goal');
-      })
-      .forEach((p) => {
-        const opt = document.createElement('option');
-        opt.value = p.name;
-        opt.textContent = p.name;
-        navGoalSelect.appendChild(opt);
-      });
+    // landmark POI は reference 専用、Nav2 goal candidate から除外 (#85)。
+    MapoiPoiFilter.filterGoalCandidates(pois).forEach((p) => {
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      opt.textContent = p.name;
+      navGoalSelect.appendChild(opt);
+    });
   }
 
   function populateNavRouteSelect(routes) {
@@ -401,7 +400,8 @@
 
   function populateInitialPoseSelect(pois) {
     navInitialPoseSelect.innerHTML = '<option value="">-- Select POI --</option>';
-    pois.forEach((p) => {
+    // landmark + initial_pose は排他、initial pose candidate から除外 (#85)。
+    MapoiPoiFilter.filterInitialPoseCandidates(pois).forEach((p) => {
       const opt = document.createElement('option');
       opt.value = p.name;
       opt.textContent = p.name;
