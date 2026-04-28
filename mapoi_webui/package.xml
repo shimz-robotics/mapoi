@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>mapoi_webui</name>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
   <description>Web UI for mapoi - POI editing, navigation, and robot monitoring</description>
   <maintainer email="kimura.shunsuke@shimz.co.jp">Shunsuke Kimura</maintainer>
   <license>MIT</license>
