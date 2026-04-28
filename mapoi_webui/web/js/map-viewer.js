@@ -64,10 +64,19 @@ class MapViewer {
     // (#69 PR-2)。最後の showRoutes 引数を保持して再描画する。再描画後は
     // _activeRouteIdx に基づいて highlight も再適用する (clearRoutes は active
     // index を保持するので、新規 _routePolylines に対して再 paint すれば良い)。
+    //
+    // perf 最適化: 表示中 route が 1 本以下なら offsetPx は必ず 0 で displayLatlngs
+    // === latlngs (世界座標) なので、Leaflet が zoom 変換を自前でやれば足りる。
+    // この場合は redraw skip して DOM/SVG layer の全削除→全作成コストを避ける
+    // (#69 round 1 low 対応)。
     this.map.on('zoomend', () => {
       if (!this._cachedRoutesArgs) return;
-      const prevActive = this._activeRouteIdx;
       const { routes, pois, visibleNames } = this._cachedRoutesArgs;
+      const visibleCount = visibleNames
+        ? routes.reduce((acc, r) => acc + (visibleNames.has(r.name) ? 1 : 0), 0)
+        : routes.length;
+      if (visibleCount <= 1) return;
+      const prevActive = this._activeRouteIdx;
       this.showRoutes(routes, pois, visibleNames);
       if (prevActive >= 0) {
         this.highlightRoute(prevActive);
@@ -119,17 +128,21 @@ class MapViewer {
     // updateRobotMarker / _updateRobotConnector が実行されると、新 map 側で
     // 誤座標描画 + 旧 signature の sticky 引継ぎが起こる (Codex PR #118 round 1
     // medium)。同様に _cachedRoutesArgs に旧 map の pois が残っていると、
-    // fitBounds → zoomend → showRoutes (旧 pois) で stale 描画 (#69 PR-2)。
-    // app.js が新 map の pois で showRoutes を呼び直すまで何も描かないよう null 化。
+    // fitBounds → zoomend → showRoutes (旧 pois) で stale 描画する (#69 PR-2)。
     this._lastRobotPose = null;
     this._reachedRouteSignatures.clear();
     this._activeRouteIdx = -1;
-    this._cachedRoutesArgs = null;
     if (this.robotMarker) {
       this.map.removeLayer(this.robotMarker);
       this.robotMarker = null;
     }
     this._clearRobotConnector();
+    // 旧 map の route layer (line / hitLine / arrow / label) も新 overlay に
+    // 重なるため明示的に物理削除。app.js の loadRoutes が遅い・失敗する・
+    // map 切替が連続するケースで stale polyline が見えないように同期 reset
+    // (#69 PR-2 round 1 medium 対応)。clearRoutes 内で _cachedRoutesArgs = null
+    // も実施されるため、再度の null 代入は冗長だが副作用は無い。
+    this.clearRoutes();
 
     // Remove old overlay
     if (this.imageOverlay) {
@@ -421,23 +434,36 @@ class MapViewer {
   }
 
   /**
-   * Offset a polyline by `offsetPx` pixels perpendicular to its tangent
-   * direction (positive offsetPx = right side of motion, i.e. 90° clockwise rotation).
+   * Offset a polyline by `offsetPx` pixels perpendicular to each segment.
    *
-   * 各 vertex で前後セグメントの perpendicular 単位ベクトル (nIn / nOut) の
-   * 和 (= bisector) を計算し、`bisector × (2*offsetPx / |bisector|^2)` で
-   * 並べる。これにより各 segment との perpendicular 距離が `offsetPx` になる。
-   * 鋭角コーナーで blowup しないよう offset 距離を `4*|offsetPx|` でキャップ。
+   * **Direction-independent (canonical) normal**: 各 segment の 2 端点を
+   * lex-order (x, y 辞書順) で並べ、その方向の 90° 時計回り回転を法線とする。
+   * これにより A→B route と B→A route が同じ segment を共有しても法線方向が
+   * 一致し、`offsetPx` を符号付きで分けるだけで両 route が同じ canonical 軸の
+   * 反対側に並行配置される (#69 PR-2 round 1 medium 対応、Codex review)。
    *
-   * 端点 (i=0 / i=last) は片側 segment のみで normal を直接使う。退化セグメント
-   * (length < epsilon) があるとその vertex の normal は無視し、有効な隣の
-   * normal にフォールバック。両側無効なら offset 0 で原点維持。
+   * 各 vertex で前後 segment 法線 (nIn / nOut) の和 = bisector を取り、
+   * `bisector × (2*offsetPx / |bisector|^2)` で位置を求める。直線・浅い角度で
+   * は perpendicular 距離 `offsetPx` を保つが、鋭角で `|bisector|` が小さく
+   * なると factor が blow up するため offset 距離を `4*|offsetPx|` でキャップ。
+   * **キャップ域では「`offsetPx` の perpendicular 距離」保証は崩れる**点に注意:
+   * 視覚分離の優先度を「コーナーで線同士が刺さらない」 > 「厳密な等距離」と
+   * 割り切った設計。
    *
-   * pixel 計算なので zoom が変わるたびに再計算が必要 → showRoutes は zoomend
-   * で cached args を使って呼び直す (#69 PR-2)。
+   * 端点 (i=0 / i=last) は片側 segment のみで normal を直接使う。退化 segment
+   * (length < epsilon) は normal を null とし、隣接 normal にフォールバック。
+   *
+   * **180° 折り返し** (A→B→A 等で nIn と nOut が anti-parallel、|bisector|≈0):
+   * 折り返し vertex で `nOut` 単独に fallback するため、incoming 側 segment の
+   * offset polyline が元 segment を斜めに横切る視覚アーティファクトが残る。
+   * 厳密に対応するなら vertex 複製 + cap 描画が必要だが、route が同 POI で
+   * 折り返すケースは稀なため許容している (#69 round 1 medium 認知済み)。
+   *
+   * pixel 計算なので zoom 変化で再計算が必要 → showRoutes は zoomend で cached
+   * args を使って呼び直す (#69 PR-2)。
    *
    * @param {Array<L.LatLng>} latlngs - 入力経路 (raw)
-   * @param {number} offsetPx - 正負で offset 方向、0 なら no-op で同じ参照
+   * @param {number} offsetPx - 正負で canonical 法線に対する offset 方向、0 なら no-op
    * @returns {Array<L.LatLng>}
    */
   _offsetLatLngs(latlngs, offsetPx) {
@@ -446,11 +472,15 @@ class MapViewer {
     const epsilon = 1e-3;
     const segNormals = [];
     for (let i = 0; i < points.length - 1; i++) {
-      const dx = points[i + 1].x - points[i].x;
-      const dy = points[i + 1].y - points[i].y;
+      const a = points[i];
+      const b = points[i + 1];
+      // canonical direction: 端点を (x, y) lex 順で並べた最小 → 最大。
+      // A→B route と B→A route の両方で同じ法線方向になるための鍵。
+      const aFirst = a.x < b.x || (a.x === b.x && a.y < b.y);
+      const dx = aFirst ? b.x - a.x : a.x - b.x;
+      const dy = aFirst ? b.y - a.y : a.y - b.y;
       const len = Math.hypot(dx, dy);
-      // 90° clockwise rotation: (dx, dy) → (dy, -dx) (Leaflet container y は下向きで
-      // CRS と揃うため、画面上で「進行方向の右側」を正と扱う)
+      // canonical 方向の 90° 時計回り回転 = (dy, -dx) / len。
       segNormals.push(len < epsilon ? null : { x: dy / len, y: -dx / len });
     }
     const maxOffset = 4 * Math.abs(offsetPx);
@@ -462,7 +492,7 @@ class MapViewer {
         const by = nIn.y + nOut.y;
         const bLen = Math.hypot(bx, by);
         if (bLen < epsilon) {
-          // nIn と nOut が anti-parallel (180° turn): nOut 方向を使う
+          // 180° 折り返し: nOut 単独で offset (incoming 側の精度は犠牲、上記 doc 参照)
           return { x: p.x + nOut.x * offsetPx, y: p.y + nOut.y * offsetPx };
         }
         let factor = (2 * offsetPx) / (bLen * bLen);
@@ -489,10 +519,18 @@ class MapViewer {
     this.clearRoutes();
     if (!this.metadata || !routes || !pois) return;
 
-    // zoomend で再描画するため最後の引数を保持。配列/Set は呼び出し側 (app.js) が
-    // showRoutes 後に in-place 変更しない前提で参照を保持する (現状そう運用、変更時は
-    // copy を取る方針に切り替える)。
-    this._cachedRoutesArgs = { routes, pois, visibleNames };
+    // zoomend で再描画するため最後の引数を保持。
+    // - visibleNames: 軽量なので `new Set` で snapshot し、呼び出し側の Set 変更が
+    //   redraw に漏れない (#69 round 1 low 対応)。
+    // - routes / pois: 配列が大きくなり得る (POI 多数) ため deep copy しない。代わりに
+    //   呼び出し側 (app.js) は showRoutes 後に in-place mutation しない前提を取る。
+    //   in-place 更新ではなく新配列で再 showRoutes する運用 (現状そう)。仕様変更で
+    //   in-place mutation が出てきた場合は、ここを snapshot に切り替える。
+    this._cachedRoutesArgs = {
+      routes,
+      pois,
+      visibleNames: visibleNames ? new Set(visibleNames) : null,
+    };
 
     // Build name -> poi lookup
     const poiByName = {};
