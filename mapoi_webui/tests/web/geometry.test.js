@@ -149,29 +149,44 @@ describe('offsetPointsPx', () => {
   });
 
   it('treats segments shorter than epsilon (1e-3) as degenerate, not above', () => {
-    // epsilon = 1e-3 は内部 const。境界条件を仕様として固定する。
+    // epsilon = 1e-3 は内部 const。境界条件を仕様として固定するために、短い
+    // segment が **非共線 (kink)** な配置で、degenerate 扱いか normal 計算かで
+    // 出力位置が観測できる差になるよう設計する (Codex round 2 low 対応)。
     //
-    // (a) 1e-4 の超短い segment を中央に挟む: (0,0) → (5,0) → (5+1e-4, 0) → (10,0)
-    //   pts[1]→pts[2] は length=1e-4 で degenerate 扱いになるため、中央 vertex の
-    //   normal は隣接 (有効) normal にフォールバックして、全体は直線として offset
-    //   される (前後の segment はどちらも y=0 軸の水平線で同じ canonical normal)。
-    const ptsDegen = [
-      { x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5 + 1e-4, y: 0 }, { x: 10, y: 0 },
-    ];
-    const outDegen = offsetPointsPx(ptsDegen, 4);
-    outDegen.forEach((p) => {
-      expect(nearlyEqual(p.y, -4, 1e-3)).toBe(true);
-    });
+    // 共通形状: 水平 → 短い垂直 → 水平 (L 字の小さい段差)。
+    //
+    // (a) 1e-4 の vertical segment: epsilon 未満で **degenerate**。中央 vertex は
+    //   隣接 (水平 segment、normal=(0,-1)) にフォールバックする。
+    //   水平 segment が両側で支配的なため offset 後 x は不変、y のみ offsetPx 分シフト。
+    {
+      const offsetPx = 4;
+      const pts = [
+        { x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 1e-4 }, { x: 10, y: 1e-4 },
+      ];
+      const out = offsetPointsPx(pts, offsetPx);
+      // 全 vertex が x 不変、y は元値 - offsetPx
+      expect(nearlyEqual(out[1].x, 5)).toBe(true);
+      expect(nearlyEqual(out[1].y, -4)).toBe(true);
+      expect(nearlyEqual(out[2].x, 5)).toBe(true);
+      expect(nearlyEqual(out[2].y, 1e-4 - 4)).toBe(true);
+    }
 
-    // (b) 1e-2 の segment は通常の normal として扱われる (epsilon = 1e-3 を超える)。
-    //   3 vertex が collinear 水平 → 直線扱いで offset。
-    const ptsAbove = [
-      { x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5 + 1e-2, y: 0 }, { x: 10, y: 0 },
-    ];
-    const outAbove = offsetPointsPx(ptsAbove, 4);
-    outAbove.forEach((p) => {
-      expect(nearlyEqual(p.y, -4, 1e-3)).toBe(true);
-    });
+    // (b) 1e-2 の vertical segment: epsilon 超で **通常 normal**。中央 vertex は
+    //   nIn=(0,-1) (水平) + nOut=(1,0) (垂直、canonical 方向 lex order で y 増加方向)
+    //   の bisector を使う → factor=2*offsetPx/bLen²=2*4/2=4、offset=(4,-4)。
+    //   結果として x が +4 動く ((a) と観測可能な差になる)。
+    {
+      const offsetPx = 4;
+      const pts = [
+        { x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 1e-2 }, { x: 10, y: 1e-2 },
+      ];
+      const out = offsetPointsPx(pts, offsetPx);
+      // vertex 1, 2 とも x が +4 動く (degenerate 扱いなら x は変わらないはず)
+      expect(nearlyEqual(out[1].x, 9, 1e-3)).toBe(true);
+      expect(nearlyEqual(out[1].y, -4, 1e-3)).toBe(true);
+      expect(nearlyEqual(out[2].x, 9, 1e-3)).toBe(true);
+      expect(nearlyEqual(out[2].y, 1e-2 - 4, 1e-3)).toBe(true);
+    }
   });
 
   it('handles vertical segment (lex tie on x, ordered by y)', () => {
