@@ -47,7 +47,7 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 
 | トピック名 | 型 | 説明 |
 | --- | --- | --- |
-| `mapoi_nav_status` | `std_msgs/String` | ナビゲーション状態の受信（transient_local QoS、後起動でも latched 値を受信） |
+| `mapoi_nav_status` | `std_msgs/String` | ナビゲーション状態の受信（`"status"` / `"status:target"` 形式、transient_local QoS）。`:` split で target を抽出し REST `/api/nav/status` の `target` field として公開 |
 | `mapoi_config_path` | `std_msgs/String` | 外部からの地図切り替え検知 |
 
 #### TF

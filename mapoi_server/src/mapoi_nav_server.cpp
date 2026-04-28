@@ -134,6 +134,10 @@ void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedP
 {
   std::string poi_name = msg->data;
   RCLCPP_INFO(this->get_logger(), "Received POI name for goal pose: %s", poi_name.c_str());
+  // target は send_goal_options に lambda capture で bind し、callback 側で
+  // goal 固有の target を使って publish_nav_status する (#104 race fix)。
+  // current_target_name_ は acceptance 時 (goal_response_callback) に更新され、
+  // pause / resume 用の active target として参照される。
 
   // Fetch POI list asynchronously, then navigate in the callback
   if (!this->pois_info_client_->wait_for_service(2s)) {
@@ -176,10 +180,16 @@ void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedP
           goal_msg.pose = goal_pose;
 
           auto send_goal_options = rclcpp_action::Client<NavigateToPose>::SendGoalOptions();
+          // target を lambda capture で bind し、callback が goal 固有の target で
+          // publish_nav_status を呼べるようにする (#104 Codex round 2 medium 対応)。
           send_goal_options.goal_response_callback =
-            std::bind(&MapoiNavServer::ntp_goal_response_callback, this, _1);
+            [this, target = poi_name](const GoalHandleNavigateToPose::SharedPtr & h) {
+              this->ntp_goal_response_callback(target, h);
+            };
           send_goal_options.result_callback =
-            std::bind(&MapoiNavServer::ntp_result_callback, this, _1);
+            [this, target = poi_name](const GoalHandleNavigateToPose::WrappedResult & r) {
+              this->ntp_result_callback(target, r);
+            };
 
           this->nav_to_pose_client_->async_send_goal(goal_msg, send_goal_options);
           RCLCPP_INFO(this->get_logger(), "Sent NavigateToPose goal from POI: %s", poi_name.c_str());
@@ -193,12 +203,17 @@ void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedP
 void MapoiNavServer::mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg)
 {
   RCLCPP_INFO(this->get_logger(), "Received route name: %s", msg->data.c_str());
+  // target は on_route_received → send_goal_options に lambda capture で bind し、
+  // callback 側で goal 固有の target を使って publish_nav_status する (#104 race fix)。
+  // current_target_name_ は acceptance 時 (goal_response_callback) に更新される。
 
   auto route_request = std::make_shared<mapoi_interfaces::srv::GetRoutePois::Request>();
   route_request->route_name = msg->data;
 
+  // route_name を bind で渡し、send_goal 直前に target 更新できるようにする。
   this->route_client_->async_send_request(
-    route_request, std::bind(&MapoiNavServer::on_route_received, this, _1));
+    route_request,
+    std::bind(&MapoiNavServer::on_route_received, this, msg->data, _1));
 }
 
 void MapoiNavServer::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future)
@@ -323,7 +338,9 @@ void MapoiNavServer::wait_for_initialpose_subscriber(double timeout_sec)
     timeout_sec);
 }
 
-void MapoiNavServer::on_route_received(rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future)
+void MapoiNavServer::on_route_received(
+  std::string route_name,
+  rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future)
 {
   auto result = future.get();
   if (!result) {
@@ -368,25 +385,34 @@ void MapoiNavServer::on_route_received(rclcpp::Client<mapoi_interfaces::srv::Get
 
   auto send_goal_options = rclcpp_action::Client<FollowWaypoints>::SendGoalOptions();
 
+  // target を lambda capture で bind し、callback が goal 固有の target で
+  // publish_nav_status を呼べるようにする (#104 Codex round 2 medium 対応)。
   send_goal_options.goal_response_callback =
-    std::bind(&MapoiNavServer::goal_response_callback, this, _1);
+    [this, target = route_name](const GoalHandleFollowWaypoints::SharedPtr & h) {
+      this->goal_response_callback(target, h);
+    };
 
   send_goal_options.feedback_callback =
     std::bind(&MapoiNavServer::feedback_callback, this, _1, _2);
 
   send_goal_options.result_callback =
-    std::bind(&MapoiNavServer::result_callback, this, _1);
+    [this, target = route_name](const GoalHandleFollowWaypoints::WrappedResult & r) {
+      this->result_callback(target, r);
+    };
 
   this->action_client_->async_send_goal(goal_msg, send_goal_options);
 }
 
-void MapoiNavServer::goal_response_callback(const GoalHandleFollowWaypoints::SharedPtr & goal_handle)
+void MapoiNavServer::goal_response_callback(std::string target, const GoalHandleFollowWaypoints::SharedPtr & goal_handle)
 {
   if (!goal_handle) {
     RCLCPP_ERROR(this->get_logger(), "Goal was rejected by server");
   } else {
     current_goal_handle_ = goal_handle;
-    publish_nav_status("navigating");
+    // Acceptance 確定時に current_target_name_ を更新 (pause / resume が active
+    // nav の target として参照する用途)。reject 時は更新しない。
+    current_target_name_ = target;
+    publish_nav_status("navigating", target);
     RCLCPP_INFO(this->get_logger(), "Goal accepted by server, waiting for result");
   }
 }
@@ -398,18 +424,20 @@ void MapoiNavServer::feedback_callback(
   current_waypoint_index_ = feedback->current_waypoint;
 }
 
-void MapoiNavServer::result_callback(const GoalHandleFollowWaypoints::WrappedResult & result)
+void MapoiNavServer::result_callback(std::string target, const GoalHandleFollowWaypoints::WrappedResult & result)
 {
   current_goal_handle_.reset();
+  // bound target を使う (#104 race fix)。共有 current_target_name_ は別 nav の
+  // 開始で上書きされる可能性があるため読まない。
   switch (result.code) {
     case rclcpp_action::ResultCode::SUCCEEDED:
       reset_nav_state();
-      publish_nav_status("succeeded");
+      publish_nav_status("succeeded", target);
       RCLCPP_INFO(this->get_logger(), "Navigation SUCCEEDED!");
       break;
     case rclcpp_action::ResultCode::ABORTED:
       reset_nav_state();
-      publish_nav_status("aborted");
+      publish_nav_status("aborted", target);
       RCLCPP_ERROR(this->get_logger(), "Navigation ABORTED");
       break;
     case rclcpp_action::ResultCode::CANCELED:
@@ -417,7 +445,7 @@ void MapoiNavServer::result_callback(const GoalHandleFollowWaypoints::WrappedRes
         RCLCPP_INFO(this->get_logger(), "Cancel confirmed (pause triggered). Waiting for resume.");
       } else {
         reset_nav_state();
-        publish_nav_status("canceled");
+        publish_nav_status("canceled", target);
         RCLCPP_WARN(this->get_logger(), "Navigation CANCELED");
       }
       break;
@@ -427,29 +455,32 @@ void MapoiNavServer::result_callback(const GoalHandleFollowWaypoints::WrappedRes
   }
 }
 
-void MapoiNavServer::ntp_goal_response_callback(const GoalHandleNavigateToPose::SharedPtr & goal_handle)
+void MapoiNavServer::ntp_goal_response_callback(std::string target, const GoalHandleNavigateToPose::SharedPtr & goal_handle)
 {
   if (!goal_handle) {
     RCLCPP_ERROR(this->get_logger(), "NavigateToPose goal was rejected by server");
   } else {
     current_ntp_goal_handle_ = goal_handle;
-    publish_nav_status("navigating");
+    // Acceptance 確定時に current_target_name_ を更新 (pause / resume 用)。
+    current_target_name_ = target;
+    publish_nav_status("navigating", target);
     RCLCPP_INFO(this->get_logger(), "NavigateToPose goal accepted, waiting for result");
   }
 }
 
-void MapoiNavServer::ntp_result_callback(const GoalHandleNavigateToPose::WrappedResult & result)
+void MapoiNavServer::ntp_result_callback(std::string target, const GoalHandleNavigateToPose::WrappedResult & result)
 {
   current_ntp_goal_handle_.reset();
+  // bound target を使う (#104 race fix)。
   switch (result.code) {
     case rclcpp_action::ResultCode::SUCCEEDED:
       reset_nav_state();
-      publish_nav_status("succeeded");
+      publish_nav_status("succeeded", target);
       RCLCPP_INFO(this->get_logger(), "NavigateToPose SUCCEEDED!");
       break;
     case rclcpp_action::ResultCode::ABORTED:
       reset_nav_state();
-      publish_nav_status("aborted");
+      publish_nav_status("aborted", target);
       RCLCPP_ERROR(this->get_logger(), "NavigateToPose ABORTED");
       break;
     case rclcpp_action::ResultCode::CANCELED:
@@ -457,7 +488,7 @@ void MapoiNavServer::ntp_result_callback(const GoalHandleNavigateToPose::Wrapped
         RCLCPP_INFO(this->get_logger(), "Cancel confirmed (pause triggered). Waiting for resume.");
       } else {
         reset_nav_state();
-        publish_nav_status("canceled");
+        publish_nav_status("canceled", target);
         RCLCPP_WARN(this->get_logger(), "NavigateToPose CANCELED");
       }
       break;
@@ -467,10 +498,14 @@ void MapoiNavServer::ntp_result_callback(const GoalHandleNavigateToPose::Wrapped
   }
 }
 
-void MapoiNavServer::publish_nav_status(const std::string & status)
+void MapoiNavServer::publish_nav_status(const std::string & status, const std::string & target)
 {
   std_msgs::msg::String msg;
-  msg.data = status;
+  // target 空なら "status" のみ、有りなら "status:target" 形式で送る (#104)。
+  // subscriber 側 (mapoi_panel / mapoi_webui_node) は : split で target を復元。
+  // 後方互換: 旧 "status" 単独 payload しか読まない subscriber は target 部を
+  // 読まないだけで従来通り動く。
+  msg.data = target.empty() ? status : status + ':' + target;
   nav_status_pub_->publish(msg);
 }
 
@@ -517,7 +552,7 @@ void MapoiNavServer::mapoi_pause_cb(const std_msgs::msg::String::SharedPtr msg)
     RCLCPP_INFO(this->get_logger(), "Pausing NavigateToPose goal.");
     nav_to_pose_client_->async_cancel_goal(current_ntp_goal_handle_);
     is_paused_ = true;
-    publish_nav_status("paused");
+    publish_nav_status("paused", current_target_name_);
 
   } else if (nav_mode_ == NavMode::ROUTE && current_goal_handle_) {
     uint32_t from = std::min(
@@ -531,7 +566,7 @@ void MapoiNavServer::mapoi_pause_cb(const std_msgs::msg::String::SharedPtr msg)
       paused_waypoints_.size(), from);
     action_client_->async_cancel_goal(current_goal_handle_);
     is_paused_ = true;
-    publish_nav_status("paused");
+    publish_nav_status("paused", current_target_name_);
 
   } else {
     RCLCPP_WARN(this->get_logger(), "mapoi_pause received but no active navigation.");
@@ -560,10 +595,17 @@ void MapoiNavServer::mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg)
     goal_msg.pose = paused_goal_pose_;
 
     auto send_goal_options = rclcpp_action::Client<NavigateToPose>::SendGoalOptions();
+    // resume: pause 直前と同じ active nav なので current_target_name_ を再利用。
+    // lambda capture で goal 固有 binding にしておくことで、resume 後さらに
+    // 別 nav が来た場合でも race しない。
     send_goal_options.goal_response_callback =
-      std::bind(&MapoiNavServer::ntp_goal_response_callback, this, _1);
+      [this, target = current_target_name_](const GoalHandleNavigateToPose::SharedPtr & h) {
+        this->ntp_goal_response_callback(target, h);
+      };
     send_goal_options.result_callback =
-      std::bind(&MapoiNavServer::ntp_result_callback, this, _1);
+      [this, target = current_target_name_](const GoalHandleNavigateToPose::WrappedResult & r) {
+        this->ntp_result_callback(target, r);
+      };
 
     nav_to_pose_client_->async_send_goal(goal_msg, send_goal_options);
 
@@ -588,12 +630,17 @@ void MapoiNavServer::mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg)
     goal_msg.poses = current_route_waypoints_;
 
     auto send_goal_options = rclcpp_action::Client<FollowWaypoints>::SendGoalOptions();
+    // resume: pause 直前と同じ active nav なので current_target_name_ を再利用。
     send_goal_options.goal_response_callback =
-      std::bind(&MapoiNavServer::goal_response_callback, this, _1);
+      [this, target = current_target_name_](const GoalHandleFollowWaypoints::SharedPtr & h) {
+        this->goal_response_callback(target, h);
+      };
     send_goal_options.feedback_callback =
       std::bind(&MapoiNavServer::feedback_callback, this, _1, _2);
     send_goal_options.result_callback =
-      std::bind(&MapoiNavServer::result_callback, this, _1);
+      [this, target = current_target_name_](const GoalHandleFollowWaypoints::WrappedResult & r) {
+        this->result_callback(target, r);
+      };
 
     action_client_->async_send_goal(goal_msg, send_goal_options);
 

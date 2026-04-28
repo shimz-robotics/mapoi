@@ -66,18 +66,28 @@ private:
 
   // Service Callbacks
   void on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future);
-  void on_route_received(rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future);
+  // route_name は #104 で current_target_name_ を action send 直前に更新するために
+  // mapoi_route_cb から bind 経由で渡す。リクエスト時点で代入すると concurrent
+  // request で active nav の target が汚染されるため、実際の send_goal 直前まで
+  // 遅延させる。
+  void on_route_received(std::string route_name,
+                         rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future);
 
   void get_pois_list();
 
   // Action Callbacks (FollowWaypoints — routes)
-  void goal_response_callback(const GoalHandleFollowWaypoints::SharedPtr & goal_handle);
+  // target は #104 race fix のため goal 固有の target を bind 経由で受け取る。
+  // callback 内で publish_nav_status はこの引数を使い、共有 current_target_name_
+  // を読まない (concurrent request で別 nav の target が混入するのを防ぐ)。
+  // current_target_name_ は acceptance 時に更新し、pause 等で active nav の
+  // target として参照される用途のみ。
+  void goal_response_callback(std::string target, const GoalHandleFollowWaypoints::SharedPtr & goal_handle);
   void feedback_callback(GoalHandleFollowWaypoints::SharedPtr, const std::shared_ptr<const FollowWaypoints::Feedback> feedback);
-  void result_callback(const GoalHandleFollowWaypoints::WrappedResult & result);
+  void result_callback(std::string target, const GoalHandleFollowWaypoints::WrappedResult & result);
 
   // Action Callbacks (NavigateToPose — single POI)
-  void ntp_goal_response_callback(const GoalHandleNavigateToPose::SharedPtr & goal_handle);
-  void ntp_result_callback(const GoalHandleNavigateToPose::WrappedResult & result);
+  void ntp_goal_response_callback(std::string target, const GoalHandleNavigateToPose::SharedPtr & goal_handle);
+  void ntp_result_callback(std::string target, const GoalHandleNavigateToPose::WrappedResult & result);
 
   // Clients
   rclcpp_action::Client<FollowWaypoints>::SharedPtr action_client_;
@@ -102,7 +112,17 @@ private:
 
   // Nav status publisher
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr nav_status_pub_;
-  void publish_nav_status(const std::string & status);
+  // payload は target 空なら "status"、target 有りなら "status:target" を送る (#104)。
+  // subscriber 側 (mapoi_panel / mapoi_webui_node) は : split で target を復元する。
+  void publish_nav_status(const std::string & status, const std::string & target = "");
+
+  // 現在 nav の target POI 名 / route 名。Acceptance 時 (goal_response_callback /
+  // ntp_goal_response_callback) に更新され、pause / resume が active nav の target
+  // として参照する用途のみ。
+  // 終端 status (succeeded / aborted / canceled) は callback に lambda capture で
+  // bind された goal 固有の target を使うので、ここを読まない (#104 race fix)。
+  // reset_nav_state では clear せず、次の acceptance で上書きされる前提。
+  std::string current_target_name_;
 
   // --- POI radius event detection ---
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
