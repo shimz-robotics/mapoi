@@ -493,7 +493,9 @@ class MapViewer {
         const by = nIn.y + nOut.y;
         const bLen = Math.hypot(bx, by);
         if (bLen < epsilon) {
-          // 180° 折り返し: nOut 単独で offset (incoming 側の精度は犠牲、上記 doc 参照)
+          // anti-parallel fallback: canonical normal 化後では通常到達しない
+          // (上段 JSDoc 参照)。数値誤差や将来の normal 計算仕様変更に対する保険
+          // として nOut 単独で offset するに留める。
           return { x: p.x + nOut.x * offsetPx, y: p.y + nOut.y * offsetPx };
         }
         let factor = (2 * offsetPx) / (bLen * bLen);
