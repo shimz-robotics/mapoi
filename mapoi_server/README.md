@@ -108,7 +108,7 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 | --- | --- | --- |
 | `initialpose` | `geometry_msgs/PoseWithCovarianceStamped` | 初期位置の配信 (topic 名は `initial_pose_topic` parameter で変更可)。`mapoi_initialpose_poi` で明示指定された場合に加え、地図ロード/切替時に `initial_pose` タグ付き POI から自動配信。自動 publish 前は subscriber readiness を最大 `initial_pose_subscriber_wait_timeout_sec` 秒待つ |
 | `goal_pose` | `geometry_msgs/PoseStamped` | ゴール位置の配信 |
-| `mapoi_nav_status` | `std_msgs/String` | ナビゲーション状態（`navigating`, `succeeded`, `aborted`, `canceled`, `paused`）。`transient_local` QoS で **現在状態の snapshot** として配信される（depth=1）。後起動 subscriber は最後の状態のみ受信し、状態遷移の履歴は復元できない。現在走行中かは `navigating` / `paused` で判定し、終端状態（`succeeded` / `aborted` / `canceled`）は直近結果として扱う |
+| `mapoi_nav_status` | `std_msgs/String` | ナビゲーション状態を `"status"` または `"status:target"` 形式で配信（例: `"navigating:kitchen"`、`"succeeded:patrol_route"`、`"paused:patrol_route"`）。`status` は `navigating` / `succeeded` / `aborted` / `canceled` / `paused`。`target` は POI 名（goal mode）または route 名（route mode）で、subscriber 側は最初の `:` で split して復元する（target 内に `:` が含まれても残り全体を target として扱える）。`transient_local` QoS の **現在状態 snapshot**（depth=1）で、後起動 subscriber が最後の状態を受信できるが状態遷移履歴は復元できない。現在走行中かは `navigating` / `paused` で判定し、終端状態（`succeeded` / `aborted` / `canceled`）は直近結果として扱う |
 | `mapoi_poi_events` | `mapoi_interfaces/PoiEvent` | POI 侵入・退出イベント |
 
 #### アクションクライアント

@@ -134,8 +134,10 @@ void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedP
 {
   std::string poi_name = msg->data;
   RCLCPP_INFO(this->get_logger(), "Received POI name for goal pose: %s", poi_name.c_str());
-  // Save target for nav_status payload (#104)。後の publish_nav_status で再利用。
-  current_target_name_ = poi_name;
+  // current_target_name_ の更新は実際に async_send_goal を呼ぶ直前で行う (#104
+  // Codex round 1 medium 対応)。リクエスト受信時点で代入すると、走行中に
+  // 無効な POI request が来ただけで active nav の target が汚染され、
+  // 終端 status (succeeded 等) に誤った target が乗ってしまう。
 
   // Fetch POI list asynchronously, then navigate in the callback
   if (!this->pois_info_client_->wait_for_service(2s)) {
@@ -183,6 +185,8 @@ void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedP
           send_goal_options.result_callback =
             std::bind(&MapoiNavServer::ntp_result_callback, this, _1);
 
+          // 実際に goal を送る直前で target を更新 (#104 Codex round 1 medium)。
+          current_target_name_ = poi_name;
           this->nav_to_pose_client_->async_send_goal(goal_msg, send_goal_options);
           RCLCPP_INFO(this->get_logger(), "Sent NavigateToPose goal from POI: %s", poi_name.c_str());
           return;
@@ -195,14 +199,17 @@ void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedP
 void MapoiNavServer::mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg)
 {
   RCLCPP_INFO(this->get_logger(), "Received route name: %s", msg->data.c_str());
-  // Save target for nav_status payload (#104)。後の publish_nav_status で再利用。
-  current_target_name_ = msg->data;
+  // current_target_name_ の更新は実際に async_send_goal を呼ぶ直前 (on_route_received
+  // 内) で行う (#104 Codex round 1 medium 対応)。リクエスト受信時点で代入すると
+  // 走行中に invalid な request が来ただけで active nav の target が汚染される。
 
   auto route_request = std::make_shared<mapoi_interfaces::srv::GetRoutePois::Request>();
   route_request->route_name = msg->data;
 
+  // route_name を bind で渡し、send_goal 直前に target 更新できるようにする。
   this->route_client_->async_send_request(
-    route_request, std::bind(&MapoiNavServer::on_route_received, this, _1));
+    route_request,
+    std::bind(&MapoiNavServer::on_route_received, this, msg->data, _1));
 }
 
 void MapoiNavServer::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future)
@@ -327,7 +334,9 @@ void MapoiNavServer::wait_for_initialpose_subscriber(double timeout_sec)
     timeout_sec);
 }
 
-void MapoiNavServer::on_route_received(rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future)
+void MapoiNavServer::on_route_received(
+  std::string route_name,
+  rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future)
 {
   auto result = future.get();
   if (!result) {
@@ -381,6 +390,8 @@ void MapoiNavServer::on_route_received(rclcpp::Client<mapoi_interfaces::srv::Get
   send_goal_options.result_callback =
     std::bind(&MapoiNavServer::result_callback, this, _1);
 
+  // 実際に goal を送る直前で target を更新 (#104 Codex round 1 medium)。
+  current_target_name_ = route_name;
   this->action_client_->async_send_goal(goal_msg, send_goal_options);
 }
 

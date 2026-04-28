@@ -66,7 +66,12 @@ private:
 
   // Service Callbacks
   void on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future);
-  void on_route_received(rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future);
+  // route_name は #104 で current_target_name_ を action send 直前に更新するために
+  // mapoi_route_cb から bind 経由で渡す。リクエスト時点で代入すると concurrent
+  // request で active nav の target が汚染されるため、実際の send_goal 直前まで
+  // 遅延させる。
+  void on_route_received(std::string route_name,
+                         rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future);
 
   void get_pois_list();
 
