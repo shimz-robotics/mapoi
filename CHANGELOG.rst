@@ -3,10 +3,11 @@ Changelog
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 This project follows `Semantic Versioning <https://semver.org/>`_. The 0.x
-series is in active development; breaking changes may occur between minor
-versions. From v1.0.0 onward, the public API (msgs, topics, services,
-launch parameters, YAML schemas) will be backward-compatible across minor
-and patch releases. See ``README.md`` for the full version policy.
+series is in active development; breaking changes may occur in any 0.x
+release (per the SemVer 2.0.0 spec for 0.y.z initial-development phase).
+From v1.0.0 onward, the public API (msgs, topics, services, launch
+parameters, YAML schemas) will be backward-compatible across minor and
+patch releases. See ``README.md`` for the full version policy.
 
 For releases prior to v0.2.0, see the
 `GitHub Releases page <https://github.com/shimz-robotics/mapoi/releases>`_.
@@ -20,8 +21,9 @@ WebUI
 
 * New ``robot_radius`` ROS parameter on ``mapoi_webui_node`` (default
   ``0.15``). Determines the robot marker size and the active-route
-  connector arrival threshold; previously hard-coded. Value is also
-  propagated to the frontend through ``/api/nav/status``. (#117, #126)
+  connector arrival threshold; previously hard-coded at 0.15. Value is
+  also propagated to the frontend through ``/api/nav/status``. (#116,
+  #117, #118, #126)
 * Active-route highlight now propagates to direction arrows and order
   labels, and non-active routes are dimmed for focus. (#69, #105)
 * Parallel-offset rendering for overlapping route polylines.
@@ -97,7 +99,8 @@ Docker / development
 
 * Distro-specific dev / demo image tags (``mapoi:dev-${ROS_DISTRO}``,
   ``mapoi:demo-${ROS_DISTRO}``) so parallel humble / jazzy runs do not
-  invalidate each other's build cache. (#90, #92)
+  invalidate each other's build cache. ``ROS_DISTRO`` inherit / override
+  behaviour documented in ``README.md``. (#90, #92, #93)
 * ``CYCLONEDDS_URI`` is forced to empty inside containers to prevent
   host configuration leak; ``RMW_IMPLEMENTATION`` and ``ROS_DOMAIN_ID``
   inherit host values for host-container discovery. (#84, #94)
