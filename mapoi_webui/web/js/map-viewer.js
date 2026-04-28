@@ -555,21 +555,27 @@ class MapViewer {
     routes.forEach((route, routeIdx) => {
       if (visibleNames && !visibleNames.has(route.name)) return;
       const rawLatlngs = [];
+      // orders は rawLatlngs と並行配列。各 vertex に「元 waypoint 配列での
+      // 1-based index」を保持する。missing POI が途中にある場合 (例: 2 番目が
+      // 未解決で skip) でも、地図上のラベルが route editor 側の waypoint 順番
+      // (1, 3, 4 等) を保つ (#69 round 4 low 対応、Codex review)。
+      const orders = [];
       let firstWaypointName = '';
-      (route.waypoints || []).forEach((wpName) => {
+      (route.waypoints || []).forEach((wpName, i) => {
         const poi = poiByName[wpName];
         if (poi && poi.pose) {
           rawLatlngs.push(this.worldToLatLng(poi.pose.x, poi.pose.y));
+          orders.push(i + 1);
           if (!firstWaypointName) firstWaypointName = wpName;
         }
       });
       if (rawLatlngs.length < 2) return;
-      drawableEntries.push({ route, routeIdx, rawLatlngs, firstWaypointName });
+      drawableEntries.push({ route, routeIdx, rawLatlngs, orders, firstWaypointName });
     });
     const totalDrawable = drawableEntries.length;
     const OFFSET_STEP_PX = 6;
 
-    drawableEntries.forEach(({ route, routeIdx, rawLatlngs, firstWaypointName }, visibleIdx) => {
+    drawableEntries.forEach(({ route, routeIdx, rawLatlngs, orders, firstWaypointName }, visibleIdx) => {
       const offsetPx = (visibleIdx - (totalDrawable - 1) / 2) * OFFSET_STEP_PX;
       const color = this.getRouteColor(routeIdx);
 
@@ -634,11 +640,14 @@ class MapViewer {
         arrowMarkers.push(arrowMarker);
       }
 
-      // Draw order labels at each waypoint (offset 後位置でラベル重なりも軽減)
+      // Draw order labels at each waypoint (offset 後位置でラベル重なりも軽減)。
+      // 番号は元 waypoint 配列の 1-based index (orders[i]) を使い、missing POI
+      // が skip されても route editor 側の順番と整合する (#69 round 4 low 対応)。
       displayLatlngs.forEach((latlng, i) => {
+        const order = orders[i];
         const icon = L.divIcon({
           className: 'route-order-label',
-          html: `<span style="background: ${color};">${i + 1}</span>`,
+          html: `<span style="background: ${color};">${order}</span>`,
           iconSize: [22, 22],
           iconAnchor: [-6, 28],
         });
