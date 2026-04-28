@@ -28,6 +28,11 @@ class MapViewer {
     this._robotConnectorLayers = []; // 現在のロボット位置 → active route 先頭 POI への connector
     this._reachedRouteSignatures = new Set(); // 到達済み route の "name|firstWaypoint" signature 集合 (page 内 sticky)
 
+    // ロボットの実寸 (m)。connector 到達閾値とロボットマーカーサイズの両方に
+    // 使う共通定数 (#116)。MVP として hardcoded、将来 launch param / Nav2 pull
+    // へ移行 (#117)。値は TurtleBot3 burger (~0.105m) に余裕を持たせた一般値。
+    this.robotRadiusM = 0.15;
+
     this.map.on('click', (e) => {
       if (this._poseTool) {
         this._handlePoseToolClick(e.latlng);
@@ -43,6 +48,13 @@ class MapViewer {
       if (this._poseTool && this._poseTool.phase === 'yaw') {
         this._updatePoseToolArrow(e.latlng);
       }
+    });
+
+    // zoom が変わると 1m あたりの pixel が変わるので、robot marker のピクセル
+    // サイズを再計算するために再描画する (#116)。pose 未受信時は updateRobotMarker
+    // が early return するので safe。
+    this.map.on('zoomend', () => {
+      if (this._lastRobotPose) this.updateRobotMarker(this._lastRobotPose);
     });
   }
 
@@ -651,19 +663,46 @@ class MapViewer {
    * Create an SVG icon for the robot marker (colored circle with direction arrow).
    * @param {number} yaw - heading in radians
    * @param {string} color - circle fill color (default cyan); 内側の方向矢印は白固定
+   * @param {number} sizePx - icon の outer width/height (px)。viewBox は固定 36 のままで
+   *   内部 path / circle 座標は変えず、outer サイズだけリスケールする
    */
-  createRobotIcon(yaw, color = '#00bcd4') {
+  createRobotIcon(yaw, color = '#00bcd4', sizePx = 36) {
     const rotDeg = 90 - (yaw * 180 / Math.PI);
-    const svg = `<svg width="36" height="36" viewBox="0 0 36 36" style="transform: rotate(${rotDeg}deg);">` +
+    const half = sizePx / 2;
+    const svg = `<svg width="${sizePx}" height="${sizePx}" viewBox="0 0 36 36" style="transform: rotate(${rotDeg}deg);">` +
       `<circle cx="18" cy="18" r="12" fill="${color}" fill-opacity="0.7" stroke="#fff" stroke-width="2"/>` +
       `<path d="M18 8 L24 24 L18 19 L12 24 Z" fill="#fff" fill-opacity="0.9" stroke="none"/>` +
       `</svg>`;
     return L.divIcon({
       className: 'robot-icon',
       html: svg,
-      iconSize: [36, 36],
-      iconAnchor: [18, 18],
+      iconSize: [sizePx, sizePx],
+      iconAnchor: [half, half],
     });
+  }
+
+  /**
+   * Compute the marker icon size (pixels) so it reflects the robot's real
+   * world radius at the current map zoom level (#116).
+   *
+   * `worldToLatLng` + `latLngToContainerPoint` で 1m が今の zoom で何 pixel
+   * になるかを実測する。CRS / resolution に依存せず robust。低 zoom で
+   * marker が点になるのを防ぐため下限 16px を入れる。
+   *
+   * pose / metadata 未受信時は default 36px (constructor 時 marker のため)。
+   */
+  _resolveRobotMarkerSizePx() {
+    const MIN_PX = 16;
+    const DEFAULT_PX = 36;
+    if (!this.metadata || !this._lastRobotPose) return DEFAULT_PX;
+    const center = this.worldToLatLng(this._lastRobotPose.x, this._lastRobotPose.y);
+    const edge = this.worldToLatLng(
+      this._lastRobotPose.x + this.robotRadiusM, this._lastRobotPose.y,
+    );
+    const pxRadius = this.map.latLngToContainerPoint(center)
+      .distanceTo(this.map.latLngToContainerPoint(edge));
+    const diameterPx = pxRadius * 2;
+    return Math.max(MIN_PX, diameterPx);
   }
 
   /**
@@ -695,8 +734,15 @@ class MapViewer {
       this._updateRobotConnector();
       return;
     }
+    // _resolveRobotMarkerSizePx は this._lastRobotPose を読むため、
+    // metadata / pose を使う前に最新値を保存しておく。
+    this._lastRobotPose = pose;
     const latlng = this.worldToLatLng(pose.x, pose.y);
-    const icon = this.createRobotIcon(pose.yaw || 0, this._resolveRobotMarkerColor());
+    const icon = this.createRobotIcon(
+      pose.yaw || 0,
+      this._resolveRobotMarkerColor(),
+      this._resolveRobotMarkerSizePx(),
+    );
     if (this.robotMarker) {
       this.robotMarker.setLatLng(latlng);
       this.robotMarker.setIcon(icon);
@@ -707,7 +753,6 @@ class MapViewer {
         zIndexOffset: 2000,
       }).addTo(this.map);
     }
-    this._lastRobotPose = pose;
     this._updateRobotConnector();
   }
 
@@ -728,17 +773,13 @@ class MapViewer {
    *     再生成された等のケースは signature が変わるため fresh 評価される
    *     (Codex round 3 medium 対応)
    *
-   * 距離が ARRIVAL_THRESHOLD_M 未満になった瞬間に signature を Set に登録し、
-   * 以降同 signature の間は描画しない (page 内 sticky)。
+   * 距離が `this.robotRadiusM` (#116) 未満になった瞬間に signature を Set に
+   * 登録し、以降同 signature の間は描画しない (page 内 sticky)。
    *
    * polyline は active route と同色 + dashed (本線 polyline と差別化) で、
    * 中点に既存の route 矢印 SVG を再利用して方向を示す。
    */
   _updateRobotConnector() {
-    // 先頭 POI に「到達」と見なす世界距離 (m)。MVP として hardcoded。
-    // TODO(#108): 先頭 POI radius または Nav2 xy_goal_tolerance に置き換え検討。
-    const ARRIVAL_THRESHOLD_M = 0.1;
-
     this._clearRobotConnector();
     if (this._activeRouteIdx < 0) return;
     if (!this._lastRobotPose || !this.metadata) return;
@@ -758,7 +799,7 @@ class MapViewer {
     const firstWorld = this.latLngToWorld(firstLatLng);
     const dx = this._lastRobotPose.x - firstWorld.x;
     const dy = this._lastRobotPose.y - firstWorld.y;
-    if (Math.hypot(dx, dy) < ARRIVAL_THRESHOLD_M) {
+    if (Math.hypot(dx, dy) < this.robotRadiusM) {
       if (signature) {
         this._reachedRouteSignatures.add(signature);
       }
