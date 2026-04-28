@@ -416,38 +416,14 @@ void MapoiRviz2Publisher::timer_callback(){
         id += 1;
       }
       else if(tag == "landmark"){
-        // landmark POI は中抜き三角 (LINE_STRIP) で描画する (#85)。
-        // goal の塗りつぶし矢印 (ARROW) との対比で「実体 (到達目標) vs 参照点」を視覚化。
-        // pose.orientation を yaw quaternion とし、local frame で頂点を打つ。
-        // anchor は底辺中央 = pose、頂点が +x (yaw) 方向。長さは radius と arrow_size_ratio
-        // に整合させ、矢印と並べたときに違和感のないサイズになる。
-        // color は default gray、tag 別 color の整理は #70 で扱う。
-        visualization_msgs::msg::Marker m_landmark;
-        m_landmark.header.frame_id = "map";
-        m_landmark.header.stamp = rclcpp::Clock().now();
-        m_landmark.ns = "landmark_outline";
-        m_landmark.id = id;
-        m_landmark.type = visualization_msgs::msg::Marker::LINE_STRIP;
-        m_landmark.action = visualization_msgs::msg::Marker::ADD;
+        // landmark POI も矢印 + label を描画する (#85)。reference 専用なので
+        // ma_events 側に置く。color は default gray、tag 別 color の整理は #70 で扱う。
+        visualization_msgs::msg::Marker m_landmark = default_arrow_marker;
         m_landmark.pose = pose;
         m_landmark.pose.position.z = 0.1;
-        m_landmark.lifetime.sec = 2.0;
-        m_landmark.scale.x = 0.04;  // line width (m)
-        m_landmark.color.r = 0.5; m_landmark.color.g = 0.5; m_landmark.color.b = 0.5; m_landmark.color.a = 0.9;
-
-        double length = 0.3;
-        if (poi.radius > 0.0 && arrow_size_ratio > 0.0) {
-          length = poi.radius * arrow_size_ratio;
-        }
-        const double half_width = length * 0.4;
-        geometry_msgs::msg::Point p_tip, p_left, p_right;
-        p_tip.x = length;  p_tip.y = 0;             p_tip.z = 0;
-        p_left.x = 0;      p_left.y = half_width;   p_left.z = 0;
-        p_right.x = 0;     p_right.y = -half_width; p_right.z = 0;
-        m_landmark.points.push_back(p_tip);
-        m_landmark.points.push_back(p_left);
-        m_landmark.points.push_back(p_right);
-        m_landmark.points.push_back(p_tip);  // closure
+        apply_radius_scale(m_landmark, poi.radius);
+        m_landmark.color.r = 0.5; m_landmark.color.g = 0.5; m_landmark.color.b = 0.5; m_landmark.color.a = 0.7;
+        m_landmark.id = id;
         ma_events.markers.push_back(m_landmark);
         id += 1;
 

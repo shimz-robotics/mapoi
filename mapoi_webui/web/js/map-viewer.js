@@ -207,40 +207,6 @@ class MapViewer {
   }
 
   /**
-   * Create an SVG outline-triangle icon for a landmark POI marker (#85)。
-   * goal の塗りつぶし矢印に対し「fill 無し / stroke のみ」の三角輪郭で
-   * 「実体 (到達目標) vs 参照点」を視覚化。底辺中央が POI pose、頂点が
-   * yaw 方向を指す。SVG 内 rotate で底辺中央を中心に回転させる。
-   */
-  createLandmarkIcon(color, yaw, highlight) {
-    const strokeColor = highlight ? '#e67e22' : color;
-    const strokeWidth = highlight ? 3.5 : 2.5;
-    const rotDeg = 90 - (yaw * 180 / Math.PI);
-    // viewBox 32x32: 頂点 (16, 4)、底辺左 (4, 26)、底辺右 (28, 26)。底辺中央 (16, 26) が anchor。
-    const svg = `<svg width="32" height="32" viewBox="0 0 32 32">` +
-      `<g transform="rotate(${rotDeg} 16 26)">` +
-      `<path d="M16 4 L28 26 L4 26 Z" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linejoin="round" stroke-linecap="round"/>` +
-      `</g></svg>`;
-    return L.divIcon({
-      className: 'poi-landmark-icon',
-      html: svg,
-      iconSize: [32, 32],
-      iconAnchor: [16, 26],
-    });
-  }
-
-  /**
-   * Build the appropriate POI marker icon based on tags (#85)。
-   * landmark タグ POI は中抜き三角、それ以外は塗りつぶし矢印。
-   */
-  createPoiIcon(poi, color, yaw, highlight) {
-    if (MapoiPoiFilter.hasLandmarkTag(poi)) {
-      return this.createLandmarkIcon(color, yaw, highlight);
-    }
-    return this.createArrowIcon(color, yaw, highlight);
-  }
-
-  /**
    * Display POI markers as directional arrows on the map.
    * @param {Array} pois - POI array
    * @param {Set|null} visibleSet - if provided, only show POIs whose index is in this set
@@ -255,7 +221,7 @@ class MapViewer {
       const color = this.getPoiColor(poi);
       const yaw = poi.pose.yaw || 0;
 
-      const icon = this.createPoiIcon(poi, color, yaw, false);
+      const icon = this.createArrowIcon(color, yaw, false);
       const marker = L.marker(latlng, { icon }).addTo(this.map);
 
       marker.bindTooltip(poi.name || `POI ${index}`, {
@@ -281,7 +247,7 @@ class MapViewer {
   highlightPoi(index) {
     this.poiMarkers.forEach((item) => {
       const isHighlighted = item.index === index;
-      const icon = this.createPoiIcon(item.poi, item.color, item.yaw, isHighlighted);
+      const icon = this.createArrowIcon(item.color, item.yaw, isHighlighted);
       item.marker.setIcon(icon);
       if (isHighlighted) {
         item.marker.setZIndexOffset(1000);
@@ -416,7 +382,7 @@ class MapViewer {
     const item = this.poiMarkers.find((m) => m.index === index);
     if (!item) return;
     item.yaw = yaw;
-    const icon = this.createPoiIcon(item.poi, item.color, yaw, true);
+    const icon = this.createArrowIcon(item.color, yaw, true);
     item.marker.setIcon(icon);
   }
 
