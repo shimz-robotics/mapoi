@@ -247,7 +247,13 @@ main {
   padding: 12px;
   margin: 0 16px 8px;
   border: 2px solid #3498db;
-  flex-shrink: 0;
+  /* form 自体に内部スクロールを持たせ、ウィンドウが小さい時も form-actions
+     (OK / Cancel) に到達できるようにする (#122 PR-1)。flex-shrink: 1 +
+     min-height: 0 は flex column 内で flex item を実際にシュリンクさせるため
+     (デフォルトの min-height: auto は content size 未満に縮まらない)。 */
+  flex-shrink: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 #poi-edit-form.hidden {
@@ -285,6 +291,15 @@ main {
   display: flex;
   gap: 8px;
   margin-top: 8px;
+  /* form の内部スクロール時に常に見える位置に sticky 固定 (#122 PR-1)。
+     parent の form は #fff 背景なので合わせて #fff を敷き、scroll up 時に
+     form-row の文字が下から透けて見えないようにする。z-index で同レイヤ
+     重なりに上から表示。 */
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  z-index: 1;
+  padding-top: 8px;
 }
 
 .form-actions button {
@@ -514,7 +529,11 @@ main {
   padding: 12px;
   margin: 4px 16px 4px;
   border: 2px solid #8e44ad;
-  flex-shrink: 0;
+  /* POI form と同じく、ウィンドウが小さい時も form-actions に到達できる
+     よう内部スクロール可能化 (#122 PR-1)。 */
+  flex-shrink: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 #route-edit-form.hidden {
