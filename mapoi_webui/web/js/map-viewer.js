@@ -58,6 +58,21 @@ class MapViewer {
     this.map.on('zoomend', () => {
       if (this._lastRobotPose) this.updateRobotMarker(this._lastRobotPose);
     });
+
+    // route polyline は parallel offset を pixel 単位で計算するため、zoom 変化で
+    // 各 vertex の世界座標が同じでも画面表示用 displayLatlngs の位置が変わる
+    // (#69 PR-2)。最後の showRoutes 引数を保持して再描画する。再描画後は
+    // _activeRouteIdx に基づいて highlight も再適用する (clearRoutes は active
+    // index を保持するので、新規 _routePolylines に対して再 paint すれば良い)。
+    this.map.on('zoomend', () => {
+      if (!this._cachedRoutesArgs) return;
+      const prevActive = this._activeRouteIdx;
+      const { routes, pois, visibleNames } = this._cachedRoutesArgs;
+      this.showRoutes(routes, pois, visibleNames);
+      if (prevActive >= 0) {
+        this.highlightRoute(prevActive);
+      }
+    });
   }
 
   /**
@@ -103,10 +118,13 @@ class MapViewer {
     // 直後の fitBounds() で zoomend hook が走るため、旧 map の latlng 基準で
     // updateRobotMarker / _updateRobotConnector が実行されると、新 map 側で
     // 誤座標描画 + 旧 signature の sticky 引継ぎが起こる (Codex PR #118 round 1
-    // medium)。
+    // medium)。同様に _cachedRoutesArgs に旧 map の pois が残っていると、
+    // fitBounds → zoomend → showRoutes (旧 pois) で stale 描画 (#69 PR-2)。
+    // app.js が新 map の pois で showRoutes を呼び直すまで何も描かないよう null 化。
     this._lastRobotPose = null;
     this._reachedRouteSignatures.clear();
     this._activeRouteIdx = -1;
+    this._cachedRoutesArgs = null;
     if (this.robotMarker) {
       this.map.removeLayer(this.robotMarker);
       this.robotMarker = null;
@@ -403,6 +421,65 @@ class MapViewer {
   }
 
   /**
+   * Offset a polyline by `offsetPx` pixels perpendicular to its tangent
+   * direction (positive offsetPx = right side of motion, i.e. 90° clockwise rotation).
+   *
+   * 各 vertex で前後セグメントの perpendicular 単位ベクトル (nIn / nOut) の
+   * 和 (= bisector) を計算し、`bisector × (2*offsetPx / |bisector|^2)` で
+   * 並べる。これにより各 segment との perpendicular 距離が `offsetPx` になる。
+   * 鋭角コーナーで blowup しないよう offset 距離を `4*|offsetPx|` でキャップ。
+   *
+   * 端点 (i=0 / i=last) は片側 segment のみで normal を直接使う。退化セグメント
+   * (length < epsilon) があるとその vertex の normal は無視し、有効な隣の
+   * normal にフォールバック。両側無効なら offset 0 で原点維持。
+   *
+   * pixel 計算なので zoom が変わるたびに再計算が必要 → showRoutes は zoomend
+   * で cached args を使って呼び直す (#69 PR-2)。
+   *
+   * @param {Array<L.LatLng>} latlngs - 入力経路 (raw)
+   * @param {number} offsetPx - 正負で offset 方向、0 なら no-op で同じ参照
+   * @returns {Array<L.LatLng>}
+   */
+  _offsetLatLngs(latlngs, offsetPx) {
+    if (!latlngs || latlngs.length < 2 || offsetPx === 0) return latlngs;
+    const points = latlngs.map((ll) => this.map.latLngToContainerPoint(ll));
+    const epsilon = 1e-3;
+    const segNormals = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      const dx = points[i + 1].x - points[i].x;
+      const dy = points[i + 1].y - points[i].y;
+      const len = Math.hypot(dx, dy);
+      // 90° clockwise rotation: (dx, dy) → (dy, -dx) (Leaflet container y は下向きで
+      // CRS と揃うため、画面上で「進行方向の右側」を正と扱う)
+      segNormals.push(len < epsilon ? null : { x: dy / len, y: -dx / len });
+    }
+    const maxOffset = 4 * Math.abs(offsetPx);
+    const offsetPoints = points.map((p, i) => {
+      const nIn = i > 0 ? segNormals[i - 1] : null;
+      const nOut = i < points.length - 1 ? segNormals[i] : null;
+      if (nIn && nOut) {
+        const bx = nIn.x + nOut.x;
+        const by = nIn.y + nOut.y;
+        const bLen = Math.hypot(bx, by);
+        if (bLen < epsilon) {
+          // nIn と nOut が anti-parallel (180° turn): nOut 方向を使う
+          return { x: p.x + nOut.x * offsetPx, y: p.y + nOut.y * offsetPx };
+        }
+        let factor = (2 * offsetPx) / (bLen * bLen);
+        const offMag = Math.abs(factor) * bLen;
+        if (offMag > maxOffset) {
+          factor *= maxOffset / offMag;
+        }
+        return { x: p.x + bx * factor, y: p.y + by * factor };
+      }
+      const single = nIn || nOut;
+      if (!single) return { x: p.x, y: p.y }; // 完全退化
+      return { x: p.x + single.x * offsetPx, y: p.y + single.y * offsetPx };
+    });
+    return offsetPoints.map((pt) => this.map.containerPointToLatLng(L.point(pt.x, pt.y)));
+  }
+
+  /**
    * Display routes on the map as polylines with waypoint order labels.
    * @param {Array} routes - [{name, waypoints: [poiName, ...]}, ...]
    * @param {Array} pois - POI array to resolve waypoint names to coordinates
@@ -412,37 +489,52 @@ class MapViewer {
     this.clearRoutes();
     if (!this.metadata || !routes || !pois) return;
 
+    // zoomend で再描画するため最後の引数を保持。配列/Set は呼び出し側 (app.js) が
+    // showRoutes 後に in-place 変更しない前提で参照を保持する (現状そう運用、変更時は
+    // copy を取る方針に切り替える)。
+    this._cachedRoutesArgs = { routes, pois, visibleNames };
+
     // Build name -> poi lookup
     const poiByName = {};
     pois.forEach((poi) => {
       if (poi.name) poiByName[poi.name] = poi;
     });
 
+    // 共通区間で polyline が完全重複する視認性問題への (b) parallel offset 対策 (#69 PR-2)。
+    // 表示対象 route 数を先に数えて、各 route に中心揃えの offset index を付与する。
+    // 例: 表示中 3 route → offset index は -1, 0, +1 → offsetPx は -STEP, 0, +STEP。
+    // route 数 1 のみだと offset 0 で _offsetLatLngs は no-op、原点描画と完全一致。
+    const visibleEntries = [];
     routes.forEach((route, routeIdx) => {
-      // Filter by visible set
       if (visibleNames && !visibleNames.has(route.name)) return;
+      visibleEntries.push({ route, routeIdx });
+    });
+    const totalVisible = visibleEntries.length;
+    const OFFSET_STEP_PX = 6;
 
+    visibleEntries.forEach(({ route, routeIdx }, visibleIdx) => {
+      const offsetPx = (visibleIdx - (totalVisible - 1) / 2) * OFFSET_STEP_PX;
       const color = this.getRouteColor(routeIdx);
       const waypoints = route.waypoints || [];
 
-      // Resolve waypoint names to LatLng positions
-      const latlngs = [];
-      const resolved = []; // { latlng, order }
+      // Resolve waypoint names to LatLng positions (raw, POI 物理座標)
+      const rawLatlngs = [];
       let firstWaypointName = '';
-      waypoints.forEach((wpName, i) => {
+      waypoints.forEach((wpName) => {
         const poi = poiByName[wpName];
         if (poi && poi.pose) {
-          const ll = this.worldToLatLng(poi.pose.x, poi.pose.y);
-          latlngs.push(ll);
-          resolved.push({ latlng: ll, order: i + 1 });
+          rawLatlngs.push(this.worldToLatLng(poi.pose.x, poi.pose.y));
           if (!firstWaypointName) firstWaypointName = wpName;
         }
       });
 
-      if (latlngs.length < 2) return;
+      if (rawLatlngs.length < 2) return;
+
+      // 表示用に offset を適用 (offsetPx === 0 なら同じ配列参照が返る)
+      const displayLatlngs = this._offsetLatLngs(rawLatlngs, offsetPx);
 
       // Draw polyline (dashed)
-      const line = L.polyline(latlngs, {
+      const line = L.polyline(displayLatlngs, {
         color: color,
         weight: 3,
         opacity: 0.7,
@@ -459,7 +551,7 @@ class MapViewer {
       this.routeLayers.push(line);
 
       // Invisible wider hit area for easier clicking
-      const hitLine = L.polyline(latlngs, {
+      const hitLine = L.polyline(displayLatlngs, {
         color: '#000',
         weight: 16,
         opacity: 0,
@@ -477,10 +569,10 @@ class MapViewer {
       const arrowMarkers = [];
       const labelMarkers = [];
 
-      // Draw teardrop direction markers along segments
-      for (let i = 0; i < latlngs.length - 1; i++) {
-        const from = latlngs[i];
-        const to = latlngs[i + 1];
+      // Draw teardrop direction markers along segments (offset 後の座標で配置)
+      for (let i = 0; i < displayLatlngs.length - 1; i++) {
+        const from = displayLatlngs[i];
+        const to = displayLatlngs[i + 1];
         const midLat = (from.lat + to.lat) / 2;
         const midLng = (from.lng + to.lng) / 2;
         const rotDeg = this.routeDirectionDeg(from, to);
@@ -499,11 +591,11 @@ class MapViewer {
         arrowMarkers.push(arrowMarker);
       }
 
-      // Draw order labels at each waypoint
-      resolved.forEach(({ latlng, order }) => {
+      // Draw order labels at each waypoint (offset 後位置でラベル重なりも軽減)
+      displayLatlngs.forEach((latlng, i) => {
         const icon = L.divIcon({
           className: 'route-order-label',
-          html: `<span style="background: ${color};">${order}</span>`,
+          html: `<span style="background: ${color};">${i + 1}</span>`,
           iconSize: [22, 22],
           iconAnchor: [-6, 28],
         });
@@ -518,7 +610,12 @@ class MapViewer {
       this._routePolylines.push({
         line, hitLine, arrowMarkers, labelMarkers,
         routeIdx, routeName: route.name || '', firstWaypointName,
-        color, latlngs,
+        color,
+        // latlngs: raw (POI 物理座標)。robot connector の到達判定など物理距離を
+        //   評価する用途で使う
+        // displayLatlngs: offset 後 (画面表示用)。connector の視覚端点や zoom
+        //   再描画時の再計算で使う
+        latlngs: rawLatlngs, displayLatlngs,
       });
     });
   }
@@ -532,6 +629,12 @@ class MapViewer {
     });
     this.routeLayers = [];
     this._routePolylines = [];
+    // cached args は次回 showRoutes で上書きされるので残しても害は無いが、
+    // route データが本当に空 (cleared) のとき zoom した瞬間に古い args で
+    // 再描画されないよう、clearRoutes が「外から明示的に空にされた」ケースで
+    // 初期化することにした。showRoutes 内部から clearRoutes を呼ぶ場合は直後に
+    // _cachedRoutesArgs が再設定されるので race にはならない。
+    this._cachedRoutesArgs = null;
     this.clearEditingRoutePreview();
     this._clearRobotConnector();
     // 到達履歴 (_reachedRouteSignatures) は clearRoutes では reset しない。
@@ -836,10 +939,17 @@ class MapViewer {
     const robotLatLng = this.worldToLatLng(
       this._lastRobotPose.x, this._lastRobotPose.y,
     );
-    const firstLatLng = item.latlngs[0];
+    // 視覚端点は offset 後 (displayLatlngs) を使い、parallel offset で動いた
+    // polyline 始点に矢印が刺さるようにする (#69 PR-2)。displayLatlngs が無い
+    // 古い entry / no-offset 時は latlngs にフォールバック。
+    const firstLatLngVisual = (item.displayLatlngs && item.displayLatlngs[0])
+      || item.latlngs[0];
 
     // 先頭 POI に到達済みなら Set に登録して以降描かない。
-    const firstWorld = this.latLngToWorld(firstLatLng);
+    // 到達判定は offset で動かない物理座標 (latlngs[0] = POI 実位置) で評価する
+    // (offset 後位置で判定すると同じ POI に到達しているのに route ごとに到達タイ
+    //  ミングがずれる)。
+    const firstWorld = this.latLngToWorld(item.latlngs[0]);
     const dx = this._lastRobotPose.x - firstWorld.x;
     const dy = this._lastRobotPose.y - firstWorld.y;
     if (Math.hypot(dx, dy) < this.robotRadiusM) {
@@ -849,7 +959,7 @@ class MapViewer {
       return;
     }
 
-    const line = L.polyline([robotLatLng, firstLatLng], {
+    const line = L.polyline([robotLatLng, firstLatLngVisual], {
       color: item.color,
       weight: 3,
       opacity: 0.8,
@@ -859,9 +969,9 @@ class MapViewer {
     line.bringToBack();
     this._robotConnectorLayers.push(line);
 
-    const midLat = (robotLatLng.lat + firstLatLng.lat) / 2;
-    const midLng = (robotLatLng.lng + firstLatLng.lng) / 2;
-    const rotDeg = this.routeDirectionDeg(robotLatLng, firstLatLng);
+    const midLat = (robotLatLng.lat + firstLatLngVisual.lat) / 2;
+    const midLng = (robotLatLng.lng + firstLatLngVisual.lng) / 2;
+    const rotDeg = this.routeDirectionDeg(robotLatLng, firstLatLngVisual);
     const arrowIcon = L.divIcon({
       className: 'route-arrow',
       html: this.createRouteDirectionSvg(item.color, rotDeg, 18),
