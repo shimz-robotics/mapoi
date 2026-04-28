@@ -189,6 +189,9 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="/js/api.js"></script>
+  <!-- geometry.js は MapoiGeometry を window に attach する pure helper 群。
+       map-viewer.js より前に読み込む必要がある (showRoutes 経由で参照される) -->
+  <script src="/js/geometry.js"></script>
   <script src="/js/map-viewer.js"></script>
   <script src="/js/poi-editor.js"></script>
   <script src="/js/route-editor.js"></script>
