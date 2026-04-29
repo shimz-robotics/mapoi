@@ -62,17 +62,29 @@ inline std::vector<std::string> split_and_trim(const std::string & input, char d
 // rad → 表示用 deg 文字列。yaml 値の rad → deg 変換で「45° 狙い 0.7853981 rad」が
 // 44.9999... と表示されるのを避けるための四捨五入 helper (#151)。
 //
-// 戦略: **「整数度を rad 化した値」と元 rad がほぼ一致** (= 1e-9 未満) するなら「整数度を
-//       1 桁表示」(例: `0.7853981... rad` → `45.0`)。それ以外は 4 桁表示で元値の精度維持。
+// 戦略: **「整数度を rad 化した値」と元 rad がほぼ一致** (= kIntegerDegreeRadTolerance 未満)
+//       するなら「整数度を 1 桁表示」(例: `0.7853981633... rad` → `45.0`)。
+//       それ以外は 4 桁表示で元値の精度維持。
 //       (round 3 ヘビー medium 対応で「整数度との deg 差判定」→「rad 差判定」に修正:
 //       前者は `45.04°` のような端数も `45.0` に丸めて round-trip で値喪失する regression
 //       を生んでいたため。本ロジックは「元の user 入力が整数度だったかどうか」を逆算する。)
+//
+// kIntegerDegreeRadTolerance:
+//   double full precision (= IEEE 754 binary64 の有効桁約 15-17 桁) で書かれた rad 値の
+//   round-trip 誤差を吸収する閾値。値 1e-9 (rad) ≒ 5.7e-8 (deg) は十分に「整数度の量子化
+//   誤差」レベル (1 deg = 0.0174533 rad なので、整数度との差が 1e-9 rad 未満 = 約 1/17M
+//   の精度) を捕捉できる。これより緩めると `45.04°` 等が誤って `45.0` 表示される regression
+//   を生む (round 3 ヘビー medium 参照)。逆にこれより厳しくすると、yaml emitter precision
+//   が低い (= 6-7 桁) legacy yaml が `45.0` 表示にならず 4 桁になる (round 4 軽微 high)。
+//   yaml save 側では `Emitter::SetDoublePrecision(17)` を設定して full precision を保つ。
+constexpr double kIntegerDegreeRadTolerance = 1e-9;
+
 inline QString format_yaw_deg(double rad)
 {
   const double deg = rad * 180.0 / M_PI;
   const double rounded_to_int = std::round(deg);
   const double rad_of_int = rounded_to_int * M_PI / 180.0;
-  if (std::abs(rad - rad_of_int) < 1e-9) {
+  if (std::abs(rad - rad_of_int) < kIntegerDegreeRadTolerance) {
     return QString::number(rounded_to_int, 'f', 1);
   }
   return QString::number(deg, 'f', 4);
