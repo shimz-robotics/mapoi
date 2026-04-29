@@ -245,7 +245,7 @@ class PoiEditor {
       pose: { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100, yaw: 0.0 },
       // default tolerance: xy=0.5 m / yaw=π/4 (45°) — sample yaml と整合 (#138)
       tolerance: { xy: 0.5, yaw: Math.PI / 4 },
-      tags: ['goal'],
+      tags: ['waypoint'],
       description: '',
     };
 

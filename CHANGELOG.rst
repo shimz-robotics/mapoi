@@ -19,6 +19,12 @@ Unreleased
 Breaking changes
 ----------------
 
+* System tag ``goal`` renamed to ``waypoint``. Both single navigation
+  targets and route waypoints share this tag (Nav2 navigation 到達対象).
+  YAML ``tags: [goal, ...]`` must be migrated to ``tags: [waypoint, ...]``.
+  Topic / service / action names referring to "goal" (e.g.
+  ``mapoi_goal_pose_poi``, ``goal_pose``) remain unchanged because they
+  follow Nav2 native terminology. (#89 段階 1, #142)
 * System tag ``origin`` removed. Map origin reference points should be
   expressed with ``landmark`` system tag plus a custom tag (e.g.
   ``map_origin``) for color/semantic differentiation. Visualization

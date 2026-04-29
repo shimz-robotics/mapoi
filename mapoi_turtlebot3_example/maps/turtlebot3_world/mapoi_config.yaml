@@ -26,24 +26,24 @@ poi:
   name: elevator_hall
   pose: {x: -2.0, y: -0.5, yaw: 0.0}
   tolerance: {xy: 0.50, yaw: 0.785}
-  tags: [goal, initial_pose]
+  tags: [waypoint, initial_pose]
 - description: 会議室A
   name: meeting_room_a
   pose: {x: -0.6, y: -0.6, yaw: 0.0}
   tolerance: {xy: 0.35, yaw: 0.785}
-  tags: [goal]
+  tags: [waypoint]
 - description: 大会議室
   name: conference_room
   pose: {x: 0.7, y: -0.4, yaw: 1.57}
   tolerance: {xy: 0.45, yaw: 0.785}
-  tags: [goal]
+  tags: [waypoint]
 - description: 廊下
   name: corridor_a
   pose: {x: 0.4, y: 0.6, yaw: -3.14}
   tolerance: {xy: 0.30, yaw: 0.785}
-  tags: [goal, pause]
+  tags: [waypoint, pause]
 - description: 模型展示
   name: model_exhibit
   pose: {x: -0.5, y: 0.5, yaw: -1.57}
   tolerance: {xy: 0.40, yaw: 0.785}
-  tags: [goal, audio_info]
+  tags: [waypoint, audio_info]
