@@ -50,10 +50,12 @@ _TOLERANCE_MIN = 0.001
 
 
 def _validate_pois_tolerance(pois):
-    """POI list の tolerance.{xy,yaw} が >= 0.001 を満たすかを検査する (#138)。
+    """POI list の tolerance.{xy,yaw} が finite な number で >= 0.001 を満たすかを検査する (#138)。
 
     frontend (poi-editor の HTML min / parseTolerance) で reject 済みだが、
     yaml 直編集や別 client からの POST に対する保険として backend でも reject。
+    bool は int subclass のため明示除外、NaN / +-Inf は math.isfinite で reject
+    (Codex review #139 medium 対応)。
     return: エラーメッセージ文字列 (issue あり) または None (OK)。
     """
     for i, poi in enumerate(pois):
@@ -64,9 +66,12 @@ def _validate_pois_tolerance(pois):
             return f'POI #{i} ({poi.get("name", "?")}): "tolerance" must be a mapping {{xy, yaw}}'
         for key in ('xy', 'yaw'):
             v = tol.get(key)
-            if not isinstance(v, (int, float)) or v < _TOLERANCE_MIN:
+            if (isinstance(v, bool)
+                    or not isinstance(v, (int, float))
+                    or not math.isfinite(v)
+                    or v < _TOLERANCE_MIN):
                 return (f'POI #{i} ({poi.get("name", "?")}): '
-                        f'"tolerance.{key}" must be a number >= {_TOLERANCE_MIN}')
+                        f'"tolerance.{key}" must be a finite number >= {_TOLERANCE_MIN}')
     return None
 
 

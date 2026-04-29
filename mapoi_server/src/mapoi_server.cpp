@@ -1,5 +1,7 @@
 #include "mapoi_server/mapoi_server.hpp"
 
+#include <cmath>
+
 using namespace std::chrono_literals;
 
 MapoiServer::MapoiServer() : Node("mapoi_server") {
@@ -83,11 +85,13 @@ mapoi_interfaces::msg::PointOfInterest MapoiServer::yaml_to_poi_msg(const YAML::
       msg.name.c_str(), DEFAULT_TOL_XY, DEFAULT_TOL_YAW);
   } else {
     const auto & tol = poi["tolerance"];
+    // NaN / +-Inf も clamp 対象 (Codex review #139 medium 対応)。yaml-cpp は ".nan" / ".inf"
+    // を double に解釈するため、有限性チェックを明示的に入れる。
     if (tol["xy"]) {
       const double v = tol["xy"].as<double>(DEFAULT_TOL_XY);
-      if (v < TOL_MIN) {
+      if (!std::isfinite(v) || v < TOL_MIN) {
         RCLCPP_WARN(this->get_logger(),
-          "POI '%s': 'tolerance.xy' (%.6f) < %.3f m; clamping to %.3f m.",
+          "POI '%s': 'tolerance.xy' (%.6f) is non-finite or < %.3f m; clamping to %.3f m.",
           msg.name.c_str(), v, TOL_MIN, TOL_MIN);
         msg.tolerance.xy = TOL_MIN;
       } else {
@@ -100,9 +104,9 @@ mapoi_interfaces::msg::PointOfInterest MapoiServer::yaml_to_poi_msg(const YAML::
     }
     if (tol["yaw"]) {
       const double v = tol["yaw"].as<double>(DEFAULT_TOL_YAW);
-      if (v < TOL_MIN) {
+      if (!std::isfinite(v) || v < TOL_MIN) {
         RCLCPP_WARN(this->get_logger(),
-          "POI '%s': 'tolerance.yaw' (%.6f rad) < %.3f rad; clamping to %.3f rad.",
+          "POI '%s': 'tolerance.yaw' (%.6f rad) is non-finite or < %.3f rad; clamping to %.3f rad.",
           msg.name.c_str(), v, TOL_MIN, TOL_MIN);
         msg.tolerance.yaw = TOL_MIN;
       } else {

@@ -320,11 +320,13 @@ class PoiEditor {
     this.inputYaw.value = pose.yaw || 0;
     // tolerance: xy は m そのまま、yaw は rad → deg 変換して UI に表示 (#138)。
     // `||` だと意図的な小さい値も default で上書きされるので Number.isFinite ベースで判定。
+    // toFixed(4) で round-trip 精度を 0.0001° (≒ 0.00000175 rad) 以内に抑える
+    // (Codex review #139 low 対応: toFixed(2) だと未編集 save で yaml 値が微小に変化する懸念)。
     const xyVal = poi.tolerance && poi.tolerance.xy;
     this.inputToleranceXy.value = Number.isFinite(xyVal) ? xyVal : 0.5;
     const yawValRad = poi.tolerance && poi.tolerance.yaw;
     this.inputToleranceYaw.value = Number.isFinite(yawValRad)
-      ? MapoiPoiFilter.radToDeg(yawValRad).toFixed(2)
+      ? MapoiPoiFilter.radToDeg(yawValRad).toFixed(4)
       : 45;
     this.inputTags.value = (poi.tags || []).join(', ');
     this.inputDescription.value = poi.description || '';
