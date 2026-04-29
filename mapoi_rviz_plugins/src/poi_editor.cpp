@@ -472,6 +472,11 @@ void PoiEditorPanel::SaveButton()
 
   map_info["poi"] = pois_list;
   YAML::Emitter out;
+  // double を full precision (17 桁) で書き出して round-trip での値喪失を防ぐ (#151 round 4 高)。
+  // 旧 default は 6-7 桁で、`pi/4` rad が 7 桁切り捨て (`0.7853981`) で yaml に書かれていた。
+  // load 時にそのまま復元すると format_yaw_deg の判定 (整数度近似) を超えて 4 桁表示になり、
+  // 「45.0 で見せる」UX 要件を満たせない問題があった。
+  out.SetDoublePrecision(17);
   out << map_info;
 
   std::string save_path = ui_->FileComboBox->currentText().toStdString();

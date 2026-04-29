@@ -86,6 +86,19 @@ Breaking changes
   削除。yaml load で違反値を検出した場合は ``0.001`` に補正 + WARN ログ。
   (#138)
 
+* RViz POI Editor 表示変更 + yaml 数値精度向上 (#151):
+
+  - column 数 6 → 5: ``tolerance.xy`` と ``tolerance.yaw (deg)`` を
+    ``tolerance (xy m, yaw deg)`` 1 column に統合
+  - yaml save 時に ``YAML::Emitter::SetDoublePrecision(17)`` を設定し、
+    rad 値を full precision で書き出す。旧 default (6-7 桁) で書かれた
+    legacy yaml は **1 度 POI Editor で開いて save** すれば順次
+    full precision 化される。
+  - tolerance.yaw (deg) 表示は「整数度を rad 化したもの」と元 rad の差が
+    1e-9 未満なら 1 桁表示 (例: ``0.7853981633... rad`` → ``45.0``)、
+    それ以外は 4 桁表示 (例: ``45.04°`` → ``45.0400``、編集せず save しても
+    値が壊れない)。
+
 Interfaces
 ----------
 

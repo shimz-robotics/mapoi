@@ -47,8 +47,9 @@ inline std::vector<std::string> split_and_trim(const std::string & input, char d
   std::stringstream ss(input);
   std::string item;
   while (std::getline(ss, item, delimiter)) {
-    const auto begin = item.find_first_not_of(" \t");
-    const auto end = item.find_last_not_of(" \t");
+    // copy & paste で改行が混入する可能性に対応 (#151 round 4 medium)。
+    const auto begin = item.find_first_not_of(" \t\r\n");
+    const auto end = item.find_last_not_of(" \t\r\n");
     if (begin == std::string::npos) {
       result.push_back("");
     } else {

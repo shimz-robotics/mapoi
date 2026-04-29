@@ -56,6 +56,35 @@ TEST(FormatYawDeg, IntegerDegreeShownAsOneDigit)
   EXPECT_EQ(format_yaw_deg(rad).toStdString(), "12.0");
 }
 
+TEST(FormatYawDeg, FullPrecisionPiQuarterShown45)
+{
+  // 17 桁 full precision の pi/4 (yaml emitter SetDoublePrecision(17) で書き出した値) は
+  // 「整数度 45 を rad 化したもの」と一致 → 1 桁 "45.0"
+  const double rad = 0.78539816339744828;  // = M_PI / 4 を 17 桁で書いた値
+  EXPECT_EQ(format_yaw_deg(rad).toStdString(), "45.0");
+}
+
+TEST(FormatYawDeg, TruncatedPiQuarterShownAs4Digits)
+{
+  // 7 桁切り捨ての pi/4 (旧 yaml emitter の default 精度で書かれた legacy 値) は
+  // 「整数度 45 を rad 化したもの」と一致しない → 4 桁表示 (= legacy data は SetDoublePrecision
+  // 適用後の save で順次 full precision 化される、CHANGELOG 参照)。
+  const double rad = 0.7853981;
+  // 期待値: "45.0000" (= 44.9999... の 4 桁四捨五入で末尾 5)。実装の桁丸め挙動を固定する。
+  EXPECT_EQ(format_yaw_deg(rad).toStdString(), "45.0000");
+}
+
+// --- split_and_trim (extra: newline trim) ---
+
+TEST(SplitAndTrim, TrimsNewlines)
+{
+  // copy & paste で改行が混入してもパースが落ちないこと (#151 round 4 medium)
+  const auto result = split_and_trim("0.5,\n45.0", ',');
+  ASSERT_EQ(result.size(), 2u);
+  EXPECT_EQ(result[0], "0.5");
+  EXPECT_EQ(result[1], "45.0");
+}
+
 // --- split_and_trim ---
 
 TEST(SplitAndTrim, BasicTwoParts)
