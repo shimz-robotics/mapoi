@@ -606,9 +606,17 @@ void PoiEditorPanel::TagFilterChanged(int index)
     }
     if (has_tag) {
       ui_->PoiTable->insertRow(row);
+      // 表示精度: pose / tolerance とも小数点以下 2 桁固定。長すぎる尾桁を避ける (#159 round 5 user)。
       ui_->PoiTable->setItem(row, kColName, new QTableWidgetItem(QString::fromStdString(p.name)));
-      ui_->PoiTable->setItem(row, kColPose, new QTableWidgetItem(tr("%1, %2, %3").arg(p.pose.position.x).arg(p.pose.position.y).arg(this->calcYaw(p.pose))));
-      ui_->PoiTable->setItem(row, kColTolerance, new QTableWidgetItem(tr("%1, %2").arg(p.tolerance.xy).arg(p.tolerance.yaw)));
+      ui_->PoiTable->setItem(row, kColPose, new QTableWidgetItem(
+        tr("%1, %2, %3")
+          .arg(QString::number(p.pose.position.x, 'f', 2))
+          .arg(QString::number(p.pose.position.y, 'f', 2))
+          .arg(QString::number(this->calcYaw(p.pose), 'f', 2))));
+      ui_->PoiTable->setItem(row, kColTolerance, new QTableWidgetItem(
+        tr("%1, %2")
+          .arg(QString::number(p.tolerance.xy, 'f', 2))
+          .arg(QString::number(p.tolerance.yaw, 'f', 2))));
       ui_->PoiTable->setItem(row, kColTags, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
       ui_->PoiTable->setItem(row, kColDescription, new QTableWidgetItem(QString::fromStdString(p.description)));
       row++;
@@ -921,8 +929,8 @@ void PoiEditorPanel::UpdatePoiTable()
   // column 構造 (#158): name / pose / tolerance / tags / description
   ui_->PoiTable->setColumnCount(kColCount);
   ui_->PoiTable->setHorizontalHeaderLabels(
-    QStringList() << tr("name") << tr("pose (x, y, yaw rad)")
-                  << tr("tolerance (xy m, yaw rad)") << tr("tags") << tr("description"));
+    QStringList() << tr("name") << tr("pose (x, y, yaw)")
+                  << tr("tolerance (xy, yaw)") << tr("tags") << tr("description"));
   ui_->PoiTable->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
   ui_->PoiTable->verticalHeader()->setSectionsMovable(true);
   ui_->PoiTable->horizontalHeader()->setSortIndicatorShown(true);
@@ -931,9 +939,17 @@ void PoiEditorPanel::UpdatePoiTable()
   is_table_color_ = false;
   for (size_t row = 0; row < numRows; row++){
     const auto & p = pois[row];
+    // 表示精度: pose / tolerance とも小数点以下 2 桁固定。
     ui_->PoiTable->setItem(row, kColName, new QTableWidgetItem(QString::fromStdString(p.name)));
-    ui_->PoiTable->setItem(row, kColPose, new QTableWidgetItem(tr("%1, %2, %3").arg(p.pose.position.x).arg(p.pose.position.y).arg(this->calcYaw(p.pose))));
-    ui_->PoiTable->setItem(row, kColTolerance, new QTableWidgetItem(tr("%1, %2").arg(p.tolerance.xy).arg(p.tolerance.yaw)));
+    ui_->PoiTable->setItem(row, kColPose, new QTableWidgetItem(
+      tr("%1, %2, %3")
+        .arg(QString::number(p.pose.position.x, 'f', 2))
+        .arg(QString::number(p.pose.position.y, 'f', 2))
+        .arg(QString::number(this->calcYaw(p.pose), 'f', 2))));
+    ui_->PoiTable->setItem(row, kColTolerance, new QTableWidgetItem(
+      tr("%1, %2")
+        .arg(QString::number(p.tolerance.xy, 'f', 2))
+        .arg(QString::number(p.tolerance.yaw, 'f', 2))));
     ui_->PoiTable->setItem(row, kColTags, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
     ui_->PoiTable->setItem(row, kColDescription, new QTableWidgetItem(QString::fromStdString(p.description)));
   }

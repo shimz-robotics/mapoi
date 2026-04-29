@@ -81,12 +81,12 @@
      </column>
      <column>
       <property name="text">
-       <string>pose (x, y, yaw rad)</string>
+       <string>pose (x, y, yaw)</string>
       </property>
      </column>
      <column>
       <property name="text">
-       <string>tolerance (xy m, yaw rad)</string>
+       <string>tolerance (xy, yaw)</string>
       </property>
      </column>
      <column>
@@ -106,12 +106,12 @@
      </item>
      <item row="0" column="1">
       <property name="text">
-       <string>1.0, 2.0, 3.0</string>
+       <string>1.00, 2.00, 3.00</string>
       </property>
      </item>
      <item row="0" column="2">
       <property name="text">
-       <string>0.5, 0.7854</string>
+       <string>0.50, 0.79</string>
       </property>
      </item>
      <item row="0" column="3">
@@ -131,12 +131,12 @@
      </item>
      <item row="1" column="1">
       <property name="text">
-       <string>0.1, 2.4, 5.6</string>
+       <string>0.10, 2.40, 5.60</string>
       </property>
      </item>
      <item row="1" column="2">
       <property name="text">
-       <string>1.0, 0.7854</string>
+       <string>1.00, 0.79</string>
       </property>
      </item>
      <item row="1" column="3">
