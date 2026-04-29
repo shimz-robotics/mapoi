@@ -27,6 +27,16 @@ set(SOURCE_FILES
 
 ament_auto_add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${HEADERS} ${UIC_FILES})
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  # poi_editor_helpers.hpp の純関数 (format_yaw_deg / split_and_trim / try_parse_finite_double)
+  # の unit test (#151 round 1 low 対応)。QString を返すので Qt5::Core link が必要。
+  ament_auto_add_gtest(test_poi_editor_helpers
+    test/test_poi_editor_helpers.cpp
+  )
+  target_link_libraries(test_poi_editor_helpers Qt5::Core)
+endif()
+
 # 将来のROS 2（Kilted Kaiju以降）と互換性を持たせるため
 # ament_auto_package()
 ament_auto_package(

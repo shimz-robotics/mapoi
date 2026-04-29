@@ -1,4 +1,5 @@
 #include "mapoi_rviz_plugins/poi_editor.hpp"
+#include "mapoi_rviz_plugins/poi_editor_helpers.hpp"
 #include <class_loader/class_loader.hpp>
 #include <cctype>
 #include <cmath>
@@ -22,45 +23,11 @@ namespace mapoi_rviz_plugins
 {
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("mapoi_rviz_plugins.poi_editor");
 
-namespace {
-// 文字列を strict に double に parse し、有限性を確認する純関数 (Codex review #139 medium 対応)。
-// std::stod は "1abc" のような部分数値を 1 として返し、QString::toDouble の ok flag も
-// 同様の問題があるため、validation と save で別 parser を使うと結果がズレる。共通 helper に
-// 寄せて、validation と保存で同じ判定基準を使う。min check は呼び出し側の責任。
-//
-// success: parsed value を out に書き、true を返す。
-// failure: out 不変、false を返す (parse failure / 末尾 garbage / NaN / +-Inf いずれも reject)。
-bool try_parse_finite_double(const std::string & str, double & out)
-{
-  if (str.empty()) return false;
-  try {
-    size_t pos = 0;
-    const double v = std::stod(str, &pos);
-    while (pos < str.size() && std::isspace(static_cast<unsigned char>(str[pos]))) ++pos;
-    if (pos != str.size()) return false;
-    if (!std::isfinite(v)) return false;
-    out = v;
-    return true;
-  } catch (...) {
-    return false;
-  }
-}
-
-// rad → 表示用 deg 文字列。yaml 値の rad → deg 変換で「45° 狙い 0.7853981 rad」が
-// 44.9999... と表示されるのを避けるための四捨五入 helper (#151)。
-//
-// 戦略: 0.1° に丸めて元との誤差が < 0.05° なら「丸めた値を 1 桁表示」、
-//       誤差が大きい (= 細かい角度を意図的に入れたケース) はそのまま 4 桁表示で精度維持。
-QString format_yaw_deg(double rad)
-{
-  const double deg = rad * 180.0 / M_PI;
-  const double rounded_to_first = std::round(deg * 10.0) / 10.0;
-  if (std::abs(deg - rounded_to_first) < 0.05) {
-    return QString::number(rounded_to_first, 'f', 1);
-  }
-  return QString::number(deg, 'f', 4);
-}
-}  // namespace
+// pure helpers (try_parse_finite_double / split_and_trim / format_yaw_deg) は
+// poi_editor_helpers.hpp に切り出した (#151 round 1 で test 容易化のため)。
+using detail::try_parse_finite_double;
+using detail::split_and_trim;
+using detail::format_yaw_deg;
 
 PoiEditorPanel::PoiEditorPanel(QWidget* parent) : Panel(parent),  ui_(new Ui::PoiEditorUi())
 {
@@ -485,7 +452,7 @@ void PoiEditorPanel::SaveButton()
     // ValidatePois で同じ split + try_parse_finite_double を通しているので parse 失敗は通常
     // 起きないが、二段防御として critical error にして save を中断する。
     auto tolerance_str = ui_->PoiTable->item(logical_row, 3)->text().toStdString();
-    auto tolerance_parts = this->SplitSentence(tolerance_str, ", ");
+    auto tolerance_parts = split_and_trim(tolerance_str, ',');
     double xy_val = 0.0;
     double yaw_deg = 0.0;
     if (tolerance_parts.size() != 2
@@ -773,7 +740,7 @@ bool PoiEditorPanel::ValidatePois()
     // min: tolerance.xy >= 0.001 m / tolerance.yaw >= 0.001 rad ≒ 0.057° (#138 msg spec)。
     auto* tolerance_item = ui_->PoiTable->item(logical_row, 3);
     std::string tolerance_str = tolerance_item ? tolerance_item->text().toStdString() : "";
-    auto tolerance_parts = this->SplitSentence(tolerance_str, ", ");
+    auto tolerance_parts = split_and_trim(tolerance_str, ',');
     if (tolerance_parts.size() != 2) {
       warnings.append(tr("Row %1: tolerance must be \"xy, yaw_deg\" (got \"%2\")")
                         .arg(row + 1).arg(QString::fromStdString(tolerance_str)));
