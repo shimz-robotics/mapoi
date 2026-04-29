@@ -29,6 +29,17 @@ class MapoiServer : public rclcpp::Node
 public:
   MapoiServer();
 
+  // 純関数版: pois_list (YAML::Node) と requested_name から initial POI 名を決定する (#144)。
+  // ロジック:
+  //   1) requested_name が指定されていれば、その POI を探す
+  //      - landmark タグ持ち → fall back (round 1 high)
+  //      - pose ノード or x/y/yaw 欠落 / numeric 不可 → fall back (round 2 low)
+  //   2) fall back: POI list 先頭で「landmark なし & pose 完備」の POI を採用
+  //   3) 候補なしなら空文字列を返す
+  // static にしてあるのは unit test で直接呼べるようにするため (#149 round 4 high 対応)。
+  static std::string compute_initial_poi_name(
+    const YAML::Node & pois_list, const std::string & requested_name);
+
 private:
   // parameters & internal state
   std::string mapoi_server_pkg_;
@@ -45,12 +56,8 @@ private:
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr initialpose_poi_publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
 
-  // initial pose 用の POI 名計算と publish (#144)。
-  // shared state (pending_initial_poi_name_ field) は持たず、呼び出し側 (コンストラクタ /
-  // switch_map_service / reload_map_info_service) が requested_name を local に渡す形にして
-  // thread safety / lifecycle race を排除 (Cursor review #149 round 2 high 対応)。
+  // initial pose 用の POI 名 publish (#144)。compute_initial_poi_name は class-level public static。
   void publish_initial_poi_name(const std::string & requested_name);
-  std::string compute_initial_poi_name(const std::string & requested_name) const;
 
   // methods
   void load_mapoi_config_file();

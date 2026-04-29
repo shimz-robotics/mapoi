@@ -78,6 +78,12 @@ if(BUILD_TESTING)
   )
   target_compile_definitions(test_nav_server_unit PRIVATE UNIT_TEST)
 
+  ament_auto_add_gtest(test_mapoi_server_unit
+    test/test_mapoi_server_unit.cpp
+    src/mapoi_server.cpp
+  )
+  target_compile_definitions(test_mapoi_server_unit PRIVATE UNIT_TEST)
+
   # Level 2: launch_testing integration tests
   add_launch_test(
     test/test_poi_event_integration.py

@@ -371,23 +371,22 @@ void MapoiServer::reload_map_info_service(
 {
   (void)request;
   load_mapoi_config_file();
-  // reload は yaml save 後の trigger なので initial pose 再 publish は通常不要だが、
-  // POI 順序が編集されて先頭 POI が変わったケースを拾うため publish する (#144)。
-  // reload では明示指定 (initial_poi_name) を取らないので default (POI list 先頭)。
-  publish_initial_poi_name("");
+  // reload は POI 編集後の再読込 trigger。ここで `mapoi_initialpose_poi` を再 publish すると、
+  // mapoi_nav_server 側で /initialpose が再配信され **運用中の自己位置が巻き戻される** 回帰がある
+  // (Cursor review #149 round 4 medium 対応)。
+  // 初期姿勢の (再) 設定は SwitchMap (= 地図切替) または手動経路 (RViz / WebUI / mapoi_initialpose_poi
+  // 直接 publish) を使うのが正しい運用。ここでは publish_initial_poi_name を呼ばない。
   response->success = true;
   response->message = config_path_;
   RCLCPP_INFO(this->get_logger(), "Reloaded mapoi config: %s", config_path_.c_str());
 }
 
-std::string MapoiServer::compute_initial_poi_name(const std::string & requested_name) const
+// static (純関数). pois_list と requested_name から initial POI 名を決定。
+// state を持たないため unit test で直接呼び出せる (#149 round 4 high 対応)。
+std::string MapoiServer::compute_initial_poi_name(
+  const YAML::Node & pois_list, const std::string & requested_name)
 {
-  // 1) requested_name が指定されていれば、その POI を探す
-  //    - landmark タグ持ちなら fall back (initial pose は到達可能 POI のみ、Cursor review #149 high 対応)
-  //    - pose ノード or x/y/yaw が欠落していたら fall back (Cursor review #149 round 2 low 対応)
-  // 2) fall back: POI list の先頭で「landmark タグなし & pose 完備」の POI を採用
-  // 3) 候補なしなら空文字列を返す
-  if (!pois_list_ || !pois_list_.IsSequence()) {
+  if (!pois_list || !pois_list.IsSequence()) {
     return "";
   }
   auto is_landmark_poi = [](const YAML::Node & poi) {
@@ -414,39 +413,17 @@ std::string MapoiServer::compute_initial_poi_name(const std::string & requested_
     return true;
   };
   if (!requested_name.empty()) {
-    for (const auto & poi : pois_list_) {
+    bool found = false;
+    for (const auto & poi : pois_list) {
       if (poi["name"].as<std::string>("") != requested_name) continue;
-      if (is_landmark_poi(poi)) {
-        RCLCPP_WARN(this->get_logger(),
-          "Requested initial_poi_name '%s' has 'landmark' tag (reachable=false); "
-          "falling back to POI list first.",
-          requested_name.c_str());
-        break;
-      }
-      if (!has_valid_pose(poi)) {
-        RCLCPP_WARN(this->get_logger(),
-          "Requested initial_poi_name '%s' has no 'pose' field; "
-          "falling back to POI list first.",
-          requested_name.c_str());
-        break;
-      }
+      found = true;
+      if (is_landmark_poi(poi)) break;     // landmark → fall back
+      if (!has_valid_pose(poi)) break;     // pose 欠落 → fall back
       return requested_name;
     }
-    if (!requested_name.empty()) {
-      // 名前が見つからなかった場合
-      bool found = false;
-      for (const auto & poi : pois_list_) {
-        if (poi["name"].as<std::string>("") == requested_name) { found = true; break; }
-      }
-      if (!found) {
-        RCLCPP_WARN(this->get_logger(),
-          "Requested initial_poi_name '%s' not found in current map; "
-          "falling back to POI list first.",
-          requested_name.c_str());
-      }
-    }
+    (void)found;  // not-found 警告は呼び出し側で扱う (state-less 化のため log は出さない)
   }
-  for (const auto & poi : pois_list_) {
+  for (const auto & poi : pois_list) {
     if (is_landmark_poi(poi)) continue;     // landmark は到達不可、initial pose 候補から除外
     if (!has_valid_pose(poi)) continue;     // pose 欠落 POI もスキップ
     const std::string n = poi["name"].as<std::string>("");
@@ -460,7 +437,15 @@ void MapoiServer::publish_initial_poi_name(const std::string & requested_name)
   // requested_name は SwitchMap.initial_poi_name (空 = default、POI list 先頭採用)。
   // shared state を持たず、呼び出し側が直接渡す形にして thread safety / lifecycle race を排除
   // (Cursor review #149 round 2 high 対応)。
-  const std::string target = compute_initial_poi_name(requested_name);
+  const std::string target = compute_initial_poi_name(pois_list_, requested_name);
+  // 純関数化 (#149 round 4 high) で log responsibility が呼び出し側に移ったので、
+  // requested_name 未マッチを WARN する。
+  if (!requested_name.empty() && target != requested_name) {
+    RCLCPP_WARN(this->get_logger(),
+      "Requested initial_poi_name '%s' was not adopted (not found / landmark / invalid pose); "
+      "falling back to POI list first ('%s').",
+      requested_name.c_str(), target.c_str());
+  }
   if (target.empty()) {
     RCLCPP_WARN(this->get_logger(),
       "No POI available for initial pose in map '%s'; skipping mapoi_initialpose_poi publish.",
@@ -508,6 +493,7 @@ void MapoiServer::get_tag_definitions_service(
   RCLCPP_DEBUG(this->get_logger(), "Sending %zu tag definitions", tag_definitions_.size());
 }
 
+#ifndef UNIT_TEST
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
@@ -515,3 +501,4 @@ int main(int argc, char **argv)
   rclcpp::shutdown();
   return 0;
 }
+#endif

@@ -301,6 +301,13 @@ void MapoiNavServer::publish_initial_pose(
   msg.pose.covariance[0] = 0.25;
   msg.pose.covariance[7] = 0.25;
   msg.pose.covariance[35] = 0.06853891945200942;
+  // 過去の retry が pending な状態で新 publish が来たら、必ず先に cancel する (#149 round 4 high)。
+  // でないと「新 publish 後に古い pose を retry が再送 → localization が古い位置へ戻る」回帰になる。
+  if (initialpose_retry_timer_) {
+    initialpose_retry_timer_->cancel();
+    initialpose_retry_timer_.reset();
+  }
+
   nav2_initialpose_pub_->publish(msg);
   RCLCPP_INFO(this->get_logger(), "Published initial pose (%s).", source.c_str());
 
@@ -319,11 +326,24 @@ void MapoiNavServer::schedule_initialpose_retry(
   initialpose_retry_attempt_ = 0;
   if (initialpose_retry_timer_) {
     initialpose_retry_timer_->cancel();
+    initialpose_retry_timer_.reset();
   }
-  const double interval_sec =
+  // パラメータの最低限の clamp (#149 round 4 low): 0 以下は default にフォールバック。
+  // 過密タイマや無限 retry の防止。
+  double interval_sec =
     this->get_parameter("initialpose_retry_interval_sec").as_double();
-  const int max_attempts =
+  if (interval_sec < 0.01) {
+    RCLCPP_WARN(this->get_logger(),
+      "initialpose_retry_interval_sec=%.3f is too small; clamping to 0.01.", interval_sec);
+    interval_sec = 0.01;
+  }
+  int max_attempts =
     this->get_parameter("initialpose_retry_max_attempts").as_int();
+  if (max_attempts < 1) {
+    RCLCPP_WARN(this->get_logger(),
+      "initialpose_retry_max_attempts=%d is invalid; clamping to 1.", max_attempts);
+    max_attempts = 1;
+  }
   initialpose_retry_timer_ = this->create_wall_timer(
     std::chrono::milliseconds(static_cast<int>(interval_sec * 1000)),
     std::bind(&MapoiNavServer::initialpose_retry_callback, this));
@@ -347,17 +367,20 @@ void MapoiNavServer::initialpose_retry_callback()
       "initialpose subscriber detected after %d retries; re-published initial pose (%s).",
       initialpose_retry_attempt_, initialpose_retry_source_.c_str());
     initialpose_retry_timer_->cancel();
+    initialpose_retry_timer_.reset();
     return;
   }
   ++initialpose_retry_attempt_;
-  const int max_attempts =
+  int max_attempts =
     this->get_parameter("initialpose_retry_max_attempts").as_int();
+  if (max_attempts < 1) max_attempts = 1;
   if (initialpose_retry_attempt_ >= max_attempts) {
     RCLCPP_WARN(this->get_logger(),
       "initialpose subscriber not detected after %d retries; giving up "
       "(user can re-publish via WebUI/RViz/mapoi_initialpose_poi).",
       max_attempts);
     initialpose_retry_timer_->cancel();
+    initialpose_retry_timer_.reset();
   }
 }
 
