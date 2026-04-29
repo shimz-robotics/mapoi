@@ -203,16 +203,20 @@ void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedP
           auto goal_msg = NavigateToPose::Goal();
           goal_msg.pose = goal_pose;
 
+          // navigation attempt generation を進めて、stale callback (旧 GOAL の result が新 nav 受理後に
+          // 来る race) を識別する (Codex review #147 round 2 high)。
+          const size_t my_generation = ++nav_attempt_generation_;
+
           auto send_goal_options = rclcpp_action::Client<NavigateToPose>::SendGoalOptions();
-          // target を lambda capture で bind し、callback が goal 固有の target で
-          // publish_nav_status を呼べるようにする (#104 Codex round 2 medium 対応)。
+          // target + generation を lambda capture で bind し、callback が goal 固有 + stale 判定で
+          // publish_nav_status / state 更新を呼べるようにする (#104 / #147)。
           send_goal_options.goal_response_callback =
-            [this, target = poi_name](const GoalHandleNavigateToPose::SharedPtr & h) {
-              this->ntp_goal_response_callback(target, h);
+            [this, target = poi_name, my_generation](const GoalHandleNavigateToPose::SharedPtr & h) {
+              this->ntp_goal_response_callback(target, my_generation, h);
             };
           send_goal_options.result_callback =
-            [this, target = poi_name](const GoalHandleNavigateToPose::WrappedResult & r) {
-              this->ntp_result_callback(target, r);
+            [this, target = poi_name, my_generation](const GoalHandleNavigateToPose::WrappedResult & r) {
+              this->ntp_result_callback(target, my_generation, r);
             };
 
           this->nav_to_pose_client_->async_send_goal(goal_msg, send_goal_options);
@@ -429,8 +433,9 @@ void MapoiNavServer::on_route_received(
   current_waypoint_index_ = 0;
   nav_mode_ = NavMode::ROUTE;
   is_paused_ = false;
-  // route_generation を増分し、result_callback の stale 判定で使う (Codex review #147 high)。
-  const size_t my_generation = ++route_generation_;
+  // navigation attempt generation を増分し、callback の stale 判定で使う
+  // (Codex review #147 round 1 + 2 high)。
+  const size_t my_generation = ++nav_attempt_generation_;
 
   // Send waypoints to Nav2 with action client
   while(!this->action_client_->wait_for_action_server(1s)) {
@@ -450,8 +455,8 @@ void MapoiNavServer::on_route_received(
   // target を lambda capture で bind し、callback が goal 固有の target で
   // publish_nav_status を呼べるようにする (#104 Codex round 2 medium 対応)。
   send_goal_options.goal_response_callback =
-    [this, target = route_name](const GoalHandleFollowWaypoints::SharedPtr & h) {
-      this->goal_response_callback(target, h);
+    [this, target = route_name, my_generation](const GoalHandleFollowWaypoints::SharedPtr & h) {
+      this->goal_response_callback(target, my_generation, h);
     };
 
   send_goal_options.feedback_callback =
@@ -465,8 +470,19 @@ void MapoiNavServer::on_route_received(
   this->action_client_->async_send_goal(goal_msg, send_goal_options);
 }
 
-void MapoiNavServer::goal_response_callback(std::string target, const GoalHandleFollowWaypoints::SharedPtr & goal_handle)
+void MapoiNavServer::goal_response_callback(std::string target, size_t nav_generation,
+                                              const GoalHandleFollowWaypoints::SharedPtr & goal_handle)
 {
+  // stale check (Codex review #147 round 2 high): 旧 route の goal_response が新 navigation
+  // (route or GOAL) の受理後に届くと、current_goal_handle_ / current_target_name_ が旧
+  // navigation に巻き戻り、pause / status publish が混乱する。bound generation と現在
+  // generation を照合し、旧 navigation の callback は何もしない。
+  if (nav_generation != nav_attempt_generation_) {
+    RCLCPP_INFO(this->get_logger(),
+      "Stale FollowWaypoints goal response for '%s' (gen=%zu, current=%zu); ignoring.",
+      target.c_str(), nav_generation, nav_attempt_generation_);
+    return;
+  }
   if (!goal_handle) {
     RCLCPP_ERROR(this->get_logger(), "Goal was rejected by server");
   } else {
@@ -486,16 +502,16 @@ void MapoiNavServer::feedback_callback(
   current_waypoint_index_ = feedback->current_waypoint;
 }
 
-void MapoiNavServer::result_callback(std::string target, size_t route_generation,
+void MapoiNavServer::result_callback(std::string target, size_t nav_generation,
                                        const GoalHandleFollowWaypoints::WrappedResult & result)
 {
-  // stale check (Codex review #147 high): route A 実行中に B を開始し、A の result が
-  // B 受理後に届くケースで、B の current_route_poi_names_ / current_goal_handle_ を
-  // 消さないよう、bound generation と現在 generation を照合する。
-  if (route_generation != route_generation_) {
+  // stale check (Codex review #147 round 1 + 2 high): route A 実行中に別 navigation を
+  // 開始し、A の result が新 nav 受理後に届くケースで、新 nav の current_route_poi_names_
+  // / current_goal_handle_ を消さないよう、bound generation と現在 generation を照合する。
+  if (nav_generation != nav_attempt_generation_) {
     RCLCPP_INFO(this->get_logger(),
       "Stale FollowWaypoints result for route '%s' (gen=%zu, current=%zu); ignoring.",
-      target.c_str(), route_generation, route_generation_);
+      target.c_str(), nav_generation, nav_attempt_generation_);
     return;
   }
   current_goal_handle_.reset();
@@ -527,8 +543,17 @@ void MapoiNavServer::result_callback(std::string target, size_t route_generation
   }
 }
 
-void MapoiNavServer::ntp_goal_response_callback(std::string target, const GoalHandleNavigateToPose::SharedPtr & goal_handle)
+void MapoiNavServer::ntp_goal_response_callback(std::string target, size_t nav_generation,
+                                                  const GoalHandleNavigateToPose::SharedPtr & goal_handle)
 {
+  // stale check (Codex review #147 round 2 high): GOAL A の goal_response が新 navigation
+  // 受理後に届く race を防ぐ。
+  if (nav_generation != nav_attempt_generation_) {
+    RCLCPP_INFO(this->get_logger(),
+      "Stale NavigateToPose goal response for '%s' (gen=%zu, current=%zu); ignoring.",
+      target.c_str(), nav_generation, nav_attempt_generation_);
+    return;
+  }
   if (!goal_handle) {
     RCLCPP_ERROR(this->get_logger(), "NavigateToPose goal was rejected by server");
   } else {
@@ -540,8 +565,17 @@ void MapoiNavServer::ntp_goal_response_callback(std::string target, const GoalHa
   }
 }
 
-void MapoiNavServer::ntp_result_callback(std::string target, const GoalHandleNavigateToPose::WrappedResult & result)
+void MapoiNavServer::ntp_result_callback(std::string target, size_t nav_generation,
+                                            const GoalHandleNavigateToPose::WrappedResult & result)
 {
+  // stale check (Codex review #147 round 2 high): GOAL A の result が新 navigation 受理後に
+  // 届くと、新 nav の current_route_poi_names_ / current_ntp_goal_handle_ が消える race を防ぐ。
+  if (nav_generation != nav_attempt_generation_) {
+    RCLCPP_INFO(this->get_logger(),
+      "Stale NavigateToPose result for '%s' (gen=%zu, current=%zu); ignoring.",
+      target.c_str(), nav_generation, nav_attempt_generation_);
+    return;
+  }
   current_ntp_goal_handle_.reset();
   // bound target を使う (#104 race fix)。
   switch (result.code) {
@@ -673,16 +707,16 @@ void MapoiNavServer::mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg)
     goal_msg.pose = paused_goal_pose_;
 
     auto send_goal_options = rclcpp_action::Client<NavigateToPose>::SendGoalOptions();
-    // resume: pause 直前と同じ active nav なので current_target_name_ を再利用。
-    // lambda capture で goal 固有 binding にしておくことで、resume 後さらに
-    // 別 nav が来た場合でも race しない。
+    // resume: pause 直前と同じ active nav なので current_target_name_ + 現在 generation を再利用。
+    // 新 navigation が割り込んできたら nav_attempt_generation_ が増分されて stale 判定 (#147)。
+    const size_t resumed_generation = nav_attempt_generation_;
     send_goal_options.goal_response_callback =
-      [this, target = current_target_name_](const GoalHandleNavigateToPose::SharedPtr & h) {
-        this->ntp_goal_response_callback(target, h);
+      [this, target = current_target_name_, resumed_generation](const GoalHandleNavigateToPose::SharedPtr & h) {
+        this->ntp_goal_response_callback(target, resumed_generation, h);
       };
     send_goal_options.result_callback =
-      [this, target = current_target_name_](const GoalHandleNavigateToPose::WrappedResult & r) {
-        this->ntp_result_callback(target, r);
+      [this, target = current_target_name_, resumed_generation](const GoalHandleNavigateToPose::WrappedResult & r) {
+        this->ntp_result_callback(target, resumed_generation, r);
       };
 
     nav_to_pose_client_->async_send_goal(goal_msg, send_goal_options);
@@ -709,11 +743,11 @@ void MapoiNavServer::mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg)
 
     auto send_goal_options = rclcpp_action::Client<FollowWaypoints>::SendGoalOptions();
     // resume: pause 直前と同じ active nav なので current_target_name_ + 現在 generation を再利用 (#143)。
-    // 新 route が割り込んできたら route_generation_ が増分されて stale 判定される。
-    const size_t resumed_generation = route_generation_;
+    // 新 navigation が割り込んできたら nav_attempt_generation_ が増分されて stale 判定される (#147)。
+    const size_t resumed_generation = nav_attempt_generation_;
     send_goal_options.goal_response_callback =
-      [this, target = current_target_name_](const GoalHandleFollowWaypoints::SharedPtr & h) {
-        this->goal_response_callback(target, h);
+      [this, target = current_target_name_, resumed_generation](const GoalHandleFollowWaypoints::SharedPtr & h) {
+        this->goal_response_callback(target, resumed_generation, h);
       };
     send_goal_options.feedback_callback =
       std::bind(&MapoiNavServer::feedback_callback, this, _1, _2);
