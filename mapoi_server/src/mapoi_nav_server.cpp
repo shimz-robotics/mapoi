@@ -16,9 +16,11 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
 
   // localization-agnostic 化のための parameter:
   // - initial_pose_topic: 配信先 topic 名 (default `/initialpose`、AMCL/slam_toolbox 等の de-facto standard)
-  // - initial_pose_subscriber_wait_timeout_sec: subscriber readiness 待ちの上限秒数 (起動の遅い localization 対応)
+  // - initialpose_retry_interval_sec / initialpose_retry_max_attempts: subscriber 後起動時の
+  //   async retry 設定 (#152)。default 0.1s × 50 = 最大 5 秒待つ。
   this->declare_parameter<std::string>("initial_pose_topic", "/initialpose");
-  this->declare_parameter<double>("initial_pose_subscriber_wait_timeout_sec", 10.0);
+  this->declare_parameter<double>("initialpose_retry_interval_sec", 0.1);
+  this->declare_parameter<int>("initialpose_retry_max_attempts", 50);
 
   // initialpose subscriber and publisher
   // mapoi_server が initial pose POI 名を transient_local で publish する (#144) ので、
@@ -132,10 +134,8 @@ void MapoiNavServer::mapoi_initialpose_poi_cb(const std_msgs::msg::String::Share
               poi_name.c_str());
             return;
           }
-          // 注意: subscriber readiness race (#152 で別途対応): localization 未 ready の状態で
-          // /initialpose を publish するとロストするが、ここで blocking wait を入れると
-          // single-thread executor で他処理 (radius_check 等) が止まる回帰がある (test 失敗で確認)。
-          // wait の復活 / async リトライ機構は #152 で扱う。
+          // subscriber readiness race (#152): publish_initial_pose 内で subscriber 0 を検知したら
+          // async retry timer が起動するので、blocking wait は不要。
           publish_initial_pose(poi.pose, "explicit POI '" + poi_name + "'");
           return;
         }
@@ -303,30 +303,62 @@ void MapoiNavServer::publish_initial_pose(
   msg.pose.covariance[35] = 0.06853891945200942;
   nav2_initialpose_pub_->publish(msg);
   RCLCPP_INFO(this->get_logger(), "Published initial pose (%s).", source.c_str());
+
+  // subscriber 未 ready なら async retry を schedule (#152)。
+  // QoS が default (volatile) のため後起動 subscriber は最初の publish を取りこぼす。
+  if (nav2_initialpose_pub_->get_subscription_count() == 0) {
+    schedule_initialpose_retry(pose, source);
+  }
 }
 
-void MapoiNavServer::wait_for_initialpose_subscriber(double timeout_sec)
+void MapoiNavServer::schedule_initialpose_retry(
+  const geometry_msgs::msg::Pose & pose, const std::string & source)
 {
-  // 既に subscriber がいれば即 return (SwitchMap 等の localization 起動済み経路)
+  initialpose_retry_pose_ = pose;
+  initialpose_retry_source_ = source;
+  initialpose_retry_attempt_ = 0;
+  if (initialpose_retry_timer_) {
+    initialpose_retry_timer_->cancel();
+  }
+  const double interval_sec =
+    this->get_parameter("initialpose_retry_interval_sec").as_double();
+  const int max_attempts =
+    this->get_parameter("initialpose_retry_max_attempts").as_int();
+  initialpose_retry_timer_ = this->create_wall_timer(
+    std::chrono::milliseconds(static_cast<int>(interval_sec * 1000)),
+    std::bind(&MapoiNavServer::initialpose_retry_callback, this));
+  RCLCPP_INFO(this->get_logger(),
+    "No initialpose subscriber yet; scheduling async retry every %.2fs (max %d attempts).",
+    interval_sec, max_attempts);
+}
+
+void MapoiNavServer::initialpose_retry_callback()
+{
   if (nav2_initialpose_pub_->get_subscription_count() > 0) {
+    geometry_msgs::msg::PoseWithCovarianceStamped msg;
+    msg.header.frame_id = this->get_parameter("map_frame").as_string();
+    msg.header.stamp = this->now();
+    msg.pose.pose = initialpose_retry_pose_;
+    msg.pose.covariance[0] = 0.25;
+    msg.pose.covariance[7] = 0.25;
+    msg.pose.covariance[35] = 0.06853891945200942;
+    nav2_initialpose_pub_->publish(msg);
+    RCLCPP_INFO(this->get_logger(),
+      "initialpose subscriber detected after %d retries; re-published initial pose (%s).",
+      initialpose_retry_attempt_, initialpose_retry_source_.c_str());
+    initialpose_retry_timer_->cancel();
     return;
   }
-  RCLCPP_INFO(this->get_logger(),
-    "Waiting for initialpose subscriber (e.g. AMCL) up to %.1fs...", timeout_sec);
-
-  const auto deadline = std::chrono::steady_clock::now() +
-    std::chrono::milliseconds(static_cast<int>(timeout_sec * 1000));
-  while (rclcpp::ok() && std::chrono::steady_clock::now() < deadline) {
-    if (nav2_initialpose_pub_->get_subscription_count() > 0) {
-      RCLCPP_INFO(this->get_logger(), "initialpose subscriber detected; proceeding to publish.");
-      return;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  ++initialpose_retry_attempt_;
+  const int max_attempts =
+    this->get_parameter("initialpose_retry_max_attempts").as_int();
+  if (initialpose_retry_attempt_ >= max_attempts) {
+    RCLCPP_WARN(this->get_logger(),
+      "initialpose subscriber not detected after %d retries; giving up "
+      "(user can re-publish via WebUI/RViz/mapoi_initialpose_poi).",
+      max_attempts);
+    initialpose_retry_timer_->cancel();
   }
-  RCLCPP_WARN(this->get_logger(),
-    "initialpose subscriber not detected within %.1fs; publishing anyway "
-    "(localization may miss the message; user can re-publish via WebUI/RViz/mapoi_initialpose_poi).",
-    timeout_sec);
 }
 
 void MapoiNavServer::on_route_received(

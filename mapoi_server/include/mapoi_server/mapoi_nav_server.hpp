@@ -181,13 +181,20 @@ private:
   static bool has_landmark_tag(const mapoi_interfaces::msg::PointOfInterest & poi);
 
   // /initialpose 配信の単一エントリポイント（手動経路 / 自動経路で共通化）。
+  // publish 直後に subscriber が居なければ非同期で retry timer を起動する。
   void publish_initial_pose(
     const geometry_msgs::msg::Pose & pose, const std::string & source);
 
-  // initialpose subscriber (主に AMCL) が ready になるまで待つ。
-  // subscriber が既に ready なら即 return。timeout 内に ready にならなければ WARN。
-  // 200ms 間隔の polling で blocking wait する (single-thread executor 前提)。
-  void wait_for_initialpose_subscriber(double timeout_sec);
+  // /initialpose subscriber (主に AMCL) が後起動した場合の async retry 機構 (#152)。
+  // single-thread executor で blocking wait すると radius_check 等が止まる回帰があるため、
+  // wall timer ベースで polling する。subscriber 検知で 1 回再 publish + timer cancel。
+  void schedule_initialpose_retry(
+    const geometry_msgs::msg::Pose & pose, const std::string & source);
+  void initialpose_retry_callback();
+  rclcpp::TimerBase::SharedPtr initialpose_retry_timer_;
+  geometry_msgs::msg::Pose initialpose_retry_pose_;
+  std::string initialpose_retry_source_;
+  int initialpose_retry_attempt_ {0};
 
 #ifdef UNIT_TEST
   friend class NavServerTestFixture;
