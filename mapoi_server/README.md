@@ -233,9 +233,9 @@ route:
 - **map**: 使用する地図ファイルの設定
   - `path_planning`: 経路計画用の地図ファイル名
   - `localization`: 自己位置推定用の地図ファイル名
-- **poi**: POI の定義
+- **poi**: POI の定義（**順序が semantics を持ちます**: 各 map で `poi:` 配下の **先頭 POI** が地図ロード/切替時の default 初期位置として採用される。先頭は `landmark` タグなし & `pose.x/y/yaw` が完備された POI である必要あり。明示指定したい場合は `SwitchMap.srv` の `initial_poi_name` で POI 名を渡す、#144）
   - `name`: POI の名前（トピックで指定する際に使用）
-  - `pose`: 位置（`x`, `y`, `yaw`）
+  - `pose`: 位置（`x`, `y`, `yaw` すべて必須。default 初期位置候補として使われる場合は欠落不可）
   - `tolerance`: Nav2 align tolerance struct
     - `xy`: Euclidean tolerance (m)。POI 進入判定半径としても使用される
     - `yaw`: Angular tolerance (rad)。`0` = 未指定として Nav2 default にフォールバック

@@ -45,13 +45,11 @@ private:
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr initialpose_poi_publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
 
-  // SwitchMap で受け取った initial_poi_name を load_mapoi_config_file 後の publish_initial_poi_name
-  // で消費するためのバッファ。空文字列なら POI list 先頭 (landmark / pose 欠落 を除外) を default
-  // 採用 (#144)。**single-thread executor 前提** (rclcpp::spin) で、SwitchMap callee と
-  // コンストラクタからの呼び出しが直列化される想定。MultiThreaded executor に移す場合は
-  // mutex 保護が必要 (Cursor review #149 medium 対応)。
-  std::string pending_initial_poi_name_;
-  void publish_initial_poi_name();
+  // initial pose 用の POI 名計算と publish (#144)。
+  // shared state (pending_initial_poi_name_ field) は持たず、呼び出し側 (コンストラクタ /
+  // switch_map_service / reload_map_info_service) が requested_name を local に渡す形にして
+  // thread safety / lifecycle race を排除 (Cursor review #149 round 2 high 対応)。
+  void publish_initial_poi_name(const std::string & requested_name);
   std::string compute_initial_poi_name(const std::string & requested_name) const;
 
   // methods

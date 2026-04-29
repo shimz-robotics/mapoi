@@ -40,7 +40,8 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   // mapoi_initialpose_poi は transient_local QoS なので mapoi_nav_server 後起動でも latched 値を
   // 受信できる。mapoi_nav_server cb 側は新たに get_pois_info を fetch して名前 lookup するので、
   // mapoi_server 内の pois_list_ 更新と nav_server 側の cb 処理は順序非依存 (#149 review 補足)。
-  publish_initial_poi_name();
+  // 起動時は requested_name = empty で default (POI list 先頭) を採用。
+  publish_initial_poi_name("");
 
   get_pois_info_service_ = this->create_service<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info",
     std::bind(&MapoiServer::get_pois_info_service, this, std::placeholders::_1, std::placeholders::_2));
@@ -334,9 +335,7 @@ void MapoiServer::switch_map_service(const std::shared_ptr<mapoi_interfaces::srv
   }
 
   map_name_ = map_name_new;
-  pending_initial_poi_name_ = request->initial_poi_name;  // #144: SwitchMap 経由で指定された初期 POI
   load_mapoi_config_file();
-  publish_initial_poi_name();  // #144: 新 map の initial pose POI 名を mapoi_initialpose_poi へ
 
   auto node = rclcpp::Node::make_shared("sc_map_client");
   if (!nav2_map_list_ || !nav2_map_list_.IsSequence()) {
@@ -356,6 +355,11 @@ void MapoiServer::switch_map_service(const std::shared_ptr<mapoi_interfaces::srv
     RCLCPP_INFO(this->get_logger(), "Loaded map for %s", map_url.c_str());
   }
 
+  // Nav2 LoadMap 完了後に initial pose POI 名を publish する (#144 + Cursor review #149 round 2 high
+  // 対応)。Nav2 が新 map に切り替わってから AMCL に initial pose が届くようにするため、必ず
+  // send_load_map_request 全件成功後にここへ来る。失敗 (上の return) では publish しない。
+  publish_initial_poi_name(request->initial_poi_name);
+
   RCLCPP_INFO(this->get_logger(), "The map was switched into %s", map_name_.c_str());
   response->success = true;
 }
@@ -369,7 +373,8 @@ void MapoiServer::reload_map_info_service(
   load_mapoi_config_file();
   // reload は yaml save 後の trigger なので initial pose 再 publish は通常不要だが、
   // POI 順序が編集されて先頭 POI が変わったケースを拾うため publish する (#144)。
-  publish_initial_poi_name();
+  // reload では明示指定 (initial_poi_name) を取らないので default (POI list 先頭)。
+  publish_initial_poi_name("");
   response->success = true;
   response->message = config_path_;
   RCLCPP_INFO(this->get_logger(), "Reloaded mapoi config: %s", config_path_.c_str());
@@ -379,8 +384,8 @@ std::string MapoiServer::compute_initial_poi_name(const std::string & requested_
 {
   // 1) requested_name が指定されていれば、その POI を探す
   //    - landmark タグ持ちなら fall back (initial pose は到達可能 POI のみ、Cursor review #149 high 対応)
-  //    - pose ノードが欠落していたら fall back (Cursor review #149 high 対応)
-  // 2) fall back: POI list の先頭で「landmark タグなし & pose 有り」の POI を採用
+  //    - pose ノード or x/y/yaw が欠落していたら fall back (Cursor review #149 round 2 low 対応)
+  // 2) fall back: POI list の先頭で「landmark タグなし & pose 完備」の POI を採用
   // 3) 候補なしなら空文字列を返す
   if (!pois_list_ || !pois_list_.IsSequence()) {
     return "";
@@ -392,8 +397,21 @@ std::string MapoiServer::compute_initial_poi_name(const std::string & requested_
     }
     return false;
   };
+  // pose ノード + x / y / yaw 全てを numeric として読めるかを確認する。
+  // bridge 側は欠落時 0.0 fallback なので、ここで弾けば「意図しない (0,0) spawn」を防げる。
   auto has_valid_pose = [](const YAML::Node & poi) {
-    return static_cast<bool>(poi["pose"]);
+    if (!poi["pose"]) return false;
+    const auto & pose = poi["pose"];
+    if (!pose.IsMap()) return false;
+    for (const char * k : {"x", "y", "yaw"}) {
+      if (!pose[k]) return false;
+      try {
+        (void)pose[k].as<double>();
+      } catch (const YAML::Exception &) {
+        return false;
+      }
+    }
+    return true;
   };
   if (!requested_name.empty()) {
     for (const auto & poi : pois_list_) {
@@ -437,12 +455,12 @@ std::string MapoiServer::compute_initial_poi_name(const std::string & requested_
   return "";
 }
 
-void MapoiServer::publish_initial_poi_name()
+void MapoiServer::publish_initial_poi_name(const std::string & requested_name)
 {
-  // pending_initial_poi_name_ を消費。空文字列なら default (POI list 先頭 / landmark 除外) を採用。
-  const std::string requested = pending_initial_poi_name_;
-  pending_initial_poi_name_.clear();
-  const std::string target = compute_initial_poi_name(requested);
+  // requested_name は SwitchMap.initial_poi_name (空 = default、POI list 先頭採用)。
+  // shared state を持たず、呼び出し側が直接渡す形にして thread safety / lifecycle race を排除
+  // (Cursor review #149 round 2 high 対応)。
+  const std::string target = compute_initial_poi_name(requested_name);
   if (target.empty()) {
     RCLCPP_WARN(this->get_logger(),
       "No POI available for initial pose in map '%s'; skipping mapoi_initialpose_poi publish.",

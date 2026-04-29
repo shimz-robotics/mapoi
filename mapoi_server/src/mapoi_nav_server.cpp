@@ -132,6 +132,10 @@ void MapoiNavServer::mapoi_initialpose_poi_cb(const std_msgs::msg::String::Share
               poi_name.c_str());
             return;
           }
+          // 注意: subscriber readiness race (#152 で別途対応): localization 未 ready の状態で
+          // /initialpose を publish するとロストするが、ここで blocking wait を入れると
+          // single-thread executor で他処理 (radius_check 等) が止まる回帰がある (test 失敗で確認)。
+          // wait の復活 / async リトライ機構は #152 で扱う。
           publish_initial_pose(poi.pose, "explicit POI '" + poi_name + "'");
           return;
         }
