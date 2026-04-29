@@ -91,12 +91,7 @@
      </column>
      <column>
       <property name="text">
-       <string>tolerance.xy</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>tolerance.yaw (deg)</string>
+       <string>tolerance (xy m, yaw deg)</string>
       </property>
      </column>
      <column>
@@ -121,15 +116,10 @@
      </item>
      <item row="0" column="3">
       <property name="text">
-       <string>0.5</string>
+       <string>0.5, 45.0</string>
       </property>
      </item>
      <item row="0" column="4">
-      <property name="text">
-       <string>45.0</string>
-      </property>
-     </item>
-     <item row="0" column="5">
       <property name="text">
        <string>Distination, landmark</string>
       </property>
@@ -151,15 +141,10 @@
      </item>
      <item row="1" column="3">
       <property name="text">
-       <string>1.0</string>
+       <string>1.0, 45.0</string>
       </property>
      </item>
      <item row="1" column="4">
-      <property name="text">
-       <string>45.0</string>
-      </property>
-     </item>
-     <item row="1" column="5">
       <property name="text">
        <string>Distination</string>
       </property>
