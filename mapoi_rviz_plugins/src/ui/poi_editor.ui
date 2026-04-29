@@ -62,7 +62,7 @@
       <number>2</number>
      </property>
      <property name="columnCount">
-      <number>6</number>
+      <number>5</number>
      </property>
      <row>
       <property name="text">
@@ -81,27 +81,22 @@
      </column>
      <column>
       <property name="text">
-       <string>description</string>
+       <string>pose (x, y, yaw)</string>
       </property>
      </column>
      <column>
       <property name="text">
-       <string>pose</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>tolerance.xy</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>tolerance.yaw (deg)</string>
+       <string>tolerance (xy, yaw)</string>
       </property>
      </column>
      <column>
       <property name="text">
        <string>tags</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>description</string>
       </property>
      </column>
      <item row="0" column="0">
@@ -111,27 +106,22 @@
      </item>
      <item row="0" column="1">
       <property name="text">
-       <string>エレベータ</string>
+       <string>1.00, 2.00, 3.00</string>
       </property>
      </item>
      <item row="0" column="2">
       <property name="text">
-       <string>1.0, 2.0, 3.0</string>
+       <string>0.50, 0.79</string>
       </property>
      </item>
      <item row="0" column="3">
       <property name="text">
-       <string>0.5</string>
+       <string>Destination, landmark</string>
       </property>
      </item>
      <item row="0" column="4">
       <property name="text">
-       <string>45.0</string>
-      </property>
-     </item>
-     <item row="0" column="5">
-      <property name="text">
-       <string>Distination, landmark</string>
+       <string>エレベータ</string>
       </property>
      </item>
      <item row="1" column="0">
@@ -141,27 +131,22 @@
      </item>
      <item row="1" column="1">
       <property name="text">
-       <string>シアタールーム</string>
+       <string>0.10, 2.40, 5.60</string>
       </property>
      </item>
      <item row="1" column="2">
       <property name="text">
-       <string>0.1, 2.4, 5.6</string>
+       <string>1.00, 0.79</string>
       </property>
      </item>
      <item row="1" column="3">
       <property name="text">
-       <string>1.0</string>
+       <string>Destination</string>
       </property>
      </item>
      <item row="1" column="4">
       <property name="text">
-       <string>45.0</string>
-      </property>
-     </item>
-     <item row="1" column="5">
-      <property name="text">
-       <string>Distination</string>
+       <string>シアタールーム</string>
       </property>
      </item>
     </widget>

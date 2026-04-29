@@ -1,4 +1,5 @@
 #include "mapoi_rviz_plugins/poi_editor.hpp"
+#include "mapoi_rviz_plugins/poi_editor_helpers.hpp"
 #include <class_loader/class_loader.hpp>
 #include <cctype>
 #include <cmath>
@@ -22,29 +23,21 @@ namespace mapoi_rviz_plugins
 {
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("mapoi_rviz_plugins.poi_editor");
 
+// pure helpers (try_parse_finite_double / split_and_trim) は poi_editor_helpers.hpp に
+// 切り出した (#158 で test 容易化のため)。
+using detail::try_parse_finite_double;
+using detail::split_and_trim;
+
+// PoiTable column index 定数 (#158 round 1 medium): magic number を排除して
+// 「name → pose → tolerance → tags → description」順序を 1 箇所に集約。将来の column
+// 追加・順序変更で silent な誤読み書きが起きないようにする。
 namespace {
-// 文字列を strict に double に parse し、有限性を確認する純関数 (Codex review #139 medium 対応)。
-// std::stod は "1abc" のような部分数値を 1 として返し、QString::toDouble の ok flag も
-// 同様の問題があるため、validation と save で別 parser を使うと結果がズレる。共通 helper に
-// 寄せて、validation と保存で同じ判定基準を使う。min check は呼び出し側の責任。
-//
-// success: parsed value を out に書き、true を返す。
-// failure: out 不変、false を返す (parse failure / 末尾 garbage / NaN / +-Inf いずれも reject)。
-bool try_parse_finite_double(const std::string & str, double & out)
-{
-  if (str.empty()) return false;
-  try {
-    size_t pos = 0;
-    const double v = std::stod(str, &pos);
-    while (pos < str.size() && std::isspace(static_cast<unsigned char>(str[pos]))) ++pos;
-    if (pos != str.size()) return false;
-    if (!std::isfinite(v)) return false;
-    out = v;
-    return true;
-  } catch (...) {
-    return false;
-  }
-}
+constexpr int kColName = 0;
+constexpr int kColPose = 1;
+constexpr int kColTolerance = 2;
+constexpr int kColTags = 3;
+constexpr int kColDescription = 4;
+constexpr int kColCount = 5;
 }  // namespace
 
 PoiEditorPanel::PoiEditorPanel(QWidget* parent) : Panel(parent),  ui_(new Ui::PoiEditorUi())
@@ -367,12 +360,12 @@ void PoiEditorPanel::NewButton()
   int current_row = ui_->PoiTable->currentRow();
   int new_row = current_row + 1;
   ui_->PoiTable->insertRow(new_row);
-  ui_->PoiTable->setItem(new_row, 0, new QTableWidgetItem("new_poi"));
-  ui_->PoiTable->setItem(new_row, 1, new QTableWidgetItem(""));
-  ui_->PoiTable->setItem(new_row, 2, new QTableWidgetItem("0.0, 0.0, 0.0"));
-  ui_->PoiTable->setItem(new_row, 3, new QTableWidgetItem("0.5"));     // tolerance.xy [m]
-  ui_->PoiTable->setItem(new_row, 4, new QTableWidgetItem("45.0"));    // tolerance.yaw [deg] (= π/4 rad)
-  ui_->PoiTable->setItem(new_row, 5, new QTableWidgetItem(""));        // tags
+  // column 構造 (#158): name / pose / tolerance "xy m, yaw rad" / tags / description
+  ui_->PoiTable->setItem(new_row, kColName, new QTableWidgetItem("new_poi"));
+  ui_->PoiTable->setItem(new_row, kColPose, new QTableWidgetItem("0.0, 0.0, 0.0"));
+  ui_->PoiTable->setItem(new_row, kColTolerance, new QTableWidgetItem("0.5, 0.7854"));  // ≒ π/4 rad
+  ui_->PoiTable->setItem(new_row, kColTags, new QTableWidgetItem(""));
+  ui_->PoiTable->setItem(new_row, kColDescription, new QTableWidgetItem(""));
   UpdatePoiCount();
 }
 
@@ -451,36 +444,51 @@ void PoiEditorPanel::SaveButton()
   for (int row = 0; row < numRows; row++) {
     int logical_row = ui_->PoiTable->verticalHeader()->logicalIndex(row);
     YAML::Node poi;
-    poi["name"] = ui_->PoiTable->item(logical_row, 0)->text().toStdString();
-    poi["description"] = ui_->PoiTable->item(logical_row, 1)->text().toStdString();
-    auto poses_str  = ui_->PoiTable->item(logical_row, 2)->text().toStdString();
-    auto poses = this->SplitSentence(poses_str, ", ");
-    try {
-      poi["pose"]["x"] = stod(poses[0]);
-      poi["pose"]["y"] = stod(poses[1]);
-      poi["pose"]["yaw"] = stod(poses[2]);
-    } catch (const std::exception & e) {
-      RCLCPP_ERROR(LOGGER, "Failed to parse pose at row %d: %s", row, e.what());
-      QMessageBox::critical(this, tr("Parse Error"),
-        tr("Failed to parse pose at row %1: %2").arg(row + 1).arg(e.what()));
+    // 全 cell の null check (#159 round 2 ヘビー medium): 未生成セルが混じると segfault する。
+    // ValidatePois と同様に「nullptr → 空文字」で扱い、validation で reject されるはずだが、
+    // ここでも防御として null を空に変換する。
+    auto cell_text = [&](int col) -> std::string {
+      auto * item = ui_->PoiTable->item(logical_row, col);
+      return item ? item->text().toStdString() : "";
+    };
+    poi["name"] = cell_text(kColName);
+    // pose も tolerance と同じ厳密 parser (try_parse_finite_double) で 1abc / nan / inf を拒否
+    // (#159 round 1 medium 対応で std::stod から切り替え)。表記揺れ trim は split_and_trim で吸収。
+    auto poses_str = cell_text(kColPose);
+    auto pose_parts = split_and_trim(poses_str, ',');
+    double x_val = 0.0, y_val = 0.0, yaw_val_pose = 0.0;
+    if (pose_parts.size() != 3
+        || !try_parse_finite_double(pose_parts[0], x_val)
+        || !try_parse_finite_double(pose_parts[1], y_val)
+        || !try_parse_finite_double(pose_parts[2], yaw_val_pose)) {
+      RCLCPP_ERROR(LOGGER, "Failed to parse pose at row %d (post-validation race?)", row);
+      QMessageBox::critical(this, tr("Save Error"),
+        tr("Failed to parse pose at row %1.").arg(row + 1));
       return;
     }
-    // tolerance struct (#87 / #138): xy は m そのまま、yaw は UI deg 入力 → rad 変換して保存。
-    // ValidatePois で同じ try_parse_finite_double を通っているので parse 失敗は通常起きないが、
-    // 二段防御として critical error にして save を中断する (Codex review #139 medium 対応)。
+    poi["pose"]["x"] = x_val;
+    poi["pose"]["y"] = y_val;
+    poi["pose"]["yaw"] = yaw_val_pose;
+    // tolerance を 1 column "xy m, yaw rad" に統合 (#158): split → xy_val (m), yaw_val (rad)
+    // を抽出して tolerance.xy / tolerance.yaw に書き戻す。yaw は rad で UI と yaml を統一
+    // (旧 deg 入力は #138 の暫定仕様。pose.yaw が rad 表示なので tolerance.yaw も rad に揃える)。
+    auto tolerance_str = cell_text(kColTolerance);
+    auto tolerance_parts = split_and_trim(tolerance_str, ',');
     double xy_val = 0.0;
-    double yaw_deg = 0.0;
-    if (!try_parse_finite_double(ui_->PoiTable->item(logical_row, 3)->text().toStdString(), xy_val)
-        || !try_parse_finite_double(ui_->PoiTable->item(logical_row, 4)->text().toStdString(), yaw_deg)) {
+    double yaw_val = 0.0;
+    if (tolerance_parts.size() != 2
+        || !try_parse_finite_double(tolerance_parts[0], xy_val)
+        || !try_parse_finite_double(tolerance_parts[1], yaw_val)) {
       RCLCPP_ERROR(LOGGER, "Failed to parse tolerance at row %d (post-validation race?)", row);
       QMessageBox::critical(this, tr("Save Error"),
         tr("Failed to parse tolerance at row %1.").arg(row + 1));
       return;
     }
     poi["tolerance"]["xy"] = xy_val;
-    poi["tolerance"]["yaw"] = yaw_deg * M_PI / 180.0;
-    auto tags_str  = ui_->PoiTable->item(logical_row, 5)->text().toStdString();
+    poi["tolerance"]["yaw"] = yaw_val;
+    auto tags_str = cell_text(kColTags);
     poi["tags"] = this->SplitSentence(tags_str, ", ");
+    poi["description"] = cell_text(kColDescription);
     pois_list.push_back(poi);
   }
 
@@ -598,12 +606,19 @@ void PoiEditorPanel::TagFilterChanged(int index)
     }
     if (has_tag) {
       ui_->PoiTable->insertRow(row);
-      ui_->PoiTable->setItem(row, 0, new QTableWidgetItem(QString::fromStdString(p.name)));
-      ui_->PoiTable->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(p.description)));
-      ui_->PoiTable->setItem(row, 2, new QTableWidgetItem(tr("%1, %2, %3").arg(p.pose.position.x).arg(p.pose.position.y).arg(this->calcYaw(p.pose))));
-      ui_->PoiTable->setItem(row, 3, new QTableWidgetItem(tr("%1").arg(p.tolerance.xy)));
-      ui_->PoiTable->setItem(row, 4, new QTableWidgetItem(tr("%1").arg(p.tolerance.yaw * 180.0 / M_PI)));
-      ui_->PoiTable->setItem(row, 5, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
+      // 表示精度: pose / tolerance とも小数点以下 2 桁固定。長すぎる尾桁を避ける (#159 round 5 user)。
+      ui_->PoiTable->setItem(row, kColName, new QTableWidgetItem(QString::fromStdString(p.name)));
+      ui_->PoiTable->setItem(row, kColPose, new QTableWidgetItem(
+        tr("%1, %2, %3")
+          .arg(QString::number(p.pose.position.x, 'f', 2))
+          .arg(QString::number(p.pose.position.y, 'f', 2))
+          .arg(QString::number(this->calcYaw(p.pose), 'f', 2))));
+      ui_->PoiTable->setItem(row, kColTolerance, new QTableWidgetItem(
+        tr("%1, %2")
+          .arg(QString::number(p.tolerance.xy, 'f', 2))
+          .arg(QString::number(p.tolerance.yaw, 'f', 2))));
+      ui_->PoiTable->setItem(row, kColTags, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
+      ui_->PoiTable->setItem(row, kColDescription, new QTableWidgetItem(QString::fromStdString(p.description)));
       row++;
     }
   }
@@ -680,7 +695,7 @@ void PoiEditorPanel::TagHelperSelected(int index)
     return;
   }
 
-  auto* tags_item = ui_->PoiTable->item(current_row, 5);
+  auto* tags_item = ui_->PoiTable->item(current_row, kColTags);
   std::string current_tags = tags_item ? tags_item->text().toStdString() : "";
 
   // Check if tag already exists
@@ -699,7 +714,7 @@ void PoiEditorPanel::TagHelperSelected(int index)
   } else {
     new_tags = current_tags + ", " + tag_name;
   }
-  ui_->PoiTable->setItem(current_row, 5, new QTableWidgetItem(QString::fromStdString(new_tags)));
+  ui_->PoiTable->setItem(current_row, kColTags, new QTableWidgetItem(QString::fromStdString(new_tags)));
 
   // Reset combo to placeholder
   ui_->TagHelperComboBox->setCurrentIndex(0);
@@ -721,7 +736,7 @@ bool PoiEditorPanel::ValidatePois()
     int logical_row = ui_->PoiTable->verticalHeader()->logicalIndex(row);
 
     // Check name
-    auto* name_item = ui_->PoiTable->item(logical_row, 0);
+    auto* name_item = ui_->PoiTable->item(logical_row, kColName);
     std::string name = name_item ? name_item->text().toStdString() : "";
     if (name.empty()) {
       warnings.append(tr("Row %1: name is empty").arg(row + 1));
@@ -730,51 +745,59 @@ bool PoiEditorPanel::ValidatePois()
     }
     names_seen.insert(name);
 
-    // Check pose format (expect "x, y, yaw" — 3 elements)
-    auto* pose_item = ui_->PoiTable->item(logical_row, 2);
+    // Check pose format (expect "x, y, yaw" — 3 elements)。
+    // try_parse_finite_double で strict parse + 有限性検査 (#159 round 1 medium)、
+    // split_and_trim で `1, 2, 3` `1,2,3` `1 , 2 , 3` 等の表記揺れを許容。
+    auto* pose_item = ui_->PoiTable->item(logical_row, kColPose);
     std::string pose_str = pose_item ? pose_item->text().toStdString() : "";
-    auto poses = this->SplitSentence(pose_str, ", ");
+    auto poses = split_and_trim(pose_str, ',');
     if (poses.size() != 3) {
-      warnings.append(tr("Row %1: pose must be \"x, y, yaw\" (3 values)").arg(row + 1));
+      warnings.append(tr("Row %1: pose must be \"x, y, yaw\" (3 values, got \"%2\")")
+                        .arg(row + 1).arg(QString::fromStdString(pose_str)));
     } else {
       for (int i = 0; i < 3; i++) {
-        try {
-          stod(poses[i]);
-        } catch (...) {
-          warnings.append(tr("Row %1: pose contains non-numeric value \"%2\"").arg(row + 1).arg(QString::fromStdString(poses[i])));
+        double r = 0.0;
+        if (!try_parse_finite_double(poses[i], r)) {
+          warnings.append(tr("Row %1: pose contains invalid value \"%2\"")
+                            .arg(row + 1).arg(QString::fromStdString(poses[i])));
           break;
         }
       }
     }
 
-    // Check tolerance.xy (m), min 0.001 m (#138 msg spec)
-    // Codex review #139 medium 対応: try_parse_finite_double で完全 parse + 有限性検査
-    // (std::stod は "1abc" を 1 として受け入れる、NaN/Inf も throw しないため SaveButton 側の
-    // QString::toDouble と挙動がズレる)。validation と save で同じ parser を使う。
-    auto* tolerance_xy_item = ui_->PoiTable->item(logical_row, 3);
-    std::string tolerance_xy_str = tolerance_xy_item ? tolerance_xy_item->text().toStdString() : "";
-    {
-      double r = 0.0;
-      if (!try_parse_finite_double(tolerance_xy_str, r)) {
+    // Check tolerance "xy m, yaw rad" (1 column 統合、#158)。"0.5, 0.7854" 形式で split → 各値を
+    // try_parse_finite_double で strict parse + 有限性検査。
+    // min: tolerance.xy >= 0.001 m / tolerance.yaw >= 0.001 rad ≒ 0.057° (#138 msg spec)。
+    auto* tolerance_item = ui_->PoiTable->item(logical_row, kColTolerance);
+    std::string tolerance_str = tolerance_item ? tolerance_item->text().toStdString() : "";
+    auto tolerance_parts = split_and_trim(tolerance_str, ',');
+    if (tolerance_parts.size() != 2) {
+      warnings.append(tr("Row %1: tolerance must be \"xy, yaw_rad\" (got \"%2\")")
+                        .arg(row + 1).arg(QString::fromStdString(tolerance_str)));
+    } else {
+      double xy_val = 0.0;
+      if (!try_parse_finite_double(tolerance_parts[0], xy_val)) {
         warnings.append(tr("Row %1: invalid tolerance.xy \"%2\"")
-                          .arg(row + 1).arg(QString::fromStdString(tolerance_xy_str)));
-      } else if (r < 0.001) {
+                          .arg(row + 1).arg(QString::fromStdString(tolerance_parts[0])));
+      } else if (xy_val < 0.001) {
         warnings.append(tr("Row %1: tolerance.xy must be >= 0.001 m (got %2)")
-                          .arg(row + 1).arg(r));
+                          .arg(row + 1).arg(xy_val));
       }
-    }
-
-    // Check tolerance.yaw (deg), 内部 rad 換算で min 0.001 rad ≒ 0.057° (#138 msg spec)
-    auto* tolerance_yaw_item = ui_->PoiTable->item(logical_row, 4);
-    std::string tolerance_yaw_str = tolerance_yaw_item ? tolerance_yaw_item->text().toStdString() : "";
-    {
-      double yaw_deg = 0.0;
-      if (!try_parse_finite_double(tolerance_yaw_str, yaw_deg)) {
+      double yaw_val = 0.0;
+      if (!try_parse_finite_double(tolerance_parts[1], yaw_val)) {
         warnings.append(tr("Row %1: invalid tolerance.yaw \"%2\"")
-                          .arg(row + 1).arg(QString::fromStdString(tolerance_yaw_str)));
-      } else if (yaw_deg * M_PI / 180.0 < 0.001) {
-        warnings.append(tr("Row %1: tolerance.yaw must be >= 0.06 deg (≒ 0.001 rad) (got %2 deg)")
-                          .arg(row + 1).arg(yaw_deg));
+                          .arg(row + 1).arg(QString::fromStdString(tolerance_parts[1])));
+      } else if (yaw_val < 0.001) {
+        warnings.append(tr("Row %1: tolerance.yaw must be >= 0.001 rad (≒ 0.057°) (got %2 rad)")
+                          .arg(row + 1).arg(yaw_val));
+      } else if (yaw_val > 2.0 * M_PI) {
+        // 旧 deg 入力 (例: 45) を rad として誤って入れた場合の防御 (#159 round 2 軽微 medium)。
+        // 2π (= 360°) 超は実用上意味のない異常値 (typo 可能性大) なので reject。
+        // 「rad 入力」の仕様 (#158) を明示し、deg として解釈した場合の同等値も提示する。
+        // (Qt MessageBox は plain text なので markdown 強調は使わない、#159 round 4 low)
+        warnings.append(tr("Row %1: tolerance.yaw is in rad units (#158); value %2 exceeds 2π (= 360°). "
+                           "If you meant deg, %2° = %3 rad.")
+                          .arg(row + 1).arg(yaw_val).arg(yaw_val * M_PI / 180.0));
       }
     }
   }
@@ -790,7 +813,7 @@ bool PoiEditorPanel::ValidatePois()
   QStringList exclusivity_warnings;
   for (int row = 0; row < numRows; row++) {
     int logical_row = ui_->PoiTable->verticalHeader()->logicalIndex(row);
-    auto* tags_item = ui_->PoiTable->item(logical_row, 5);
+    auto* tags_item = ui_->PoiTable->item(logical_row, kColTags);
     std::string tags_str = tags_item ? tags_item->text().toStdString() : "";
     if (tags_str.empty()) continue;
 
@@ -822,7 +845,7 @@ bool PoiEditorPanel::ValidatePois()
   QStringList tag_warnings;
   for (int row = 0; row < numRows; row++) {
     int logical_row = ui_->PoiTable->verticalHeader()->logicalIndex(row);
-    auto* tags_item = ui_->PoiTable->item(logical_row, 5);
+    auto* tags_item = ui_->PoiTable->item(logical_row, kColTags);
     std::string tags_str = tags_item ? tags_item->text().toStdString() : "";
     if (tags_str.empty()) continue;
 
@@ -903,10 +926,11 @@ void PoiEditorPanel::UpdatePoiTable()
   // 一度 0 行にしてから再生成することで visual = logical を強制する。
   ui_->PoiTable->setRowCount(0);
   ui_->PoiTable->setRowCount(numRows);
-  ui_->PoiTable->setColumnCount(6);
+  // column 構造 (#158): name / pose / tolerance / tags / description
+  ui_->PoiTable->setColumnCount(kColCount);
   ui_->PoiTable->setHorizontalHeaderLabels(
-    QStringList() << tr("name") << tr("description") << tr("x, y, yaw")
-                  << tr("tolerance.xy") << tr("tolerance.yaw (deg)") << tr("tags"));
+    QStringList() << tr("name") << tr("pose (x, y, yaw)")
+                  << tr("tolerance (xy, yaw)") << tr("tags") << tr("description"));
   ui_->PoiTable->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
   ui_->PoiTable->verticalHeader()->setSectionsMovable(true);
   ui_->PoiTable->horizontalHeader()->setSortIndicatorShown(true);
@@ -915,12 +939,19 @@ void PoiEditorPanel::UpdatePoiTable()
   is_table_color_ = false;
   for (size_t row = 0; row < numRows; row++){
     const auto & p = pois[row];
-    ui_->PoiTable->setItem(row, 0, new QTableWidgetItem(QString::fromStdString(p.name)));
-    ui_->PoiTable->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(p.description)));
-    ui_->PoiTable->setItem(row, 2, new QTableWidgetItem(tr("%1, %2, %3").arg(p.pose.position.x).arg(p.pose.position.y).arg(this->calcYaw(p.pose))));
-    ui_->PoiTable->setItem(row, 3, new QTableWidgetItem(tr("%1").arg(p.tolerance.xy)));
-    ui_->PoiTable->setItem(row, 4, new QTableWidgetItem(tr("%1").arg(p.tolerance.yaw * 180.0 / M_PI)));
-    ui_->PoiTable->setItem(row, 5, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
+    // 表示精度: pose / tolerance とも小数点以下 2 桁固定。
+    ui_->PoiTable->setItem(row, kColName, new QTableWidgetItem(QString::fromStdString(p.name)));
+    ui_->PoiTable->setItem(row, kColPose, new QTableWidgetItem(
+      tr("%1, %2, %3")
+        .arg(QString::number(p.pose.position.x, 'f', 2))
+        .arg(QString::number(p.pose.position.y, 'f', 2))
+        .arg(QString::number(this->calcYaw(p.pose), 'f', 2))));
+    ui_->PoiTable->setItem(row, kColTolerance, new QTableWidgetItem(
+      tr("%1, %2")
+        .arg(QString::number(p.tolerance.xy, 'f', 2))
+        .arg(QString::number(p.tolerance.yaw, 'f', 2))));
+    ui_->PoiTable->setItem(row, kColTags, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
+    ui_->PoiTable->setItem(row, kColDescription, new QTableWidgetItem(QString::fromStdString(p.description)));
   }
   is_table_color_ = true;
   ui_->SaveButton->setText("save");
