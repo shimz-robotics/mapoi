@@ -89,6 +89,13 @@
         error: '"initial_pose" と "landmark" は併用できません (landmark は到達不可な reference 点)。',
       };
     }
+    // landmark × pause 排他 (#143): landmark は到達不可なので pause 動作が成立しない。
+    if (has('pause') && has('landmark')) {
+      return {
+        ok: false,
+        error: '"pause" と "landmark" は併用できません (landmark は到達不可な reference のため pause 動作が成立しません)。',
+      };
+    }
     return { ok: true };
   }
 

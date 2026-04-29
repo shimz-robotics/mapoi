@@ -139,9 +139,11 @@
 
   function updateRouteEditorPoiNames() {
     // landmark POI は Nav2 navigation goal にできない reference 専用 (#85)。
-    // route waypoint candidate からも除外する。
+    // route waypoint candidate からは除外、route.landmarks candidate に振り分ける (#143)。
     const navigablePois = MapoiPoiFilter.filterRouteWaypointCandidates(poiEditor.pois);
     routeEditor.setPoiNames(navigablePois.map((p) => p.name));
+    const landmarkPois = (poiEditor.pois || []).filter((p) => MapoiPoiFilter.hasLandmarkTag(p));
+    routeEditor.setLandmarkNames(landmarkPois.map((p) => p.name));
   }
 
   // --- Load routes ---
@@ -220,6 +222,11 @@
     if (routeEditor.editingIndex !== -1) {
       const poi = poiEditor.pois[index];
       if (poi && poi.name) {
+        // landmark POI は waypoint dropdown と整合させ、map click でも waypoint には
+        // 入れない (Codex review #147 medium)。route.landmarks への追加は dropdown UI で行う。
+        if (MapoiPoiFilter.hasLandmarkTag(poi)) {
+          return;
+        }
         routeEditor.addWaypointByName(poi.name);
       }
       return;

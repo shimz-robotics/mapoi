@@ -211,9 +211,17 @@ describe('validatePoiTags', () => {
     expect(result.error).toMatch(/initial_pose.*landmark/);
   });
 
-  it('matches case-insensitively for both system tags', () => {
+  it('rejects pause + landmark combination (#143)', () => {
+    // landmark は到達不可な reference のため pause 動作が成立しない。
+    const result = validatePoiTags(poi('a', ['pause', 'landmark']));
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/pause.*landmark/);
+  });
+
+  it('matches case-insensitively for all exclusion pairs', () => {
     expect(validatePoiTags(poi('a', ['WAYPOINT', 'Landmark'])).ok).toBe(false);
     expect(validatePoiTags(poi('b', ['Initial_Pose', 'LANDMARK'])).ok).toBe(false);
+    expect(validatePoiTags(poi('c', ['Pause', 'Landmark'])).ok).toBe(false);  // #143
   });
 
   it('handles missing / null poi gracefully', () => {

@@ -81,13 +81,22 @@ private:
   // を読まない (concurrent request で別 nav の target が混入するのを防ぐ)。
   // current_target_name_ は acceptance 時に更新し、pause 等で active nav の
   // target として参照される用途のみ。
-  void goal_response_callback(std::string target, const GoalHandleFollowWaypoints::SharedPtr & goal_handle);
-  void feedback_callback(GoalHandleFollowWaypoints::SharedPtr, const std::shared_ptr<const FollowWaypoints::Feedback> feedback);
-  void result_callback(std::string target, const GoalHandleFollowWaypoints::WrappedResult & result);
+  // nav_attempt_generation: navigation 開始 (route or GOAL) ごとに増分。各 callback で stale 判定に
+  // 使い、旧 navigation の遅延 callback が新 navigation の global state (current_goal_handle_ /
+  // current_route_poi_names_ / current_target_name_ 等) を上書き / clear しないようにする
+  // (Codex review #147 round 2 high 対応)。
+  void goal_response_callback(std::string target, size_t nav_generation,
+                                const GoalHandleFollowWaypoints::SharedPtr & goal_handle);
+  void feedback_callback(size_t nav_generation, GoalHandleFollowWaypoints::SharedPtr,
+                          const std::shared_ptr<const FollowWaypoints::Feedback> feedback);
+  void result_callback(std::string target, size_t nav_generation,
+                       const GoalHandleFollowWaypoints::WrappedResult & result);
 
   // Action Callbacks (NavigateToPose — single POI)
-  void ntp_goal_response_callback(std::string target, const GoalHandleNavigateToPose::SharedPtr & goal_handle);
-  void ntp_result_callback(std::string target, const GoalHandleNavigateToPose::WrappedResult & result);
+  void ntp_goal_response_callback(std::string target, size_t nav_generation,
+                                    const GoalHandleNavigateToPose::SharedPtr & goal_handle);
+  void ntp_result_callback(std::string target, size_t nav_generation,
+                            const GoalHandleNavigateToPose::WrappedResult & result);
 
   // Clients
   rclcpp_action::Client<FollowWaypoints>::SharedPtr action_client_;
@@ -104,6 +113,18 @@ private:
   std::vector<geometry_msgs::msg::PoseStamped> current_route_waypoints_;
   uint32_t current_waypoint_index_ = 0;
   std::vector<geometry_msgs::msg::PoseStamped> paused_waypoints_;
+
+  // active route の POI 名 set (waypoints + landmarks 両方を含む) (#143)。
+  // route 受信 (on_route_received) で set、route 終端 / cancel / GOAL 切替で clear。
+  // radius_check_callback の pause 発火条件 (active route POI に含まれる時のみ) で参照。
+  std::unordered_set<std::string> current_route_poi_names_;
+  void clear_current_route_poi_names_();
+
+  // nav_attempt_generation: navigation 開始 (route or GOAL) ごとに 1 ずつ増分。各 action
+  // callback で stale 判定に使う (Codex review #147 round 1+2 high 対応)。route ↔ route /
+  // route ↔ GOAL / GOAL ↔ GOAL いずれの切替でも、旧 navigation の遅延 callback が新 nav state
+  // を消さないようにする。single-thread executor 前提なので mutex なしで読み書き OK。
+  size_t nav_attempt_generation_ = 0;
 
   void reset_nav_state();
 

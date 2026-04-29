@@ -177,6 +177,18 @@
               </div>
               <div class="route-wp-map-hint">Click a POI on the map to add it as a waypoint</div>
             </div>
+            <!-- route.landmarks (#143): この route 走行中に意識する補助 POI 群 (Nav2 へは送らず radius 監視のみ) -->
+            <div class="route-wp-section">
+              <label>Landmarks (optional)</label>
+              <div id="route-landmark-list" class="route-waypoint-list"></div>
+              <div class="route-wp-add-row">
+                <select id="route-lm-select" class="route-wp-select">
+                  <option value="">-- Select landmark POI --</option>
+                </select>
+                <button type="button" id="btn-add-landmark" class="btn-add-wp">+</button>
+              </div>
+              <div class="route-wp-map-hint">Landmark POI は radius 監視対象として認識されますが Nav2 へは送られません</div>
+            </div>
             <div class="form-actions">
               <button id="btn-route-form-ok">OK</button>
               <button id="btn-route-form-cancel">Cancel</button>

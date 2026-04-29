@@ -10,8 +10,10 @@ class RouteEditor {
     this.editingIndex = -1; // -1 = closed, >=0 = editing, -2 = new route
     this.selectedIndex = -1; // -1 = none selected
     this.visibleRoutes = new Set();
-    this.poiNames = [];
+    this.poiNames = [];          // navigable POI names (waypoint candidate)
+    this.landmarkNames = [];     // landmark POI names (route.landmarks candidate, #143)
     this.editingWaypoints = []; // working waypoint list for form
+    this.editingLandmarks = []; // working landmark list for form (#143)
 
     this.onDirtyChange = null;
     this.onVisibilityChange = null;
@@ -27,11 +29,16 @@ class RouteEditor {
     this.btnAddRoute = document.getElementById('btn-add-route');
     this.dirtyIndicator = document.getElementById('route-dirty-indicator');
 
-    // Form inputs
+    // Form inputs - waypoints
     this.inputRouteName = document.getElementById('route-name');
     this.waypointListEl = document.getElementById('route-waypoint-list');
     this.waypointSelect = document.getElementById('route-wp-select');
     this.btnAddWaypoint = document.getElementById('btn-add-waypoint');
+
+    // Form inputs - landmarks (#143)
+    this.landmarkListEl = document.getElementById('route-landmark-list');
+    this.landmarkSelect = document.getElementById('route-lm-select');
+    this.btnAddLandmark = document.getElementById('btn-add-landmark');
 
     // Bind button events
     document.getElementById('btn-route-form-ok').addEventListener('click', () => this.formOk());
@@ -40,6 +47,16 @@ class RouteEditor {
     this.btnSaveRoutes.addEventListener('click', () => this.save());
     this.btnDiscardRoutes.addEventListener('click', () => this.discard());
     this.btnAddWaypoint.addEventListener('click', () => this.addWaypointFromSelect());
+    if (this.btnAddLandmark) {
+      this.btnAddLandmark.addEventListener('click', () => this.addLandmarkFromSelect());
+    }
+  }
+
+  /**
+   * Set available landmark POI names for route.landmarks dropdown (#143).
+   */
+  setLandmarkNames(names) {
+    this.landmarkNames = names || [];
   }
 
   /**
@@ -231,8 +248,11 @@ class RouteEditor {
   fillForm(route) {
     this.inputRouteName.value = route.name || '';
     this.editingWaypoints = [...(route.waypoints || [])];
+    this.editingLandmarks = [...(route.landmarks || [])];   // #143
     this.renderWaypointList();
     this.populateWaypointSelect();
+    this.renderLandmarkList();
+    this.populateLandmarkSelect();
   }
 
   /**
@@ -347,6 +367,86 @@ class RouteEditor {
     this._fireEditingChange();
   }
 
+  // ---- landmarks (#143) ----
+
+  populateLandmarkSelect() {
+    if (!this.landmarkSelect) return;
+    this.landmarkSelect.innerHTML = '<option value="">-- Select landmark POI --</option>';
+    this.landmarkNames.forEach((name) => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      this.landmarkSelect.appendChild(opt);
+    });
+  }
+
+  renderLandmarkList() {
+    if (!this.landmarkListEl) return;
+    this.landmarkListEl.innerHTML = '';
+    if (this.editingLandmarks.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'wp-empty';
+      empty.textContent = 'No landmarks added';
+      this.landmarkListEl.appendChild(empty);
+      return;
+    }
+    // landmarks は順序の意味が無いので waypoint と同じ表示でも num は省略しない
+    // (waypoint との視覚的一貫性を優先)。
+    this.editingLandmarks.forEach((lm, i) => {
+      const row = document.createElement('div');
+      row.className = 'wp-item';
+
+      const num = document.createElement('span');
+      num.className = 'wp-num';
+      num.textContent = (i + 1) + '.';
+
+      const name = document.createElement('span');
+      name.className = 'wp-name';
+      name.textContent = lm;
+      if (this.landmarkNames.length > 0 && !this.landmarkNames.includes(lm)) {
+        name.classList.add('wp-missing');
+        name.title = 'Landmark POI not found (existing landmark POI と紐付かない名前)';
+      }
+
+      const btns = document.createElement('span');
+      btns.className = 'wp-btns';
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.textContent = '×';
+      removeBtn.title = 'Remove';
+      removeBtn.className = 'wp-remove';
+      removeBtn.addEventListener('click', () => this.removeLandmark(i));
+
+      btns.appendChild(removeBtn);
+
+      row.appendChild(num);
+      row.appendChild(name);
+      row.appendChild(btns);
+      this.landmarkListEl.appendChild(row);
+    });
+  }
+
+  addLandmarkFromSelect() {
+    if (!this.landmarkSelect) return;
+    const val = this.landmarkSelect.value;
+    if (!val) return;
+    if (this.editingLandmarks.includes(val)) {
+      this.landmarkSelect.value = '';
+      return;  // 重複追加を防ぐ
+    }
+    this.editingLandmarks.push(val);
+    this.landmarkSelect.value = '';
+    this.renderLandmarkList();
+    this._fireEditingChange();
+  }
+
+  removeLandmark(index) {
+    this.editingLandmarks.splice(index, 1);
+    this.renderLandmarkList();
+    this._fireEditingChange();
+  }
+
   /**
    * Confirm form edits.
    */
@@ -377,7 +477,13 @@ class RouteEditor {
       }
     }
 
-    const route = { name: name, waypoints: [...this.editingWaypoints] };
+    // #143: route.landmarks は optional。空 array の場合は yaml 出力でも省略しない
+    // (frontend 側で常に key を含めて backend に送る)。yaml 上の見栄えは backend に任せる。
+    const route = {
+      name: name,
+      waypoints: [...this.editingWaypoints],
+      landmarks: [...this.editingLandmarks],
+    };
 
     if (this.editingIndex === -2) {
       // New route

@@ -5,6 +5,9 @@ custom_tags:
 route:
 - name: route_1
   waypoints: [meeting_room_a, conference_room, corridor_a, model_exhibit]
+  # route 走行中に意識する補助 POI 群 (#143)。Nav2 へは送らず radius 監視のみ。
+  # tour_landmark の tolerance.xy 進入で EVENT_ENTER が publish される。
+  landmarks: [tour_landmark]
 - name: route_2
   waypoints: [elevator_hall, corridor_a, conference_room]
 map:
@@ -47,3 +50,10 @@ poi:
   pose: {x: -0.5, y: 0.5, yaw: -1.57}
   tolerance: {xy: 0.40, yaw: 0.785}
   tags: [waypoint, audio_info]
+# tour_landmark は landmark タグ付き = Nav2 navigation 不可な reference 点 (#85, #143)。
+# route_1 の landmarks: [tour_landmark] で route 走行中だけ radius event 監視対象として扱う。
+- description: ツアー中の観察点 (route_1 の通り道に置いた展示物想定)
+  name: tour_landmark
+  pose: {x: 0.0, y: 0.2, yaw: 0.0}
+  tolerance: {xy: 0.30, yaw: 0.785}
+  tags: [landmark]

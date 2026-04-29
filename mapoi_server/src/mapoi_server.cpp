@@ -178,41 +178,76 @@ void MapoiServer::get_route_pois_service(
     return;
   }
 
-  for (const auto &route : routes_list_) {
-    if (route["name"].as<std::string>("") == request->route_name) {
-      const auto &wps = route["waypoints"];
-      if (!wps || !wps.IsSequence()) {
-        break;
+  // Helper to look up a POI by name in pois_list_ and append the converted msg
+  // into the given vector (#143).
+  auto append_poi_by_name = [this](const std::string & name,
+                                    std::vector<mapoi_interfaces::msg::PointOfInterest> & target) {
+    if (!pois_list_ || !pois_list_.IsSequence()) return;
+    for (const auto &poi : pois_list_) {
+      if (poi["name"].as<std::string>("") == name) {
+        target.push_back(yaml_to_poi_msg(poi));
+        return;
       }
+    }
+    RCLCPP_WARN(this->get_logger(),
+      "Route POI '%s' not found in pois_list_; skipping.", name.c_str());
+  };
 
-      for (const auto &wp : wps) {
-        std::string wp_name = wp.as<std::string>();
+  for (const auto &route : routes_list_) {
+    if (route["name"].as<std::string>("") != request->route_name) continue;
 
-        if (!pois_list_ || !pois_list_.IsSequence()) {
-          break;
-        }
-        for (const auto &poi : pois_list_) {
-          if (poi["name"].as<std::string>("") == wp_name) {
-            response->pois_list.push_back(yaml_to_poi_msg(poi));
+    // Ordered waypoints (sent to Nav2 FollowWaypoints).
+    if (route["waypoints"] && route["waypoints"].IsSequence()) {
+      for (const auto &wp : route["waypoints"]) {
+        append_poi_by_name(wp.as<std::string>(), response->pois_list);
+      }
+    }
+
+    // route.landmarks (#143): NOT navigated, but radius-monitored while this
+    // route is active. Order is informational only.
+    // Codex review #147 low: 参照先 POI が `landmark` tag を持つかも検証し、
+    // 持たない POI を route.landmarks に書いた場合は WARN ログ (typo / spec 誤解の検知)。
+    if (route["landmarks"] && route["landmarks"].IsSequence()) {
+      for (const auto &lm : route["landmarks"]) {
+        const std::string lm_name = lm.as<std::string>();
+        const size_t before = response->landmark_pois.size();
+        append_poi_by_name(lm_name, response->landmark_pois);
+        if (response->landmark_pois.size() > before) {
+          const auto & lm_poi = response->landmark_pois.back();
+          bool has_landmark_tag = false;
+          for (const auto & t : lm_poi.tags) {
+            if (t == "landmark") { has_landmark_tag = true; break; }
+          }
+          if (!has_landmark_tag) {
+            RCLCPP_WARN(this->get_logger(),
+              "Route '%s' references '%s' as landmark but POI does not have 'landmark' tag.",
+              request->route_name.c_str(), lm_name.c_str());
           }
         }
       }
-
-      break;
     }
+
+    break;
   }
 
   // debug log
-  std::string poi_names;
+  std::string wp_names;
   bool first = true;
   for (const auto &poi : response->pois_list) {
-    if (!first) poi_names += ", ";
+    if (!first) wp_names += ", ";
     first = false;
-    poi_names += poi.name;
+    wp_names += poi.name;
   }
-
-  RCLCPP_DEBUG(this->get_logger(), "Collected POIs in route '%s': [%s]",
-               request->route_name.c_str(), poi_names.c_str());
+  std::string lm_names;
+  first = true;
+  for (const auto &poi : response->landmark_pois) {
+    if (!first) lm_names += ", ";
+    first = false;
+    lm_names += poi.name;
+  }
+  RCLCPP_DEBUG(this->get_logger(),
+    "Collected route '%s': waypoints=[%s], landmarks=[%s]",
+    request->route_name.c_str(), wp_names.c_str(), lm_names.c_str());
 }
 
 void MapoiServer::get_maps_info_service(
