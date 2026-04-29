@@ -444,10 +444,17 @@ void PoiEditorPanel::SaveButton()
   for (int row = 0; row < numRows; row++) {
     int logical_row = ui_->PoiTable->verticalHeader()->logicalIndex(row);
     YAML::Node poi;
-    poi["name"] = ui_->PoiTable->item(logical_row, kColName)->text().toStdString();
+    // 全 cell の null check (#159 round 2 ヘビー medium): 未生成セルが混じると segfault する。
+    // ValidatePois と同様に「nullptr → 空文字」で扱い、validation で reject されるはずだが、
+    // ここでも防御として null を空に変換する。
+    auto cell_text = [&](int col) -> std::string {
+      auto * item = ui_->PoiTable->item(logical_row, col);
+      return item ? item->text().toStdString() : "";
+    };
+    poi["name"] = cell_text(kColName);
     // pose も tolerance と同じ厳密 parser (try_parse_finite_double) で 1abc / nan / inf を拒否
     // (#159 round 1 medium 対応で std::stod から切り替え)。表記揺れ trim は split_and_trim で吸収。
-    auto poses_str = ui_->PoiTable->item(logical_row, kColPose)->text().toStdString();
+    auto poses_str = cell_text(kColPose);
     auto pose_parts = split_and_trim(poses_str, ',');
     double x_val = 0.0, y_val = 0.0, yaw_val_pose = 0.0;
     if (pose_parts.size() != 3
@@ -465,7 +472,7 @@ void PoiEditorPanel::SaveButton()
     // tolerance を 1 column "xy m, yaw rad" に統合 (#158): split → xy_val (m), yaw_val (rad)
     // を抽出して tolerance.xy / tolerance.yaw に書き戻す。yaw は rad で UI と yaml を統一
     // (旧 deg 入力は #138 の暫定仕様。pose.yaw が rad 表示なので tolerance.yaw も rad に揃える)。
-    auto tolerance_str = ui_->PoiTable->item(logical_row, kColTolerance)->text().toStdString();
+    auto tolerance_str = cell_text(kColTolerance);
     auto tolerance_parts = split_and_trim(tolerance_str, ',');
     double xy_val = 0.0;
     double yaw_val = 0.0;
@@ -479,9 +486,9 @@ void PoiEditorPanel::SaveButton()
     }
     poi["tolerance"]["xy"] = xy_val;
     poi["tolerance"]["yaw"] = yaw_val;
-    auto tags_str = ui_->PoiTable->item(logical_row, kColTags)->text().toStdString();
+    auto tags_str = cell_text(kColTags);
     poi["tags"] = this->SplitSentence(tags_str, ", ");
-    poi["description"] = ui_->PoiTable->item(logical_row, kColDescription)->text().toStdString();
+    poi["description"] = cell_text(kColDescription);
     pois_list.push_back(poi);
   }
 
@@ -775,6 +782,12 @@ bool PoiEditorPanel::ValidatePois()
       } else if (yaw_val < 0.001) {
         warnings.append(tr("Row %1: tolerance.yaw must be >= 0.001 rad (≒ 0.057°) (got %2 rad)")
                           .arg(row + 1).arg(yaw_val));
+      } else if (yaw_val > 2.0 * M_PI) {
+        // 旧 deg 入力 (例: 45) を rad として誤って入れた場合の防御 (#159 round 2 軽微 medium)。
+        // 2π (= 360°) 超は実用上意味のない異常値。typo の可能性が高いので reject。
+        warnings.append(tr("Row %1: tolerance.yaw must be <= 2π rad (= 360°) (got %2 rad). "
+                           "This unit changed from deg to rad in #158 — did you mean %3 rad (= %2°)?")
+                          .arg(row + 1).arg(yaw_val).arg(yaw_val * M_PI / 180.0));
       }
     }
   }

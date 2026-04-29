@@ -116,7 +116,7 @@
      </item>
      <item row="0" column="3">
       <property name="text">
-       <string>Distination, landmark</string>
+       <string>Destination, landmark</string>
       </property>
      </item>
      <item row="0" column="4">
@@ -141,7 +141,7 @@
      </item>
      <item row="1" column="3">
       <property name="text">
-       <string>Distination</string>
+       <string>Destination</string>
       </property>
      </item>
      <item row="1" column="4">
