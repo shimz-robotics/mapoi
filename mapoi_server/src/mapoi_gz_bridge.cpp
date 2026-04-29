@@ -69,6 +69,12 @@ MapoiGzBridge::MapoiGzBridge()
     "mapoi_config_path", sub_qos,
     std::bind(&MapoiGzBridge::on_config_path, this, _1),
     sub_opts);
+  // mapoi_initialpose_poi (transient_local) を subscribe して、SwitchMap.initial_poi_name
+  // 指定時に bridge も同じ POI を spawn 位置に採用する (#149 round 7 ヘビー high 対応)。
+  initialpose_poi_sub_ = this->create_subscription<std_msgs::msg::String>(
+    "mapoi_initialpose_poi", sub_qos,
+    std::bind(&MapoiGzBridge::on_initialpose_poi, this, _1),
+    sub_opts);
 
   worker_ = std::thread(&MapoiGzBridge::worker_loop, this);
 
@@ -84,6 +90,13 @@ MapoiGzBridge::~MapoiGzBridge()
   if (worker_.joinable()) {
     worker_.join();
   }
+}
+
+void MapoiGzBridge::on_initialpose_poi(const std_msgs::msg::String::SharedPtr msg)
+{
+  // POI 名のみ保持。実際の lookup は worker thread の load_gazebo_info で行う。
+  std::lock_guard<std::mutex> lock(requested_initial_poi_name_mutex_);
+  requested_initial_poi_name_ = msg->data;
 }
 
 void MapoiGzBridge::on_config_path(const std_msgs::msg::String::SharedPtr msg)
@@ -210,35 +223,53 @@ ConfigLoadStatus MapoiGzBridge::load_gazebo_info(
       out.world_model.name = wm["name"] ? wm["name"].as<std::string>() : "";
       out.has_gazebo = !out.world_model.uri.empty();
     }
-    // initial pose は POI list の先頭 (landmark タグは到達不可なので除外) を採用 (#144)。
-    // 旧 `initial_pose` system tag を yaml 順序で表現する semantics に移行した。
+    // initial pose は (1) latched mapoi_initialpose_poi (= SwitchMap.initial_poi_name 指定) があれば
+    // それを優先、(2) なければ POI list 先頭 (landmark 除外、pose 妥当性 check) を採用 (#144 / #149
+    // round 7 ヘビー high 対応)。
+    std::string requested;
+    {
+      std::lock_guard<std::mutex> lock(requested_initial_poi_name_mutex_);
+      requested = requested_initial_poi_name_;
+    }
+    auto is_landmark_poi = [](const YAML::Node & poi) {
+      if (!poi["tags"] || !poi["tags"].IsSequence()) return false;
+      for (const auto & t : poi["tags"]) {
+        if (t.as<std::string>() == "landmark") return true;
+      }
+      return false;
+    };
+    auto try_apply_pose = [&](const YAML::Node & poi) -> bool {
+      if (is_landmark_poi(poi)) return false;
+      if (!poi["pose"] || !poi["pose"].IsMap()) return false;
+      const auto & pose = poi["pose"];
+      for (const char * k : {"x", "y", "yaw"}) {
+        if (!pose[k]) return false;
+        try { (void)pose[k].as<double>(); }
+        catch (const YAML::Exception &) { return false; }
+      }
+      out.initial_x = pose["x"].as<double>();
+      out.initial_y = pose["y"].as<double>();
+      out.initial_yaw = pose["yaw"].as<double>();
+      out.has_initial_pose = true;
+      return true;
+    };
     if (cfg["poi"] && cfg["poi"].IsSequence()) {
-      for (const auto & poi : cfg["poi"]) {
-        bool is_landmark = false;
-        if (poi["tags"] && poi["tags"].IsSequence()) {
-          for (const auto & tag : poi["tags"]) {
-            if (tag.as<std::string>() == "landmark") { is_landmark = true; break; }
+      bool applied = false;
+      if (!requested.empty()) {
+        for (const auto & poi : cfg["poi"]) {
+          if (poi["name"].as<std::string>("") != requested) continue;
+          if (try_apply_pose(poi)) {
+            applied = true;
+            RCLCPP_INFO(this->get_logger(),
+              "Adopted requested initial POI '%s' for spawn position.", requested.c_str());
           }
+          break;
         }
-        if (is_landmark) continue;
-        // pose 妥当性 check: mapoi_server::compute_initial_poi_name と挙動一致 (#149 round 5 high)。
-        // pose ノード or x/y/yaw が欠落 / numeric 不可なら次の POI を試す。
-        // (旧仕様の 0.0 fallback は意図しない (0,0) spawn の原因になり得るため撤廃。
-        // 共通 helper 化は #150 follow-up。)
-        if (!poi["pose"] || !poi["pose"].IsMap()) continue;
-        const auto & pose = poi["pose"];
-        bool pose_ok = true;
-        for (const char * k : {"x", "y", "yaw"}) {
-          if (!pose[k]) { pose_ok = false; break; }
-          try { (void)pose[k].as<double>(); }
-          catch (const YAML::Exception &) { pose_ok = false; break; }
+      }
+      if (!applied) {
+        for (const auto & poi : cfg["poi"]) {
+          if (try_apply_pose(poi)) break;
         }
-        if (!pose_ok) continue;
-        out.initial_x = pose["x"].as<double>();
-        out.initial_y = pose["y"].as<double>();
-        out.initial_yaw = pose["yaw"].as<double>();
-        out.has_initial_pose = true;
-        break;
       }
     }
   } catch (const YAML::Exception & e) {

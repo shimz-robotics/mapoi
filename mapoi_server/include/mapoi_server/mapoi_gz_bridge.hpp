@@ -74,6 +74,12 @@ private:
 
   // subscription
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr config_path_sub_;
+  // mapoi_initialpose_poi (#149 round 7 ヘビー high 対応): SwitchMap.initial_poi_name 指定時に
+  // mapoi_server がここに POI 名を publish するので、bridge も同じ POI を spawn 位置に採用する。
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr initialpose_poi_sub_;
+  void on_initialpose_poi(const std_msgs::msg::String::SharedPtr msg);
+  std::string requested_initial_poi_name_;
+  std::mutex requested_initial_poi_name_mutex_;
 
   // worker thread + queue (subscribe callback は queue.push のみ、worker が直列処理)
   std::thread worker_;

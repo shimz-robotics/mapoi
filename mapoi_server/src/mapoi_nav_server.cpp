@@ -315,12 +315,14 @@ void MapoiNavServer::publish_initial_pose(
   nav2_initialpose_pub_->publish(msg);
   RCLCPP_INFO(this->get_logger(), "Published initial pose (%s).", source.c_str());
 
-  // 常に async retry / post-subscribe republish path に乗せる (#149 round 6 high 対応)。
-  // 旧実装は count == 0 のときだけ retry を起動していたが、これだと「subscriber visible だが
-  // AMCL 側がまだ処理 ready 直前」ケースで初回 publish のみで終わり取りこぼす。
-  // schedule 内で subscriber 状態を毎回 check するため、count > 0 でも post-subscribe
-  // republish (default 3 回) が実行される。
-  schedule_initialpose_retry(pose, source);
+  // subscriber 未 ready の場合のみ async retry を起動 (#149 round 7 high 対応で round 6 を revert)。
+  // 「常時 retry」は subscriber visible but not ready 取りこぼし対策には有効だが、運用中
+  // (AMCL fully ready) で `mapoi_initialpose_poi` が来た際に意図しない自己位置 jump を
+  // 引き起こす副作用が大きい。グレーゾーン (起動直後の visible but not ready) は捨て、
+  // 「count == 0 のみ retry」=「後起動 path のみ retry」のロバスト性を優先する。
+  if (nav2_initialpose_pub_->get_subscription_count() == 0) {
+    schedule_initialpose_retry(pose, source);
+  }
 }
 
 void MapoiNavServer::schedule_initialpose_retry(
