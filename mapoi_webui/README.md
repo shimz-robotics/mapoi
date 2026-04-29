@@ -42,7 +42,7 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 | `mapoi_pause` | `std_msgs/String` | ナビゲーションの一時停止 |
 | `mapoi_resume` | `std_msgs/String` | ナビゲーションの再開 |
 | `mapoi_cancel` | `std_msgs/String` | ナビゲーションのキャンセル |
-| `mapoi_initialpose_poi` | `std_msgs/String` | 初期位置設定の POI 名 |
+| `mapoi_initialpose_poi` | `mapoi_interfaces/InitialPoseRequest` | 初期位置に採用する POI 名 (`{map_name, poi_name}`)、transient_local QoS |
 
 #### サブスクライバー
 

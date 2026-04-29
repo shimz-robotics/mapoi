@@ -23,12 +23,25 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   // Publish config_path_
   config_path_publisher_ = this->create_publisher<std_msgs::msg::String>(
     "mapoi_config_path", rclcpp::QoS(1).transient_local());
+  // Publish initial pose POI name (#144): mapoi_nav_server がこれを受けて /initialpose を流す。
+  // 起動時 / SwitchMap / reload で publish する。後起動 subscriber でも受信できるよう transient_local。
+  initialpose_poi_publisher_ = this->create_publisher<mapoi_interfaces::msg::InitialPoseRequest>(
+    "mapoi_initialpose_poi", rclcpp::QoS(1).transient_local());
   int pub_interval_ms = this->get_parameter("pub_interval_ms").as_int();
   timer_ = this->create_wall_timer(std::chrono::milliseconds(pub_interval_ms), [this]() {
     auto msg = std_msgs::msg::String();
     msg.data = config_path_;
     config_path_publisher_->publish(msg);
   });
+
+  // 起動時の最初の map に対する initial pose POI を publish (#144)。
+  // 順序保証: load_mapoi_config_file() (line 21) → publish_initial_poi_name() の順に実行。
+  // pois_list_ は load 後に最新化されているので、compute_initial_poi_name の lookup は安全。
+  // mapoi_initialpose_poi は transient_local QoS なので mapoi_nav_server 後起動でも latched 値を
+  // 受信できる。mapoi_nav_server cb 側は新たに get_pois_info を fetch して名前 lookup するので、
+  // mapoi_server 内の pois_list_ 更新と nav_server 側の cb 処理は順序非依存 (#149 review 補足)。
+  // 起動時は requested_name = empty で default (POI list 先頭) を採用。
+  publish_initial_poi_name("");
 
   get_pois_info_service_ = this->create_service<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info",
     std::bind(&MapoiServer::get_pois_info_service, this, std::placeholders::_1, std::placeholders::_2));
@@ -342,6 +355,11 @@ void MapoiServer::switch_map_service(const std::shared_ptr<mapoi_interfaces::srv
     RCLCPP_INFO(this->get_logger(), "Loaded map for %s", map_url.c_str());
   }
 
+  // Nav2 LoadMap 完了後に initial pose POI 名を publish する (#144 + Cursor review #149 round 2 high
+  // 対応)。Nav2 が新 map に切り替わってから AMCL に initial pose が届くようにするため、必ず
+  // send_load_map_request 全件成功後にここへ来る。失敗 (上の return) では publish しない。
+  publish_initial_poi_name(request->initial_poi_name);
+
   RCLCPP_INFO(this->get_logger(), "The map was switched into %s", map_name_.c_str());
   response->success = true;
 }
@@ -353,9 +371,95 @@ void MapoiServer::reload_map_info_service(
 {
   (void)request;
   load_mapoi_config_file();
+  // reload は POI 編集後の再読込 trigger。ここで `mapoi_initialpose_poi` を再 publish すると、
+  // mapoi_nav_server 側で /initialpose が再配信され **運用中の自己位置が巻き戻される** 回帰がある
+  // (Cursor review #149 round 4 medium 対応)。
+  // 初期姿勢の (再) 設定は SwitchMap (= 地図切替) または手動経路 (RViz / WebUI / mapoi_initialpose_poi
+  // 直接 publish) を使うのが正しい運用。ここでは publish_initial_poi_name を呼ばない。
   response->success = true;
   response->message = config_path_;
   RCLCPP_INFO(this->get_logger(), "Reloaded mapoi config: %s", config_path_.c_str());
+}
+
+// static (純関数). pois_list と requested_name から initial POI 名を決定。
+// state を持たないため unit test で直接呼び出せる (#149 round 4 high 対応)。
+std::string MapoiServer::compute_initial_poi_name(
+  const YAML::Node & pois_list, const std::string & requested_name)
+{
+  if (!pois_list || !pois_list.IsSequence()) {
+    return "";
+  }
+  auto is_landmark_poi = [](const YAML::Node & poi) {
+    if (!poi["tags"] || !poi["tags"].IsSequence()) return false;
+    for (const auto & t : poi["tags"]) {
+      if (t.as<std::string>() == "landmark") return true;
+    }
+    return false;
+  };
+  // pose ノード + x / y / yaw 全てを numeric として読めるかを確認する。
+  // bridge 側は欠落時 0.0 fallback なので、ここで弾けば「意図しない (0,0) spawn」を防げる。
+  auto has_valid_pose = [](const YAML::Node & poi) {
+    if (!poi["pose"]) return false;
+    const auto & pose = poi["pose"];
+    if (!pose.IsMap()) return false;
+    for (const char * k : {"x", "y", "yaw"}) {
+      if (!pose[k]) return false;
+      try {
+        (void)pose[k].as<double>();
+      } catch (const YAML::Exception &) {
+        return false;
+      }
+    }
+    return true;
+  };
+  if (!requested_name.empty()) {
+    bool found = false;
+    for (const auto & poi : pois_list) {
+      if (poi["name"].as<std::string>("") != requested_name) continue;
+      found = true;
+      if (is_landmark_poi(poi)) break;     // landmark → fall back
+      if (!has_valid_pose(poi)) break;     // pose 欠落 → fall back
+      return requested_name;
+    }
+    (void)found;  // not-found 警告は呼び出し側で扱う (state-less 化のため log は出さない)
+  }
+  for (const auto & poi : pois_list) {
+    if (is_landmark_poi(poi)) continue;     // landmark は到達不可、initial pose 候補から除外
+    if (!has_valid_pose(poi)) continue;     // pose 欠落 POI もスキップ
+    const std::string n = poi["name"].as<std::string>("");
+    if (!n.empty()) return n;
+  }
+  return "";
+}
+
+void MapoiServer::publish_initial_poi_name(const std::string & requested_name)
+{
+  // requested_name は SwitchMap.initial_poi_name (空 = default、POI list 先頭採用)。
+  // shared state を持たず、呼び出し側が直接渡す形にして thread safety / lifecycle race を排除
+  // (Cursor review #149 round 2 high 対応)。
+  const std::string target = compute_initial_poi_name(pois_list_, requested_name);
+  // ログ順序: target.empty() の WARN は下流に任せ、ここでは「requested 不採用かつ fallback 候補が
+  // 存在する」ケースのみ WARN を出す (#149 round 5 low: target.empty() 時に紛らわしい両 WARN が
+  // 出るのを避ける)。
+  if (!requested_name.empty() && !target.empty() && target != requested_name) {
+    RCLCPP_WARN(this->get_logger(),
+      "Requested initial_poi_name '%s' was not adopted (not found / landmark / invalid pose); "
+      "falling back to POI list first ('%s').",
+      requested_name.c_str(), target.c_str());
+  }
+  if (target.empty()) {
+    RCLCPP_WARN(this->get_logger(),
+      "No POI available for initial pose in map '%s'; skipping mapoi_initialpose_poi publish.",
+      map_name_.c_str());
+    return;
+  }
+  auto msg = mapoi_interfaces::msg::InitialPoseRequest();
+  msg.map_name = map_name_;
+  msg.poi_name = target;
+  initialpose_poi_publisher_->publish(msg);
+  RCLCPP_INFO(this->get_logger(),
+    "Published initial pose POI name '%s' for map '%s' (#144).",
+    target.c_str(), map_name_.c_str());
 }
 
 void MapoiServer::load_tag_definitions()
@@ -391,6 +495,7 @@ void MapoiServer::get_tag_definitions_service(
   RCLCPP_DEBUG(this->get_logger(), "Sending %zu tag definitions", tag_definitions_.size());
 }
 
+#ifndef UNIT_TEST
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
@@ -398,3 +503,4 @@ int main(int argc, char **argv)
   rclcpp::shutdown();
   return 0;
 }
+#endif

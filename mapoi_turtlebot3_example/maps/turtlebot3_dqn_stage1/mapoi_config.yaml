@@ -29,7 +29,7 @@ poi:
   description: 開始地点
   pose: {x: 0.0, y: 0.0, yaw: 0.0}
   tolerance: {xy: 0.40, yaw: 0.785}
-  tags: [waypoint, initial_pose]
+  tags: [waypoint]
 - name: checkpoint_west
   description: 西側中継点
   pose: {x: -1.6, y: 0.5, yaw: 1.57}

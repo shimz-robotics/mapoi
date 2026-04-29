@@ -86,9 +86,11 @@ describe('filterWaypointCandidates', () => {
 });
 
 describe('filterInitialPoseCandidates', () => {
-  it('drops landmark POIs (排他: landmark + initial_pose)', () => {
+  it('drops landmark POIs from initial pose candidate list', () => {
+    // landmark は到達不可なので initial pose には設定できない (#144 では initial_pose tag は
+    // 廃止したが、landmark POI を initial pose として publish させない原則は維持)。
     const pois = [
-      poi('start_zone', ['waypoint', 'initial_pose']),
+      poi('start_zone', ['waypoint']),
       poi('landmark_x', ['landmark']),
       poi('hazard', ['event', 'landmark', 'hazard']),
       poi('north', ['waypoint']),
@@ -96,9 +98,8 @@ describe('filterInitialPoseCandidates', () => {
     expect(filterInitialPoseCandidates(pois).map((p) => p.name)).toEqual(['start_zone', 'north']);
   });
 
-  it('keeps non-landmark POIs even without initial_pose tag', () => {
-    // initial pose dropdown は全 navigable POI を載せて user に選ばせる
-    // (manual override 用途) ため、initial_pose タグの有無で絞らない。
+  it('keeps any non-landmark POI as initial pose candidate', () => {
+    // initial pose dropdown は全 navigable POI を載せて user に選ばせる (manual override 用途)。
     const pois = [
       poi('a', ['waypoint']),
       poi('b', ['pause']),
@@ -195,7 +196,7 @@ describe('validatePoiTags', () => {
     expect(validatePoiTags(poi('a', ['waypoint'])).ok).toBe(true);
     expect(validatePoiTags(poi('b', ['landmark'])).ok).toBe(true);
     expect(validatePoiTags(poi('c', ['event', 'landmark', 'hazard'])).ok).toBe(true);
-    expect(validatePoiTags(poi('d', ['initial_pose', 'waypoint'])).ok).toBe(true);
+    expect(validatePoiTags(poi('d', ['waypoint', 'pause'])).ok).toBe(true);
     expect(validatePoiTags(poi('e', [])).ok).toBe(true);
   });
 
@@ -203,12 +204,6 @@ describe('validatePoiTags', () => {
     const result = validatePoiTags(poi('a', ['waypoint', 'landmark']));
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/waypoint.*landmark/);
-  });
-
-  it('rejects initial_pose + landmark combination', () => {
-    const result = validatePoiTags(poi('a', ['initial_pose', 'landmark']));
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/initial_pose.*landmark/);
   });
 
   it('rejects pause + landmark combination (#143)', () => {
@@ -220,9 +215,10 @@ describe('validatePoiTags', () => {
 
   it('matches case-insensitively for all exclusion pairs', () => {
     expect(validatePoiTags(poi('a', ['WAYPOINT', 'Landmark'])).ok).toBe(false);
-    expect(validatePoiTags(poi('b', ['Initial_Pose', 'LANDMARK'])).ok).toBe(false);
-    expect(validatePoiTags(poi('c', ['Pause', 'Landmark'])).ok).toBe(false);  // #143
+    expect(validatePoiTags(poi('b', ['Pause', 'Landmark'])).ok).toBe(false);  // #143
   });
+
+  // (initial_pose × landmark 排他 test は #144 で initial_pose system tag を廃止したため削除。)
 
   it('handles missing / null poi gracefully', () => {
     expect(validatePoiTags(null).ok).toBe(true);

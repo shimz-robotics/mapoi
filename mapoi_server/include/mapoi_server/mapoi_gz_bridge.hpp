@@ -14,6 +14,8 @@
 #include <ros_gz_interfaces/srv/delete_entity.hpp>
 #include <ros_gz_interfaces/srv/set_entity_pose.hpp>
 
+#include "mapoi_interfaces/msg/initial_pose_request.hpp"
+
 
 struct GzWorldModelInfo
 {
@@ -74,6 +76,15 @@ private:
 
   // subscription
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr config_path_sub_;
+  // mapoi_initialpose_poi (#149 round 7-8 ヘビー high 対応): SwitchMap.initial_poi_name 指定時に
+  // mapoi_server がここに {map_name, poi_name} を publish するので、bridge も map 一致時に
+  // 同じ POI を spawn 位置に採用する。
+  rclcpp::Subscription<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr initialpose_poi_sub_;
+  void on_initialpose_poi(
+    const mapoi_interfaces::msg::InitialPoseRequest::SharedPtr msg);
+  std::string requested_initial_pose_map_;
+  std::string requested_initial_pose_poi_;
+  std::mutex requested_initial_pose_mutex_;
 
   // worker thread + queue (subscribe callback は queue.push のみ、worker が直列処理)
   std::thread worker_;

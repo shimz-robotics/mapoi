@@ -31,6 +31,7 @@
 #include "mapoi_interfaces/srv/get_tag_definitions.hpp"
 #include "mapoi_interfaces/msg/point_of_interest.hpp"
 #include "mapoi_interfaces/msg/poi_event.hpp"
+#include "mapoi_interfaces/msg/initial_pose_request.hpp"
 
 class MapoiNavServer : public rclcpp::Node
 {
@@ -46,7 +47,7 @@ public:
 
 private:
   // --- publisher & subscriber ---
-  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_initialpose_poi_sub_;
+  rclcpp::Subscription<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr mapoi_initialpose_poi_sub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr nav2_initialpose_pub_;
 
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_goal_pose_poi_sub_;
@@ -57,7 +58,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_pause_sub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_resume_sub_;
 
-  void mapoi_initialpose_poi_cb(const std_msgs::msg::String::SharedPtr msg);
+  void mapoi_initialpose_poi_cb(const mapoi_interfaces::msg::InitialPoseRequest::SharedPtr msg);
   void mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedPtr msg);
   void mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg);
   void mapoi_cancel_cb(const std_msgs::msg::String::SharedPtr msg);
@@ -176,32 +177,29 @@ private:
   void radius_check_callback();
   double distance_2d(const geometry_msgs::msg::Pose & poi_pose, double rx, double ry);
 
-  // initial_pose タグ付き POI を抽出して /initialpose に自動 publish。
-  // 0 個: skip / 1 個: そのまま / 複数: 警告して先頭を採用。
-  // 同一 config_path に対する重複 publish はスキップする。
-  void auto_publish_initial_pose();
-
-  // POI リストから initial_pose タグ付き候補を返す純関数（test 容易化のため分離）。
-  // 複数あれば WARN を出し先頭、0 個なら空ベクタ。
-  // landmark タグ併用 POI は initial_pose 排他のため候補から除外する (#85)。
-  std::vector<mapoi_interfaces::msg::PointOfInterest> select_initial_pose_pois(
-    const std::vector<mapoi_interfaces::msg::PointOfInterest> & pois);
-
   // landmark system tag を持つかを判定する純関数 (#85)。
   // landmark POI は Nav2 navigation goal / initial_pose に使えない reference 専用。
   static bool has_landmark_tag(const mapoi_interfaces::msg::PointOfInterest & poi);
 
   // /initialpose 配信の単一エントリポイント（手動経路 / 自動経路で共通化）。
+  // publish 直後に subscriber が居なければ非同期で retry timer を起動する。
   void publish_initial_pose(
     const geometry_msgs::msg::Pose & pose, const std::string & source);
 
-  // initialpose subscriber (主に AMCL) が ready になるまで待つ。
-  // subscriber が既に ready なら即 return。timeout 内に ready にならなければ WARN。
-  // 200ms 間隔の polling で blocking wait する (single-thread executor 前提)。
-  void wait_for_initialpose_subscriber(double timeout_sec);
-
-  // 同一 config_path への重複 publish 防止
-  std::string last_initial_pose_config_path_;
+  // /initialpose subscriber (主に AMCL) が後起動した場合の async retry 機構 (#152)。
+  // single-thread executor で blocking wait すると radius_check 等が止まる回帰があるため、
+  // wall timer ベースで polling する。subscriber 検知で 1 回再 publish + timer cancel。
+  void schedule_initialpose_retry(
+    const geometry_msgs::msg::Pose & pose, const std::string & source);
+  void initialpose_retry_callback();
+  rclcpp::TimerBase::SharedPtr initialpose_retry_timer_;
+  geometry_msgs::msg::Pose initialpose_retry_pose_;
+  std::string initialpose_retry_source_;
+  int initialpose_retry_attempt_ {0};
+  // subscriber 検知後の追加 republish カウント (#149 round 5 medium):
+  // AMCL が「subscriber visible だが処理 ready 直前」のケースで取りこぼしを防ぐため、
+  // subscriber 検知後も短いインターバルで N 回連続 publish する。
+  int initialpose_post_subscribe_republish_done_ {0};
 
 #ifdef UNIT_TEST
   friend class NavServerTestFixture;
@@ -210,10 +208,6 @@ private:
   FRIEND_TEST(NavServerTestFixture, RebuildEventPoisIncludesAllPois);
   FRIEND_TEST(NavServerTestFixture, RebuildEventPoisEmpty);
   FRIEND_TEST(NavServerTestFixture, PauseTagDetection);
-  FRIEND_TEST(NavServerTestFixture, SelectInitialPosePoisEmpty);
-  FRIEND_TEST(NavServerTestFixture, SelectInitialPosePoisSingle);
-  FRIEND_TEST(NavServerTestFixture, SelectInitialPosePoisMultiple);
-  FRIEND_TEST(NavServerTestFixture, SelectInitialPosePoisExcludesLandmark);
   FRIEND_TEST(NavServerTestFixture, HasLandmarkTagDetection);
 #endif
 };

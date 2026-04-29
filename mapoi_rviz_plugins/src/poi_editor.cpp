@@ -795,20 +795,15 @@ bool PoiEditorPanel::ValidatePois()
     if (tags_str.empty()) continue;
 
     auto tags = this->SplitSentence(tags_str, ", ");
-    bool has_waypoint = false, has_landmark = false, has_initial_pose = false, has_pause = false;
+    bool has_waypoint = false, has_landmark = false, has_pause = false;
     for (const auto& t : tags) {
       if (t == "waypoint") has_waypoint = true;
       else if (t == "landmark") has_landmark = true;
-      else if (t == "initial_pose") has_initial_pose = true;
       else if (t == "pause") has_pause = true;
     }
     if (has_waypoint && has_landmark) {
       exclusivity_warnings.append(
         tr("Row %1: \"waypoint\" と \"landmark\" は併用できません (landmark は Nav2 navigation 不可)").arg(row + 1));
-    }
-    if (has_initial_pose && has_landmark) {
-      exclusivity_warnings.append(
-        tr("Row %1: \"initial_pose\" と \"landmark\" は併用できません").arg(row + 1));
     }
     // landmark × pause 排他 (#143): landmark は到達不可な reference なので
     // pause (= 到達したときに止める semantics) と意味的に矛盾する。
@@ -816,6 +811,7 @@ bool PoiEditorPanel::ValidatePois()
       exclusivity_warnings.append(
         tr("Row %1: \"pause\" と \"landmark\" は併用できません (landmark は到達不可な reference のため pause 動作が成立しない)").arg(row + 1));
     }
+    // (initial_pose × landmark 排他は #144 で initial_pose system tag を廃止したため不要に。)
   }
   if (!exclusivity_warnings.isEmpty()) {
     QMessageBox::warning(this, tr("Tag Exclusivity Errors"), exclusivity_warnings.join("\n"));

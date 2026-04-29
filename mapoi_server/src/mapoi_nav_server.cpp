@@ -16,13 +16,22 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
 
   // localization-agnostic 化のための parameter:
   // - initial_pose_topic: 配信先 topic 名 (default `/initialpose`、AMCL/slam_toolbox 等の de-facto standard)
-  // - initial_pose_subscriber_wait_timeout_sec: subscriber readiness 待ちの上限秒数 (起動の遅い localization 対応)
+  // - initialpose_retry_interval_sec / initialpose_retry_max_attempts: subscriber 後起動時の
+  //   async retry 設定 (#152)。default 0.1s × 50 = 最大 5 秒待つ。
   this->declare_parameter<std::string>("initial_pose_topic", "/initialpose");
-  this->declare_parameter<double>("initial_pose_subscriber_wait_timeout_sec", 10.0);
+  this->declare_parameter<double>("initialpose_retry_interval_sec", 0.1);
+  this->declare_parameter<int>("initialpose_retry_max_attempts", 50);
+  // subscriber 検知後 republish 回数 (#149 round 5 medium)。
+  // AMCL が「subscriber visible だが処理 ready 直前」のケースで初回 publish を取りこぼすことが
+  // あるため、検知後に N 回 republish する。1 = 検知時の 1 回のみ (= 旧挙動)。
+  this->declare_parameter<int>("initialpose_post_subscribe_republish_count", 3);
 
   // initialpose subscriber and publisher
-  mapoi_initialpose_poi_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi_initialpose_poi", 1, std::bind(&MapoiNavServer::mapoi_initialpose_poi_cb, this, std::placeholders::_1));
+  // mapoi_server が initial pose POI 名を transient_local で publish する (#144) ので、
+  // 後起動でも latched 値を受信できるよう sub も transient_local に揃える。
+  mapoi_initialpose_poi_sub_ = this->create_subscription<mapoi_interfaces::msg::InitialPoseRequest>(
+    "mapoi_initialpose_poi", rclcpp::QoS(1).transient_local(),
+    std::bind(&MapoiNavServer::mapoi_initialpose_poi_cb, this, std::placeholders::_1));
   nav2_initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
     this->get_parameter("initial_pose_topic").as_string(), 1);
 
@@ -96,10 +105,23 @@ void MapoiNavServer::get_pois_list(){
     pois_info_request, std::bind(&MapoiNavServer::on_pois_info_received, this, _1));
 }
 
-void MapoiNavServer::mapoi_initialpose_poi_cb(const std_msgs::msg::String::SharedPtr msg)
+void MapoiNavServer::mapoi_initialpose_poi_cb(
+  const mapoi_interfaces::msg::InitialPoseRequest::SharedPtr msg)
 {
-  std::string poi_name = msg->data;
-  RCLCPP_INFO(this->get_logger(), "Received POI name for initialpose: %s", poi_name.c_str());
+  std::string poi_name = msg->poi_name;
+  if (poi_name.empty()) {
+    RCLCPP_DEBUG(this->get_logger(),
+      "Received empty initialpose POI name for map '%s'; skipping.", msg->map_name.c_str());
+    return;
+  }
+  // 注: map_name 世代検証は #149 round 10 で取り下げ (#155 で改めて検討)。
+  //   round 9 で「current map と不一致なら無視」とした実装は、SwitchMap 中に
+  //   InitialPoseRequest が config_path より先に到着する正当ケースを「stale」と
+  //   誤判定して捨てる regression を生むため。pending 戦略 (mismatch を保持して
+  //   後で再評価) が必要だが scope が大きいので別 PR に分離する。
+  //   現状は「publisher 上書き (transient_local depth=1) で stale を排除」を期待。
+  RCLCPP_INFO(this->get_logger(),
+    "Received initialpose POI '%s' for map '%s'.", poi_name.c_str(), msg->map_name.c_str());
 
   // Fetch POI list asynchronously, then publish initialpose in the callback
   if (!this->pois_info_client_->wait_for_service(2s)) {
@@ -129,6 +151,8 @@ void MapoiNavServer::mapoi_initialpose_poi_cb(const std_msgs::msg::String::Share
               poi_name.c_str());
             return;
           }
+          // subscriber readiness race (#152): publish_initial_pose 内で subscriber 0 を検知したら
+          // async retry timer が起動するので、blocking wait は不要。
           publish_initial_pose(poi.pose, "explicit POI '" + poi_name + "'");
           return;
         }
@@ -265,74 +289,13 @@ void MapoiNavServer::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv:
   // config_path 由来の fetch (on_config_path_changed → get_pois_list) が成功した時のみ guard を確定。
   // start_sequence 経由の初回 fetch では pending_guard_active_ が false で、ここは no-op。
   // fetch 失敗 (result == nullptr) で早期 return した場合も pending を残し、次回 publish で retry する。
-  // auto_publish_initial_pose() は last_config_path_ を見て二重発火判定するため、guard 確定を先に行う。
+  // (#144 で auto_publish_initial_pose は廃止、initial pose は mapoi_server が
+  // mapoi_initialpose_poi topic に publish して mapoi_initialpose_poi_cb 経由で配信する。)
   if (pending_guard_active_) {
     last_config_path_ = pending_config_path_;
     last_config_mtime_ = pending_config_mtime_;
     pending_guard_active_ = false;
   }
-
-  auto_publish_initial_pose();
-}
-
-std::vector<mapoi_interfaces::msg::PointOfInterest> MapoiNavServer::select_initial_pose_pois(
-  const std::vector<mapoi_interfaces::msg::PointOfInterest> & pois)
-{
-  std::vector<mapoi_interfaces::msg::PointOfInterest> matched;
-  for (const auto & poi : pois) {
-    // landmark + initial_pose は排他 (#85)。auto-publish 候補からも除外する。
-    if (has_landmark_tag(poi)) {
-      continue;
-    }
-    for (const auto & tag : poi.tags) {
-      if (tag == "initial_pose") {
-        matched.push_back(poi);
-        break;
-      }
-    }
-  }
-  if (matched.size() > 1) {
-    std::string names;
-    for (size_t i = 0; i < matched.size(); ++i) {
-      if (i > 0) names += ", ";
-      names += matched[i].name;
-    }
-    RCLCPP_WARN(this->get_logger(),
-      "Multiple POIs with 'initial_pose' tag (%zu): [%s]. Using first: '%s'.",
-      matched.size(), names.c_str(), matched[0].name.c_str());
-  }
-  return matched;
-}
-
-void MapoiNavServer::auto_publish_initial_pose()
-{
-  // config_path 未確定 / 同一 config で publish 済み → スキップ（起動時の二重発火防止）
-  if (last_config_path_.empty() || last_config_path_ == last_initial_pose_config_path_) {
-    return;
-  }
-
-  std::vector<mapoi_interfaces::msg::PointOfInterest> matched;
-  {
-    std::lock_guard<std::mutex> lock(data_mutex_);
-    matched = select_initial_pose_pois(pois_list_);
-  }
-
-  if (matched.empty()) {
-    RCLCPP_INFO(this->get_logger(),
-      "No POI with 'initial_pose' tag found; skipping auto initial pose.");
-    last_initial_pose_config_path_ = last_config_path_;  // 同一 config の再評価を抑止
-    return;
-  }
-
-  // localization (主に AMCL) より早く起動した場合の subscription readiness race を
-  // 回避するため、initialpose subscriber を一定時間 wait してから publish する。
-  // SwitchMap 等で localization が既に起動している経路では即時 return するので overhead なし。
-  const double timeout_sec =
-    this->get_parameter("initial_pose_subscriber_wait_timeout_sec").as_double();
-  wait_for_initialpose_subscriber(timeout_sec);
-
-  publish_initial_pose(matched[0].pose, "auto from POI '" + matched[0].name + "'");
-  last_initial_pose_config_path_ = last_config_path_;
 }
 
 bool MapoiNavServer::has_landmark_tag(const mapoi_interfaces::msg::PointOfInterest & poi)
@@ -355,32 +318,103 @@ void MapoiNavServer::publish_initial_pose(
   msg.pose.covariance[0] = 0.25;
   msg.pose.covariance[7] = 0.25;
   msg.pose.covariance[35] = 0.06853891945200942;
+  // 過去の retry が pending な状態で新 publish が来たら、必ず先に cancel する (#149 round 4 high)。
+  // でないと「新 publish 後に古い pose を retry が再送 → localization が古い位置へ戻る」回帰になる。
+  if (initialpose_retry_timer_) {
+    initialpose_retry_timer_->cancel();
+    initialpose_retry_timer_.reset();
+  }
+
   nav2_initialpose_pub_->publish(msg);
   RCLCPP_INFO(this->get_logger(), "Published initial pose (%s).", source.c_str());
+
+  // subscriber 未 ready の場合のみ async retry を起動 (#149 round 7 high 対応で round 6 を revert)。
+  // 「常時 retry」は subscriber visible but not ready 取りこぼし対策には有効だが、運用中
+  // (AMCL fully ready) で `mapoi_initialpose_poi` が来た際に意図しない自己位置 jump を
+  // 引き起こす副作用が大きい。グレーゾーン (起動直後の visible but not ready) は捨て、
+  // 「count == 0 のみ retry」=「後起動 path のみ retry」のロバスト性を優先する。
+  if (nav2_initialpose_pub_->get_subscription_count() == 0) {
+    schedule_initialpose_retry(pose, source);
+  }
 }
 
-void MapoiNavServer::wait_for_initialpose_subscriber(double timeout_sec)
+void MapoiNavServer::schedule_initialpose_retry(
+  const geometry_msgs::msg::Pose & pose, const std::string & source)
 {
-  // 既に subscriber がいれば即 return (SwitchMap 等の localization 起動済み経路)
+  initialpose_retry_pose_ = pose;
+  initialpose_retry_source_ = source;
+  initialpose_retry_attempt_ = 0;
+  initialpose_post_subscribe_republish_done_ = 0;
+  if (initialpose_retry_timer_) {
+    initialpose_retry_timer_->cancel();
+    initialpose_retry_timer_.reset();
+  }
+  // パラメータの最低限の clamp (#149 round 4 low): 0 以下は default にフォールバック。
+  // 過密タイマや無限 retry の防止。
+  double interval_sec =
+    this->get_parameter("initialpose_retry_interval_sec").as_double();
+  if (interval_sec < 0.01) {
+    RCLCPP_WARN(this->get_logger(),
+      "initialpose_retry_interval_sec=%.3f is too small; clamping to 0.01.", interval_sec);
+    interval_sec = 0.01;
+  }
+  int max_attempts =
+    this->get_parameter("initialpose_retry_max_attempts").as_int();
+  if (max_attempts < 1) {
+    RCLCPP_WARN(this->get_logger(),
+      "initialpose_retry_max_attempts=%d is invalid; clamping to 1.", max_attempts);
+    max_attempts = 1;
+  }
+  initialpose_retry_timer_ = this->create_wall_timer(
+    std::chrono::milliseconds(static_cast<int>(interval_sec * 1000)),
+    std::bind(&MapoiNavServer::initialpose_retry_callback, this));
+  const int post_n =
+    this->get_parameter("initialpose_post_subscribe_republish_count").as_int();
+  RCLCPP_INFO(this->get_logger(),
+    "Scheduled initialpose retry/republish every %.2fs "
+    "(max %d wait attempts; %d post-subscribe republish).",
+    interval_sec, max_attempts, post_n);
+}
+
+void MapoiNavServer::initialpose_retry_callback()
+{
   if (nav2_initialpose_pub_->get_subscription_count() > 0) {
+    // subscriber 検知後は N 回 republish する (#149 round 5 medium)。
+    // AMCL が「subscriber visible でも処理 ready 直前」のケースで取りこぼすため。
+    geometry_msgs::msg::PoseWithCovarianceStamped msg;
+    msg.header.frame_id = this->get_parameter("map_frame").as_string();
+    msg.header.stamp = this->now();
+    msg.pose.pose = initialpose_retry_pose_;
+    msg.pose.covariance[0] = 0.25;
+    msg.pose.covariance[7] = 0.25;
+    msg.pose.covariance[35] = 0.06853891945200942;
+    nav2_initialpose_pub_->publish(msg);
+    ++initialpose_post_subscribe_republish_done_;
+    int post_n =
+      this->get_parameter("initialpose_post_subscribe_republish_count").as_int();
+    if (post_n < 1) post_n = 1;
+    if (initialpose_post_subscribe_republish_done_ >= post_n) {
+      RCLCPP_INFO(this->get_logger(),
+        "initialpose subscriber detected; re-published %d times after %d retries (%s).",
+        initialpose_post_subscribe_republish_done_, initialpose_retry_attempt_,
+        initialpose_retry_source_.c_str());
+      initialpose_retry_timer_->cancel();
+      initialpose_retry_timer_.reset();
+    }
     return;
   }
-  RCLCPP_INFO(this->get_logger(),
-    "Waiting for initialpose subscriber (e.g. AMCL) up to %.1fs...", timeout_sec);
-
-  const auto deadline = std::chrono::steady_clock::now() +
-    std::chrono::milliseconds(static_cast<int>(timeout_sec * 1000));
-  while (rclcpp::ok() && std::chrono::steady_clock::now() < deadline) {
-    if (nav2_initialpose_pub_->get_subscription_count() > 0) {
-      RCLCPP_INFO(this->get_logger(), "initialpose subscriber detected; proceeding to publish.");
-      return;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  ++initialpose_retry_attempt_;
+  int max_attempts =
+    this->get_parameter("initialpose_retry_max_attempts").as_int();
+  if (max_attempts < 1) max_attempts = 1;
+  if (initialpose_retry_attempt_ >= max_attempts) {
+    RCLCPP_WARN(this->get_logger(),
+      "initialpose subscriber not detected after %d retries; giving up "
+      "(user can re-publish via WebUI/RViz/mapoi_initialpose_poi).",
+      max_attempts);
+    initialpose_retry_timer_->cancel();
+    initialpose_retry_timer_.reset();
   }
-  RCLCPP_WARN(this->get_logger(),
-    "initialpose subscriber not detected within %.1fs; publishing anyway "
-    "(localization may miss the message; user can re-publish via WebUI/RViz/mapoi_initialpose_poi).",
-    timeout_sec);
 }
 
 void MapoiNavServer::on_route_received(
