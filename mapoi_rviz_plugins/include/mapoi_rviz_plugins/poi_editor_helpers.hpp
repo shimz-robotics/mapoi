@@ -36,8 +36,11 @@ inline bool try_parse_finite_double(const std::string & str, double & out)
 }
 
 // `delimiter` で区切って trim ( leading/trailing whitespace を除去) した結果を返す。
-// 空要素も保持する (`a,,b` → `["a", "", "b"]`)。`SplitSentence(", ")` の硬い分割と異なり、
-// `0.5,45.0` `0.5, 45.0` `0.5 , 45.0` 等の表記揺れを許容する (#151 round 1 medium)。
+// **中間の空要素は保持** (`"a,,b"` → `["a", "", "b"]`) するが、**末尾の空要素は std::getline
+// 仕様で省略される** (`"0.5,"` → `["0.5"]`)。tolerance validation は「2 要素必須」check で
+// 末尾区切りを拒否できるので致命的ではない。先頭空要素は保持される (`",0.5"` → `["", "0.5"]`)。
+// `SplitSentence(", ")` の硬い分割と異なり `0.5,45.0` `0.5, 45.0` `0.5 , 45.0` 等の表記揺れを
+// 許容する (#151 round 1 medium、round 3 軽微 medium で挙動明示)。
 inline std::vector<std::string> split_and_trim(const std::string & input, char delimiter)
 {
   std::vector<std::string> result;
@@ -58,14 +61,17 @@ inline std::vector<std::string> split_and_trim(const std::string & input, char d
 // rad → 表示用 deg 文字列。yaml 値の rad → deg 変換で「45° 狙い 0.7853981 rad」が
 // 44.9999... と表示されるのを避けるための四捨五入 helper (#151)。
 //
-// 戦略: **整数度** との差が <= 0.05° なら「整数 deg を 1 桁表示」、
-//       誤差が大きい (= 細かい角度を意図的に入れたケース) はそのまま 4 桁表示で精度維持
-//       (round 1 ヘビー medium 対応で「0.1° 単位」→「整数 deg 単位」に修正)。
+// 戦略: **「整数度を rad 化した値」と元 rad がほぼ一致** (= 1e-9 未満) するなら「整数度を
+//       1 桁表示」(例: `0.7853981... rad` → `45.0`)。それ以外は 4 桁表示で元値の精度維持。
+//       (round 3 ヘビー medium 対応で「整数度との deg 差判定」→「rad 差判定」に修正:
+//       前者は `45.04°` のような端数も `45.0` に丸めて round-trip で値喪失する regression
+//       を生んでいたため。本ロジックは「元の user 入力が整数度だったかどうか」を逆算する。)
 inline QString format_yaw_deg(double rad)
 {
   const double deg = rad * 180.0 / M_PI;
   const double rounded_to_int = std::round(deg);
-  if (std::abs(deg - rounded_to_int) <= 0.05) {
+  const double rad_of_int = rounded_to_int * M_PI / 180.0;
+  if (std::abs(rad - rad_of_int) < 1e-9) {
     return QString::number(rounded_to_int, 'f', 1);
   }
   return QString::number(deg, 'f', 4);
