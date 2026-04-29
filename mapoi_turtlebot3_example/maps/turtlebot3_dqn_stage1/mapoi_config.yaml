@@ -29,17 +29,17 @@ poi:
   description: 開始地点
   pose: {x: 0.0, y: 0.0, yaw: 0.0}
   tolerance: {xy: 0.40, yaw: 0.785}
-  tags: [goal, initial_pose]
+  tags: [waypoint, initial_pose]
 - name: checkpoint_west
   description: 西側中継点
   pose: {x: -1.6, y: 0.5, yaw: 1.57}
   tolerance: {xy: 0.35, yaw: 0.785}
-  tags: [goal, checkpoint]
+  tags: [waypoint, checkpoint]
 - name: checkpoint_east
   description: 東側中継点
   pose: {x: 1.4, y: -0.3, yaw: -1.6}
   tolerance: {xy: 0.30, yaw: 0.785}
-  tags: [goal, checkpoint]
+  tags: [waypoint, checkpoint]
 - name: hazard_south
   description: 南側ハザード (回避対象、Nav2 goal 不可)
   pose: {x: 0.5, y: -1.3, yaw: 0.0}
@@ -49,4 +49,4 @@ poi:
   description: 北側目標地点
   pose: {x: 0.4, y: 1.7, yaw: -2.0}
   tolerance: {xy: 0.30, yaw: 0.785}
-  tags: [goal]
+  tags: [waypoint]

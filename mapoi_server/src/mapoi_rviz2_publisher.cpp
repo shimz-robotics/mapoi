@@ -332,7 +332,7 @@ void MapoiRviz2Publisher::timer_callback(){
 
     // POI radius を床面の円で描画 (全 POI 共通)。
     // primary tag の color を採用。優先順位は tags 配列の順序ではなく
-    // goal > event で固定 (poi.tags が ["event", "goal"] のような順でも goal が勝つ)。
+    // waypoint > event で固定 (poi.tags が ["event", "waypoint"] のような順でも waypoint が勝つ)。
     if (poi.tolerance.xy > 0.0) {
       const auto has_tag = [&poi](const std::string & target) {
         for (const auto & t : poi.tags) {
@@ -343,7 +343,7 @@ void MapoiRviz2Publisher::timer_callback(){
 
       float cr = 0.5f, cg = 0.5f, cb = 0.5f;  // default gray (recognized tag none)
       visualization_msgs::msg::MarkerArray * circle_target = &ma_events;
-      if (has_tag("goal")) {
+      if (has_tag("waypoint")) {
         cr = 0.0f; cg = 1.0f; cb = 0.0f;
         circle_target = &ma_waypoints;
       } else if (has_tag("event")) {
@@ -355,7 +355,7 @@ void MapoiRviz2Publisher::timer_callback(){
     }
 
     for(const auto & tag : poi.tags){
-      if(tag == "goal"){
+      if(tag == "waypoint"){
         visualization_msgs::msg::Marker m_waypoint = default_arrow_marker;
         m_waypoint.pose = pose;
         m_waypoint.pose.position.z = 0.1;

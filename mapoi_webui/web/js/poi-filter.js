@@ -1,8 +1,8 @@
 /**
  * POI candidate filters for mapoi WebUI.
  *
- * landmark system tag (#85) は Nav2 navigation goal にしない reference 専用。
- * goal candidate / route waypoint candidate / initial pose candidate の dropdown
+ * landmark system tag (#85) は Nav2 navigation target にしない reference 専用。
+ * waypoint candidate / route waypoint candidate / initial pose candidate の dropdown
  * から landmark POI を除外する純関数群を集約する。
  *
  * Browser からは `MapoiPoiFilter.*` のグローバルとして使い、
@@ -17,10 +17,13 @@
     return tags.some((t) => typeof t === 'string' && t.toLowerCase() === 'landmark');
   }
 
-  function filterGoalCandidates(pois) {
+  // Nav2 navigation 候補 (= waypoint tag 付き / landmark なし) を抽出する (#142)。
+  // 旧 system tag は `goal` だったが #142 で `waypoint` にリネームし、
+  // 単発 nav goal も route 中間点も同じ tag で表現する semantics に統一した。
+  function filterWaypointCandidates(pois) {
     return (pois || []).filter((p) => {
       const tags = (p && p.tags ? p.tags : []).map((t) => String(t).toLowerCase());
-      return tags.includes('goal') && !tags.includes('landmark');
+      return tags.includes('waypoint') && !tags.includes('landmark');
     });
   }
 
@@ -74,10 +77,10 @@
   function validatePoiTags(poi) {
     const tags = (poi && poi.tags ? poi.tags : []).map((t) => String(t).toLowerCase());
     const has = (n) => tags.includes(n);
-    if (has('goal') && has('landmark')) {
+    if (has('waypoint') && has('landmark')) {
       return {
         ok: false,
-        error: '"goal" と "landmark" は併用できません (landmark は Nav2 navigation goal 不可な reference 専用)。',
+        error: '"waypoint" と "landmark" は併用できません (landmark は Nav2 navigation 不可な reference 専用)。',
       };
     }
     if (has('initial_pose') && has('landmark')) {
@@ -91,7 +94,7 @@
 
   const api = {
     hasLandmarkTag,
-    filterGoalCandidates,
+    filterWaypointCandidates,
     filterInitialPoseCandidates,
     filterRouteWaypointCandidates,
     validatePoiTags,

@@ -2,22 +2,22 @@ poi:
   - name: poi_goal_only
     pose: {x: 1.0, y: 0.0, yaw: 0.0}
     tolerance: {xy: 0.5, yaw: 0.785}
-    tags: [goal]
+    tags: [waypoint]
     description: "goalタグのみ"
   - name: poi_with_pause
     pose: {x: 0.0, y: 2.0, yaw: 0.0}
     tolerance: {xy: 0.5, yaw: 0.785}
-    tags: [goal, pause]
+    tags: [waypoint, pause]
     description: "pauseタグ付き"
   - name: poi_with_custom
     pose: {x: 3.0, y: 0.0, yaw: 0.0}
     tolerance: {xy: 0.5, yaw: 0.785}
-    tags: [goal, audio_info]
+    tags: [waypoint, audio_info]
     description: "custom_tag付き"
   - name: poi_pause_and_custom
     pose: {x: 0.0, y: 4.0, yaw: 0.0}
     tolerance: {xy: 0.5, yaw: 0.785}
-    tags: [goal, pause, audio_info]
+    tags: [waypoint, pause, audio_info]
     description: "pause + custom_tag"
 
 custom_tags:

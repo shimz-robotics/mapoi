@@ -57,9 +57,9 @@ TEST_F(NavServerTestFixture, RebuildEventPoisIncludesAllPois)
 {
   {
     std::lock_guard<std::mutex> lock(node_->data_mutex_);
-    node_->pois_list_.push_back(make_poi("goal_only", 1.0, 0.0, 0.5, {"goal"}));
-    node_->pois_list_.push_back(make_poi("with_pause", 0.0, 2.0, 0.5, {"goal", "pause"}));
-    node_->pois_list_.push_back(make_poi("with_custom", 3.0, 0.0, 0.5, {"goal", "audio_info"}));
+    node_->pois_list_.push_back(make_poi("goal_only", 1.0, 0.0, 0.5, {"waypoint"}));
+    node_->pois_list_.push_back(make_poi("with_pause", 0.0, 2.0, 0.5, {"waypoint", "pause"}));
+    node_->pois_list_.push_back(make_poi("with_custom", 3.0, 0.0, 0.5, {"waypoint", "audio_info"}));
     node_->pois_list_.push_back(make_poi("landmark_ref", 0.0, 0.0, 0.5, {"landmark"}));
   }
   node_->rebuild_event_pois();
@@ -74,8 +74,8 @@ TEST_F(NavServerTestFixture, RebuildEventPoisEmpty)
 
 TEST_F(NavServerTestFixture, PauseTagDetection)
 {
-  auto poi_pause = make_poi("pause_poi", 0.0, 0.0, 0.5, {"goal", "pause"});
-  auto poi_no_pause = make_poi("normal_poi", 0.0, 0.0, 0.5, {"goal", "audio_info"});
+  auto poi_pause = make_poi("pause_poi", 0.0, 0.0, 0.5, {"waypoint", "pause"});
+  auto poi_no_pause = make_poi("normal_poi", 0.0, 0.0, 0.5, {"waypoint", "audio_info"});
 
   auto has_pause = [](const mapoi_interfaces::msg::PointOfInterest & p) {
     for (const auto & tag : p.tags) {
@@ -91,7 +91,7 @@ TEST_F(NavServerTestFixture, PauseTagDetection)
 TEST_F(NavServerTestFixture, SelectInitialPosePoisEmpty)
 {
   std::vector<mapoi_interfaces::msg::PointOfInterest> pois;
-  pois.push_back(make_poi("goal_only", 0.0, 0.0, 0.5, {"goal"}));
+  pois.push_back(make_poi("goal_only", 0.0, 0.0, 0.5, {"waypoint"}));
   pois.push_back(make_poi("landmark_only", 1.0, 0.0, 0.5, {"landmark"}));
   auto matched = node_->select_initial_pose_pois(pois);
   EXPECT_EQ(matched.size(), 0u);
@@ -100,8 +100,8 @@ TEST_F(NavServerTestFixture, SelectInitialPosePoisEmpty)
 TEST_F(NavServerTestFixture, SelectInitialPosePoisSingle)
 {
   std::vector<mapoi_interfaces::msg::PointOfInterest> pois;
-  pois.push_back(make_poi("goal_only", 0.0, 0.0, 0.5, {"goal"}));
-  pois.push_back(make_poi("entry", -2.0, -0.5, 0.5, {"goal", "initial_pose"}));
+  pois.push_back(make_poi("goal_only", 0.0, 0.0, 0.5, {"waypoint"}));
+  pois.push_back(make_poi("entry", -2.0, -0.5, 0.5, {"waypoint", "initial_pose"}));
   pois.push_back(make_poi("landmark_only", 1.0, 0.0, 0.5, {"landmark"}));
   auto matched = node_->select_initial_pose_pois(pois);
   ASSERT_EQ(matched.size(), 1u);
@@ -112,8 +112,8 @@ TEST_F(NavServerTestFixture, SelectInitialPosePoisMultiple)
 {
   std::vector<mapoi_interfaces::msg::PointOfInterest> pois;
   pois.push_back(make_poi("first", 1.0, 1.0, 0.5, {"initial_pose"}));
-  pois.push_back(make_poi("middle", 2.0, 2.0, 0.5, {"goal"}));
-  pois.push_back(make_poi("second", 3.0, 3.0, 0.5, {"initial_pose", "goal"}));
+  pois.push_back(make_poi("middle", 2.0, 2.0, 0.5, {"waypoint"}));
+  pois.push_back(make_poi("second", 3.0, 3.0, 0.5, {"initial_pose", "waypoint"}));
   auto matched = node_->select_initial_pose_pois(pois);
   ASSERT_EQ(matched.size(), 2u);
   EXPECT_EQ(matched[0].name, "first");  // 順序保持・先頭採用
@@ -126,7 +126,7 @@ TEST_F(NavServerTestFixture, SelectInitialPosePoisExcludesLandmark)
   std::vector<mapoi_interfaces::msg::PointOfInterest> pois;
   pois.push_back(make_poi("ip_only", 1.0, 1.0, 0.5, {"initial_pose"}));
   pois.push_back(make_poi("landmark_ip", 2.0, 2.0, 0.5, {"initial_pose", "landmark"}));
-  pois.push_back(make_poi("ip_with_other", 3.0, 3.0, 0.5, {"initial_pose", "goal"}));
+  pois.push_back(make_poi("ip_with_other", 3.0, 3.0, 0.5, {"initial_pose", "waypoint"}));
   auto matched = node_->select_initial_pose_pois(pois);
   ASSERT_EQ(matched.size(), 2u);
   EXPECT_EQ(matched[0].name, "ip_only");
@@ -136,7 +136,7 @@ TEST_F(NavServerTestFixture, SelectInitialPosePoisExcludesLandmark)
 TEST_F(NavServerTestFixture, HasLandmarkTagDetection)
 {
   EXPECT_FALSE(MapoiNavServer::has_landmark_tag(
-    make_poi("goal_only", 0.0, 0.0, 0.5, {"goal"})));
+    make_poi("goal_only", 0.0, 0.0, 0.5, {"waypoint"})));
   EXPECT_FALSE(MapoiNavServer::has_landmark_tag(
     make_poi("no_tags", 0.0, 0.0, 0.5, {})));
   EXPECT_TRUE(MapoiNavServer::has_landmark_tag(

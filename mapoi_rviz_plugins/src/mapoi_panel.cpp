@@ -295,14 +295,14 @@ void MapoiPanel::SetNav2GoalComboBox()
     pois_.clear();
 
     for(const auto & p : pois_all){
-      bool is_goal = false;
+      bool is_waypoint = false;
       bool is_landmark = false;
       for(const auto & tag : p.tags){
-        if(tag == "goal") is_goal = true;
+        if(tag == "waypoint") is_waypoint = true;
         else if(tag == "landmark") is_landmark = true;
       }
-      // goal+landmark 併用は意味矛盾だが万一 config に混入しても candidate には載せない (#85)。
-      if(is_goal && !is_landmark){
+      // waypoint+landmark 併用は意味矛盾だが万一 config に混入しても candidate には載せない (#85)。
+      if(is_waypoint && !is_landmark){
         pois_.push_back(p);
         ui_->Nav2GoalComboBox->addItem(QString::fromStdString(p.name));
       }

@@ -349,8 +349,8 @@
   // --- Navigation controls ---
   function populateNavGoalSelect(pois) {
     navGoalSelect.innerHTML = '<option value="">-- Select POI --</option>';
-    // landmark POI は reference 専用、Nav2 goal candidate から除外 (#85)。
-    MapoiPoiFilter.filterGoalCandidates(pois).forEach((p) => {
+    // landmark POI は reference 専用、Nav2 navigation candidate から除外 (#85)。
+    MapoiPoiFilter.filterWaypointCandidates(pois).forEach((p) => {
       const opt = document.createElement('option');
       opt.value = p.name;
       opt.textContent = p.name;

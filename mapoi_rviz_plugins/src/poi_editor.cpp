@@ -795,15 +795,15 @@ bool PoiEditorPanel::ValidatePois()
     if (tags_str.empty()) continue;
 
     auto tags = this->SplitSentence(tags_str, ", ");
-    bool has_goal = false, has_landmark = false, has_initial_pose = false;
+    bool has_waypoint = false, has_landmark = false, has_initial_pose = false;
     for (const auto& t : tags) {
-      if (t == "goal") has_goal = true;
+      if (t == "waypoint") has_waypoint = true;
       else if (t == "landmark") has_landmark = true;
       else if (t == "initial_pose") has_initial_pose = true;
     }
-    if (has_goal && has_landmark) {
+    if (has_waypoint && has_landmark) {
       exclusivity_warnings.append(
-        tr("Row %1: \"goal\" と \"landmark\" は併用できません (landmark は Nav2 goal 不可)").arg(row + 1));
+        tr("Row %1: \"waypoint\" と \"landmark\" は併用できません (landmark は Nav2 navigation 不可)").arg(row + 1));
     }
     if (has_initial_pose && has_landmark) {
       exclusivity_warnings.append(

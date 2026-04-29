@@ -1,12 +1,13 @@
 // vitest unit tests for the POI candidate filters in
-// mapoi_webui/web/js/poi-filter.js (#85).
+// mapoi_webui/web/js/poi-filter.js (#85 / #142).
 //
-// 対象: MapoiPoiFilter.{hasLandmarkTag, filterGoalCandidates,
+// 対象: MapoiPoiFilter.{hasLandmarkTag, filterWaypointCandidates,
 //   filterInitialPoseCandidates, filterRouteWaypointCandidates}
 //
 // テスト方針:
 // - landmark system tag を持つ POI が dropdown 候補から確実に除外されること
-//   を検証する (#85: landmark = Nav2 goal 不可な reference 専用)。
+//   を検証する (#85: landmark = Nav2 navigation 不可な reference 専用)。
+// - waypoint system tag (#142 で goal からリネーム) が Nav2 navigation candidate を表す。
 // - DOM / window 依存ゼロの pure JS。
 
 import { describe, it, expect } from 'vitest';
@@ -14,7 +15,7 @@ import * as filter from '../../web/js/poi-filter.js';
 
 const {
   hasLandmarkTag,
-  filterGoalCandidates,
+  filterWaypointCandidates,
   filterInitialPoseCandidates,
   filterRouteWaypointCandidates,
   validatePoiTags,
@@ -33,9 +34,9 @@ describe('hasLandmarkTag', () => {
   });
 
   it('returns false when landmark is absent', () => {
-    expect(hasLandmarkTag(poi('a', ['goal']))).toBe(false);
+    expect(hasLandmarkTag(poi('a', ['waypoint']))).toBe(false);
     expect(hasLandmarkTag(poi('b', []))).toBe(false);
-    expect(hasLandmarkTag(poi('c', ['goal', 'pause']))).toBe(false);
+    expect(hasLandmarkTag(poi('c', ['waypoint', 'pause']))).toBe(false);
   });
 
   it('matches case-insensitively', () => {
@@ -51,46 +52,46 @@ describe('hasLandmarkTag', () => {
   });
 });
 
-describe('filterGoalCandidates', () => {
-  it('keeps goal POIs without landmark', () => {
+describe('filterWaypointCandidates', () => {
+  it('keeps waypoint POIs without landmark', () => {
     const pois = [
-      poi('north_goal', ['goal']),
-      poi('checkpoint', ['goal', 'checkpoint']),
+      poi('north_goal', ['waypoint']),
+      poi('checkpoint', ['waypoint', 'checkpoint']),
     ];
-    expect(filterGoalCandidates(pois).map((p) => p.name)).toEqual(['north_goal', 'checkpoint']);
+    expect(filterWaypointCandidates(pois).map((p) => p.name)).toEqual(['north_goal', 'checkpoint']);
   });
 
-  it('drops POIs that combine goal with landmark', () => {
-    // goal+landmark は仕様上排他だが万一 config に混入しても候補に載せない。
+  it('drops POIs that combine waypoint with landmark', () => {
+    // waypoint+landmark は仕様上排他だが万一 config に混入しても候補に載せない。
     const pois = [
-      poi('valid', ['goal']),
-      poi('reference', ['goal', 'landmark']),
+      poi('valid', ['waypoint']),
+      poi('reference', ['waypoint', 'landmark']),
     ];
-    expect(filterGoalCandidates(pois).map((p) => p.name)).toEqual(['valid']);
+    expect(filterWaypointCandidates(pois).map((p) => p.name)).toEqual(['valid']);
   });
 
-  it('drops landmark-only POIs (no goal tag)', () => {
+  it('drops landmark-only POIs (no waypoint tag)', () => {
     const pois = [
       poi('landmark_only', ['landmark']),
       poi('hazard_landmark', ['event', 'landmark', 'hazard']),
     ];
-    expect(filterGoalCandidates(pois)).toEqual([]);
+    expect(filterWaypointCandidates(pois)).toEqual([]);
   });
 
   it('returns [] for empty / null input', () => {
-    expect(filterGoalCandidates([])).toEqual([]);
-    expect(filterGoalCandidates(null)).toEqual([]);
-    expect(filterGoalCandidates(undefined)).toEqual([]);
+    expect(filterWaypointCandidates([])).toEqual([]);
+    expect(filterWaypointCandidates(null)).toEqual([]);
+    expect(filterWaypointCandidates(undefined)).toEqual([]);
   });
 });
 
 describe('filterInitialPoseCandidates', () => {
   it('drops landmark POIs (排他: landmark + initial_pose)', () => {
     const pois = [
-      poi('start_zone', ['goal', 'initial_pose']),
+      poi('start_zone', ['waypoint', 'initial_pose']),
       poi('landmark_x', ['landmark']),
       poi('hazard', ['event', 'landmark', 'hazard']),
-      poi('north', ['goal']),
+      poi('north', ['waypoint']),
     ];
     expect(filterInitialPoseCandidates(pois).map((p) => p.name)).toEqual(['start_zone', 'north']);
   });
@@ -99,7 +100,7 @@ describe('filterInitialPoseCandidates', () => {
     // initial pose dropdown は全 navigable POI を載せて user に選ばせる
     // (manual override 用途) ため、initial_pose タグの有無で絞らない。
     const pois = [
-      poi('a', ['goal']),
+      poi('a', ['waypoint']),
       poi('b', ['pause']),
     ];
     expect(filterInitialPoseCandidates(pois).map((p) => p.name)).toEqual(['a', 'b']);
@@ -109,9 +110,9 @@ describe('filterInitialPoseCandidates', () => {
 describe('filterRouteWaypointCandidates', () => {
   it('drops landmark POIs from route waypoint candidate list', () => {
     const pois = [
-      poi('start_zone', ['goal']),
+      poi('start_zone', ['waypoint']),
       poi('hazard', ['event', 'landmark', 'hazard']),
-      poi('north_goal', ['goal']),
+      poi('north_goal', ['waypoint']),
     ];
     expect(filterRouteWaypointCandidates(pois).map((p) => p.name)).toEqual(['start_zone', 'north_goal']);
   });
@@ -191,17 +192,17 @@ describe('parseTolerance', () => {
 
 describe('validatePoiTags', () => {
   it('accepts non-conflicting combinations', () => {
-    expect(validatePoiTags(poi('a', ['goal'])).ok).toBe(true);
+    expect(validatePoiTags(poi('a', ['waypoint'])).ok).toBe(true);
     expect(validatePoiTags(poi('b', ['landmark'])).ok).toBe(true);
     expect(validatePoiTags(poi('c', ['event', 'landmark', 'hazard'])).ok).toBe(true);
-    expect(validatePoiTags(poi('d', ['initial_pose', 'goal'])).ok).toBe(true);
+    expect(validatePoiTags(poi('d', ['initial_pose', 'waypoint'])).ok).toBe(true);
     expect(validatePoiTags(poi('e', [])).ok).toBe(true);
   });
 
-  it('rejects goal + landmark combination', () => {
-    const result = validatePoiTags(poi('a', ['goal', 'landmark']));
+  it('rejects waypoint + landmark combination', () => {
+    const result = validatePoiTags(poi('a', ['waypoint', 'landmark']));
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/goal.*landmark/);
+    expect(result.error).toMatch(/waypoint.*landmark/);
   });
 
   it('rejects initial_pose + landmark combination', () => {
@@ -211,7 +212,7 @@ describe('validatePoiTags', () => {
   });
 
   it('matches case-insensitively for both system tags', () => {
-    expect(validatePoiTags(poi('a', ['GOAL', 'Landmark'])).ok).toBe(false);
+    expect(validatePoiTags(poi('a', ['WAYPOINT', 'Landmark'])).ok).toBe(false);
     expect(validatePoiTags(poi('b', ['Initial_Pose', 'LANDMARK'])).ok).toBe(false);
   });
 
