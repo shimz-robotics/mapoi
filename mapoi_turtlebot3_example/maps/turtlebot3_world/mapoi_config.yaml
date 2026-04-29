@@ -19,30 +19,31 @@ gazebo:
 # tolerance.xy は Nav2 controller の xy_goal_tolerance (0.25) より大きく取らないと、Nav2 が POI
 # tolerance.xy 内に入る前にゴール判定で停止し radius event が発火しない。最小 0.30 (5cm 余裕) で
 # 各部屋の規模感に合わせ 0.30〜0.50 にバラす。位置も grid 的整列 (-0.5 / 0.5) を少し崩して非対称に。
-# tolerance.yaw は 0 = 未指定で Nav2 yaw_goal_tolerance default にフォールバック。
+# tolerance.yaw は >= 0.001 (rad) を指定する (msg spec #138 で 0 / 負値は禁止)。
+# default 0.785 (≒ π/4 = 45°)。yaw を厳密制御したい POI はより小さい値を指定する。
 poi:
 - description: エレベーターホール
   name: elevator_hall
   pose: {x: -2.0, y: -0.5, yaw: 0.0}
-  tolerance: {xy: 0.50, yaw: 0.0}
+  tolerance: {xy: 0.50, yaw: 0.785}
   tags: [goal, initial_pose]
 - description: 会議室A
   name: meeting_room_a
   pose: {x: -0.6, y: -0.6, yaw: 0.0}
-  tolerance: {xy: 0.35, yaw: 0.0}
+  tolerance: {xy: 0.35, yaw: 0.785}
   tags: [goal]
 - description: 大会議室
   name: conference_room
   pose: {x: 0.7, y: -0.4, yaw: 1.57}
-  tolerance: {xy: 0.45, yaw: 0.0}
+  tolerance: {xy: 0.45, yaw: 0.785}
   tags: [goal]
 - description: 廊下
   name: corridor_a
   pose: {x: 0.4, y: 0.6, yaw: -3.14}
-  tolerance: {xy: 0.30, yaw: 0.0}
+  tolerance: {xy: 0.30, yaw: 0.785}
   tags: [goal, pause]
 - description: 模型展示
   name: model_exhibit
   pose: {x: -0.5, y: 0.5, yaw: -1.57}
-  tolerance: {xy: 0.40, yaw: 0.0}
+  tolerance: {xy: 0.40, yaw: 0.785}
   tags: [goal, audio_info]

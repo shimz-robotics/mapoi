@@ -63,34 +63,55 @@ mapoi_interfaces::msg::PointOfInterest MapoiServer::yaml_to_poi_msg(const YAML::
   msg.pose.orientation.w = std::cos(yaw / 2.0);
   // tolerance struct (Nav2 align、xy / yaw 同時に指定可能)。v0.3.0 で旧 `radius` フィールドから
   // 破壊変更で移行 (#87)。tolerance.xy は POI radius (進入判定距離) としても使われる。
-  // tolerance.yaw == 0 は「未指定」扱いで Nav2 yaw_goal_tolerance default にフォールバック。
-  // tolerance struct の schema 検査 (Codex review #137 medium 対応):
-  //   - 不在: default + WARN
-  //   - non-map: default + WARN (yaml が `tolerance: 0.5` のような scalar 形式の場合等)
-  //   - xy 欠落: default 0.5 + WARN (`tolerance: {yaw: 0.2}` だけ書いた場合の silent fallback を防ぐ)
-  //   - yaw 欠落: default 0.0 で進行 (0 = 未指定として valid)
-  msg.tolerance.xy = 0.5;
-  msg.tolerance.yaw = 0.0;
+  // 仕様 (#138): xy / yaw 共に >= 0.001、0 / 負値は禁止 (実用上「無反応 POI」を防ぐ)。
+  // 違反時は安全側 default に補正 + WARN ログ:
+  //   - tolerance struct 不在 / non-map / xy or yaw 欠落 / < 0.001: WARN + default (xy=0.5, yaw=π/4)
+  //   - default は sample yaml と整合 (45° = π/4)
+  constexpr double TOL_MIN = 0.001;
+  constexpr double DEFAULT_TOL_XY = 0.5;
+  const double DEFAULT_TOL_YAW = M_PI / 4.0;  // = 45°、sample yaml 統一値と整合
+  msg.tolerance.xy = DEFAULT_TOL_XY;
+  msg.tolerance.yaw = DEFAULT_TOL_YAW;
   if (!poi["tolerance"]) {
     RCLCPP_WARN(this->get_logger(),
-      "POI '%s': 'tolerance' field missing; using default (xy=0.5, yaw=0.0). "
+      "POI '%s': 'tolerance' field missing; using default (xy=%.3f, yaw=%.3f rad). "
       "Old 'radius' field is no longer supported (#87).",
-      msg.name.c_str());
+      msg.name.c_str(), DEFAULT_TOL_XY, DEFAULT_TOL_YAW);
   } else if (!poi["tolerance"].IsMap()) {
     RCLCPP_WARN(this->get_logger(),
-      "POI '%s': 'tolerance' must be a mapping {xy, yaw}; using default (xy=0.5, yaw=0.0).",
-      msg.name.c_str());
+      "POI '%s': 'tolerance' must be a mapping {xy, yaw}; using default (xy=%.3f, yaw=%.3f rad).",
+      msg.name.c_str(), DEFAULT_TOL_XY, DEFAULT_TOL_YAW);
   } else {
     const auto & tol = poi["tolerance"];
     if (tol["xy"]) {
-      msg.tolerance.xy = tol["xy"].as<double>(0.5);
+      const double v = tol["xy"].as<double>(DEFAULT_TOL_XY);
+      if (v < TOL_MIN) {
+        RCLCPP_WARN(this->get_logger(),
+          "POI '%s': 'tolerance.xy' (%.6f) < %.3f m; clamping to %.3f m.",
+          msg.name.c_str(), v, TOL_MIN, TOL_MIN);
+        msg.tolerance.xy = TOL_MIN;
+      } else {
+        msg.tolerance.xy = v;
+      }
     } else {
       RCLCPP_WARN(this->get_logger(),
-        "POI '%s': 'tolerance.xy' missing; using default (0.5).",
-        msg.name.c_str());
+        "POI '%s': 'tolerance.xy' missing; using default (%.3f).",
+        msg.name.c_str(), DEFAULT_TOL_XY);
     }
     if (tol["yaw"]) {
-      msg.tolerance.yaw = tol["yaw"].as<double>(0.0);
+      const double v = tol["yaw"].as<double>(DEFAULT_TOL_YAW);
+      if (v < TOL_MIN) {
+        RCLCPP_WARN(this->get_logger(),
+          "POI '%s': 'tolerance.yaw' (%.6f rad) < %.3f rad; clamping to %.3f rad.",
+          msg.name.c_str(), v, TOL_MIN, TOL_MIN);
+        msg.tolerance.yaw = TOL_MIN;
+      } else {
+        msg.tolerance.yaw = v;
+      }
+    } else {
+      RCLCPP_WARN(this->get_logger(),
+        "POI '%s': 'tolerance.yaw' missing; using default (%.3f rad ≒ 45 deg).",
+        msg.name.c_str(), DEFAULT_TOL_YAW);
     }
   }
   msg.tags = poi["tags"].as<std::vector<std::string>>(std::vector<std::string>{});

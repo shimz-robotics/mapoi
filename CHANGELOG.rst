@@ -22,9 +22,12 @@ Breaking changes
 * ``PointOfInterest.msg``: ``float64 radius`` field removed in favor of the
   new ``mapoi_interfaces/Tolerance tolerance`` struct (``xy`` + ``yaw``,
   Nav2 ``SimpleGoalChecker`` align). YAML ``poi.radius`` keys must be
-  migrated to ``poi.tolerance: {xy, yaw}``. Old configs without
-  ``tolerance`` will WARN and fall back to default ``xy=0.5, yaw=0.0``.
-  (#87)
+  migrated to ``poi.tolerance: {xy, yaw}``. (#87)
+* ``Tolerance.msg`` semantics: ``xy`` / ``yaw`` ともに ``>= 0.001`` を要求
+  (`xy`: 1 mm / ``yaw``: 約 0.057°)。0 / 負値は禁止 (実用上「無反応 POI」を
+  作れてしまうため)。"未指定で Nav2 default fallback" の semantics は
+  削除。yaml load で違反値を検出した場合は ``0.001`` に補正 + WARN ログ。
+  (#138)
 
 Interfaces
 ----------
@@ -38,10 +41,12 @@ WebUI / rviz_plugins
 --------------------
 
 * POI Editor (WebUI form / rviz_plugins POI Editor table) replaces the
-  ``Radius`` input / column with ``tolerance.xy``. ``tolerance.yaw`` input
-  UI is intentionally deferred to a follow-up issue; existing
-  ``tolerance.yaw`` values in YAML are preserved through the WebUI form
-  but are reset to ``0.0`` when saving from the rviz Panel. (#87)
+  ``Radius`` input / column with ``tolerance.xy`` + ``tolerance.yaw``. UI
+  入力単位は ``yaw`` のみ度 (deg) で表示・入力、内部 / yaml は rad で
+  保存 (#138)。HTML ``min`` 制約と Panel ``ValidatePois`` で
+  ``xy >= 0.001`` (m) / ``yaw >= 0.06`` (deg ≒ 0.001 rad) を強制。
+* ``mapoi_webui_node`` の ``POST /api/pois`` で ``tolerance.{xy, yaw}``
+  の min 制約を backend 側でも検証 (frontend bypass 防御)。(#138)
 
 
 0.2.0 (2026-04-29)

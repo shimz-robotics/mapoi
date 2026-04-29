@@ -22,31 +22,31 @@ gazebo:
 # Nav2 controller の xy_goal_tolerance (0.25) より大きく取る (Nav2 が POI tolerance.xy 内に入る前
 # にゴール判定で停止し、radius event が発火しないため)。最小 0.30 (5cm 余裕)、最大 0.45 で意味付け
 # (中央 start_zone は余裕、東 checkpoint は wall 制約で最狭、南 hazard は最も広い回避ゾーン、
-# 北 north_goal は精密目標)。tolerance.yaw は 0 = 未指定で Nav2 yaw_goal_tolerance default に
-# フォールバック。yaw を厳密制御したい POI は tolerance.yaw に 0.05〜0.10 (rad) を指定する。
+# 北 north_goal は精密目標)。tolerance.yaw は >= 0.001 (rad) を指定する (msg spec #138 で
+# 0 / 負値は禁止)。default 0.785 (≒ π/4 = 45°)。yaw を厳密制御したい POI はより小さい値を指定する。
 poi:
 - name: start_zone
   description: 開始地点
   pose: {x: 0.0, y: 0.0, yaw: 0.0}
-  tolerance: {xy: 0.40, yaw: 0.0}
+  tolerance: {xy: 0.40, yaw: 0.785}
   tags: [goal, initial_pose]
 - name: checkpoint_west
   description: 西側中継点
   pose: {x: -1.6, y: 0.5, yaw: 1.57}
-  tolerance: {xy: 0.35, yaw: 0.0}
+  tolerance: {xy: 0.35, yaw: 0.785}
   tags: [goal, checkpoint]
 - name: checkpoint_east
   description: 東側中継点
   pose: {x: 1.4, y: -0.3, yaw: -1.6}
-  tolerance: {xy: 0.30, yaw: 0.0}
+  tolerance: {xy: 0.30, yaw: 0.785}
   tags: [goal, checkpoint]
 - name: hazard_south
   description: 南側ハザード (回避対象、Nav2 goal 不可)
   pose: {x: 0.5, y: -1.3, yaw: 0.0}
-  tolerance: {xy: 0.45, yaw: 0.0}
+  tolerance: {xy: 0.45, yaw: 0.785}
   tags: [event, landmark, hazard]
 - name: north_goal
   description: 北側目標地点
   pose: {x: 0.4, y: 1.7, yaw: -2.0}
-  tolerance: {xy: 0.30, yaw: 0.0}
+  tolerance: {xy: 0.30, yaw: 0.785}
   tags: [goal]

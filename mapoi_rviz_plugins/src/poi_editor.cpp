@@ -343,8 +343,9 @@ void PoiEditorPanel::NewButton()
   ui_->PoiTable->setItem(new_row, 0, new QTableWidgetItem("new_poi"));
   ui_->PoiTable->setItem(new_row, 1, new QTableWidgetItem(""));
   ui_->PoiTable->setItem(new_row, 2, new QTableWidgetItem("0.0, 0.0, 0.0"));
-  ui_->PoiTable->setItem(new_row, 3, new QTableWidgetItem("0.5"));
-  ui_->PoiTable->setItem(new_row, 4, new QTableWidgetItem(""));
+  ui_->PoiTable->setItem(new_row, 3, new QTableWidgetItem("0.5"));     // tolerance.xy [m]
+  ui_->PoiTable->setItem(new_row, 4, new QTableWidgetItem("45.0"));    // tolerance.yaw [deg] (= π/4 rad)
+  ui_->PoiTable->setItem(new_row, 5, new QTableWidgetItem(""));        // tags
   UpdatePoiCount();
 }
 
@@ -437,11 +438,11 @@ void PoiEditorPanel::SaveButton()
         tr("Failed to parse pose at row %1: %2").arg(row + 1).arg(e.what()));
       return;
     }
-    // tolerance struct (#87): yaw は本 PR では UI 入力欄を持たないため、yaw 値を持つ POI を
-    // Panel から save すると yaw が 0 にリセットされる挙動。tolerance.yaw 入力 UI は別 PR で追加予定。
+    // tolerance struct (#87 / #138): xy は m そのまま、yaw は UI deg 入力 → rad 変換して保存。
     poi["tolerance"]["xy"] = ui_->PoiTable->item(logical_row, 3)->text().toDouble();
-    poi["tolerance"]["yaw"] = 0.0;
-    auto tags_str  = ui_->PoiTable->item(logical_row, 4)->text().toStdString();
+    const double yaw_deg = ui_->PoiTable->item(logical_row, 4)->text().toDouble();
+    poi["tolerance"]["yaw"] = yaw_deg * M_PI / 180.0;
+    auto tags_str  = ui_->PoiTable->item(logical_row, 5)->text().toStdString();
     poi["tags"] = this->SplitSentence(tags_str, ", ");
     pois_list.push_back(poi);
   }
@@ -564,7 +565,8 @@ void PoiEditorPanel::TagFilterChanged(int index)
       ui_->PoiTable->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(p.description)));
       ui_->PoiTable->setItem(row, 2, new QTableWidgetItem(tr("%1, %2, %3").arg(p.pose.position.x).arg(p.pose.position.y).arg(this->calcYaw(p.pose))));
       ui_->PoiTable->setItem(row, 3, new QTableWidgetItem(tr("%1").arg(p.tolerance.xy)));
-      ui_->PoiTable->setItem(row, 4, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
+      ui_->PoiTable->setItem(row, 4, new QTableWidgetItem(tr("%1").arg(p.tolerance.yaw * 180.0 / M_PI)));
+      ui_->PoiTable->setItem(row, 5, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
       row++;
     }
   }
@@ -641,7 +643,7 @@ void PoiEditorPanel::TagHelperSelected(int index)
     return;
   }
 
-  auto* tags_item = ui_->PoiTable->item(current_row, 4);
+  auto* tags_item = ui_->PoiTable->item(current_row, 5);
   std::string current_tags = tags_item ? tags_item->text().toStdString() : "";
 
   // Check if tag already exists
@@ -708,16 +710,31 @@ bool PoiEditorPanel::ValidatePois()
       }
     }
 
-    // Check tolerance.xy
+    // Check tolerance.xy (m), min 0.001 m (#138 msg spec)
     auto* tolerance_xy_item = ui_->PoiTable->item(logical_row, 3);
     std::string tolerance_xy_str = tolerance_xy_item ? tolerance_xy_item->text().toStdString() : "";
     try {
       double r = stod(tolerance_xy_str);
-      if (r < 0) {
-        warnings.append(tr("Row %1: tolerance.xy is negative").arg(row + 1));
+      if (r < 0.001) {
+        warnings.append(tr("Row %1: tolerance.xy must be >= 0.001 m (got %2)")
+                          .arg(row + 1).arg(r));
       }
     } catch (...) {
       warnings.append(tr("Row %1: invalid tolerance.xy \"%2\"").arg(row + 1).arg(QString::fromStdString(tolerance_xy_str)));
+    }
+
+    // Check tolerance.yaw (deg), 内部 rad 換算で min 0.001 rad ≒ 0.057° (#138 msg spec)
+    auto* tolerance_yaw_item = ui_->PoiTable->item(logical_row, 4);
+    std::string tolerance_yaw_str = tolerance_yaw_item ? tolerance_yaw_item->text().toStdString() : "";
+    try {
+      double yaw_deg = stod(tolerance_yaw_str);
+      double yaw_rad = yaw_deg * M_PI / 180.0;
+      if (yaw_rad < 0.001) {
+        warnings.append(tr("Row %1: tolerance.yaw must be >= 0.06 deg (≒ 0.001 rad) (got %2 deg)")
+                          .arg(row + 1).arg(yaw_deg));
+      }
+    } catch (...) {
+      warnings.append(tr("Row %1: invalid tolerance.yaw \"%2\"").arg(row + 1).arg(QString::fromStdString(tolerance_yaw_str)));
     }
   }
 
@@ -732,7 +749,7 @@ bool PoiEditorPanel::ValidatePois()
   QStringList exclusivity_warnings;
   for (int row = 0; row < numRows; row++) {
     int logical_row = ui_->PoiTable->verticalHeader()->logicalIndex(row);
-    auto* tags_item = ui_->PoiTable->item(logical_row, 4);
+    auto* tags_item = ui_->PoiTable->item(logical_row, 5);
     std::string tags_str = tags_item ? tags_item->text().toStdString() : "";
     if (tags_str.empty()) continue;
 
@@ -761,7 +778,7 @@ bool PoiEditorPanel::ValidatePois()
   QStringList tag_warnings;
   for (int row = 0; row < numRows; row++) {
     int logical_row = ui_->PoiTable->verticalHeader()->logicalIndex(row);
-    auto* tags_item = ui_->PoiTable->item(logical_row, 4);
+    auto* tags_item = ui_->PoiTable->item(logical_row, 5);
     std::string tags_str = tags_item ? tags_item->text().toStdString() : "";
     if (tags_str.empty()) continue;
 
@@ -842,8 +859,10 @@ void PoiEditorPanel::UpdatePoiTable()
   // 一度 0 行にしてから再生成することで visual = logical を強制する。
   ui_->PoiTable->setRowCount(0);
   ui_->PoiTable->setRowCount(numRows);
-  ui_->PoiTable->setColumnCount(5);
-  ui_->PoiTable->setHorizontalHeaderLabels( QStringList() << tr("name") << tr("description") << tr("x, y, yaw") << tr("tolerance.xy") << tr("tags" ) );
+  ui_->PoiTable->setColumnCount(6);
+  ui_->PoiTable->setHorizontalHeaderLabels(
+    QStringList() << tr("name") << tr("description") << tr("x, y, yaw")
+                  << tr("tolerance.xy") << tr("tolerance.yaw (deg)") << tr("tags"));
   ui_->PoiTable->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
   ui_->PoiTable->verticalHeader()->setSectionsMovable(true);
   ui_->PoiTable->horizontalHeader()->setSortIndicatorShown(true);
@@ -856,7 +875,8 @@ void PoiEditorPanel::UpdatePoiTable()
     ui_->PoiTable->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(p.description)));
     ui_->PoiTable->setItem(row, 2, new QTableWidgetItem(tr("%1, %2, %3").arg(p.pose.position.x).arg(p.pose.position.y).arg(this->calcYaw(p.pose))));
     ui_->PoiTable->setItem(row, 3, new QTableWidgetItem(tr("%1").arg(p.tolerance.xy)));
-    ui_->PoiTable->setItem(row, 4, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
+    ui_->PoiTable->setItem(row, 4, new QTableWidgetItem(tr("%1").arg(p.tolerance.yaw * 180.0 / M_PI)));
+    ui_->PoiTable->setItem(row, 5, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
   }
   is_table_color_ = true;
   ui_->SaveButton->setText("save");

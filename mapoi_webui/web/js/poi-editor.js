@@ -32,6 +32,7 @@ class PoiEditor {
     this.inputY = document.getElementById('poi-y');
     this.inputYaw = document.getElementById('poi-yaw');
     this.inputToleranceXy = document.getElementById('poi-tolerance-xy');
+    this.inputToleranceYaw = document.getElementById('poi-tolerance-yaw');
     this.inputTags = document.getElementById('poi-tags');
     this.inputDescription = document.getElementById('poi-description');
 
@@ -242,7 +243,8 @@ class PoiEditor {
     const newPoi = {
       name: `poi_${this.pois.length}`,
       pose: { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100, yaw: 0.0 },
-      tolerance: { xy: 0.5, yaw: 0.0 },
+      // default tolerance: xy=0.5 m / yaw=π/4 (45°) — sample yaml と整合 (#138)
+      tolerance: { xy: 0.5, yaw: Math.PI / 4 },
       tags: ['goal'],
       description: '',
     };
@@ -316,10 +318,14 @@ class PoiEditor {
     this.inputX.value = pose.x || 0;
     this.inputY.value = pose.y || 0;
     this.inputYaw.value = pose.yaw || 0;
-    // tolerance.xy = 0 を「未指定 = Nav2 default fallback」として保持するため、`||` ではなく
-    // Number.isFinite ベースで判定する (Codex review #137 medium 対応)。
+    // tolerance: xy は m そのまま、yaw は rad → deg 変換して UI に表示 (#138)。
+    // `||` だと意図的な小さい値も default で上書きされるので Number.isFinite ベースで判定。
     const xyVal = poi.tolerance && poi.tolerance.xy;
     this.inputToleranceXy.value = Number.isFinite(xyVal) ? xyVal : 0.5;
+    const yawValRad = poi.tolerance && poi.tolerance.yaw;
+    this.inputToleranceYaw.value = Number.isFinite(yawValRad)
+      ? MapoiPoiFilter.radToDeg(yawValRad).toFixed(2)
+      : 45;
     this.inputTags.value = (poi.tags || []).join(', ');
     this.inputDescription.value = poi.description || '';
     this.renderTagChips();
@@ -336,14 +342,11 @@ class PoiEditor {
         y: parseFloat(this.inputY.value) || 0,
         yaw: parseFloat(this.inputYaw.value) || 0,
       },
-      // tolerance.yaw は本 PR では UI 入力欄を持たない。既存 yaml の yaw 値を保存時に
-      // 引き継ぐため、editingIndex >= 0 (既存 POI 編集) の場合は元の yaw を保持する。
-      // 新規 POI (-2) や未保存の dirty 等で元値が無いケースは default 0.0 を埋める。
+      // tolerance: xy は m そのまま、yaw は UI deg → rad 変換して dict / yaml に保存 (#138)。
+      // parseTolerance が finite 判定 + min 0.001 強制 (HTML min を bypass する経路の防御) を担う。
       tolerance: MapoiPoiFilter.parseTolerance(
         this.inputToleranceXy.value,
-        this.editingIndex >= 0 && this.pois[this.editingIndex]
-          && this.pois[this.editingIndex].tolerance
-          && this.pois[this.editingIndex].tolerance.yaw,
+        MapoiPoiFilter.degToRad(this.inputToleranceYaw.value),
       ),
       tags: this.inputTags.value.split(',').map(t => t.trim()).filter(t => t),
       description: this.inputDescription.value.trim(),

@@ -96,6 +96,11 @@
      </column>
      <column>
       <property name="text">
+       <string>tolerance.yaw (deg)</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
        <string>tags</string>
       </property>
      </column>
@@ -121,6 +126,11 @@
      </item>
      <item row="0" column="4">
       <property name="text">
+       <string>45.0</string>
+      </property>
+     </item>
+     <item row="0" column="5">
+      <property name="text">
        <string>Distination, origin</string>
       </property>
      </item>
@@ -145,6 +155,11 @@
       </property>
      </item>
      <item row="1" column="4">
+      <property name="text">
+       <string>45.0</string>
+      </property>
+     </item>
+     <item row="1" column="5">
       <property name="text">
        <string>Distination</string>
       </property>

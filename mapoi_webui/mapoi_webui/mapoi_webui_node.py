@@ -44,6 +44,32 @@ def _validate_unique_names(items, label):
     return None
 
 
+# tolerance 最小値 (msg spec #138): xy = 1 mm、yaw = 約 0.057°。
+# 0 / 負値は「無反応 POI」を許してしまうため明示的に禁止。
+_TOLERANCE_MIN = 0.001
+
+
+def _validate_pois_tolerance(pois):
+    """POI list の tolerance.{xy,yaw} が >= 0.001 を満たすかを検査する (#138)。
+
+    frontend (poi-editor の HTML min / parseTolerance) で reject 済みだが、
+    yaml 直編集や別 client からの POST に対する保険として backend でも reject。
+    return: エラーメッセージ文字列 (issue あり) または None (OK)。
+    """
+    for i, poi in enumerate(pois):
+        if not isinstance(poi, dict):
+            return f'POI #{i} must be an object'
+        tol = poi.get('tolerance')
+        if not isinstance(tol, dict):
+            return f'POI #{i} ({poi.get("name", "?")}): "tolerance" must be a mapping {{xy, yaw}}'
+        for key in ('xy', 'yaw'):
+            v = tol.get(key)
+            if not isinstance(v, (int, float)) or v < _TOLERANCE_MIN:
+                return (f'POI #{i} ({poi.get("name", "?")}): '
+                        f'"tolerance.{key}" must be a number >= {_TOLERANCE_MIN}')
+    return None
+
+
 class MapoiWebNode(Node):
     def __init__(self):
         super().__init__('mapoi_webui_node')
@@ -365,6 +391,9 @@ class MapoiWebNode(Node):
             # frontend 経由なら poi-editor が reject 済みだが、yaml 直編集や
             # 別 client からの POST に対する保険として 400 で reject する。
             err = _validate_unique_names(data['pois'], 'POI')
+            if err:
+                return jsonify({'error': err}), 400
+            err = _validate_pois_tolerance(data['pois'])
             if err:
                 return jsonify({'error': err}), 400
             config_path = node.get_config_path()

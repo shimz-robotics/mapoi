@@ -32,19 +32,35 @@
     return (pois || []).filter((p) => !hasLandmarkTag(p));
   }
 
+  // tolerance 最小値 (msg spec): xy = 1 mm、yaw = 約 0.057° (#138)。
+  // 0 / 負値 は「無反応 POI」を許してしまうため明示的に禁止。
+  const TOLERANCE_MIN = 0.001;
+
+  function degToRad(deg) {
+    const v = parseFloat(deg);
+    return Number.isFinite(v) ? v * Math.PI / 180.0 : NaN;
+  }
+
+  function radToDeg(rad) {
+    const v = parseFloat(rad);
+    return Number.isFinite(v) ? v * 180.0 / Math.PI : NaN;
+  }
+
   /**
-   * POI form の tolerance round-trip を保つ純関数 (#87)。
-   * `||` だと xy=0 / yaw=0 の意図的な値も default で上書きされるので
-   * Number.isFinite ベースで判定する (Codex review #137 medium 対応)。
+   * POI form の tolerance round-trip を保つ純関数 (#87 / #138)。
+   * `||` だと意図的な小さい値も default で上書きされるので Number.isFinite で判定。
+   * 最終 xy / yaw は msg spec に従い `>= TOLERANCE_MIN` を保証する (UI HTML min を
+   * bypass する経路に対する防御)。
    *
-   * @param {string|number} rawXyValue input value から読んだ生 (string for `<input>`)
-   * @param {number|undefined} originalYaw fillForm 時の yaw 元値 (UI 入力欄が無いため保持専用)
-   * @returns {{xy: number, yaw: number}}
+   * @param {string|number} rawXyValueM xy input 値 (m)
+   * @param {string|number} rawYawValueRad yaw input から deg→rad 変換済の値
+   * @returns {{xy: number, yaw: number}} 両方とも >= TOLERANCE_MIN
    */
-  function parseTolerance(rawXyValue, originalYaw) {
-    const xyVal = parseFloat(rawXyValue);
-    const xy = Number.isFinite(xyVal) ? xyVal : 0.5;
-    const yaw = Number.isFinite(originalYaw) ? originalYaw : 0.0;
+  function parseTolerance(rawXyValueM, rawYawValueRad) {
+    const xyParsed = parseFloat(rawXyValueM);
+    const yawParsed = parseFloat(rawYawValueRad);
+    const xy = Number.isFinite(xyParsed) && xyParsed >= TOLERANCE_MIN ? xyParsed : TOLERANCE_MIN;
+    const yaw = Number.isFinite(yawParsed) && yawParsed >= TOLERANCE_MIN ? yawParsed : TOLERANCE_MIN;
     return { xy, yaw };
   }
 
@@ -80,6 +96,9 @@
     filterRouteWaypointCandidates,
     validatePoiTags,
     parseTolerance,
+    degToRad,
+    radToDeg,
+    TOLERANCE_MIN,
   };
 
   if (typeof window !== 'undefined') {
