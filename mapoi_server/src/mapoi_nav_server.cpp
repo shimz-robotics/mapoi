@@ -315,11 +315,12 @@ void MapoiNavServer::publish_initial_pose(
   nav2_initialpose_pub_->publish(msg);
   RCLCPP_INFO(this->get_logger(), "Published initial pose (%s).", source.c_str());
 
-  // subscriber 未 ready なら async retry を schedule (#152)。
-  // QoS が default (volatile) のため後起動 subscriber は最初の publish を取りこぼす。
-  if (nav2_initialpose_pub_->get_subscription_count() == 0) {
-    schedule_initialpose_retry(pose, source);
-  }
+  // 常に async retry / post-subscribe republish path に乗せる (#149 round 6 high 対応)。
+  // 旧実装は count == 0 のときだけ retry を起動していたが、これだと「subscriber visible だが
+  // AMCL 側がまだ処理 ready 直前」ケースで初回 publish のみで終わり取りこぼす。
+  // schedule 内で subscriber 状態を毎回 check するため、count > 0 でも post-subscribe
+  // republish (default 3 回) が実行される。
+  schedule_initialpose_retry(pose, source);
 }
 
 void MapoiNavServer::schedule_initialpose_retry(
@@ -352,9 +353,12 @@ void MapoiNavServer::schedule_initialpose_retry(
   initialpose_retry_timer_ = this->create_wall_timer(
     std::chrono::milliseconds(static_cast<int>(interval_sec * 1000)),
     std::bind(&MapoiNavServer::initialpose_retry_callback, this));
+  const int post_n =
+    this->get_parameter("initialpose_post_subscribe_republish_count").as_int();
   RCLCPP_INFO(this->get_logger(),
-    "No initialpose subscriber yet; scheduling async retry every %.2fs (max %d attempts).",
-    interval_sec, max_attempts);
+    "Scheduled initialpose retry/republish every %.2fs "
+    "(max %d wait attempts; %d post-subscribe republish).",
+    interval_sec, max_attempts, post_n);
 }
 
 void MapoiNavServer::initialpose_retry_callback()

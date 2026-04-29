@@ -31,6 +31,16 @@ Breaking changes
     削除し、開始 POI を ``poi:`` 配下の先頭に並べる
   - ``mapoi_gazebo_bridge`` / ``mapoi_gz_bridge`` の robot spawn 位置も同
     semantics (POI list 先頭) に移行
+  - ``reload_map_info`` service の挙動変更: POI 編集後の reload で
+    ``mapoi_initialpose_poi`` を再 publish しなくなった (運用中の自己位置を
+    巻き戻すリスクを排除)。再設定は ``SwitchMap`` (= 地図切替) または
+    手動経路 (RViz / WebUI / ``mapoi_initialpose_poi`` 直接 publish) で
+  - ``mapoi_nav_server`` parameter 変更:
+    ``initial_pose_subscriber_wait_timeout_sec`` を削除し、async retry
+    timer ベースの新 parameter に置換 (``initialpose_retry_interval_sec``,
+    ``initialpose_retry_max_attempts``,
+    ``initialpose_post_subscribe_republish_count``)。blocking wait による
+    他 callback 停止の回帰を防止
 
 * ``pause`` system tag の発火条件を厳格化 (#89 段階 2, #143):
 

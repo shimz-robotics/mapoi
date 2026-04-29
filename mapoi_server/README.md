@@ -88,7 +88,9 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 | `map_frame` | `string` | `map` | TF の親フレーム |
 | `base_frame` | `string` | `base_link` | TF の子フレーム |
 | `initial_pose_topic` | `string` | `/initialpose` | initial_pose の配信先 topic 名 (非 AMCL の localization に対応する場合に変更) |
-| `initial_pose_subscriber_wait_timeout_sec` | `double` | `10.0` | 自動 publish 前に subscriber readiness を待つ秒数 (起動の遅い localization は延長) |
+| `initialpose_retry_interval_sec` | `double` | `0.1` | subscriber 後起動 / 検知後 republish の timer 間隔 (秒)。`0.01` 未満は default に clamp |
+| `initialpose_retry_max_attempts` | `int` | `50` | subscriber 検知前の最大 wait 試行回数 (= `interval_sec × max_attempts` 秒で諦め)。default = 約 5 秒 |
+| `initialpose_post_subscribe_republish_count` | `int` | `3` | subscriber 検知後に追加 republish する回数。AMCL の「visible だが処理 ready 直前」取りこぼしを防ぐ |
 
 #### サブスクライバー
 
@@ -106,7 +108,7 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 
 | トピック名 | 型 | 説明 |
 | --- | --- | --- |
-| `initialpose` | `geometry_msgs/PoseWithCovarianceStamped` | 初期位置の配信 (topic 名は `initial_pose_topic` parameter で変更可)。`mapoi_initialpose_poi` で受信した POI 名 (default: 新 map の **POI list 先頭** / SwitchMap で `initial_poi_name` 指定時はその POI、#144) の pose を流す。自動 publish 前は subscriber readiness を最大 `initial_pose_subscriber_wait_timeout_sec` 秒待つ |
+| `initialpose` | `geometry_msgs/PoseWithCovarianceStamped` | 初期位置の配信 (topic 名は `initial_pose_topic` parameter で変更可)。`mapoi_initialpose_poi` で受信した POI 名 (default: 新 map の **POI list 先頭** / SwitchMap で `initial_poi_name` 指定時はその POI、#144) の pose を流す。subscriber 後起動 / 検知後 ready 直前ケースに備えて wall_timer ベースで非同期 retry + post-subscribe republish する (`initialpose_retry_*` parameter 群、#152) |
 | `goal_pose` | `geometry_msgs/PoseStamped` | ゴール位置の配信 |
 | `mapoi_nav_status` | `std_msgs/String` | ナビゲーション状態を `"status"` または `"status:target"` 形式で配信（例: `"navigating:kitchen"`、`"succeeded:patrol_route"`、`"paused:patrol_route"`）。`status` は `navigating` / `succeeded` / `aborted` / `canceled` / `paused`。`target` は POI 名（goal mode）または route 名（route mode）で、subscriber 側は最初の `:` で split して復元する（target 内に `:` が含まれても残り全体を target として扱える）。`transient_local` QoS の **現在状態 snapshot**（depth=1）で、後起動 subscriber が最後の状態を受信できるが状態遷移履歴は復元できない。現在走行中かは `navigating` / `paused` で判定し、終端状態（`succeeded` / `aborted` / `canceled`）は直近結果として扱う |
 | `mapoi_poi_events` | `mapoi_interfaces/PoiEvent` | POI 侵入・退出イベント |
