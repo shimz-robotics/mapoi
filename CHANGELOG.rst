@@ -19,6 +19,10 @@ Unreleased
 Breaking changes
 ----------------
 
+* System tag ``origin`` removed. Map origin reference points should be
+  expressed with ``landmark`` system tag plus a custom tag (e.g.
+  ``map_origin``) for color/semantic differentiation. Visualization
+  defaults to gray; per-tag color is tracked in #70. (#89 段階 0)
 * ``PointOfInterest.msg``: ``float64 radius`` field removed in favor of the
   new ``mapoi_interfaces/Tolerance tolerance`` struct (``xy`` + ``yaw``,
   Nav2 ``SimpleGoalChecker`` align). YAML ``poi.radius`` keys must be

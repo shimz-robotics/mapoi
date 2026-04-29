@@ -35,7 +35,7 @@ describe('hasLandmarkTag', () => {
   it('returns false when landmark is absent', () => {
     expect(hasLandmarkTag(poi('a', ['goal']))).toBe(false);
     expect(hasLandmarkTag(poi('b', []))).toBe(false);
-    expect(hasLandmarkTag(poi('c', ['origin', 'pause']))).toBe(false);
+    expect(hasLandmarkTag(poi('c', ['goal', 'pause']))).toBe(false);
   });
 
   it('matches case-insensitively', () => {
@@ -100,7 +100,7 @@ describe('filterInitialPoseCandidates', () => {
     // (manual override 用途) ため、initial_pose タグの有無で絞らない。
     const pois = [
       poi('a', ['goal']),
-      poi('b', ['origin']),
+      poi('b', ['pause']),
     ];
     expect(filterInitialPoseCandidates(pois).map((p) => p.name)).toEqual(['a', 'b']);
   });

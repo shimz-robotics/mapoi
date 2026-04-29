@@ -60,7 +60,7 @@ TEST_F(NavServerTestFixture, RebuildEventPoisIncludesAllPois)
     node_->pois_list_.push_back(make_poi("goal_only", 1.0, 0.0, 0.5, {"goal"}));
     node_->pois_list_.push_back(make_poi("with_pause", 0.0, 2.0, 0.5, {"goal", "pause"}));
     node_->pois_list_.push_back(make_poi("with_custom", 3.0, 0.0, 0.5, {"goal", "audio_info"}));
-    node_->pois_list_.push_back(make_poi("origin_only", 0.0, 0.0, 0.5, {"origin"}));
+    node_->pois_list_.push_back(make_poi("landmark_ref", 0.0, 0.0, 0.5, {"landmark"}));
   }
   node_->rebuild_event_pois();
   EXPECT_EQ(node_->event_pois_.size(), 4u);
@@ -92,7 +92,7 @@ TEST_F(NavServerTestFixture, SelectInitialPosePoisEmpty)
 {
   std::vector<mapoi_interfaces::msg::PointOfInterest> pois;
   pois.push_back(make_poi("goal_only", 0.0, 0.0, 0.5, {"goal"}));
-  pois.push_back(make_poi("origin_only", 1.0, 0.0, 0.5, {"origin"}));
+  pois.push_back(make_poi("landmark_only", 1.0, 0.0, 0.5, {"landmark"}));
   auto matched = node_->select_initial_pose_pois(pois);
   EXPECT_EQ(matched.size(), 0u);
 }
@@ -102,7 +102,7 @@ TEST_F(NavServerTestFixture, SelectInitialPosePoisSingle)
   std::vector<mapoi_interfaces::msg::PointOfInterest> pois;
   pois.push_back(make_poi("goal_only", 0.0, 0.0, 0.5, {"goal"}));
   pois.push_back(make_poi("entry", -2.0, -0.5, 0.5, {"goal", "initial_pose"}));
-  pois.push_back(make_poi("origin_only", 1.0, 0.0, 0.5, {"origin"}));
+  pois.push_back(make_poi("landmark_only", 1.0, 0.0, 0.5, {"landmark"}));
   auto matched = node_->select_initial_pose_pois(pois);
   ASSERT_EQ(matched.size(), 1u);
   EXPECT_EQ(matched[0].name, "entry");
