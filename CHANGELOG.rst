@@ -104,6 +104,15 @@ WebUI / rviz_plugins
   ``xy >= 0.001`` (m) / ``yaw >= 0.06`` (deg ≒ 0.001 rad) を強制。
 * ``mapoi_webui_node`` の ``POST /api/pois`` で ``tolerance.{xy, yaw}``
   の min 制約を backend 側でも検証 (frontend bypass 防御)。(#138)
+* RViz POI Editor の column 構造を 6 → 5 に再編 (#158):
+
+  - 旧: ``name / description / pose / tolerance.xy / tolerance.yaw (deg) / tags``
+  - 新: ``name / pose (x, y, yaw rad) / tolerance (xy m, yaw rad) / tags / description``
+  - tolerance は 1 column 統合 (例: ``0.5, 0.7854``)、yaw は **rad 表示** に統一
+    (pose.yaw が rad なので一貫性確保、#138 の暫定 deg 表示を撤回)。
+  - description column を末尾に移動 (長文で横幅を圧迫しないように)。
+  - validation の min 制約は ``xy >= 0.001 m`` / ``yaw >= 0.001 rad`` に簡素化
+    (旧 deg 換算メッセージを撤廃)。
 
 
 0.2.0 (2026-04-29)
