@@ -35,6 +35,11 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   });
 
   // 起動時の最初の map に対する initial pose POI を publish (#144)。
+  // 順序保証: load_mapoi_config_file() (line 21) → publish_initial_poi_name() の順に実行。
+  // pois_list_ は load 後に最新化されているので、compute_initial_poi_name の lookup は安全。
+  // mapoi_initialpose_poi は transient_local QoS なので mapoi_nav_server 後起動でも latched 値を
+  // 受信できる。mapoi_nav_server cb 側は新たに get_pois_info を fetch して名前 lookup するので、
+  // mapoi_server 内の pois_list_ 更新と nav_server 側の cb 処理は順序非依存 (#149 review 補足)。
   publish_initial_poi_name();
 
   get_pois_info_service_ = this->create_service<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info",
@@ -372,30 +377,60 @@ void MapoiServer::reload_map_info_service(
 
 std::string MapoiServer::compute_initial_poi_name(const std::string & requested_name) const
 {
-  // 1) requested_name が指定されていればその POI を探す
-  // 2) なければ POI list の先頭 (landmark タグは到達不可なので除外)
+  // 1) requested_name が指定されていれば、その POI を探す
+  //    - landmark タグ持ちなら fall back (initial pose は到達可能 POI のみ、Cursor review #149 high 対応)
+  //    - pose ノードが欠落していたら fall back (Cursor review #149 high 対応)
+  // 2) fall back: POI list の先頭で「landmark タグなし & pose 有り」の POI を採用
   // 3) 候補なしなら空文字列を返す
   if (!pois_list_ || !pois_list_.IsSequence()) {
     return "";
   }
+  auto is_landmark_poi = [](const YAML::Node & poi) {
+    if (!poi["tags"] || !poi["tags"].IsSequence()) return false;
+    for (const auto & t : poi["tags"]) {
+      if (t.as<std::string>() == "landmark") return true;
+    }
+    return false;
+  };
+  auto has_valid_pose = [](const YAML::Node & poi) {
+    return static_cast<bool>(poi["pose"]);
+  };
   if (!requested_name.empty()) {
     for (const auto & poi : pois_list_) {
-      if (poi["name"].as<std::string>("") == requested_name) {
-        return requested_name;
+      if (poi["name"].as<std::string>("") != requested_name) continue;
+      if (is_landmark_poi(poi)) {
+        RCLCPP_WARN(this->get_logger(),
+          "Requested initial_poi_name '%s' has 'landmark' tag (reachable=false); "
+          "falling back to POI list first.",
+          requested_name.c_str());
+        break;
+      }
+      if (!has_valid_pose(poi)) {
+        RCLCPP_WARN(this->get_logger(),
+          "Requested initial_poi_name '%s' has no 'pose' field; "
+          "falling back to POI list first.",
+          requested_name.c_str());
+        break;
+      }
+      return requested_name;
+    }
+    if (!requested_name.empty()) {
+      // 名前が見つからなかった場合
+      bool found = false;
+      for (const auto & poi : pois_list_) {
+        if (poi["name"].as<std::string>("") == requested_name) { found = true; break; }
+      }
+      if (!found) {
+        RCLCPP_WARN(this->get_logger(),
+          "Requested initial_poi_name '%s' not found in current map; "
+          "falling back to POI list first.",
+          requested_name.c_str());
       }
     }
-    RCLCPP_WARN(this->get_logger(),
-      "Requested initial_poi_name '%s' not found in current map; falling back to POI list first.",
-      requested_name.c_str());
   }
   for (const auto & poi : pois_list_) {
-    bool is_landmark = false;
-    if (poi["tags"] && poi["tags"].IsSequence()) {
-      for (const auto & t : poi["tags"]) {
-        if (t.as<std::string>() == "landmark") { is_landmark = true; break; }
-      }
-    }
-    if (is_landmark) continue;  // landmark は到達不可、initial_pose 候補から除外
+    if (is_landmark_poi(poi)) continue;     // landmark は到達不可、initial pose 候補から除外
+    if (!has_valid_pose(poi)) continue;     // pose 欠落 POI もスキップ
     const std::string n = poi["name"].as<std::string>("");
     if (!n.empty()) return n;
   }
