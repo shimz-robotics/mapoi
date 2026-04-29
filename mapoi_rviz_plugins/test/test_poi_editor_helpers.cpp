@@ -106,6 +106,24 @@ TEST(SplitAndTrim, OnlyWhitespaceElement)
   EXPECT_EQ(result[2], "b");
 }
 
+TEST(SplitAndTrim, TrailingDelimiter)
+{
+  // "0.5," → 末尾区切りの空要素は std::getline では生成されない (= 1 要素のみ)。
+  // tolerance validation 側で「2 要素必須」として reject されるので致命的ではないが、
+  // helper の契約を test で固定する。
+  const auto result = split_and_trim("0.5,", ',');
+  ASSERT_EQ(result.size(), 1u);
+  EXPECT_EQ(result[0], "0.5");
+}
+
+TEST(SplitAndTrim, LeadingDelimiter)
+{
+  const auto result = split_and_trim(",0.5", ',');
+  ASSERT_EQ(result.size(), 2u);
+  EXPECT_EQ(result[0], "");
+  EXPECT_EQ(result[1], "0.5");
+}
+
 // --- try_parse_finite_double ---
 
 TEST(TryParseFiniteDouble, ValidNumber)

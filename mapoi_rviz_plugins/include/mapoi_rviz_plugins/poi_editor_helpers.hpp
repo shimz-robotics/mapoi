@@ -1,7 +1,8 @@
 // Pure helper functions for PoiEditorPanel (#151 で header 化、unit test 容易化のため)。
-// rclcpp / Qt 依存なし。stdlib のみ。
+// 依存: stdlib + QString (format_yaw_deg のみ Qt5::Core が必要、それ以外は stdlib のみ)。
 #pragma once
 
+#include <cctype>
 #include <cmath>
 #include <sstream>
 #include <string>
