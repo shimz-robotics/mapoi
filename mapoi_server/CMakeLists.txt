@@ -83,6 +83,9 @@ if(BUILD_TESTING)
     src/mapoi_server.cpp
   )
   target_compile_definitions(test_mapoi_server_unit PRIVATE UNIT_TEST)
+  # mapoi_server.cpp は yaml-cpp 依存。本体 executable と同じく test binary にも明示 link
+  # (#149 で見落とし、別 PC clean build で undefined reference 発覚 → hotfix)。
+  target_link_libraries(test_mapoi_server_unit ${_mapoi_yaml_cpp_target})
 
   # Level 2: launch_testing integration tests
   add_launch_test(
