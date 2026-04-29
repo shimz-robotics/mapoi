@@ -25,6 +25,9 @@ jobs:
       - name: Check robot_radius drift between WebUI launch and Nav2 yaml
         run: python3 scripts/check_robot_radius_drift.py
 
+      - name: Check sample mapoi_config.yaml consistency
+        run: python3 scripts/check_sample_yaml_consistency.py
+
   webui_js_tests:
     runs-on: ubuntu-latest
     steps:

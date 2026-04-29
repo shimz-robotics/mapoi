@@ -13,9 +13,10 @@ route:
 - name: tour_full
   waypoints: [meeting_room_a, conference_room, corridor_a, corridor_b, model_exhibit]
   landmarks: [tour_landmark, exhibit_display, capture_target_painting]
-# tour_short: landmarks 無しの短縮版。route schema が landmarks 省略でも動く検証用。
+# tour_short: landmarks 無しの短縮版 (旧 route_2 互換、corridor_a 経由)。
+# route schema が landmarks 省略でも動く検証用。
 - name: tour_short
-  waypoints: [elevator_hall, conference_room]
+  waypoints: [elevator_hall, corridor_a, conference_room]
 map:
 - {node_name: /map_server, map_file: localization.yaml}
 # mapoi_gazebo_bridge が SwitchMap 時に読む。

@@ -137,7 +137,7 @@ ros2 run mapoi_turtlebot3_example get_pois_info_client
 
 | POI | tags | 役割 |
 | --- | --- | --- |
-| `start_zone` | `waypoint` | POI list 先頭 = default initial pose |
+| `start_zone` | `waypoint` | POI list 先頭 = default initial pose (#149) |
 | `checkpoint_west` | `waypoint`, `checkpoint` | yaw 不問の通過点 (`tolerance.yaw=π`) |
 | `checkpoint_east` | `waypoint`, `checkpoint` | yaw 不問の通過点 (`tolerance.yaw=π`) |
 | `pause_intersection` | `waypoint`, `pause` | 交差点で自動停止 |

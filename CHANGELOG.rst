@@ -143,6 +143,22 @@ Samples
   - ``mapoi_turtlebot3_example/README.md`` にサンプル一覧表 (各シナリオで
     検証できる機能 / POI tag 構成) を追記。
 
+  **Route 名のリネーム** (旧 → 新):
+
+  - ``turtlebot3_world``: ``route_1`` → ``tour_full``、``route_2`` → ``tour_short``
+  - ``turtlebot3_dqn_stage1``: 変更なし (``avoidance_a`` / ``avoidance_b``)
+
+  ``tour_short`` は旧 ``route_2`` 互換 (``[elevator_hall, corridor_a,
+  conference_room]``) で経路は同じ。launch / クライアント / 社内スクリプトで
+  ``route_1`` / ``route_2`` を直接参照している場合は新名への移行が必要。
+  サンプル YAML の固定スナップショットを前提にした外部チュートリアル等も同様
+  (POI 数 / 名前 / tag 組合せが大幅に拡張されているため)。
+
+* ``scripts/check_sample_yaml_consistency.py`` 新設 + CI 組み込み (#146)。
+  サンプル yaml の POI 名 / route waypoint / landmark 参照の整合性、tag 排他
+  (``waypoint × landmark``、``landmark × pause``)、``tolerance.{xy,yaw}``
+  の min 制約 (>= 0.001) を pull request / push で自動検証。
+
 
 0.2.0 (2026-04-29)
 ==================
