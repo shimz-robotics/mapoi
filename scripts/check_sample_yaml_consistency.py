@@ -6,11 +6,18 @@ mapoi_server / mapoi_turtlebot3_example 配下の同名サンプル yaml は ``m
 
 - POI 名のユニーク性
 - ``route.waypoints`` / ``route.landmarks`` が POI 一覧に存在する
+- ``route.waypoints`` の参照 POI は ``waypoint`` タグ持ち、``route.landmarks``
+  の参照 POI は ``landmark`` タグ持ち (タグと route 用途のミスマッチを検出)
 - tag 排他 (``waypoint × landmark``、``landmark × pause``、#85 / #143)
 - ``tolerance.{xy,yaw}`` の範囲制約 (>= 0.001、yaw <= 2π、#138 / #158)
 - ``poi`` 配列の先頭が ``landmark`` ではなく pose 完備 (= default initial pose、#149)
 
 CI で本 script を回し、上記いずれかが破れたら fail させる。
+
+**スコープ**: 本 script はサンプル yaml のドリフト防止を目的とした **軽量バリ
+データ** で、``mapoi_server`` の yaml load (C++ 側) や ``mapoi_webui_node`` の
+backend validation の網羅的レプリカではない。``map`` block / ``gazebo`` block
+の妥当性、custom_tags 名規約、pose 数値の物理的妥当性などはチェックしない。
 
 使い方::
     python3 scripts/check_sample_yaml_consistency.py
@@ -109,6 +116,11 @@ def _validate_single(path: Path, data: dict) -> list[str]:
             f'(#149 default initial pose 採用条件に違反)'
         )
 
+    poi_tags = {
+        poi['name']: [str(t).lower() for t in (poi.get('tags') or [])]
+        for poi in pois
+        if isinstance(poi, dict) and isinstance(poi.get('name'), str)
+    }
     routes = data.get('route') or []
     if isinstance(routes, list):
         route_names_seen: set[str] = set()
@@ -123,7 +135,7 @@ def _validate_single(path: Path, data: dict) -> list[str]:
             if rname in route_names_seen:
                 issues.append(f'{rel}: route 名 "{rname}" が重複している')
             route_names_seen.add(rname)
-            for field in ('waypoints', 'landmarks'):
+            for field, expected_tag in (('waypoints', 'waypoint'), ('landmarks', 'landmark')):
                 refs = route.get(field) or []
                 if not isinstance(refs, list):
                     issues.append(f'{rel}: route "{rname}" の {field} が list ではない')
@@ -132,6 +144,12 @@ def _validate_single(path: Path, data: dict) -> list[str]:
                     if ref not in names_seen:
                         issues.append(
                             f'{rel}: route "{rname}" の {field} が未定義 POI を参照: "{ref}"'
+                        )
+                        continue
+                    if expected_tag not in poi_tags.get(ref, []):
+                        issues.append(
+                            f'{rel}: route "{rname}" の {field} に列挙された POI "{ref}" に '
+                            f'"{expected_tag}" タグがない (route 用途と tag のミスマッチ)'
                         )
 
     return issues
