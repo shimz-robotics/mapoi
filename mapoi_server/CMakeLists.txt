@@ -85,6 +85,9 @@ if(BUILD_TESTING)
   target_compile_definitions(test_mapoi_server_unit PRIVATE UNIT_TEST)
   # mapoi_server.cpp は yaml-cpp 依存。本体 executable と同じく test binary にも明示 link
   # (#149 で見落とし、別 PC clean build で undefined reference 発覚 → hotfix)。
+  # NOTE: humble の `ament_auto_add_gtest` 内で plain signature の target_link_libraries
+  # が使われているため、ここも plain (= PUBLIC/PRIVATE/INTERFACE 無し) で揃える必要がある。
+  # PRIVATE 化は CMake が「all-keyword or all-plain」混在を error にするため不可。
   target_link_libraries(test_mapoi_server_unit ${_mapoi_yaml_cpp_target})
 
   # Level 2: launch_testing integration tests
