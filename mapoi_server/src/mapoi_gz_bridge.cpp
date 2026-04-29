@@ -274,6 +274,12 @@ ConfigLoadStatus MapoiGzBridge::load_gazebo_info(
         }
       }
       if (!applied) {
+        if (!requested.empty()) {
+          // requested 名は届いていたが採用に失敗した (= name not found / landmark / pose 不備) (#149 round 9 low)。
+          RCLCPP_WARN(this->get_logger(),
+            "Requested initial POI '%s' not adopted for spawn (not found / landmark / invalid pose); "
+            "falling back to POI list first.", requested.c_str());
+        }
         for (const auto & poi : cfg["poi"]) {
           if (try_apply_pose(poi)) break;
         }

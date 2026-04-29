@@ -108,16 +108,25 @@ void MapoiNavServer::get_pois_list(){
 void MapoiNavServer::mapoi_initialpose_poi_cb(
   const mapoi_interfaces::msg::InitialPoseRequest::SharedPtr msg)
 {
-  // map_name は世代識別 (#149 round 8 high 対応): bridge 側では map 一致 check に使う。
-  // nav_server は POI 名 lookup のみで判定するので map_name は info ログ用途に留める。
-  // 空 poi_name は「default を使う指示」だが、nav_server 側の経路としては default 採用は
-  // mapoi_server の compute_initial_poi_name が POI 名を埋めて publish するため到達しない。
-  // 念のため空なら無視する。
   std::string poi_name = msg->poi_name;
   if (poi_name.empty()) {
     RCLCPP_DEBUG(this->get_logger(),
       "Received empty initialpose POI name for map '%s'; skipping.", msg->map_name.c_str());
     return;
+  }
+  // map_name 世代検証 (#149 round 9 high 対応): 既知の current map (= last_config_path_ 由来) と
+  // msg->map_name が異なれば stale latched message とみなして無視。
+  // last_config_path_ が空 (= まだ config_path を受信していない起動直後) は trust する
+  // (= まだ世代を判定できないので、最初の latched message は受け入れる)。
+  if (!last_config_path_.empty() && !msg->map_name.empty()) {
+    const std::string current_map =
+      std::filesystem::path(last_config_path_).parent_path().filename().string();
+    if (msg->map_name != current_map) {
+      RCLCPP_WARN(this->get_logger(),
+        "Ignoring InitialPoseRequest for map '%s' (current map is '%s'); stale latched message.",
+        msg->map_name.c_str(), current_map.c_str());
+      return;
+    }
   }
   RCLCPP_INFO(this->get_logger(),
     "Received initialpose POI '%s' for map '%s'.", poi_name.c_str(), msg->map_name.c_str());
