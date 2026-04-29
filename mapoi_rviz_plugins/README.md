@@ -44,7 +44,13 @@ POI の情報を表形式で表示・編集・保存できるパネルです。
 - 現在の設定ファイルから POI 情報を読み込み
 - 表形式での POI 情報の確認・編集（name, description, pose, tolerance, tags の 5 column 構成、#151）
   - **tolerance** column は `xy m, yaw deg` 形式の 1 column 統合表記（例: `0.5, 45.0`）
-  - yaw は `0.7853981 rad → 45.0` のように 0.05° 以内なら 1 桁丸めで表示、それ以外は 4 桁
+  - yaw 表示精度: 「整数度を rad 化した値」と元 rad の差が `1e-9` 未満なら 1 桁表示
+    （例: full precision な `0.7853981633... rad` → `45.0`）、それ以外は 4 桁表示で
+    元値を保持（例: `45.04°` → `45.0400`、編集せず save しても値が壊れない）
+  - 保存は `YAML::Emitter::SetDoublePrecision(17)` で full precision (17 桁) で書き出す
+  - **legacy yaml** (= 旧 default 6-7 桁精度で保存された値) は 1 度 POI Editor で開いて
+    save し直すと full precision に migration される。それまでは整数度狙いでも `45.0000`
+    のような 4 桁表示になることがある
 - POI の追加・コピー・削除
 - タグによるフィルタリング表示
 - TagHelperComboBox によるタグ入力補助（システムタグは `[S]` 表記）
