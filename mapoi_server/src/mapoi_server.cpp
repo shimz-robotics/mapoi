@@ -205,9 +205,25 @@ void MapoiServer::get_route_pois_service(
 
     // route.landmarks (#143): NOT navigated, but radius-monitored while this
     // route is active. Order is informational only.
+    // Codex review #147 low: 参照先 POI が `landmark` tag を持つかも検証し、
+    // 持たない POI を route.landmarks に書いた場合は WARN ログ (typo / spec 誤解の検知)。
     if (route["landmarks"] && route["landmarks"].IsSequence()) {
       for (const auto &lm : route["landmarks"]) {
-        append_poi_by_name(lm.as<std::string>(), response->landmark_pois);
+        const std::string lm_name = lm.as<std::string>();
+        const size_t before = response->landmark_pois.size();
+        append_poi_by_name(lm_name, response->landmark_pois);
+        if (response->landmark_pois.size() > before) {
+          const auto & lm_poi = response->landmark_pois.back();
+          bool has_landmark_tag = false;
+          for (const auto & t : lm_poi.tags) {
+            if (t == "landmark") { has_landmark_tag = true; break; }
+          }
+          if (!has_landmark_tag) {
+            RCLCPP_WARN(this->get_logger(),
+              "Route '%s' references '%s' as landmark but POI does not have 'landmark' tag.",
+              request->route_name.c_str(), lm_name.c_str());
+          }
+        }
       }
     }
 

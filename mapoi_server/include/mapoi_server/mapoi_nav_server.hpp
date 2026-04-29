@@ -83,7 +83,10 @@ private:
   // target として参照される用途のみ。
   void goal_response_callback(std::string target, const GoalHandleFollowWaypoints::SharedPtr & goal_handle);
   void feedback_callback(GoalHandleFollowWaypoints::SharedPtr, const std::shared_ptr<const FollowWaypoints::Feedback> feedback);
-  void result_callback(std::string target, const GoalHandleFollowWaypoints::WrappedResult & result);
+  // route_generation: 新 route 受理ごとに増分。stale な result_callback (= 旧 route の遅延結果)
+  // が新 route の global state を消さないよう識別する (Codex review #147 high 対応)。
+  void result_callback(std::string target, size_t route_generation,
+                       const GoalHandleFollowWaypoints::WrappedResult & result);
 
   // Action Callbacks (NavigateToPose — single POI)
   void ntp_goal_response_callback(std::string target, const GoalHandleNavigateToPose::SharedPtr & goal_handle);
@@ -110,6 +113,11 @@ private:
   // radius_check_callback の pause 発火条件 (active route POI に含まれる時のみ) で参照。
   std::unordered_set<std::string> current_route_poi_names_;
   void clear_current_route_poi_names_();
+
+  // route_generation: route 受理ごとに 1 ずつ増分。result_callback で stale 判定に使う
+  // (Codex review #147 high 対応)。連続 route で旧 result が遅延到着して新 route の
+  // current_route_poi_names_ / current_goal_handle_ を消す race を防ぐ。
+  size_t route_generation_ = 0;
 
   void reset_nav_state();
 

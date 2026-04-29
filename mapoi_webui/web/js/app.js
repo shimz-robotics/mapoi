@@ -222,6 +222,11 @@
     if (routeEditor.editingIndex !== -1) {
       const poi = poiEditor.pois[index];
       if (poi && poi.name) {
+        // landmark POI は waypoint dropdown と整合させ、map click でも waypoint には
+        // 入れない (Codex review #147 medium)。route.landmarks への追加は dropdown UI で行う。
+        if (MapoiPoiFilter.hasLandmarkTag(poi)) {
+          return;
+        }
         routeEditor.addWaypointByName(poi.name);
       }
       return;
