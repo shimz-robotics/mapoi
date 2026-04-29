@@ -39,7 +39,17 @@ private:
 
   // publishers
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr config_path_publisher_;
+  // initial pose POI 名 publisher (#144): mapoi_server が新 map の初期 POI 名を決定して
+  // mapoi_initialpose_poi topic に publish。mapoi_nav_server がそれを受けて /initialpose を流す。
+  // QoS: transient_local (depth=1) で後起動 subscriber でも受信できる。
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr initialpose_poi_publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
+
+  // SwitchMap で受け取った initial_poi_name を load_mapoi_config_file 後の publish_initial_poi_name
+  // で消費するためのバッファ。空文字列なら POI list 先頭 (landmark 除外) を default 採用 (#144)。
+  std::string pending_initial_poi_name_;
+  void publish_initial_poi_name();
+  std::string compute_initial_poi_name(const std::string & requested_name) const;
 
   // methods
   void load_mapoi_config_file();

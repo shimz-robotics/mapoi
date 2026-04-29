@@ -21,8 +21,11 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   this->declare_parameter<double>("initial_pose_subscriber_wait_timeout_sec", 10.0);
 
   // initialpose subscriber and publisher
+  // mapoi_server が initial pose POI 名を transient_local で publish する (#144) ので、
+  // 後起動でも latched 値を受信できるよう sub も transient_local に揃える。
   mapoi_initialpose_poi_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi_initialpose_poi", 1, std::bind(&MapoiNavServer::mapoi_initialpose_poi_cb, this, std::placeholders::_1));
+    "mapoi_initialpose_poi", rclcpp::QoS(1).transient_local(),
+    std::bind(&MapoiNavServer::mapoi_initialpose_poi_cb, this, std::placeholders::_1));
   nav2_initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
     this->get_parameter("initial_pose_topic").as_string(), 1);
 
@@ -265,74 +268,13 @@ void MapoiNavServer::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv:
   // config_path 由来の fetch (on_config_path_changed → get_pois_list) が成功した時のみ guard を確定。
   // start_sequence 経由の初回 fetch では pending_guard_active_ が false で、ここは no-op。
   // fetch 失敗 (result == nullptr) で早期 return した場合も pending を残し、次回 publish で retry する。
-  // auto_publish_initial_pose() は last_config_path_ を見て二重発火判定するため、guard 確定を先に行う。
+  // (#144 で auto_publish_initial_pose は廃止、initial pose は mapoi_server が
+  // mapoi_initialpose_poi topic に publish して mapoi_initialpose_poi_cb 経由で配信する。)
   if (pending_guard_active_) {
     last_config_path_ = pending_config_path_;
     last_config_mtime_ = pending_config_mtime_;
     pending_guard_active_ = false;
   }
-
-  auto_publish_initial_pose();
-}
-
-std::vector<mapoi_interfaces::msg::PointOfInterest> MapoiNavServer::select_initial_pose_pois(
-  const std::vector<mapoi_interfaces::msg::PointOfInterest> & pois)
-{
-  std::vector<mapoi_interfaces::msg::PointOfInterest> matched;
-  for (const auto & poi : pois) {
-    // landmark + initial_pose は排他 (#85)。auto-publish 候補からも除外する。
-    if (has_landmark_tag(poi)) {
-      continue;
-    }
-    for (const auto & tag : poi.tags) {
-      if (tag == "initial_pose") {
-        matched.push_back(poi);
-        break;
-      }
-    }
-  }
-  if (matched.size() > 1) {
-    std::string names;
-    for (size_t i = 0; i < matched.size(); ++i) {
-      if (i > 0) names += ", ";
-      names += matched[i].name;
-    }
-    RCLCPP_WARN(this->get_logger(),
-      "Multiple POIs with 'initial_pose' tag (%zu): [%s]. Using first: '%s'.",
-      matched.size(), names.c_str(), matched[0].name.c_str());
-  }
-  return matched;
-}
-
-void MapoiNavServer::auto_publish_initial_pose()
-{
-  // config_path 未確定 / 同一 config で publish 済み → スキップ（起動時の二重発火防止）
-  if (last_config_path_.empty() || last_config_path_ == last_initial_pose_config_path_) {
-    return;
-  }
-
-  std::vector<mapoi_interfaces::msg::PointOfInterest> matched;
-  {
-    std::lock_guard<std::mutex> lock(data_mutex_);
-    matched = select_initial_pose_pois(pois_list_);
-  }
-
-  if (matched.empty()) {
-    RCLCPP_INFO(this->get_logger(),
-      "No POI with 'initial_pose' tag found; skipping auto initial pose.");
-    last_initial_pose_config_path_ = last_config_path_;  // 同一 config の再評価を抑止
-    return;
-  }
-
-  // localization (主に AMCL) より早く起動した場合の subscription readiness race を
-  // 回避するため、initialpose subscriber を一定時間 wait してから publish する。
-  // SwitchMap 等で localization が既に起動している経路では即時 return するので overhead なし。
-  const double timeout_sec =
-    this->get_parameter("initial_pose_subscriber_wait_timeout_sec").as_double();
-  wait_for_initialpose_subscriber(timeout_sec);
-
-  publish_initial_pose(matched[0].pose, "auto from POI '" + matched[0].name + "'");
-  last_initial_pose_config_path_ = last_config_path_;
 }
 
 bool MapoiNavServer::has_landmark_tag(const mapoi_interfaces::msg::PointOfInterest & poi)

@@ -23,12 +23,19 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   // Publish config_path_
   config_path_publisher_ = this->create_publisher<std_msgs::msg::String>(
     "mapoi_config_path", rclcpp::QoS(1).transient_local());
+  // Publish initial pose POI name (#144): mapoi_nav_server がこれを受けて /initialpose を流す。
+  // 起動時 / SwitchMap / reload で publish する。後起動 subscriber でも受信できるよう transient_local。
+  initialpose_poi_publisher_ = this->create_publisher<std_msgs::msg::String>(
+    "mapoi_initialpose_poi", rclcpp::QoS(1).transient_local());
   int pub_interval_ms = this->get_parameter("pub_interval_ms").as_int();
   timer_ = this->create_wall_timer(std::chrono::milliseconds(pub_interval_ms), [this]() {
     auto msg = std_msgs::msg::String();
     msg.data = config_path_;
     config_path_publisher_->publish(msg);
   });
+
+  // 起動時の最初の map に対する initial pose POI を publish (#144)。
+  publish_initial_poi_name();
 
   get_pois_info_service_ = this->create_service<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info",
     std::bind(&MapoiServer::get_pois_info_service, this, std::placeholders::_1, std::placeholders::_2));
@@ -322,7 +329,9 @@ void MapoiServer::switch_map_service(const std::shared_ptr<mapoi_interfaces::srv
   }
 
   map_name_ = map_name_new;
+  pending_initial_poi_name_ = request->initial_poi_name;  // #144: SwitchMap 経由で指定された初期 POI
   load_mapoi_config_file();
+  publish_initial_poi_name();  // #144: 新 map の initial pose POI 名を mapoi_initialpose_poi へ
 
   auto node = rclcpp::Node::make_shared("sc_map_client");
   if (!nav2_map_list_ || !nav2_map_list_.IsSequence()) {
@@ -353,9 +362,64 @@ void MapoiServer::reload_map_info_service(
 {
   (void)request;
   load_mapoi_config_file();
+  // reload は yaml save 後の trigger なので initial pose 再 publish は通常不要だが、
+  // POI 順序が編集されて先頭 POI が変わったケースを拾うため publish する (#144)。
+  publish_initial_poi_name();
   response->success = true;
   response->message = config_path_;
   RCLCPP_INFO(this->get_logger(), "Reloaded mapoi config: %s", config_path_.c_str());
+}
+
+std::string MapoiServer::compute_initial_poi_name(const std::string & requested_name) const
+{
+  // 1) requested_name が指定されていればその POI を探す
+  // 2) なければ POI list の先頭 (landmark タグは到達不可なので除外)
+  // 3) 候補なしなら空文字列を返す
+  if (!pois_list_ || !pois_list_.IsSequence()) {
+    return "";
+  }
+  if (!requested_name.empty()) {
+    for (const auto & poi : pois_list_) {
+      if (poi["name"].as<std::string>("") == requested_name) {
+        return requested_name;
+      }
+    }
+    RCLCPP_WARN(this->get_logger(),
+      "Requested initial_poi_name '%s' not found in current map; falling back to POI list first.",
+      requested_name.c_str());
+  }
+  for (const auto & poi : pois_list_) {
+    bool is_landmark = false;
+    if (poi["tags"] && poi["tags"].IsSequence()) {
+      for (const auto & t : poi["tags"]) {
+        if (t.as<std::string>() == "landmark") { is_landmark = true; break; }
+      }
+    }
+    if (is_landmark) continue;  // landmark は到達不可、initial_pose 候補から除外
+    const std::string n = poi["name"].as<std::string>("");
+    if (!n.empty()) return n;
+  }
+  return "";
+}
+
+void MapoiServer::publish_initial_poi_name()
+{
+  // pending_initial_poi_name_ を消費。空文字列なら default (POI list 先頭 / landmark 除外) を採用。
+  const std::string requested = pending_initial_poi_name_;
+  pending_initial_poi_name_.clear();
+  const std::string target = compute_initial_poi_name(requested);
+  if (target.empty()) {
+    RCLCPP_WARN(this->get_logger(),
+      "No POI available for initial pose in map '%s'; skipping mapoi_initialpose_poi publish.",
+      map_name_.c_str());
+    return;
+  }
+  auto msg = std_msgs::msg::String();
+  msg.data = target;
+  initialpose_poi_publisher_->publish(msg);
+  RCLCPP_INFO(this->get_logger(),
+    "Published initial pose POI name '%s' for map '%s' (#144).",
+    target.c_str(), map_name_.c_str());
 }
 
 void MapoiServer::load_tag_definitions()

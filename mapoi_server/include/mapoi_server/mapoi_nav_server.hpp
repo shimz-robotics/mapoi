@@ -176,17 +176,6 @@ private:
   void radius_check_callback();
   double distance_2d(const geometry_msgs::msg::Pose & poi_pose, double rx, double ry);
 
-  // initial_pose タグ付き POI を抽出して /initialpose に自動 publish。
-  // 0 個: skip / 1 個: そのまま / 複数: 警告して先頭を採用。
-  // 同一 config_path に対する重複 publish はスキップする。
-  void auto_publish_initial_pose();
-
-  // POI リストから initial_pose タグ付き候補を返す純関数（test 容易化のため分離）。
-  // 複数あれば WARN を出し先頭、0 個なら空ベクタ。
-  // landmark タグ併用 POI は initial_pose 排他のため候補から除外する (#85)。
-  std::vector<mapoi_interfaces::msg::PointOfInterest> select_initial_pose_pois(
-    const std::vector<mapoi_interfaces::msg::PointOfInterest> & pois);
-
   // landmark system tag を持つかを判定する純関数 (#85)。
   // landmark POI は Nav2 navigation goal / initial_pose に使えない reference 専用。
   static bool has_landmark_tag(const mapoi_interfaces::msg::PointOfInterest & poi);
@@ -200,9 +189,6 @@ private:
   // 200ms 間隔の polling で blocking wait する (single-thread executor 前提)。
   void wait_for_initialpose_subscriber(double timeout_sec);
 
-  // 同一 config_path への重複 publish 防止
-  std::string last_initial_pose_config_path_;
-
 #ifdef UNIT_TEST
   friend class NavServerTestFixture;
   FRIEND_TEST(NavServerTestFixture, DistanceCalculation);
@@ -210,10 +196,6 @@ private:
   FRIEND_TEST(NavServerTestFixture, RebuildEventPoisIncludesAllPois);
   FRIEND_TEST(NavServerTestFixture, RebuildEventPoisEmpty);
   FRIEND_TEST(NavServerTestFixture, PauseTagDetection);
-  FRIEND_TEST(NavServerTestFixture, SelectInitialPosePoisEmpty);
-  FRIEND_TEST(NavServerTestFixture, SelectInitialPosePoisSingle);
-  FRIEND_TEST(NavServerTestFixture, SelectInitialPosePoisMultiple);
-  FRIEND_TEST(NavServerTestFixture, SelectInitialPosePoisExcludesLandmark);
   FRIEND_TEST(NavServerTestFixture, HasLandmarkTagDetection);
 #endif
 };

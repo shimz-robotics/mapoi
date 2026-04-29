@@ -62,17 +62,15 @@ def _validate_pois_tag_exclusivity(pois):
             tags = [str(t).lower() for t in poi['tags']]
         has_waypoint = 'waypoint' in tags
         has_landmark = 'landmark' in tags
-        has_initial_pose = 'initial_pose' in tags
         has_pause = 'pause' in tags
         name = (poi.get('name', '?') if isinstance(poi, dict) else '?')
         if has_waypoint and has_landmark:
             return (f'POI #{i} ({name}): "waypoint" と "landmark" は併用できません '
                     '(landmark は Nav2 navigation 不可な reference 専用)')
-        if has_initial_pose and has_landmark:
-            return (f'POI #{i} ({name}): "initial_pose" と "landmark" は併用できません')
         if has_pause and has_landmark:
             return (f'POI #{i} ({name}): "pause" と "landmark" は併用できません '
                     '(landmark は到達不可な reference のため pause 動作が成立しません)')
+        # (initial_pose × landmark 排他は #144 で initial_pose system tag を廃止したため不要に。)
     return None
 
 

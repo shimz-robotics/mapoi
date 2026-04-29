@@ -210,21 +210,17 @@ ConfigLoadStatus MapoiGzBridge::load_gazebo_info(
       out.world_model.name = wm["name"] ? wm["name"].as<std::string>() : "";
       out.has_gazebo = !out.world_model.uri.empty();
     }
+    // initial pose は POI list の先頭 (landmark タグは到達不可なので除外) を採用 (#144)。
+    // 旧 `initial_pose` system tag を yaml 順序で表現する semantics に移行した。
     if (cfg["poi"] && cfg["poi"].IsSequence()) {
       for (const auto & poi : cfg["poi"]) {
-        if (!poi["tags"] || !poi["tags"].IsSequence()) {
-          continue;
-        }
-        bool is_initial = false;
-        for (const auto & tag : poi["tags"]) {
-          if (tag.as<std::string>() == "initial_pose") {
-            is_initial = true;
-            break;
+        bool is_landmark = false;
+        if (poi["tags"] && poi["tags"].IsSequence()) {
+          for (const auto & tag : poi["tags"]) {
+            if (tag.as<std::string>() == "landmark") { is_landmark = true; break; }
           }
         }
-        if (!is_initial) {
-          continue;
-        }
+        if (is_landmark) continue;
         if (poi["pose"]) {
           const auto & pose = poi["pose"];
           out.initial_x = pose["x"] ? pose["x"].as<double>() : 0.0;

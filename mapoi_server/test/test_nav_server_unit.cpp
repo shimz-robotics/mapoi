@@ -88,50 +88,9 @@ TEST_F(NavServerTestFixture, PauseTagDetection)
   EXPECT_FALSE(has_pause(poi_no_pause));
 }
 
-TEST_F(NavServerTestFixture, SelectInitialPosePoisEmpty)
-{
-  std::vector<mapoi_interfaces::msg::PointOfInterest> pois;
-  pois.push_back(make_poi("goal_only", 0.0, 0.0, 0.5, {"waypoint"}));
-  pois.push_back(make_poi("landmark_only", 1.0, 0.0, 0.5, {"landmark"}));
-  auto matched = node_->select_initial_pose_pois(pois);
-  EXPECT_EQ(matched.size(), 0u);
-}
-
-TEST_F(NavServerTestFixture, SelectInitialPosePoisSingle)
-{
-  std::vector<mapoi_interfaces::msg::PointOfInterest> pois;
-  pois.push_back(make_poi("goal_only", 0.0, 0.0, 0.5, {"waypoint"}));
-  pois.push_back(make_poi("entry", -2.0, -0.5, 0.5, {"waypoint", "initial_pose"}));
-  pois.push_back(make_poi("landmark_only", 1.0, 0.0, 0.5, {"landmark"}));
-  auto matched = node_->select_initial_pose_pois(pois);
-  ASSERT_EQ(matched.size(), 1u);
-  EXPECT_EQ(matched[0].name, "entry");
-}
-
-TEST_F(NavServerTestFixture, SelectInitialPosePoisMultiple)
-{
-  std::vector<mapoi_interfaces::msg::PointOfInterest> pois;
-  pois.push_back(make_poi("first", 1.0, 1.0, 0.5, {"initial_pose"}));
-  pois.push_back(make_poi("middle", 2.0, 2.0, 0.5, {"waypoint"}));
-  pois.push_back(make_poi("second", 3.0, 3.0, 0.5, {"initial_pose", "waypoint"}));
-  auto matched = node_->select_initial_pose_pois(pois);
-  ASSERT_EQ(matched.size(), 2u);
-  EXPECT_EQ(matched[0].name, "first");  // 順序保持・先頭採用
-  EXPECT_EQ(matched[1].name, "second");
-}
-
-TEST_F(NavServerTestFixture, SelectInitialPosePoisExcludesLandmark)
-{
-  // landmark + initial_pose は排他なので auto-publish 候補から除外される (#85)。
-  std::vector<mapoi_interfaces::msg::PointOfInterest> pois;
-  pois.push_back(make_poi("ip_only", 1.0, 1.0, 0.5, {"initial_pose"}));
-  pois.push_back(make_poi("landmark_ip", 2.0, 2.0, 0.5, {"initial_pose", "landmark"}));
-  pois.push_back(make_poi("ip_with_other", 3.0, 3.0, 0.5, {"initial_pose", "waypoint"}));
-  auto matched = node_->select_initial_pose_pois(pois);
-  ASSERT_EQ(matched.size(), 2u);
-  EXPECT_EQ(matched[0].name, "ip_only");
-  EXPECT_EQ(matched[1].name, "ip_with_other");
-}
+// SelectInitialPosePois* tests は #144 で削除。
+// `initial_pose` system tag を廃止し、initial pose の選定ロジックは mapoi_server::compute_initial_poi_name
+// に移動した。新ロジックの test は mapoi_server 側に置く想定 (本 PR では未追加、follow-up #148 で扱う)。
 
 TEST_F(NavServerTestFixture, HasLandmarkTagDetection)
 {

@@ -19,6 +19,19 @@ Unreleased
 Breaking changes
 ----------------
 
+* ``initial_pose`` system tag を廃止 (#89 段階 3, #144)。
+
+  - 旧: ``initial_pose`` タグ付き POI の pose を地図ロード/切替時に自動配信
+  - 新: 新 map の **POI list 先頭** (landmark タグ POI は除外) を default として
+    採用。``SwitchMap.srv`` に追加した ``initial_poi_name`` で明示指定も可
+  - 配信経路: ``mapoi_server`` が新 map ロード時に POI 名を
+    ``mapoi_initialpose_poi`` (transient_local) に publish、
+    ``mapoi_nav_server`` がそれを受けて ``/initialpose`` に流す
+  - YAML migration: ``tags: [..., initial_pose]`` 行から ``initial_pose`` を
+    削除し、開始 POI を ``poi:`` 配下の先頭に並べる
+  - ``mapoi_gazebo_bridge`` / ``mapoi_gz_bridge`` の robot spawn 位置も同
+    semantics (POI list 先頭) に移行
+
 * ``pause`` system tag の発火条件を厳格化 (#89 段階 2, #143):
 
   - 旧: ``nav_mode_ != IDLE`` (= GOAL or ROUTE 走行中) なら全 POI で発火
