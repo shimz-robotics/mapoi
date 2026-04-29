@@ -195,6 +195,10 @@ private:
   geometry_msgs::msg::Pose initialpose_retry_pose_;
   std::string initialpose_retry_source_;
   int initialpose_retry_attempt_ {0};
+  // subscriber 検知後の追加 republish カウント (#149 round 5 medium):
+  // AMCL が「subscriber visible だが処理 ready 直前」のケースで取りこぼしを防ぐため、
+  // subscriber 検知後も短いインターバルで N 回連続 publish する。
+  int initialpose_post_subscribe_republish_done_ {0};
 
 #ifdef UNIT_TEST
   friend class NavServerTestFixture;

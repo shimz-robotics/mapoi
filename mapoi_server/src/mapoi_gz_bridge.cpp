@@ -221,13 +221,23 @@ ConfigLoadStatus MapoiGzBridge::load_gazebo_info(
           }
         }
         if (is_landmark) continue;
-        if (poi["pose"]) {
-          const auto & pose = poi["pose"];
-          out.initial_x = pose["x"] ? pose["x"].as<double>() : 0.0;
-          out.initial_y = pose["y"] ? pose["y"].as<double>() : 0.0;
-          out.initial_yaw = pose["yaw"] ? pose["yaw"].as<double>() : 0.0;
-          out.has_initial_pose = true;
+        // pose 妥当性 check: mapoi_server::compute_initial_poi_name と挙動一致 (#149 round 5 high)。
+        // pose ノード or x/y/yaw が欠落 / numeric 不可なら次の POI を試す。
+        // (旧仕様の 0.0 fallback は意図しない (0,0) spawn の原因になり得るため撤廃。
+        // 共通 helper 化は #150 follow-up。)
+        if (!poi["pose"] || !poi["pose"].IsMap()) continue;
+        const auto & pose = poi["pose"];
+        bool pose_ok = true;
+        for (const char * k : {"x", "y", "yaw"}) {
+          if (!pose[k]) { pose_ok = false; break; }
+          try { (void)pose[k].as<double>(); }
+          catch (const YAML::Exception &) { pose_ok = false; break; }
         }
+        if (!pose_ok) continue;
+        out.initial_x = pose["x"].as<double>();
+        out.initial_y = pose["y"].as<double>();
+        out.initial_yaw = pose["yaw"].as<double>();
+        out.has_initial_pose = true;
         break;
       }
     }

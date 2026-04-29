@@ -21,6 +21,10 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   this->declare_parameter<std::string>("initial_pose_topic", "/initialpose");
   this->declare_parameter<double>("initialpose_retry_interval_sec", 0.1);
   this->declare_parameter<int>("initialpose_retry_max_attempts", 50);
+  // subscriber 検知後 republish 回数 (#149 round 5 medium)。
+  // AMCL が「subscriber visible だが処理 ready 直前」のケースで初回 publish を取りこぼすことが
+  // あるため、検知後に N 回 republish する。1 = 検知時の 1 回のみ (= 旧挙動)。
+  this->declare_parameter<int>("initialpose_post_subscribe_republish_count", 3);
 
   // initialpose subscriber and publisher
   // mapoi_server が initial pose POI 名を transient_local で publish する (#144) ので、
@@ -324,6 +328,7 @@ void MapoiNavServer::schedule_initialpose_retry(
   initialpose_retry_pose_ = pose;
   initialpose_retry_source_ = source;
   initialpose_retry_attempt_ = 0;
+  initialpose_post_subscribe_republish_done_ = 0;
   if (initialpose_retry_timer_) {
     initialpose_retry_timer_->cancel();
     initialpose_retry_timer_.reset();
@@ -355,6 +360,8 @@ void MapoiNavServer::schedule_initialpose_retry(
 void MapoiNavServer::initialpose_retry_callback()
 {
   if (nav2_initialpose_pub_->get_subscription_count() > 0) {
+    // subscriber 検知後は N 回 republish する (#149 round 5 medium)。
+    // AMCL が「subscriber visible でも処理 ready 直前」のケースで取りこぼすため。
     geometry_msgs::msg::PoseWithCovarianceStamped msg;
     msg.header.frame_id = this->get_parameter("map_frame").as_string();
     msg.header.stamp = this->now();
@@ -363,11 +370,18 @@ void MapoiNavServer::initialpose_retry_callback()
     msg.pose.covariance[7] = 0.25;
     msg.pose.covariance[35] = 0.06853891945200942;
     nav2_initialpose_pub_->publish(msg);
-    RCLCPP_INFO(this->get_logger(),
-      "initialpose subscriber detected after %d retries; re-published initial pose (%s).",
-      initialpose_retry_attempt_, initialpose_retry_source_.c_str());
-    initialpose_retry_timer_->cancel();
-    initialpose_retry_timer_.reset();
+    ++initialpose_post_subscribe_republish_done_;
+    int post_n =
+      this->get_parameter("initialpose_post_subscribe_republish_count").as_int();
+    if (post_n < 1) post_n = 1;
+    if (initialpose_post_subscribe_republish_done_ >= post_n) {
+      RCLCPP_INFO(this->get_logger(),
+        "initialpose subscriber detected; re-published %d times after %d retries (%s).",
+        initialpose_post_subscribe_republish_done_, initialpose_retry_attempt_,
+        initialpose_retry_source_.c_str());
+      initialpose_retry_timer_->cancel();
+      initialpose_retry_timer_.reset();
+    }
     return;
   }
   ++initialpose_retry_attempt_;

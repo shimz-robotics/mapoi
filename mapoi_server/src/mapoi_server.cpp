@@ -438,9 +438,10 @@ void MapoiServer::publish_initial_poi_name(const std::string & requested_name)
   // shared state を持たず、呼び出し側が直接渡す形にして thread safety / lifecycle race を排除
   // (Cursor review #149 round 2 high 対応)。
   const std::string target = compute_initial_poi_name(pois_list_, requested_name);
-  // 純関数化 (#149 round 4 high) で log responsibility が呼び出し側に移ったので、
-  // requested_name 未マッチを WARN する。
-  if (!requested_name.empty() && target != requested_name) {
+  // ログ順序: target.empty() の WARN は下流に任せ、ここでは「requested 不採用かつ fallback 候補が
+  // 存在する」ケースのみ WARN を出す (#149 round 5 low: target.empty() 時に紛らわしい両 WARN が
+  // 出るのを避ける)。
+  if (!requested_name.empty() && !target.empty() && target != requested_name) {
     RCLCPP_WARN(this->get_logger(),
       "Requested initial_poi_name '%s' was not adopted (not found / landmark / invalid pose); "
       "falling back to POI list first ('%s').",
