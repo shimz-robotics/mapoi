@@ -332,7 +332,7 @@ void MapoiRviz2Publisher::timer_callback(){
 
     // POI radius を床面の円で描画 (全 POI 共通)。
     // primary tag の color を採用。優先順位は tags 配列の順序ではなく
-    // goal > event > origin で固定 (poi.tags が ["event", "goal"] のような順でも goal が勝つ)。
+    // goal > event で固定 (poi.tags が ["event", "goal"] のような順でも goal が勝つ)。
     if (poi.tolerance.xy > 0.0) {
       const auto has_tag = [&poi](const std::string & target) {
         for (const auto & t : poi.tags) {
@@ -348,9 +348,6 @@ void MapoiRviz2Publisher::timer_callback(){
         circle_target = &ma_waypoints;
       } else if (has_tag("event")) {
         cr = 0.0f; cg = 0.0f; cb = 1.0f;
-        circle_target = &ma_events;
-      } else if (has_tag("origin")) {
-        cr = 1.0f; cg = 0.0f; cb = 0.0f;
         circle_target = &ma_events;
       }
       add_radius_circle(pose, poi.tolerance.xy, cr, cg, cb, id, *circle_target);
@@ -404,16 +401,6 @@ void MapoiRviz2Publisher::timer_callback(){
           ma_events.markers.push_back(m_text);
           id += 1;
         }
-      }
-      else if(tag == "origin"){
-        visualization_msgs::msg::Marker m_event = default_arrow_marker;
-        m_event.pose = pose;
-        m_event.pose.position.z = 0.1;
-        apply_radius_scale(m_event, poi.tolerance.xy);
-        m_event.color.r = 1.0; m_event.color.g = 0.0; m_event.color.b = 0.0; m_event.color.a = 0.7;
-        m_event.id = id;
-        ma_events.markers.push_back(m_event);
-        id += 1;
       }
       else if(tag == "landmark"){
         // landmark POI も矢印 + label を描画する (#85)。reference 専用なので
@@ -503,7 +490,7 @@ void MapoiRviz2Publisher::timer_callback(){
   //   "all"      : 全 route 表示、active route (highlighted_route_names_ に含む) は太線+不透明で強調
   //   "selected" : active route のみ表示
   //   "none"     : 表示しない (DELETEALL で既存も消す)
-  // POI marker (goal=green / event=blue / origin=red / gray) と被らない palette を使う。
+  // POI marker (goal=green / event=blue / landmark=gray) と被らない palette を使う。
   static constexpr std::array<std::array<float, 3>, 6> ROUTE_PALETTE = {{
     {1.0f, 0.5f, 0.0f},   // orange
     {1.0f, 0.0f, 1.0f},   // magenta

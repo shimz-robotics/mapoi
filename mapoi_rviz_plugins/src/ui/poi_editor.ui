@@ -131,7 +131,7 @@
      </item>
      <item row="0" column="5">
       <property name="text">
-       <string>Distination, origin</string>
+       <string>Distination, landmark</string>
       </property>
      </item>
      <item row="1" column="0">
