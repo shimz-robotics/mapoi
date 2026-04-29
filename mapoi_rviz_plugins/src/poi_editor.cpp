@@ -1,5 +1,7 @@
 #include "mapoi_rviz_plugins/poi_editor.hpp"
 #include <class_loader/class_loader.hpp>
+#include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 
@@ -19,6 +21,31 @@ using namespace std::chrono_literals;
 namespace mapoi_rviz_plugins
 {
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("mapoi_rviz_plugins.poi_editor");
+
+namespace {
+// 文字列を strict に double に parse し、有限性を確認する純関数 (Codex review #139 medium 対応)。
+// std::stod は "1abc" のような部分数値を 1 として返し、QString::toDouble の ok flag も
+// 同様の問題があるため、validation と save で別 parser を使うと結果がズレる。共通 helper に
+// 寄せて、validation と保存で同じ判定基準を使う。min check は呼び出し側の責任。
+//
+// success: parsed value を out に書き、true を返す。
+// failure: out 不変、false を返す (parse failure / 末尾 garbage / NaN / +-Inf いずれも reject)。
+bool try_parse_finite_double(const std::string & str, double & out)
+{
+  if (str.empty()) return false;
+  try {
+    size_t pos = 0;
+    const double v = std::stod(str, &pos);
+    while (pos < str.size() && std::isspace(static_cast<unsigned char>(str[pos]))) ++pos;
+    if (pos != str.size()) return false;
+    if (!std::isfinite(v)) return false;
+    out = v;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+}  // namespace
 
 PoiEditorPanel::PoiEditorPanel(QWidget* parent) : Panel(parent),  ui_(new Ui::PoiEditorUi())
 {
@@ -343,8 +370,9 @@ void PoiEditorPanel::NewButton()
   ui_->PoiTable->setItem(new_row, 0, new QTableWidgetItem("new_poi"));
   ui_->PoiTable->setItem(new_row, 1, new QTableWidgetItem(""));
   ui_->PoiTable->setItem(new_row, 2, new QTableWidgetItem("0.0, 0.0, 0.0"));
-  ui_->PoiTable->setItem(new_row, 3, new QTableWidgetItem("0.5"));
-  ui_->PoiTable->setItem(new_row, 4, new QTableWidgetItem(""));
+  ui_->PoiTable->setItem(new_row, 3, new QTableWidgetItem("0.5"));     // tolerance.xy [m]
+  ui_->PoiTable->setItem(new_row, 4, new QTableWidgetItem("45.0"));    // tolerance.yaw [deg] (= π/4 rad)
+  ui_->PoiTable->setItem(new_row, 5, new QTableWidgetItem(""));        // tags
   UpdatePoiCount();
 }
 
@@ -437,11 +465,21 @@ void PoiEditorPanel::SaveButton()
         tr("Failed to parse pose at row %1: %2").arg(row + 1).arg(e.what()));
       return;
     }
-    // tolerance struct (#87): yaw は本 PR では UI 入力欄を持たないため、yaw 値を持つ POI を
-    // Panel から save すると yaw が 0 にリセットされる挙動。tolerance.yaw 入力 UI は別 PR で追加予定。
-    poi["tolerance"]["xy"] = ui_->PoiTable->item(logical_row, 3)->text().toDouble();
-    poi["tolerance"]["yaw"] = 0.0;
-    auto tags_str  = ui_->PoiTable->item(logical_row, 4)->text().toStdString();
+    // tolerance struct (#87 / #138): xy は m そのまま、yaw は UI deg 入力 → rad 変換して保存。
+    // ValidatePois で同じ try_parse_finite_double を通っているので parse 失敗は通常起きないが、
+    // 二段防御として critical error にして save を中断する (Codex review #139 medium 対応)。
+    double xy_val = 0.0;
+    double yaw_deg = 0.0;
+    if (!try_parse_finite_double(ui_->PoiTable->item(logical_row, 3)->text().toStdString(), xy_val)
+        || !try_parse_finite_double(ui_->PoiTable->item(logical_row, 4)->text().toStdString(), yaw_deg)) {
+      RCLCPP_ERROR(LOGGER, "Failed to parse tolerance at row %d (post-validation race?)", row);
+      QMessageBox::critical(this, tr("Save Error"),
+        tr("Failed to parse tolerance at row %1.").arg(row + 1));
+      return;
+    }
+    poi["tolerance"]["xy"] = xy_val;
+    poi["tolerance"]["yaw"] = yaw_deg * M_PI / 180.0;
+    auto tags_str  = ui_->PoiTable->item(logical_row, 5)->text().toStdString();
     poi["tags"] = this->SplitSentence(tags_str, ", ");
     pois_list.push_back(poi);
   }
@@ -564,7 +602,8 @@ void PoiEditorPanel::TagFilterChanged(int index)
       ui_->PoiTable->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(p.description)));
       ui_->PoiTable->setItem(row, 2, new QTableWidgetItem(tr("%1, %2, %3").arg(p.pose.position.x).arg(p.pose.position.y).arg(this->calcYaw(p.pose))));
       ui_->PoiTable->setItem(row, 3, new QTableWidgetItem(tr("%1").arg(p.tolerance.xy)));
-      ui_->PoiTable->setItem(row, 4, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
+      ui_->PoiTable->setItem(row, 4, new QTableWidgetItem(tr("%1").arg(p.tolerance.yaw * 180.0 / M_PI)));
+      ui_->PoiTable->setItem(row, 5, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
       row++;
     }
   }
@@ -634,14 +673,14 @@ void PoiEditorPanel::TagHelperSelected(int index)
   }
   std::string tag_name = selected.toStdString();
 
-  // Get current row's tags cell (column 4)
+  // Get current row's tags cell (column 5; tags は #138 で column 4→5 にシフト)
   int current_row = ui_->PoiTable->currentRow();
   if (current_row < 0) {
     ui_->TagHelperComboBox->setCurrentIndex(0);
     return;
   }
 
-  auto* tags_item = ui_->PoiTable->item(current_row, 4);
+  auto* tags_item = ui_->PoiTable->item(current_row, 5);
   std::string current_tags = tags_item ? tags_item->text().toStdString() : "";
 
   // Check if tag already exists
@@ -653,14 +692,14 @@ void PoiEditorPanel::TagHelperSelected(int index)
     }
   }
 
-  // Append tag
+  // Append tag (column 5 = tags、column 4 (tolerance.yaw) を上書きしないよう注意 — Codex review #139 high)
   std::string new_tags;
   if (current_tags.empty()) {
     new_tags = tag_name;
   } else {
     new_tags = current_tags + ", " + tag_name;
   }
-  ui_->PoiTable->setItem(current_row, 4, new QTableWidgetItem(QString::fromStdString(new_tags)));
+  ui_->PoiTable->setItem(current_row, 5, new QTableWidgetItem(QString::fromStdString(new_tags)));
 
   // Reset combo to placeholder
   ui_->TagHelperComboBox->setCurrentIndex(0);
@@ -708,16 +747,35 @@ bool PoiEditorPanel::ValidatePois()
       }
     }
 
-    // Check tolerance.xy
+    // Check tolerance.xy (m), min 0.001 m (#138 msg spec)
+    // Codex review #139 medium 対応: try_parse_finite_double で完全 parse + 有限性検査
+    // (std::stod は "1abc" を 1 として受け入れる、NaN/Inf も throw しないため SaveButton 側の
+    // QString::toDouble と挙動がズレる)。validation と save で同じ parser を使う。
     auto* tolerance_xy_item = ui_->PoiTable->item(logical_row, 3);
     std::string tolerance_xy_str = tolerance_xy_item ? tolerance_xy_item->text().toStdString() : "";
-    try {
-      double r = stod(tolerance_xy_str);
-      if (r < 0) {
-        warnings.append(tr("Row %1: tolerance.xy is negative").arg(row + 1));
+    {
+      double r = 0.0;
+      if (!try_parse_finite_double(tolerance_xy_str, r)) {
+        warnings.append(tr("Row %1: invalid tolerance.xy \"%2\"")
+                          .arg(row + 1).arg(QString::fromStdString(tolerance_xy_str)));
+      } else if (r < 0.001) {
+        warnings.append(tr("Row %1: tolerance.xy must be >= 0.001 m (got %2)")
+                          .arg(row + 1).arg(r));
       }
-    } catch (...) {
-      warnings.append(tr("Row %1: invalid tolerance.xy \"%2\"").arg(row + 1).arg(QString::fromStdString(tolerance_xy_str)));
+    }
+
+    // Check tolerance.yaw (deg), 内部 rad 換算で min 0.001 rad ≒ 0.057° (#138 msg spec)
+    auto* tolerance_yaw_item = ui_->PoiTable->item(logical_row, 4);
+    std::string tolerance_yaw_str = tolerance_yaw_item ? tolerance_yaw_item->text().toStdString() : "";
+    {
+      double yaw_deg = 0.0;
+      if (!try_parse_finite_double(tolerance_yaw_str, yaw_deg)) {
+        warnings.append(tr("Row %1: invalid tolerance.yaw \"%2\"")
+                          .arg(row + 1).arg(QString::fromStdString(tolerance_yaw_str)));
+      } else if (yaw_deg * M_PI / 180.0 < 0.001) {
+        warnings.append(tr("Row %1: tolerance.yaw must be >= 0.06 deg (≒ 0.001 rad) (got %2 deg)")
+                          .arg(row + 1).arg(yaw_deg));
+      }
     }
   }
 
@@ -732,7 +790,7 @@ bool PoiEditorPanel::ValidatePois()
   QStringList exclusivity_warnings;
   for (int row = 0; row < numRows; row++) {
     int logical_row = ui_->PoiTable->verticalHeader()->logicalIndex(row);
-    auto* tags_item = ui_->PoiTable->item(logical_row, 4);
+    auto* tags_item = ui_->PoiTable->item(logical_row, 5);
     std::string tags_str = tags_item ? tags_item->text().toStdString() : "";
     if (tags_str.empty()) continue;
 
@@ -761,7 +819,7 @@ bool PoiEditorPanel::ValidatePois()
   QStringList tag_warnings;
   for (int row = 0; row < numRows; row++) {
     int logical_row = ui_->PoiTable->verticalHeader()->logicalIndex(row);
-    auto* tags_item = ui_->PoiTable->item(logical_row, 4);
+    auto* tags_item = ui_->PoiTable->item(logical_row, 5);
     std::string tags_str = tags_item ? tags_item->text().toStdString() : "";
     if (tags_str.empty()) continue;
 
@@ -842,8 +900,10 @@ void PoiEditorPanel::UpdatePoiTable()
   // 一度 0 行にしてから再生成することで visual = logical を強制する。
   ui_->PoiTable->setRowCount(0);
   ui_->PoiTable->setRowCount(numRows);
-  ui_->PoiTable->setColumnCount(5);
-  ui_->PoiTable->setHorizontalHeaderLabels( QStringList() << tr("name") << tr("description") << tr("x, y, yaw") << tr("tolerance.xy") << tr("tags" ) );
+  ui_->PoiTable->setColumnCount(6);
+  ui_->PoiTable->setHorizontalHeaderLabels(
+    QStringList() << tr("name") << tr("description") << tr("x, y, yaw")
+                  << tr("tolerance.xy") << tr("tolerance.yaw (deg)") << tr("tags"));
   ui_->PoiTable->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
   ui_->PoiTable->verticalHeader()->setSectionsMovable(true);
   ui_->PoiTable->horizontalHeader()->setSortIndicatorShown(true);
@@ -856,7 +916,8 @@ void PoiEditorPanel::UpdatePoiTable()
     ui_->PoiTable->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(p.description)));
     ui_->PoiTable->setItem(row, 2, new QTableWidgetItem(tr("%1, %2, %3").arg(p.pose.position.x).arg(p.pose.position.y).arg(this->calcYaw(p.pose))));
     ui_->PoiTable->setItem(row, 3, new QTableWidgetItem(tr("%1").arg(p.tolerance.xy)));
-    ui_->PoiTable->setItem(row, 4, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
+    ui_->PoiTable->setItem(row, 4, new QTableWidgetItem(tr("%1").arg(p.tolerance.yaw * 180.0 / M_PI)));
+    ui_->PoiTable->setItem(row, 5, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
   }
   is_table_color_ = true;
   ui_->SaveButton->setText("save");

@@ -19,6 +19,9 @@ const {
   filterRouteWaypointCandidates,
   validatePoiTags,
   parseTolerance,
+  degToRad,
+  radToDeg,
+  TOLERANCE_MIN,
 } = filter;
 
 const poi = (name, tags) => ({ name, tags });
@@ -120,32 +123,69 @@ describe('filterRouteWaypointCandidates', () => {
   });
 });
 
+describe('degToRad / radToDeg', () => {
+  it('converts known angles', () => {
+    expect(degToRad(0)).toBeCloseTo(0, 6);
+    expect(degToRad(45)).toBeCloseTo(Math.PI / 4, 6);
+    expect(degToRad(90)).toBeCloseTo(Math.PI / 2, 6);
+    expect(degToRad(180)).toBeCloseTo(Math.PI, 6);
+    expect(radToDeg(Math.PI / 4)).toBeCloseTo(45, 6);
+    expect(radToDeg(Math.PI)).toBeCloseTo(180, 6);
+  });
+
+  it('parses string input alongside numeric', () => {
+    expect(degToRad('45')).toBeCloseTo(Math.PI / 4, 6);
+    expect(radToDeg('3.14159265')).toBeCloseTo(180, 4);
+  });
+
+  it('returns NaN for non-numeric input', () => {
+    expect(Number.isNaN(degToRad(''))).toBe(true);
+    expect(Number.isNaN(degToRad('abc'))).toBe(true);
+    expect(Number.isNaN(radToDeg(NaN))).toBe(true);
+  });
+
+  it('round-trips deg → rad → deg (#138)', () => {
+    [0.1, 1, 45, 90, 180, 359].forEach((deg) => {
+      expect(radToDeg(degToRad(deg))).toBeCloseTo(deg, 6);
+    });
+  });
+});
+
 describe('parseTolerance', () => {
-  it('preserves xy=0 as a finite value (not default 0.5)', () => {
-    // Codex review #137 medium: `||` だと意図的な 0 が 0.5 に化けるため
-    expect(parseTolerance('0', 0.1)).toEqual({ xy: 0, yaw: 0.1 });
+  it('exposes msg-spec min value (#138)', () => {
+    expect(TOLERANCE_MIN).toBe(0.001);
   });
 
-  it('falls back to xy=0.5 when input is empty / non-numeric', () => {
-    expect(parseTolerance('', undefined)).toEqual({ xy: 0.5, yaw: 0.0 });
-    expect(parseTolerance('abc', undefined)).toEqual({ xy: 0.5, yaw: 0.0 });
-    expect(parseTolerance(NaN, undefined)).toEqual({ xy: 0.5, yaw: 0.0 });
+  it('clamps xy < 0.001 to TOLERANCE_MIN (#138 spec)', () => {
+    // 0 / 負値 / 0 寄り は無反応 POI を作るため明示的に min に補正
+    expect(parseTolerance('0', 0.785)).toEqual({ xy: 0.001, yaw: 0.785 });
+    expect(parseTolerance('-0.5', 0.785)).toEqual({ xy: 0.001, yaw: 0.785 });
+    expect(parseTolerance('0.0005', 0.785)).toEqual({ xy: 0.001, yaw: 0.785 });
   });
 
-  it('preserves originalYaw including 0 when finite', () => {
-    expect(parseTolerance('0.3', 0)).toEqual({ xy: 0.3, yaw: 0 });
-    expect(parseTolerance('0.3', 0.15)).toEqual({ xy: 0.3, yaw: 0.15 });
+  it('clamps yaw < 0.001 to TOLERANCE_MIN (#138 spec)', () => {
+    expect(parseTolerance('0.5', 0)).toEqual({ xy: 0.5, yaw: 0.001 });
+    expect(parseTolerance('0.5', -0.1)).toEqual({ xy: 0.5, yaw: 0.001 });
+    expect(parseTolerance('0.5', 0.0005)).toEqual({ xy: 0.5, yaw: 0.001 });
   });
 
-  it('defaults yaw to 0 when originalYaw is missing / null / NaN', () => {
-    expect(parseTolerance('0.3', undefined)).toEqual({ xy: 0.3, yaw: 0 });
-    expect(parseTolerance('0.3', null)).toEqual({ xy: 0.3, yaw: 0 });
-    expect(parseTolerance('0.3', NaN)).toEqual({ xy: 0.3, yaw: 0 });
+  it('falls back to TOLERANCE_MIN when input is empty / non-numeric / NaN', () => {
+    expect(parseTolerance('', undefined)).toEqual({ xy: 0.001, yaw: 0.001 });
+    expect(parseTolerance('abc', null)).toEqual({ xy: 0.001, yaw: 0.001 });
+    expect(parseTolerance(NaN, NaN)).toEqual({ xy: 0.001, yaw: 0.001 });
   });
 
-  it('parses numeric input alongside string input', () => {
-    expect(parseTolerance(0.42, 0)).toEqual({ xy: 0.42, yaw: 0 });
-    expect(parseTolerance('0.42', 0)).toEqual({ xy: 0.42, yaw: 0 });
+  it('preserves valid values above TOLERANCE_MIN', () => {
+    expect(parseTolerance('0.5', 0.785)).toEqual({ xy: 0.5, yaw: 0.785 });
+    expect(parseTolerance(0.42, Math.PI / 6)).toEqual({ xy: 0.42, yaw: Math.PI / 6 });
+  });
+
+  it('handles deg-converted yaw values (typical UI flow)', () => {
+    // UI で 45° 入力 → degToRad(45) → parseTolerance に渡す流れ
+    const yawRad = degToRad(45);
+    const result = parseTolerance('0.5', yawRad);
+    expect(result.xy).toBe(0.5);
+    expect(result.yaw).toBeCloseTo(Math.PI / 4, 6);
   });
 });
 
