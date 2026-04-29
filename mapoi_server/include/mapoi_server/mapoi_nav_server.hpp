@@ -87,7 +87,8 @@ private:
   // (Codex review #147 round 2 high 対応)。
   void goal_response_callback(std::string target, size_t nav_generation,
                                 const GoalHandleFollowWaypoints::SharedPtr & goal_handle);
-  void feedback_callback(GoalHandleFollowWaypoints::SharedPtr, const std::shared_ptr<const FollowWaypoints::Feedback> feedback);
+  void feedback_callback(size_t nav_generation, GoalHandleFollowWaypoints::SharedPtr,
+                          const std::shared_ptr<const FollowWaypoints::Feedback> feedback);
   void result_callback(std::string target, size_t nav_generation,
                        const GoalHandleFollowWaypoints::WrappedResult & result);
 
