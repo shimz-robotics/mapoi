@@ -182,8 +182,9 @@ def main() -> int:
         if not example_path.exists():
             issues.append(f'sample yaml が存在しない: {example_path.relative_to(REPO_ROOT)}')
             continue
-        for path in (server_path, example_path):
-            issues.extend(_validate_single(path, _load(path)))
+        # server を代表として individual validation。example 側は同期 check に
+        # 委ねる (両方を走らせると同一違反を 2 重 report してしまうため)。
+        issues.extend(_validate_single(server_path, _load(server_path)))
         issues.extend(_validate_pair_sync(server_path, example_path))
 
     if issues:
