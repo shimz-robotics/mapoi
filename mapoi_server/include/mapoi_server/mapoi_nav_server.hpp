@@ -105,6 +105,12 @@ private:
   uint32_t current_waypoint_index_ = 0;
   std::vector<geometry_msgs::msg::PoseStamped> paused_waypoints_;
 
+  // active route の POI 名 set (waypoints + landmarks 両方を含む) (#143)。
+  // route 受信 (on_route_received) で set、route 終端 / cancel / GOAL 切替で clear。
+  // radius_check_callback の pause 発火条件 (active route POI に含まれる時のみ) で参照。
+  std::unordered_set<std::string> current_route_poi_names_;
+  void clear_current_route_poi_names_();
+
   void reset_nav_state();
 
   std::mutex data_mutex_;

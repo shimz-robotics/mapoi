@@ -1,4 +1,11 @@
-# Retrieve the ordered list of POIs that make up a named route
+# Retrieve the POIs that make up a named route, separated into navigated waypoints
+# and reference-only landmarks (#143)
 string route_name  # Name of the route to look up
 ---
-mapoi_interfaces/PointOfInterest[] pois_list  # Ordered waypoints in the route
+# Ordered waypoints in the route. Each POI is sent to Nav2 FollowWaypoints.
+mapoi_interfaces/PointOfInterest[] pois_list
+
+# Landmarks attached to the route. NOT navigated by Nav2, but radius-monitored
+# while this route is active (e.g. radius event publish, route-scoped pause).
+# Order is informational only.
+mapoi_interfaces/PointOfInterest[] landmark_pois

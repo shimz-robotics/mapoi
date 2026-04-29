@@ -190,6 +190,12 @@ void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedP
           paused_goal_pose_ = goal_pose;
           nav_mode_ = NavMode::GOAL;
           is_paused_ = false;
+          // 直前まで ROUTE モードだった場合に備えて active route POI set を clear (#143)。
+          // GOAL モードでは route POI 限定の pause 発火 logic を走らせない。
+          {
+            std::lock_guard<std::mutex> lock(data_mutex_);
+            current_route_poi_names_.clear();
+          }
 
           auto goal_msg = NavigateToPose::Goal();
           goal_msg.pose = goal_pose;
@@ -383,8 +389,12 @@ void MapoiNavServer::on_route_received(
   }
 
   const auto & route_poi = result->pois_list;
-  RCLCPP_INFO(this->get_logger(), "Received Route with %zu waypoints.", route_poi.size());
+  const auto & route_landmarks = result->landmark_pois;
+  RCLCPP_INFO(this->get_logger(),
+    "Received Route '%s' with %zu waypoints + %zu landmarks.",
+    route_name.c_str(), route_poi.size(), route_landmarks.size());
 
+  // Nav2 FollowWaypoints へ送るのは waypoints のみ。landmark は radius 監視専用 (#143)。
   std::vector<geometry_msgs::msg::PoseStamped> waypoints;
   for (size_t i = 0; i < route_poi.size(); ++i) {
     geometry_msgs::msg::PoseStamped wp;
@@ -397,6 +407,19 @@ void MapoiNavServer::on_route_received(
   if (waypoints.empty()) {
     RCLCPP_ERROR(this->get_logger(), "Route is empty. Cannot navigate.");
     return;
+  }
+
+  // active route の POI 名 set を構築 (waypoints + landmarks 両方を radius_check で
+  // pause 発火対象として扱う)。lock 下で書き込み (#143)。
+  {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    current_route_poi_names_.clear();
+    for (const auto & p : route_poi) {
+      current_route_poi_names_.insert(p.name);
+    }
+    for (const auto & p : route_landmarks) {
+      current_route_poi_names_.insert(p.name);
+    }
   }
 
   current_route_waypoints_ = waypoints;
@@ -571,6 +594,12 @@ void MapoiNavServer::reset_nav_state()
   current_route_waypoints_.clear();
   paused_waypoints_.clear();
   current_waypoint_index_ = 0;
+  // active route POI set もここで clear (#143)。route 終端 / cancel / failure 等で route が
+  // 終わったあとに pause 発火条件が誤って残らないようにする。
+  {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    current_route_poi_names_.clear();
+  }
 }
 
 void MapoiNavServer::mapoi_pause_cb(const std_msgs::msg::String::SharedPtr msg)
@@ -791,10 +820,15 @@ void MapoiNavServer::radius_check_callback()
       double dist = distance_2d(poi.pose, rx, ry);
       bool was_inside = poi_inside_state_[poi.name];
 
-      // pause タグを持つか確認
+      // pause タグを持つかつ active route の POI かを確認 (#143):
+      //   - pause 自動発火は **ROUTE 走行中の active route POI のみ** に厳格化
+      //   - 別 route で pause タグが付いた POI に偶然 ENTER しても発火しない
+      //   - GOAL 走行 / IDLE では発火しない (操作者の意図しない停止を避ける)
       bool is_pause_poi = false;
-      for (const auto & tag : poi.tags) {
-        if (tag == "pause") { is_pause_poi = true; break; }
+      if (nav_mode_ == NavMode::ROUTE && current_route_poi_names_.count(poi.name) > 0) {
+        for (const auto & tag : poi.tags) {
+          if (tag == "pause") { is_pause_poi = true; break; }
+        }
       }
 
       if (!was_inside && dist <= poi.tolerance.xy) {
@@ -807,7 +841,7 @@ void MapoiNavServer::radius_check_callback()
         poi_event_pub_->publish(event);
         RCLCPP_INFO(this->get_logger(), "POI ENTER: %s (dist=%.2f, tolerance.xy=%.2f)",
                     poi.name.c_str(), dist, poi.tolerance.xy);
-        // pauseタグがあれば自動pause対象
+        // pauseタグがあれば自動pause対象 (active route POI かつ ROUTE 走行中のみ)
         if (is_pause_poi) {
           pause_triggered_poi = poi.name;
         }
@@ -825,14 +859,20 @@ void MapoiNavServer::radius_check_callback()
     }
   }  // data_mutex_ をここで解放
 
-  // pause タグ POI の ENTER → 走行中かつ未一時停止なら自動 pause
-  if (!pause_triggered_poi.empty() && nav_mode_ != NavMode::IDLE && !is_paused_) {
+  // pause タグ POI の ENTER → 自動 pause (is_pause_poi 判定で route + ROUTE mode を確認済)
+  if (!pause_triggered_poi.empty() && !is_paused_) {
     RCLCPP_INFO(this->get_logger(),
-      "Auto-pausing navigation: entered pause POI '%s'", pause_triggered_poi.c_str());
+      "Auto-pausing route navigation: entered pause POI '%s'", pause_triggered_poi.c_str());
     auto msg = std::make_shared<std_msgs::msg::String>();
     msg->data = "poi_event:" + pause_triggered_poi;
     mapoi_pause_cb(msg);
   }
+}
+
+void MapoiNavServer::clear_current_route_poi_names_()
+{
+  std::lock_guard<std::mutex> lock(data_mutex_);
+  current_route_poi_names_.clear();
 }
 
 double MapoiNavServer::distance_2d(const geometry_msgs::msg::Pose & poi_pose, double rx, double ry)

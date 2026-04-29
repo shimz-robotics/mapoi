@@ -19,6 +19,23 @@ Unreleased
 Breaking changes
 ----------------
 
+* ``pause`` system tag の発火条件を厳格化 (#89 段階 2, #143):
+
+  - 旧: ``nav_mode_ != IDLE`` (= GOAL or ROUTE 走行中) なら全 POI で発火
+  - 新: ``nav_mode_ == ROUTE`` かつ active route の ``waypoints`` / ``landmarks``
+    に含まれる POI でのみ発火。GOAL 走行や IDLE では発火しない
+
+  既存挙動からの変更点として、単発 ``mapoi_goal_pose_poi`` で偶然 ``pause`` POI に
+  進入しても自動 pause しなくなる。route ベースのシナリオでのみ pause が走る形に
+  整理した。
+
+* ``GetRoutePois.srv`` の response に ``landmark_pois`` フィールドを追加 (#143)。
+  yaml の ``route.landmarks`` で参照された POI が response に入る。Nav2 へは
+  送られず、radius 監視と route スコープの pause 発火に使う。
+
+* ``landmark × pause`` 排他追加。landmark POI は到達不可な reference のため
+  pause 動作が成立しない。WebUI / rviz Panel / API の validation で reject。
+
 * System tag ``goal`` renamed to ``waypoint``. Both single navigation
   targets and route waypoints share this tag (Nav2 navigation 到達対象).
   YAML ``tags: [goal, ...]`` must be migrated to ``tags: [waypoint, ...]``.

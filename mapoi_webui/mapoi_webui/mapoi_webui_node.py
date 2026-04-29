@@ -49,6 +49,33 @@ def _validate_unique_names(items, label):
 _TOLERANCE_MIN = 0.001
 
 
+def _validate_pois_tag_exclusivity(pois):
+    """POI list の tag 排他組合せを backend でも reject する (#85, #143)。
+
+    frontend (poi-editor.formOk → MapoiPoiFilter.validatePoiTags) で reject 済みだが、
+    yaml 直編集や別 client からの POST に対する保険として backend でも検査。
+    return: エラーメッセージ文字列 (issue あり) または None (OK)。
+    """
+    for i, poi in enumerate(pois):
+        tags = []
+        if isinstance(poi, dict) and isinstance(poi.get('tags'), list):
+            tags = [str(t).lower() for t in poi['tags']]
+        has_waypoint = 'waypoint' in tags
+        has_landmark = 'landmark' in tags
+        has_initial_pose = 'initial_pose' in tags
+        has_pause = 'pause' in tags
+        name = (poi.get('name', '?') if isinstance(poi, dict) else '?')
+        if has_waypoint and has_landmark:
+            return (f'POI #{i} ({name}): "waypoint" と "landmark" は併用できません '
+                    '(landmark は Nav2 navigation 不可な reference 専用)')
+        if has_initial_pose and has_landmark:
+            return (f'POI #{i} ({name}): "initial_pose" と "landmark" は併用できません')
+        if has_pause and has_landmark:
+            return (f'POI #{i} ({name}): "pause" と "landmark" は併用できません '
+                    '(landmark は到達不可な reference のため pause 動作が成立しません)')
+    return None
+
+
 def _validate_pois_tolerance(pois):
     """POI list の tolerance.{xy,yaw} が finite な number で >= 0.001 を満たすかを検査する (#138)。
 
@@ -396,6 +423,9 @@ class MapoiWebNode(Node):
             # frontend 経由なら poi-editor が reject 済みだが、yaml 直編集や
             # 別 client からの POST に対する保険として 400 で reject する。
             err = _validate_unique_names(data['pois'], 'POI')
+            if err:
+                return jsonify({'error': err}), 400
+            err = _validate_pois_tag_exclusivity(data['pois'])
             if err:
                 return jsonify({'error': err}), 400
             err = _validate_pois_tolerance(data['pois'])
