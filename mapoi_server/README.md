@@ -96,7 +96,7 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 
 | トピック名 | 型 | 説明 |
 | --- | --- | --- |
-| `mapoi_initialpose_poi` | `std_msgs/String` | 指定した POI 名の位置に初期位置を設定 |
+| `mapoi_initialpose_poi` | `mapoi_interfaces/InitialPoseRequest` | 初期位置に採用する POI 名 (`{map_name, poi_name}`)。bridge 側は `map_name` 一致時のみ採用。空 `poi_name` は無視 |
 | `mapoi_goal_pose_poi` | `std_msgs/String` | 指定した POI 名の位置に自律走行 |
 | `mapoi_route` | `std_msgs/String` | 指定したルート名のウェイポイントを順に走行 |
 | `mapoi_pause` | `std_msgs/String` | ナビゲーションの一時停止 |

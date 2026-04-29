@@ -25,7 +25,7 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
     "mapoi_config_path", rclcpp::QoS(1).transient_local());
   // Publish initial pose POI name (#144): mapoi_nav_server がこれを受けて /initialpose を流す。
   // 起動時 / SwitchMap / reload で publish する。後起動 subscriber でも受信できるよう transient_local。
-  initialpose_poi_publisher_ = this->create_publisher<std_msgs::msg::String>(
+  initialpose_poi_publisher_ = this->create_publisher<mapoi_interfaces::msg::InitialPoseRequest>(
     "mapoi_initialpose_poi", rclcpp::QoS(1).transient_local());
   int pub_interval_ms = this->get_parameter("pub_interval_ms").as_int();
   timer_ = this->create_wall_timer(std::chrono::milliseconds(pub_interval_ms), [this]() {
@@ -453,8 +453,9 @@ void MapoiServer::publish_initial_poi_name(const std::string & requested_name)
       map_name_.c_str());
     return;
   }
-  auto msg = std_msgs::msg::String();
-  msg.data = target;
+  auto msg = mapoi_interfaces::msg::InitialPoseRequest();
+  msg.map_name = map_name_;
+  msg.poi_name = target;
   initialpose_poi_publisher_->publish(msg);
   RCLCPP_INFO(this->get_logger(),
     "Published initial pose POI name '%s' for map '%s' (#144).",

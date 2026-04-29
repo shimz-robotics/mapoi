@@ -13,6 +13,7 @@ from rclpy.qos import QoSProfile, DurabilityPolicy
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from mapoi_interfaces.srv import GetMapsInfo, GetTagDefinitions
+from mapoi_interfaces.msg import InitialPoseRequest
 import tf2_ros
 
 from flask import Flask, jsonify, request, send_from_directory, Response
@@ -151,7 +152,11 @@ class MapoiWebNode(Node):
         self.cancel_pub_ = self.create_publisher(String, 'mapoi_cancel', 10)
         self.pause_pub_  = self.create_publisher(String, 'mapoi_pause',  10)
         self.resume_pub_ = self.create_publisher(String, 'mapoi_resume', 10)
-        self.initialpose_poi_pub_ = self.create_publisher(String, 'mapoi_initialpose_poi', 10)
+        # mapoi_initialpose_poi は #149 round 8 で {map_name, poi_name} 型に変更。
+        # transient_local QoS で後起動 subscriber (bridge / nav_server) も latched 値を拾える。
+        initialpose_poi_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.initialpose_poi_pub_ = self.create_publisher(
+            InitialPoseRequest, 'mapoi_initialpose_poi', initialpose_poi_qos)
 
         # TF for robot pose
         self.tf_buffer_ = tf2_ros.Buffer()
@@ -586,8 +591,9 @@ class MapoiWebNode(Node):
             data = request.get_json()
             if not data or 'poi_name' not in data:
                 return jsonify({'error': 'poi_name required'}), 400
-            msg = String()
-            msg.data = data['poi_name']
+            msg = InitialPoseRequest()
+            msg.map_name = node.map_name_
+            msg.poi_name = data['poi_name']
             _, warning = node.publish_with_subscriber_check(
                 node.initialpose_poi_pub_, msg, 'mapoi_initialpose_poi')
             node.get_logger().info(f'Initial pose: {data["poi_name"]}')

@@ -41,6 +41,13 @@ Breaking changes
     ``initialpose_retry_max_attempts``,
     ``initialpose_post_subscribe_republish_count``)。blocking wait による
     他 callback 停止の回帰を防止
+  - ``mapoi_initialpose_poi`` topic の型変更: ``std_msgs/String`` →
+    ``mapoi_interfaces/InitialPoseRequest`` (``{map_name, poi_name}``)。
+    SwitchMap 中の topic 同期 race (bridge / nav_server が古い世代の POI 名を
+    採用してしまう) を防ぐため、subscriber 側は ``map_name`` で世代を検証する。
+    publisher: ``mapoi_server``, ``mapoi_webui`` (両方更新済)。
+    subscriber: ``mapoi_nav_server``, ``mapoi_gazebo_bridge``,
+    ``mapoi_gz_bridge`` (全て更新済)
 
 * ``pause`` system tag の発火条件を厳格化 (#89 段階 2, #143):
 

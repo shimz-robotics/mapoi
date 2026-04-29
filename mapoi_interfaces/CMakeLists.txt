@@ -14,6 +14,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/PointOfInterest.msg"
   "msg/PoiEvent.msg"
   "msg/TagDefinition.msg"
+  "msg/InitialPoseRequest.msg"
   "srv/SwitchMap.srv"
   "srv/GetMapsInfo.srv"
   "srv/GetPoisInfo.srv"

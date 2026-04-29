@@ -31,6 +31,7 @@
 #include "mapoi_interfaces/srv/get_tag_definitions.hpp"
 #include "mapoi_interfaces/msg/point_of_interest.hpp"
 #include "mapoi_interfaces/msg/poi_event.hpp"
+#include "mapoi_interfaces/msg/initial_pose_request.hpp"
 
 class MapoiNavServer : public rclcpp::Node
 {
@@ -46,7 +47,7 @@ public:
 
 private:
   // --- publisher & subscriber ---
-  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_initialpose_poi_sub_;
+  rclcpp::Subscription<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr mapoi_initialpose_poi_sub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr nav2_initialpose_pub_;
 
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_goal_pose_poi_sub_;
@@ -57,7 +58,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_pause_sub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_resume_sub_;
 
-  void mapoi_initialpose_poi_cb(const std_msgs::msg::String::SharedPtr msg);
+  void mapoi_initialpose_poi_cb(const mapoi_interfaces::msg::InitialPoseRequest::SharedPtr msg);
   void mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedPtr msg);
   void mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg);
   void mapoi_cancel_cb(const std_msgs::msg::String::SharedPtr msg);

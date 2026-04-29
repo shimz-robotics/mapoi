@@ -29,7 +29,7 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   // initialpose subscriber and publisher
   // mapoi_server が initial pose POI 名を transient_local で publish する (#144) ので、
   // 後起動でも latched 値を受信できるよう sub も transient_local に揃える。
-  mapoi_initialpose_poi_sub_ = this->create_subscription<std_msgs::msg::String>(
+  mapoi_initialpose_poi_sub_ = this->create_subscription<mapoi_interfaces::msg::InitialPoseRequest>(
     "mapoi_initialpose_poi", rclcpp::QoS(1).transient_local(),
     std::bind(&MapoiNavServer::mapoi_initialpose_poi_cb, this, std::placeholders::_1));
   nav2_initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
@@ -105,10 +105,22 @@ void MapoiNavServer::get_pois_list(){
     pois_info_request, std::bind(&MapoiNavServer::on_pois_info_received, this, _1));
 }
 
-void MapoiNavServer::mapoi_initialpose_poi_cb(const std_msgs::msg::String::SharedPtr msg)
+void MapoiNavServer::mapoi_initialpose_poi_cb(
+  const mapoi_interfaces::msg::InitialPoseRequest::SharedPtr msg)
 {
-  std::string poi_name = msg->data;
-  RCLCPP_INFO(this->get_logger(), "Received POI name for initialpose: %s", poi_name.c_str());
+  // map_name は世代識別 (#149 round 8 high 対応): bridge 側では map 一致 check に使う。
+  // nav_server は POI 名 lookup のみで判定するので map_name は info ログ用途に留める。
+  // 空 poi_name は「default を使う指示」だが、nav_server 側の経路としては default 採用は
+  // mapoi_server の compute_initial_poi_name が POI 名を埋めて publish するため到達しない。
+  // 念のため空なら無視する。
+  std::string poi_name = msg->poi_name;
+  if (poi_name.empty()) {
+    RCLCPP_DEBUG(this->get_logger(),
+      "Received empty initialpose POI name for map '%s'; skipping.", msg->map_name.c_str());
+    return;
+  }
+  RCLCPP_INFO(this->get_logger(),
+    "Received initialpose POI '%s' for map '%s'.", poi_name.c_str(), msg->map_name.c_str());
 
   // Fetch POI list asynchronously, then publish initialpose in the callback
   if (!this->pois_info_client_->wait_for_service(2s)) {

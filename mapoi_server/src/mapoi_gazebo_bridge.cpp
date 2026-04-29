@@ -57,7 +57,7 @@ MapoiGazeboBridge::MapoiGazeboBridge()
     sub_opts);
   // mapoi_initialpose_poi (transient_local) を subscribe して、SwitchMap.initial_poi_name
   // 指定時に bridge も同じ POI を spawn 位置に採用する (#149 round 7 ヘビー high 対応)。
-  initialpose_poi_sub_ = this->create_subscription<std_msgs::msg::String>(
+  initialpose_poi_sub_ = this->create_subscription<mapoi_interfaces::msg::InitialPoseRequest>(
     "mapoi_initialpose_poi", sub_qos,
     std::bind(&MapoiGazeboBridge::on_initialpose_poi, this, _1),
     sub_opts);
@@ -79,11 +79,14 @@ MapoiGazeboBridge::~MapoiGazeboBridge()
   }
 }
 
-void MapoiGazeboBridge::on_initialpose_poi(const std_msgs::msg::String::SharedPtr msg)
+void MapoiGazeboBridge::on_initialpose_poi(
+  const mapoi_interfaces::msg::InitialPoseRequest::SharedPtr msg)
 {
-  // POI 名のみ保持。実際の lookup は worker thread の load_gazebo_info で行う。
-  std::lock_guard<std::mutex> lock(requested_initial_poi_name_mutex_);
-  requested_initial_poi_name_ = msg->data;
+  // {map_name, poi_name} を保持。worker thread の load_gazebo_info で「処理中 map と一致するか」
+  // を check してから採用する (#149 round 8 high)。
+  std::lock_guard<std::mutex> lock(requested_initial_pose_mutex_);
+  requested_initial_pose_map_ = msg->map_name;
+  requested_initial_pose_poi_ = msg->poi_name;
 }
 
 void MapoiGazeboBridge::on_config_path(const std_msgs::msg::String::SharedPtr msg)
@@ -210,13 +213,17 @@ ConfigLoadStatus MapoiGazeboBridge::load_gazebo_info(
       out.world_model.name = wm["name"] ? wm["name"].as<std::string>() : "";
       out.has_gazebo = !out.world_model.uri.empty();
     }
-    // initial pose は (1) latched mapoi_initialpose_poi (= SwitchMap.initial_poi_name 指定) があれば
-    // それを優先、(2) なければ POI list 先頭 (landmark 除外、pose 妥当性 check) を採用 (#144 / #149
-    // round 7 ヘビー high 対応)。
+    // initial pose は (1) latched mapoi_initialpose_poi が「**処理中 map** と一致」なら採用、
+    // (2) なければ POI list 先頭 (landmark 除外、pose 妥当性 check) を採用 (#144 / #149 round 7-8
+    // high 対応)。map 名で世代を検証することで、SwitchMap 中の topic 同期 race を排除する。
+    // path の構造: <maps_path>/<map_name>/<config_file> なので path から map 名を導出。
+    std::string target_map = std::filesystem::path(config_path).parent_path().filename().string();
     std::string requested;
     {
-      std::lock_guard<std::mutex> lock(requested_initial_poi_name_mutex_);
-      requested = requested_initial_poi_name_;
+      std::lock_guard<std::mutex> lock(requested_initial_pose_mutex_);
+      if (requested_initial_pose_map_ == target_map) {
+        requested = requested_initial_pose_poi_;
+      }
     }
     auto is_landmark_poi = [](const YAML::Node & poi) {
       if (!poi["tags"] || !poi["tags"].IsSequence()) return false;

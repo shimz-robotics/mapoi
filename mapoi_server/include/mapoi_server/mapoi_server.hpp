@@ -17,6 +17,7 @@
 #include "mapoi_interfaces/srv/get_pois_info.hpp"
 #include "mapoi_interfaces/srv/get_route_pois.hpp"
 #include "mapoi_interfaces/msg/point_of_interest.hpp"
+#include "mapoi_interfaces/msg/initial_pose_request.hpp"
 #include "mapoi_interfaces/srv/get_maps_info.hpp"
 #include "mapoi_interfaces/srv/get_routes_info.hpp"
 #include "mapoi_interfaces/srv/switch_map.hpp"
@@ -53,7 +54,7 @@ private:
   // initial pose POI 名 publisher (#144): mapoi_server が新 map の初期 POI 名を決定して
   // mapoi_initialpose_poi topic に publish。mapoi_nav_server がそれを受けて /initialpose を流す。
   // QoS: transient_local (depth=1) で後起動 subscriber でも受信できる。
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr initialpose_poi_publisher_;
+  rclcpp::Publisher<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr initialpose_poi_publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   // initial pose 用の POI 名 publish (#144)。compute_initial_poi_name は class-level public static。
