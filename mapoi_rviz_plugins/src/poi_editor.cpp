@@ -784,9 +784,10 @@ bool PoiEditorPanel::ValidatePois()
                           .arg(row + 1).arg(yaw_val));
       } else if (yaw_val > 2.0 * M_PI) {
         // 旧 deg 入力 (例: 45) を rad として誤って入れた場合の防御 (#159 round 2 軽微 medium)。
-        // 2π (= 360°) 超は実用上意味のない異常値。typo の可能性が高いので reject。
-        warnings.append(tr("Row %1: tolerance.yaw must be <= 2π rad (= 360°) (got %2 rad). "
-                           "This unit changed from deg to rad in #158 — did you mean %3 rad (= %2°)?")
+        // 2π (= 360°) 超は実用上意味のない異常値 (typo 可能性大) なので reject。
+        // **rad で入力**する仕様 (#158) を明示し、deg として解釈した場合の同等値も提示する。
+        warnings.append(tr("Row %1: tolerance.yaw is in **rad** (#158); value %2 exceeds 2π (= 360°). "
+                           "If you meant deg, %2° = %3 rad.")
                           .arg(row + 1).arg(yaw_val).arg(yaw_val * M_PI / 180.0));
       }
     }

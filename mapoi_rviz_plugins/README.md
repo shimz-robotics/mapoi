@@ -45,6 +45,9 @@ POI の情報を表形式で表示・編集・保存できるパネルです。
 - 表形式での POI 情報の確認・編集（name, pose, tolerance, tags, description の 5 column 構成、#158）
   - **pose** column は `x, y, yaw rad` 形式（例: `1.0, 2.0, 0.7854`）
   - **tolerance** column は `xy m, yaw rad` 形式の 1 column 統合表記（例: `0.5, 0.7854`）
+    - validation 制約: `xy >= 0.001 m` / `0.001 rad <= yaw <= 2π rad`
+    - max `2π rad` (= 360°) は、deg → rad 単位変更 (#158) 後の旧 deg 入力 (例: `45`)
+      を誤って rad として入れたケースを弾くガード
   - **description** は末尾 column（長文 OK、横幅圧迫を回避）
 - POI の追加・コピー・削除
 - タグによるフィルタリング表示
