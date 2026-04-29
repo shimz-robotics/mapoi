@@ -1,14 +1,21 @@
+# シナリオ: オフィス見学ツアー (見学客を案内、要所で撮影 / 音声ガイド / 自動停止)。
+# 検証カバレッジ (#146): system tag 単独 / 複合、tolerance.yaw 厳密 ↔ 緩い、route の
+# waypoints + landmarks 両方持ち、連続 pause、撮影 / 音声 / 観察対象の custom tag。
 custom_tags:
 - {name: event, description: Event trigger area}
 - {name: destination, description: General destination point}
-- {name: audio_info, description: Audio guide trigger}
+- {name: audio_info, description: Audio guide trigger (POI 進入で音声再生)}
+- {name: capture_trigger, description: Capture action trigger (POI 進入で撮影起動)}
+- {name: capture_target, description: Capture action target (撮影対象、landmark で参照)}
 route:
-- name: route_1
-  waypoints: [meeting_room_a, conference_room, corridor_a, model_exhibit]
-  # route 走行中に意識する補助 POI 群 (#143)。Nav2 へは送らず radius 監視のみ。
-  # tour_landmark の tolerance.xy 進入で EVENT_ENTER が publish される。
-  landmarks: [tour_landmark]
-- name: route_2
+# tour_full: フルツアー。waypoints + landmarks 両方を持ち、連続 pause / 撮影 / 観察対象の
+# 全シナリオを 1 route で踏む (#143 route.landmarks の動作確認用)。
+- name: tour_full
+  waypoints: [meeting_room_a, conference_room, corridor_a, corridor_b, model_exhibit]
+  landmarks: [tour_landmark, exhibit_display, capture_target_painting]
+# tour_short: landmarks 無しの短縮版 (旧 route_2 互換、corridor_a 経由)。
+# route schema が landmarks 省略でも動く検証用。
+- name: tour_short
   waypoints: [elevator_hall, corridor_a, conference_room]
 map:
 - {node_name: /map_server, map_file: turtlebot3.yaml}
@@ -18,43 +25,60 @@ gazebo:
   world_model:
     uri: model://turtlebot3_world
     name: turtlebot3_world
-# elevator_hall は POI list 先頭 (= default initial pose、#144) で、Gazebo robot spawn の
+# elevator_hall は POI list 先頭 (= default initial pose、#149) で、Gazebo robot spawn の
 # デフォルト位置 (-2, -0.5) と一致。
 # tolerance.xy は Nav2 controller の xy_goal_tolerance (0.25) より大きく取らないと、Nav2 が POI
 # tolerance.xy 内に入る前にゴール判定で停止し radius event が発火しない。最小 0.30 (5cm 余裕) で
-# 各部屋の規模感に合わせ 0.30〜0.50 にバラす。位置も grid 的整列 (-0.5 / 0.5) を少し崩して非対称に。
+# 各部屋の規模感に合わせ 0.30〜0.50 にバラす。
 # tolerance.yaw は >= 0.001 (rad) を指定する (msg spec #138 で 0 / 負値は禁止)。
-# default 0.785 (≒ π/4 = 45°)。yaw を厳密制御したい POI はより小さい値を指定する。
+# default 0.785 (≒ π/4 = 45°)。撮影位置等 yaw を厳密制御したい POI はより小さい値、
+# 通り過ぎる経由点等 yaw を問わない POI は π (≒ 180°) 近辺を指定する。
 poi:
-- description: エレベーターホール
+- description: エレベーターホール (POI list 先頭 = default initial pose)
   name: elevator_hall
   pose: {x: -2.0, y: -0.5, yaw: 0.0}
   tolerance: {xy: 0.50, yaw: 0.785}
   tags: [waypoint]
-- description: 会議室A
+- description: 会議室A (普通の経由点)
   name: meeting_room_a
   pose: {x: -0.6, y: -0.6, yaw: 0.0}
   tolerance: {xy: 0.35, yaw: 0.785}
   tags: [waypoint]
-- description: 大会議室
+- description: 大会議室 (撮影地点、yaw 厳密)
   name: conference_room
   pose: {x: 0.7, y: -0.4, yaw: 1.57}
-  tolerance: {xy: 0.45, yaw: 0.785}
-  tags: [waypoint]
-- description: 廊下
+  tolerance: {xy: 0.45, yaw: 0.10}
+  tags: [waypoint, capture_trigger]
+- description: 廊下A (連続 pause #1、yaw 不問で通り過ぎる)
   name: corridor_a
   pose: {x: 0.4, y: 0.6, yaw: -3.14}
-  tolerance: {xy: 0.30, yaw: 0.785}
+  tolerance: {xy: 0.30, yaw: 3.14}
   tags: [waypoint, pause]
-- description: 模型展示
+- description: 廊下B (連続 pause #2、tour_full で連続 pause 発火を検証)
+  name: corridor_b
+  pose: {x: 0.0, y: 0.6, yaw: -3.14}
+  tolerance: {xy: 0.30, yaw: 3.14}
+  tags: [waypoint, pause]
+- description: 模型展示 (音声ガイド再生、waypoint + custom tag)
   name: model_exhibit
   pose: {x: -0.5, y: 0.5, yaw: -1.57}
   tolerance: {xy: 0.40, yaw: 0.785}
   tags: [waypoint, audio_info]
-# tour_landmark は landmark タグ付き = Nav2 navigation 不可な reference 点 (#85, #143)。
-# route_1 の landmarks: [tour_landmark] で route 走行中だけ radius event 監視対象として扱う。
-- description: ツアー中の観察点 (route_1 の通り道に置いた展示物想定)
+# 以下 landmark 群: Nav2 navigation 不可な reference 点 (#85, #143)。
+# tour_full の landmarks: [...] で route 走行中だけ radius event 監視対象として扱う。
+# landmark × pause は排他 (#143 validation で reject) なので組み合わせない。
+- description: 観察点 (純粋 landmark、tag 単独)
   name: tour_landmark
   pose: {x: 0.0, y: 0.2, yaw: 0.0}
   tolerance: {xy: 0.30, yaw: 0.785}
   tags: [landmark]
+- description: 展示物 (landmark + audio_info、観察対象でガイド再生)
+  name: exhibit_display
+  pose: {x: -0.3, y: 0.3, yaw: 0.0}
+  tolerance: {xy: 0.30, yaw: 0.785}
+  tags: [landmark, audio_info]
+- description: 絵画 (landmark + capture_target、撮影アクションの対象として参照)
+  name: capture_target_painting
+  pose: {x: 0.6, y: 0.0, yaw: 1.57}
+  tolerance: {xy: 0.30, yaw: 0.785}
+  tags: [landmark, capture_target]

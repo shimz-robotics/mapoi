@@ -120,6 +120,45 @@ WebUI / rviz_plugins
     ``[-π, π]`` で表現するのが慣習で、それを超えるユースケースは事実上ない想定)。
     soft warning にせず hard reject を選んだ理由は typo 防止を優先するため。
 
+Samples
+-------
+
+* Sample yaml (``turtlebot3_world`` / ``turtlebot3_dqn_stage1``) を全パターン
+  網羅シナリオに刷新 (#146)。新機能 (``route.landmarks`` #143、扇形描画 #136、
+  ``tolerance.yaw`` #138) のリグレッション検証カバレッジを底上げする。
+
+  - ``turtlebot3_world`` (オフィス見学ツアー): POI 5 → 9 に拡張。連続 ``pause``
+    (``corridor_a`` + ``corridor_b``)、撮影地点 (``conference_room`` の
+    ``tolerance.yaw=0.10``)、yaw 不問の通り過ぎ (``corridor_*`` の
+    ``tolerance.yaw=π``)、純粋 ``landmark`` / ``landmark + audio_info`` /
+    ``landmark + capture_target`` の 3 パターン、route ``tour_full``
+    (waypoints + landmarks 両方持ち) と ``tour_short`` (landmarks 省略) の対比。
+    custom tag ``capture_trigger`` / ``capture_target`` を追加。
+  - ``turtlebot3_dqn_stage1`` (障害物 sandbox での回避): POI 5 → 7 に拡張。
+    複合 tag (``event + landmark + hazard``) のハザード、``tolerance.yaw=π`` で
+    yaw 不問の通過点 (= pass_through 代替) として ``checkpoint_west/east``、
+    pause 中継 (``pause_intersection``)、route ``avoidance_a``
+    (waypoints + landmarks) と ``avoidance_b`` (waypoints のみ)。custom tag
+    ``observation`` を追加。
+  - ``mapoi_turtlebot3_example/README.md`` にサンプル一覧表 (各シナリオで
+    検証できる機能 / POI tag 構成) を追記。
+
+  **Route 名のリネーム** (旧 → 新):
+
+  - ``turtlebot3_world``: ``route_1`` → ``tour_full``、``route_2`` → ``tour_short``
+  - ``turtlebot3_dqn_stage1``: 変更なし (``avoidance_a`` / ``avoidance_b``)
+
+  ``tour_short`` は旧 ``route_2`` 互換 (``[elevator_hall, corridor_a,
+  conference_room]``) で経路は同じ。launch / クライアント / 社内スクリプトで
+  ``route_1`` / ``route_2`` を直接参照している場合は新名への移行が必要。
+  サンプル YAML の固定スナップショットを前提にした外部チュートリアル等も同様
+  (POI 数 / 名前 / tag 組合せが大幅に拡張されているため)。
+
+* ``scripts/check_sample_yaml_consistency.py`` 新設 + CI 組み込み (#146)。
+  サンプル yaml の POI 名 / route waypoint / landmark 参照の整合性、tag 排他
+  (``waypoint × landmark``、``landmark × pause``)、``tolerance.{xy,yaw}``
+  の min 制約 (>= 0.001) を pull request / push で自動検証。
+
 
 0.2.0 (2026-04-29)
 ==================

@@ -110,9 +110,41 @@ ros2 run mapoi_turtlebot3_example get_pois_info_client
 
 ## サンプル地図
 
-| 地図名 | 説明 |
-| --- | --- |
-| `turtlebot3_world` | TurtleBot3 標準ワールドの地図（POI・ルート設定済み） |
-| `turtlebot3_dqn_stage1` | DQN ステージ1 の地図 |
+シナリオに即した POI 配置 + tag 組合せの全パターンをカバーする 2 サンプルを同梱しています (#146)。
+
+| 地図名 | シナリオ | 検証できる主な機能 |
+| --- | --- | --- |
+| `turtlebot3_world` | オフィス見学ツアー (見学客を案内、要所で撮影 / 音声ガイド / 自動停止) | system tag 単独 / 複合、`tolerance.yaw` 厳密 ↔ 緩い、`route.waypoints + landmarks` 両方持ち、連続 `pause`、撮影 / 音声 / 観察対象の custom tag |
+| `turtlebot3_dqn_stage1` | 障害物 sandbox での回避走行 (ハザード / 観察 / 通過点) | 複合 tag (`event + landmark + custom`)、`tolerance.yaw=π` で yaw 不問の通過点 (= pass_through 代替)、`pause` 中継、`route.landmarks` の利用 |
+
+### POI / tag 構成
+
+#### turtlebot3_world (route: `tour_full` / `tour_short`)
+
+| POI | tags | 役割 |
+| --- | --- | --- |
+| `elevator_hall` | `waypoint` | POI list 先頭 = default initial pose (#149) |
+| `meeting_room_a` | `waypoint` | 普通の経由点 |
+| `conference_room` | `waypoint`, `capture_trigger` | 撮影地点、`tolerance.yaw=0.10` で厳密 |
+| `corridor_a` | `waypoint`, `pause` | 連続 `pause` #1、`tolerance.yaw=π` で通り過ぎ |
+| `corridor_b` | `waypoint`, `pause` | 連続 `pause` #2 (`tour_full` で連続 pause 発火を検証) |
+| `model_exhibit` | `waypoint`, `audio_info` | 音声ガイド再生 (waypoint + custom tag) |
+| `tour_landmark` | `landmark` | 純粋 landmark (tag 単独) |
+| `exhibit_display` | `landmark`, `audio_info` | 観察対象でガイド再生 |
+| `capture_target_painting` | `landmark`, `capture_target` | 撮影アクションの対象として参照 |
+
+#### turtlebot3_dqn_stage1 (route: `avoidance_a` / `avoidance_b`)
+
+| POI | tags | 役割 |
+| --- | --- | --- |
+| `start_zone` | `waypoint` | POI list 先頭 = default initial pose (#149) |
+| `checkpoint_west` | `waypoint`, `checkpoint` | yaw 不問の通過点 (`tolerance.yaw=π`) |
+| `checkpoint_east` | `waypoint`, `checkpoint` | yaw 不問の通過点 (`tolerance.yaw=π`) |
+| `pause_intersection` | `waypoint`, `pause` | 交差点で自動停止 |
+| `north_goal` | `waypoint` | 北側目標、`tolerance.yaw=0.10` で厳密 |
+| `hazard_south` | `event`, `landmark`, `hazard` | 複合 tag のハザード (Nav2 goal 不可) |
+| `observation_point` | `landmark`, `observation` | 観察対象 (route 走行中の参照点) |
+
+> **NOTE**: `landmark × pause` は #143 validation で reject されるため組み合わせていません。
 
 参考: [TurtleBot3 E-Manual (Simulation)](https://emanual.robotis.com/docs/en/platform/turtlebot3/simulation/)
