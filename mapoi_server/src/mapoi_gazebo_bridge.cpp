@@ -213,17 +213,16 @@ ConfigLoadStatus MapoiGazeboBridge::load_gazebo_info(
       out.world_model.name = wm["name"] ? wm["name"].as<std::string>() : "";
       out.has_gazebo = !out.world_model.uri.empty();
     }
-    // initial pose は (1) latched mapoi_initialpose_poi が「**処理中 map** と一致」なら採用、
-    // (2) なければ POI list 先頭 (landmark 除外、pose 妥当性 check) を採用 (#144 / #149 round 7-8
-    // high 対応)。map 名で世代を検証することで、SwitchMap 中の topic 同期 race を排除する。
-    // path の構造: <maps_path>/<map_name>/<config_file> なので path から map 名を導出。
-    std::string target_map = std::filesystem::path(config_path).parent_path().filename().string();
+    // initial pose は (1) latched mapoi_initialpose_poi (= SwitchMap.initial_poi_name 指定) があれば
+    // それを優先、(2) なければ POI list 先頭 (landmark 除外、pose 妥当性 check) を採用 (#144 /
+    // #149 round 7 ヘビー high 対応)。
+    // 注: map_name による世代検証は #149 round 10 で取り下げ (#155 で改めて検討)。
+    //   InitialPoseRequest が config_path 処理より先に届く正当ケースを「stale」誤判定する
+    //   regression を防ぐため。stale 排除は publisher 上書き (transient_local depth=1) に依存。
     std::string requested;
     {
       std::lock_guard<std::mutex> lock(requested_initial_pose_mutex_);
-      if (requested_initial_pose_map_ == target_map) {
-        requested = requested_initial_pose_poi_;
-      }
+      requested = requested_initial_pose_poi_;
     }
     auto is_landmark_poi = [](const YAML::Node & poi) {
       if (!poi["tags"] || !poi["tags"].IsSequence()) return false;

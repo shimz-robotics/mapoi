@@ -114,20 +114,12 @@ void MapoiNavServer::mapoi_initialpose_poi_cb(
       "Received empty initialpose POI name for map '%s'; skipping.", msg->map_name.c_str());
     return;
   }
-  // map_name 世代検証 (#149 round 9 high 対応): 既知の current map (= last_config_path_ 由来) と
-  // msg->map_name が異なれば stale latched message とみなして無視。
-  // last_config_path_ が空 (= まだ config_path を受信していない起動直後) は trust する
-  // (= まだ世代を判定できないので、最初の latched message は受け入れる)。
-  if (!last_config_path_.empty() && !msg->map_name.empty()) {
-    const std::string current_map =
-      std::filesystem::path(last_config_path_).parent_path().filename().string();
-    if (msg->map_name != current_map) {
-      RCLCPP_WARN(this->get_logger(),
-        "Ignoring InitialPoseRequest for map '%s' (current map is '%s'); stale latched message.",
-        msg->map_name.c_str(), current_map.c_str());
-      return;
-    }
-  }
+  // 注: map_name 世代検証は #149 round 10 で取り下げ (#155 で改めて検討)。
+  //   round 9 で「current map と不一致なら無視」とした実装は、SwitchMap 中に
+  //   InitialPoseRequest が config_path より先に到着する正当ケースを「stale」と
+  //   誤判定して捨てる regression を生むため。pending 戦略 (mismatch を保持して
+  //   後で再評価) が必要だが scope が大きいので別 PR に分離する。
+  //   現状は「publisher 上書き (transient_local depth=1) で stale を排除」を期待。
   RCLCPP_INFO(this->get_logger(),
     "Received initialpose POI '%s' for map '%s'.", poi_name.c_str(), msg->map_name.c_str());
 
