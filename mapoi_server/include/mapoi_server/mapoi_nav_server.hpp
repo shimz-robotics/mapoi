@@ -18,6 +18,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/twist.hpp>
 #include <nav2_msgs/action/follow_waypoints.hpp>
 #include <nav2_msgs/action/navigate_to_pose.hpp>
 #include <std_msgs/msg/string.hpp>
@@ -117,7 +118,7 @@ private:
 
   // active route の POI 名 set (waypoints + landmarks 両方を含む) (#143)。
   // route 受信 (on_route_received) で set、route 終端 / cancel / GOAL 切替で clear。
-  // radius_check_callback の pause 発火条件 (active route POI に含まれる時のみ) で参照。
+  // tolerance_check_callback の pause 発火条件 (active route POI に含まれる時のみ) で参照。
   std::unordered_set<std::string> current_route_poi_names_;
   void clear_current_route_poi_names_();
 
@@ -150,7 +151,7 @@ private:
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
-  rclcpp::TimerBase::SharedPtr radius_check_timer_;
+  rclcpp::TimerBase::SharedPtr tolerance_check_timer_;
   rclcpp::Publisher<mapoi_interfaces::msg::PoiEvent>::SharedPtr poi_event_pub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr config_path_sub_;
   rclcpp::Client<mapoi_interfaces::srv::GetTagDefinitions>::SharedPtr tag_defs_client_;
@@ -168,13 +169,53 @@ private:
   std::unordered_set<std::string> system_tags_;
   bool system_tags_loaded_ = false;
   std::unordered_map<std::string, bool> poi_inside_state_;  // key: poi.name
+  // STOPPED/RESUMED 判定用の per-POI 状態 (#140)。
+  //   was_stopped == true: 既に EVENT_STOPPED 発火済 (RESUMED まで持続)。
+  //   was_stopped == false: 未停止 / OUTSIDE / RESUMED 後。
+  // ENTER/EXIT 判定 (poi_inside_state_) と独立して持つ: STOPPED は inside 内での
+  // sub-state なので、EXIT 時は inside_state→false と同時に stopped_state→false に reset する。
+  std::unordered_map<std::string, bool> poi_stopped_state_;  // key: poi.name
   std::vector<mapoi_interfaces::msg::PointOfInterest> event_pois_;
+
+  // --- STOPPED/RESUMED 判定 (#140) ---
+  // cmd_vel subscriber: 速度判定の source の一つ。Nav2 action SUCCEEDED もう一つの source は
+  // result_callback / ntp_result_callback で hook する (両方 OR で STOPPED 判定)。
+  // dwell 判定は robot 全体で 1 つ (POI ごとには持たない)。線速ノルムと角速度絶対値の両方が
+  // 同じ閾値 ``stopped_speed_threshold`` 未満のとき停止扱い。線速 (m/s) と角速 (rad/s) に
+  // 単位の異なる同一閾値を使う割り切りは、撮影シナリオで「その場旋回も停止扱いしたくない」
+  // 用途と整合する (param 説明 / CHANGELOG にも明記)。
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
+  void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
+  // 速度が閾値以下になり始めた時刻 (steady_clock)。閾値超えに戻ったら reset。
+  std::chrono::steady_clock::time_point last_zero_velocity_start_ {};
+  bool zero_velocity_active_ {false};
+  // STOPPED 判定 param のキャッシュ (cmd_vel callback で毎 tick 取得すると lock コストが高いため
+  // constructor で読み込んで保持。ROS 動的 reconfigure で変更したい場合は再起動が必要)。
+  double stopped_speed_threshold_ {0.01};
+  double stopped_dwell_time_sec_ {1.0};
+
+  // 状態遷移判定の純関数 (unit test 用、#140)。inputs から transition を返すだけで副作用なし。
+  enum class StoppedTransition { NONE, TO_STOPPED, TO_RESUMED };
+  struct StoppedDetectionInputs {
+    bool inside;                 // robot が POI の tolerance.xy 内に居るか
+    bool was_stopped;            // 前 tick での poi_stopped_state_
+    bool zero_velocity_dwelled;  // 速度が閾値以下で dwell_time 以上経過
+  };
+  static StoppedTransition compute_stopped_transition(const StoppedDetectionInputs & in);
+
+  // STOPPED publish (Nav2 SUCCEEDED 受信時)。``target_poi_name`` が指定された場合、その POI は
+  // inside check を skip して強制的に STOPPED publish する (SUCCEEDED と tolerance_check tick の
+  // 非同期で「まだ inside と判定されていない」瞬間に SUCCEEDED が来ても取りこぼさない)。それ以外
+  // の inside POI は通常通り poi_inside_state_ を見て publish。``reason`` は log 用。
+  void stop_all_inside_pois(const std::string & reason, const std::string & target_poi_name = "");
+  // 全 stopped POI に対して RESUMED publish (新規 goal 受信時)。
+  void resume_all_stopped_pois();
 
   void fetch_system_tags();
   void on_system_tags_received(rclcpp::Client<mapoi_interfaces::srv::GetTagDefinitions>::SharedFuture future);
   void on_config_path_changed(const std_msgs::msg::String::SharedPtr msg);
   void rebuild_event_pois();
-  void radius_check_callback();
+  void tolerance_check_callback();
   double distance_2d(const geometry_msgs::msg::Pose & poi_pose, double rx, double ry);
 
   // landmark system tag を持つかを判定する純関数 (#85)。
@@ -182,7 +223,7 @@ private:
   static bool has_landmark_tag(const mapoi_interfaces::msg::PointOfInterest & poi);
 
   // active route の POI 名集合を組み立てる純関数 (#143 / #148)。
-  // waypoints と landmarks の両方を 1 つの set にマージし、radius_check の
+  // waypoints と landmarks の両方を 1 つの set にマージし、tolerance_check の
   // pause 発火条件 (active route POI に含まれるか) を判定する用に使う。
   // 同名の重複は set 性質で自動的に 1 つに集約される。
   static std::unordered_set<std::string> build_route_poi_names(
@@ -205,7 +246,7 @@ private:
     const geometry_msgs::msg::Pose & pose, const std::string & source);
 
   // /initialpose subscriber (主に AMCL) が後起動した場合の async retry 機構 (#152)。
-  // single-thread executor で blocking wait すると radius_check 等が止まる回帰があるため、
+  // single-thread executor で blocking wait すると tolerance_check 等が止まる回帰があるため、
   // wall timer ベースで polling する。subscriber 検知で 1 回再 publish + timer cancel。
   void schedule_initialpose_retry(
     const geometry_msgs::msg::Pose & pose, const std::string & source);
@@ -238,6 +279,11 @@ private:
   FRIEND_TEST(NavServerTestFixture, IsPauseEligibleGoalMode);
   FRIEND_TEST(NavServerTestFixture, IsPauseEligibleIdleMode);
   FRIEND_TEST(NavServerTestFixture, ResetNavStateClearsRouteContext);
+  FRIEND_TEST(NavServerTestFixture, ComputeStoppedTransitionNoOutside);
+  FRIEND_TEST(NavServerTestFixture, ComputeStoppedTransitionEnterStopped);
+  FRIEND_TEST(NavServerTestFixture, ComputeStoppedTransitionEnterMoving);
+  FRIEND_TEST(NavServerTestFixture, ComputeStoppedTransitionResumeOnVelocity);
+  FRIEND_TEST(NavServerTestFixture, ComputeStoppedTransitionStaysStopped);
 #endif
 };
 

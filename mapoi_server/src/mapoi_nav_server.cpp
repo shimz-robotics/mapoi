@@ -66,10 +66,20 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   this->route_client_ = this->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
 
   // --- POI radius event detection ---
-  this->declare_parameter<double>("radius_check_hz", 5.0);
+  this->declare_parameter<double>("tolerance_check_hz", 5.0);
   this->declare_parameter<double>("hysteresis_exit_multiplier", 1.15);
   this->declare_parameter<std::string>("map_frame", "map");
   this->declare_parameter<std::string>("base_frame", "base_link");
+  // STOPPED/RESUMED 判定 (#140): 線速ノルムと角速度絶対値の両方が ``stopped_speed_threshold``
+  // 未満の状態が ``stopped_dwell_time_sec`` 続いたら EVENT_STOPPED publish。線速 (m/s) と角速
+  // (rad/s) に同一閾値を使う割り切りで「その場旋回も停止扱いしない」用途を表現する。
+  this->declare_parameter<double>("stopped_speed_threshold", 0.01);
+  this->declare_parameter<double>("stopped_dwell_time_sec", 1.0);
+  this->declare_parameter<std::string>("cmd_vel_topic", "cmd_vel");
+  // パラメータを cmd_vel_callback / tolerance_check_callback の hot path で毎回取得すると
+  // lock コストが高いため、起動時にキャッシュして以降は member を読む (#176 review low #4)。
+  stopped_speed_threshold_ = this->get_parameter("stopped_speed_threshold").as_double();
+  stopped_dwell_time_sec_ = this->get_parameter("stopped_dwell_time_sec").as_double();
 
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -80,14 +90,21 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
     "mapoi_config_path", rclcpp::QoS(1).transient_local(),
     std::bind(&MapoiNavServer::on_config_path_changed, this, _1));
 
+  // cmd_vel subscribe (#140): STOPPED 判定の source の一つ (もう一つは Nav2 SUCCEEDED)。
+  // QoS は Nav2 の cmd_vel publisher と同じ default (reliable, depth=10)。
+  const std::string cmd_vel_topic = this->get_parameter("cmd_vel_topic").as_string();
+  cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+    cmd_vel_topic, 10,
+    std::bind(&MapoiNavServer::cmd_vel_callback, this, _1));
+
   tag_defs_client_ = this->create_client<mapoi_interfaces::srv::GetTagDefinitions>("get_tag_definitions");
   fetch_system_tags();
 
-  double hz = this->get_parameter("radius_check_hz").as_double();
+  double hz = this->get_parameter("tolerance_check_hz").as_double();
   auto period = std::chrono::duration<double>(1.0 / hz);
-  radius_check_timer_ = this->create_wall_timer(
+  tolerance_check_timer_ = this->create_wall_timer(
     std::chrono::duration_cast<std::chrono::nanoseconds>(period),
-    std::bind(&MapoiNavServer::radius_check_callback, this));
+    std::bind(&MapoiNavServer::tolerance_check_callback, this));
 
   RCLCPP_INFO(this->get_logger(), "MapoiNavServer initialized.");
 }
@@ -165,6 +182,10 @@ void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedP
 {
   std::string poi_name = msg->data;
   RCLCPP_INFO(this->get_logger(), "Received POI name for goal pose: %s", poi_name.c_str());
+  // 新規 goal 受信時に現在 STOPPED 状態の POI を全て RESUMED publish する (#140)。
+  // 以降 Nav2 への goal 送信で robot が動き始めるため、STOPPED 中の subscriber が
+  // 「停止解除」を即時に検知できる (cmd_vel callback で観測する前に publish)。
+  resume_all_stopped_pois();
   // target は send_goal_options に lambda capture で bind し、callback 側で
   // goal 固有の target を使って publish_nav_status する (#104 race fix)。
   // current_target_name_ は acceptance 時 (goal_response_callback) に更新され、
@@ -253,6 +274,9 @@ void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedP
 void MapoiNavServer::mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg)
 {
   RCLCPP_INFO(this->get_logger(), "Received route name: %s", msg->data.c_str());
+  // 新規 route 受信時に現在 STOPPED 状態の POI を全て RESUMED publish (#140)。
+  // 以降の send_goal で robot が動き始めるため、即時に「停止解除」通知する。
+  resume_all_stopped_pois();
   // target は on_route_received → send_goal_options に lambda capture で bind し、
   // callback 側で goal 固有の target を使って publish_nav_status する (#104 race fix)。
   // current_target_name_ は acceptance 時 (goal_response_callback) に更新される。
@@ -481,7 +505,7 @@ void MapoiNavServer::on_route_received(
     return;
   }
 
-  // active route の POI 名 set を構築 (waypoints + landmarks 両方を radius_check で
+  // active route の POI 名 set を構築 (waypoints + landmarks 両方を tolerance_check で
   // pause 発火対象として扱う)。lock 下で書き込み (#143)。
   // 構築ロジックは pure helper に切り出し、unit test で検証する (#148)。
   {
@@ -592,6 +616,10 @@ void MapoiNavServer::result_callback(std::string target, size_t nav_generation,
       reset_nav_state();
       publish_nav_status("succeeded", target);
       RCLCPP_INFO(this->get_logger(), "Navigation SUCCEEDED!");
+      // Nav2 SUCCEEDED 時点で robot は goal で停止している。target POI に対して強制 publish
+      // (inside check skip で取りこぼし防止) + 他の inside POI にも STOPPED publish (#140)。
+      // cmd_vel ベースの dwell 待ちを経由せず即時発火。
+      stop_all_inside_pois("Nav2 FollowWaypoints succeeded", target);
       break;
     case rclcpp_action::ResultCode::ABORTED:
       reset_nav_state();
@@ -653,6 +681,7 @@ void MapoiNavServer::ntp_result_callback(std::string target, size_t nav_generati
       reset_nav_state();
       publish_nav_status("succeeded", target);
       RCLCPP_INFO(this->get_logger(), "NavigateToPose SUCCEEDED!");
+      stop_all_inside_pois("Nav2 NavigateToPose succeeded", target);
       break;
     case rclcpp_action::ResultCode::ABORTED:
       reset_nav_state();
@@ -844,7 +873,7 @@ void MapoiNavServer::fetch_system_tags()
 {
   if (!tag_defs_client_->service_is_ready()) {
     RCLCPP_INFO(this->get_logger(), "get_tag_definitions service not available yet, waiting...");
-    return;  // radius_check_callback will retry via guard check
+    return;  // tolerance_check_callback will retry via guard check
   }
   auto request = std::make_shared<mapoi_interfaces::srv::GetTagDefinitions::Request>();
   tag_defs_client_->async_send_request(
@@ -911,7 +940,7 @@ void MapoiNavServer::rebuild_event_pois()
   RCLCPP_INFO(this->get_logger(), "Monitoring %zu POIs for radius events.", event_pois_.size());
 }
 
-void MapoiNavServer::radius_check_callback()
+void MapoiNavServer::tolerance_check_callback()
 {
   if (!system_tags_loaded_) {
     fetch_system_tags();
@@ -932,6 +961,14 @@ void MapoiNavServer::radius_check_callback()
   double rx = transform.transform.translation.x;
   double ry = transform.transform.translation.y;
   double hysteresis = this->get_parameter("hysteresis_exit_multiplier").as_double();
+  // STOPPED 判定: zero_velocity が dwell threshold 以上続いたら停止扱い (#140)。
+  // 全 POI 共通の判定なので timer tick 内で 1 回計算して使い回す。
+  bool zero_velocity_dwelled = false;
+  if (zero_velocity_active_) {
+    const double dwell = std::chrono::duration<double>(
+      std::chrono::steady_clock::now() - last_zero_velocity_start_).count();
+    zero_velocity_dwelled = (dwell >= stopped_dwell_time_sec_);
+  }
 
   // pause タグ POI の ENTER を収集（mutex 外で処理するため）
   std::string pause_triggered_poi;
@@ -967,6 +1004,10 @@ void MapoiNavServer::radius_check_callback()
       } else if (was_inside && dist > poi.tolerance.xy * hysteresis) {
         // EXIT event: 全POIでPoiEvent発行
         poi_inside_state_[poi.name] = false;
+        // STOPPED state も EXIT で clear (#140)。RESUMED publish は EXIT で兼ねる扱いとする
+        // (ライフサイクル: ENTER → STOPPED → (RESUMED |) EXIT。EXIT 時に明示 RESUMED を出すと
+        // 同 tick で 2 イベントが連続発火して subscriber 側の handler 設計が複雑化するため見送り)。
+        poi_stopped_state_[poi.name] = false;
         mapoi_interfaces::msg::PoiEvent event;
         event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_EXIT;
         event.poi = poi;
@@ -974,6 +1015,30 @@ void MapoiNavServer::radius_check_callback()
         poi_event_pub_->publish(event);
         RCLCPP_INFO(this->get_logger(), "POI EXIT: %s (dist=%.2f, tolerance.xy=%.2f)",
                     poi.name.c_str(), dist, poi.tolerance.xy);
+        continue;  // STOPPED/RESUMED 判定不要 (今 tick で OUTSIDE 化)
+      }
+
+      // STOPPED / RESUMED 判定 (#140): inside (新規 ENTER 含む) かつ velocity / RESUMED 条件。
+      if (!poi_inside_state_[poi.name]) continue;
+      const bool was_stopped = poi_stopped_state_[poi.name];
+      const StoppedDetectionInputs in{true, was_stopped, zero_velocity_dwelled};
+      const auto trans = compute_stopped_transition(in);
+      if (trans == StoppedTransition::TO_STOPPED) {
+        poi_stopped_state_[poi.name] = true;
+        mapoi_interfaces::msg::PoiEvent event;
+        event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_STOPPED;
+        event.poi = poi;
+        event.stamp = this->now();
+        poi_event_pub_->publish(event);
+        RCLCPP_INFO(this->get_logger(), "POI STOPPED: %s", poi.name.c_str());
+      } else if (trans == StoppedTransition::TO_RESUMED) {
+        poi_stopped_state_[poi.name] = false;
+        mapoi_interfaces::msg::PoiEvent event;
+        event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_RESUMED;
+        event.poi = poi;
+        event.stamp = this->now();
+        poi_event_pub_->publish(event);
+        RCLCPP_INFO(this->get_logger(), "POI RESUMED: %s", poi.name.c_str());
       }
     }
   }  // data_mutex_ をここで解放
@@ -999,6 +1064,125 @@ double MapoiNavServer::distance_2d(const geometry_msgs::msg::Pose & poi_pose, do
   double dx = poi_pose.position.x - rx;
   double dy = poi_pose.position.y - ry;
   return std::sqrt(dx * dx + dy * dy);
+}
+
+// --- STOPPED / RESUMED 判定 (#140) ---
+
+void MapoiNavServer::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
+{
+  // 線速ノルム (3D) と角速度絶対値 (yaw 軸) の両方が閾値以下のとき「停止」とみなす。
+  // 撮影シナリオでは「その場旋回も停止扱いしない」前提のため、angular.z も判定に含める。
+  // 単位が異なるが同一閾値を使う割り切り (param 説明参照、#140)。
+  const double linear_norm = std::sqrt(
+    msg->linear.x * msg->linear.x +
+    msg->linear.y * msg->linear.y +
+    msg->linear.z * msg->linear.z);
+  const double angular_norm = std::abs(msg->angular.z);
+  const bool zero_now =
+    (linear_norm < stopped_speed_threshold_) && (angular_norm < stopped_speed_threshold_);
+  if (zero_now) {
+    if (!zero_velocity_active_) {
+      zero_velocity_active_ = true;
+      last_zero_velocity_start_ = std::chrono::steady_clock::now();
+    }
+  } else {
+    zero_velocity_active_ = false;
+  }
+}
+
+// 純関数 (副作用なし、unit test 用)。inside / was_stopped / zero_velocity / zero_velocity_dwelled
+// の組み合わせから次の遷移を返す。
+//
+// 仕様:
+//   - !inside: NONE (EXIT 側で stopped state は別途 reset する)
+//   - !was_stopped + zero_velocity_dwelled (停止が dwell_time 続いた): TO_STOPPED
+//   - was_stopped + !zero_velocity (動き始めた): TO_RESUMED (dwell 不要、即時)
+//   - それ以外: NONE
+MapoiNavServer::StoppedTransition MapoiNavServer::compute_stopped_transition(
+  const StoppedDetectionInputs & in)
+{
+  if (!in.inside) return StoppedTransition::NONE;
+  if (!in.was_stopped) {
+    return in.zero_velocity_dwelled ? StoppedTransition::TO_STOPPED : StoppedTransition::NONE;
+  }
+  // was_stopped == true
+  return in.zero_velocity_dwelled ? StoppedTransition::NONE : StoppedTransition::TO_RESUMED;
+}
+
+void MapoiNavServer::stop_all_inside_pois(
+  const std::string & reason, const std::string & target_poi_name)
+{
+  // Nav2 SUCCEEDED 受信時に呼ぶ: 現在 inside の全 POI に対して STOPPED publish
+  // (既に STOPPED state の POI は idempotent に skip)。
+  // ``target_poi_name`` が指定された場合は、その POI は inside check を skip して
+  // 強制的に STOPPED publish する (SUCCEEDED と tolerance_check tick の非同期による
+  // 取りこぼし防止、#176 review medium #1)。
+  // target POI でまだ ENTER 未発火の場合、lifecycle invariant ``ENTER → STOPPED → EXIT`` を
+  // 守るため ENTER を先に publish してから STOPPED を発火する (#176 review r2 high #1)。
+  // event_pois_ / poi_inside_state_ / poi_stopped_state_ を lock で守って snapshot を
+  // 取り、publish は lock 外で実行 (既存 tolerance_check の pattern と整合)。
+  std::vector<mapoi_interfaces::msg::PointOfInterest> to_enter;
+  std::vector<mapoi_interfaces::msg::PointOfInterest> to_stop;
+  {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    for (const auto & poi : event_pois_) {
+      const bool is_target = !target_poi_name.empty() && poi.name == target_poi_name;
+      const bool was_inside = poi_inside_state_[poi.name];
+      const bool eligible = is_target || was_inside;
+      if (!eligible) continue;
+      // target POI で inside_state がまだ false なら ENTER 先行 publish (lifecycle 整合)。
+      if (is_target && !was_inside) {
+        poi_inside_state_[poi.name] = true;
+        to_enter.push_back(poi);
+      }
+      if (!poi_stopped_state_[poi.name]) {
+        poi_stopped_state_[poi.name] = true;
+        to_stop.push_back(poi);
+      }
+    }
+  }
+  // ENTER → STOPPED の順で publish (subscriber 側の handler 設計が ENTER を前提にできる)。
+  for (const auto & poi : to_enter) {
+    mapoi_interfaces::msg::PoiEvent event;
+    event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_ENTER;
+    event.poi = poi;
+    event.stamp = this->now();
+    poi_event_pub_->publish(event);
+    RCLCPP_INFO(this->get_logger(),
+      "POI ENTER (forced by %s): %s", reason.c_str(), poi.name.c_str());
+  }
+  for (const auto & poi : to_stop) {
+    mapoi_interfaces::msg::PoiEvent event;
+    event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_STOPPED;
+    event.poi = poi;
+    event.stamp = this->now();
+    poi_event_pub_->publish(event);
+    RCLCPP_INFO(this->get_logger(), "POI STOPPED (%s): %s", reason.c_str(), poi.name.c_str());
+  }
+}
+
+void MapoiNavServer::resume_all_stopped_pois()
+{
+  // 新規 goal 受信時に呼ぶ: 現在 STOPPED 状態の全 POI に RESUMED publish。
+  // event_pois_ と poi_stopped_state_ を lock で守って snapshot を取り、publish は lock 外。
+  std::vector<mapoi_interfaces::msg::PointOfInterest> to_resume;
+  {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    for (const auto & poi : event_pois_) {
+      if (poi_stopped_state_[poi.name]) {
+        poi_stopped_state_[poi.name] = false;
+        to_resume.push_back(poi);
+      }
+    }
+  }
+  for (const auto & poi : to_resume) {
+    mapoi_interfaces::msg::PoiEvent event;
+    event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_RESUMED;
+    event.poi = poi;
+    event.stamp = this->now();
+    poi_event_pub_->publish(event);
+    RCLCPP_INFO(this->get_logger(), "POI RESUMED (new goal): %s", poi.name.c_str());
+  }
 }
 
 #ifndef UNIT_TEST
