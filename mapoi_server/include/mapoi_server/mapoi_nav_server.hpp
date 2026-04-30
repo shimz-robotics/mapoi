@@ -181,6 +181,24 @@ private:
   // landmark POI は Nav2 navigation goal / initial_pose に使えない reference 専用。
   static bool has_landmark_tag(const mapoi_interfaces::msg::PointOfInterest & poi);
 
+  // active route の POI 名集合を組み立てる純関数 (#143 / #148)。
+  // waypoints と landmarks の両方を 1 つの set にマージし、radius_check の
+  // pause 発火条件 (active route POI に含まれるか) を判定する用に使う。
+  // 同名の重複は set 性質で自動的に 1 つに集約される。
+  static std::unordered_set<std::string> build_route_poi_names(
+    const std::vector<mapoi_interfaces::msg::PointOfInterest> & waypoints,
+    const std::vector<mapoi_interfaces::msg::PointOfInterest> & landmarks);
+
+  // pause 自動発火の eligibility 判定純関数 (#143 / #148)。
+  // ROUTE 走行中 + active route POI + "pause" タグありの 3 条件を全て満たす場合のみ true。
+  // GOAL 走行中 / IDLE では false (操作者の意図しない停止を避けるため、route POI 限定)。
+  // **lock 契約**: `current_route_poi_names_` をそのまま渡す呼び出しでは、参照が
+  // 安定するように `data_mutex_` を保持中に呼ぶこと。snapshot を渡す場合は不要。
+  static bool is_pause_eligible(
+    const mapoi_interfaces::msg::PointOfInterest & poi,
+    NavMode nav_mode,
+    const std::unordered_set<std::string> & active_route_poi_names);
+
   // /initialpose 配信の単一エントリポイント（手動経路 / 自動経路で共通化）。
   // publish 直後に subscriber が居なければ非同期で retry timer を起動する。
   void publish_initial_pose(
@@ -209,6 +227,17 @@ private:
   FRIEND_TEST(NavServerTestFixture, RebuildEventPoisEmpty);
   FRIEND_TEST(NavServerTestFixture, PauseTagDetection);
   FRIEND_TEST(NavServerTestFixture, HasLandmarkTagDetection);
+  FRIEND_TEST(NavServerTestFixture, BuildRoutePoiNamesWaypointsOnly);
+  FRIEND_TEST(NavServerTestFixture, BuildRoutePoiNamesWaypointsAndLandmarks);
+  FRIEND_TEST(NavServerTestFixture, BuildRoutePoiNamesLandmarksEmptyBackwardCompat);
+  FRIEND_TEST(NavServerTestFixture, BuildRoutePoiNamesEmpty);
+  FRIEND_TEST(NavServerTestFixture, BuildRoutePoiNamesDuplicateNames);
+  FRIEND_TEST(NavServerTestFixture, IsPauseEligibleRouteModeActiveWithPauseTag);
+  FRIEND_TEST(NavServerTestFixture, IsPauseEligibleRouteModeActiveWithoutPauseTag);
+  FRIEND_TEST(NavServerTestFixture, IsPauseEligibleRouteModeNonActivePoi);
+  FRIEND_TEST(NavServerTestFixture, IsPauseEligibleGoalMode);
+  FRIEND_TEST(NavServerTestFixture, IsPauseEligibleIdleMode);
+  FRIEND_TEST(NavServerTestFixture, ResetNavStateClearsRouteContext);
 #endif
 };
 
