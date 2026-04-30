@@ -1117,24 +1117,39 @@ void MapoiNavServer::stop_all_inside_pois(
   // ``target_poi_name`` が指定された場合は、その POI は inside check を skip して
   // 強制的に STOPPED publish する (SUCCEEDED と tolerance_check tick の非同期による
   // 取りこぼし防止、#176 review medium #1)。
+  // target POI でまだ ENTER 未発火の場合、lifecycle invariant ``ENTER → STOPPED → EXIT`` を
+  // 守るため ENTER を先に publish してから STOPPED を発火する (#176 review r2 high #1)。
   // event_pois_ / poi_inside_state_ / poi_stopped_state_ を lock で守って snapshot を
   // 取り、publish は lock 外で実行 (既存 tolerance_check の pattern と整合)。
+  std::vector<mapoi_interfaces::msg::PointOfInterest> to_enter;
   std::vector<mapoi_interfaces::msg::PointOfInterest> to_stop;
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
     for (const auto & poi : event_pois_) {
       const bool is_target = !target_poi_name.empty() && poi.name == target_poi_name;
-      const bool eligible = is_target || poi_inside_state_[poi.name];
-      if (eligible && !poi_stopped_state_[poi.name]) {
+      const bool was_inside = poi_inside_state_[poi.name];
+      const bool eligible = is_target || was_inside;
+      if (!eligible) continue;
+      // target POI で inside_state がまだ false なら ENTER 先行 publish (lifecycle 整合)。
+      if (is_target && !was_inside) {
+        poi_inside_state_[poi.name] = true;
+        to_enter.push_back(poi);
+      }
+      if (!poi_stopped_state_[poi.name]) {
         poi_stopped_state_[poi.name] = true;
-        // target POI は SUCCEEDED で確実に到達済なので、念のため inside_state も true に
-        // 同期させる (まだ TF が tick で観測されていないケース対応)。
-        if (is_target) {
-          poi_inside_state_[poi.name] = true;
-        }
         to_stop.push_back(poi);
       }
     }
+  }
+  // ENTER → STOPPED の順で publish (subscriber 側の handler 設計が ENTER を前提にできる)。
+  for (const auto & poi : to_enter) {
+    mapoi_interfaces::msg::PoiEvent event;
+    event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_ENTER;
+    event.poi = poi;
+    event.stamp = this->now();
+    poi_event_pub_->publish(event);
+    RCLCPP_INFO(this->get_logger(),
+      "POI ENTER (forced by %s): %s", reason.c_str(), poi.name.c_str());
   }
   for (const auto & poi : to_stop) {
     mapoi_interfaces::msg::PoiEvent event;
