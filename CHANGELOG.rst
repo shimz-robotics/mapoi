@@ -206,9 +206,10 @@ WebUI / rviz_plugins
   - 扇形 (塗り or 中抜き): yaw 制約を強調。``0 < tolerance.yaw < π`` の時のみ
     重ね描き (完全円との情報冗長を回避)
   - **見た目の変化点**: 旧 (#178) では yaw 不問 POI (``tolerance.yaw == 0`` または ``>= π``)
-    も塗り扇形 = 完全円塗り (waypoint なら緑塗り) として描画されていた。本 PR では
-    yaw 不問なら**円アウトラインのみ**表示 (塗りなし)。判定 semantics と一致するが、
-    旧表示に慣れた利用者には印象変化あり
+    も扇形 = 完全円として描画されていた (waypoint = 緑塗り完全円、landmark = 灰
+    中抜き完全円)。本 PR では yaw 不問なら **円アウトライン (細実線・薄め) のみ**表示で、
+    塗り / 中抜き strokeは描画しない。判定 semantics (xy のみ) と一致するが、
+    旧表示に慣れた利用者には印象変化あり (デモ・スクリーンショット用途は要確認)
   - pause overlay: 旧 dash (``dashArray: '6, 4'`` / RViz segment 0.05m, 1:1 比率) は
     「点と感じない、潰れて見える」user feedback (#178 PR コメント) を受け、
     sparse dot 形式に変更。WebUI ``dashArray: '2, 6'`` + ``lineCap: round`` (cycle 比
