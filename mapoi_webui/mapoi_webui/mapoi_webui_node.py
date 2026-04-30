@@ -234,17 +234,20 @@ class MapoiWebNode(Node):
         try:
             parts = path.replace('\\', '/').split('/')
             # Find config_file in path, map_name is the directory before it
+            map_name_parsed = None
             for i, part in enumerate(parts):
                 if part == self.config_file_ and i > 0:
-                    new_map = parts[i - 1]
-                    if new_map != self.map_name_:
-                        self.map_name_ = new_map
-                        self.get_logger().info(f'Map switched externally to: {new_map}')
+                    map_name_parsed = parts[i - 1]
+                    if map_name_parsed != self.map_name_:
+                        self.map_name_ = map_name_parsed
+                        self.get_logger().info(f'Map switched externally to: {map_name_parsed}')
                     break
-            # 内容変更 (POI / route の save 後 reload による再 publish) でも frontend に通知して
-            # loadPois / loadRoutes / loadTagDefinitions を再実行させる (#135 (B))。
-            # parse 成功時のみ broadcast: 異常メッセージで無駄な reload を避ける (#173 Round 1 medium)。
-            self._broadcast_sse_event('config_changed')
+            if map_name_parsed is not None:
+                # 内容変更 (POI / route の save 後 reload による再 publish) でも frontend に通知して
+                # loadPois / loadRoutes / loadTagDefinitions を再実行させる (#135 (B))。
+                # map 名が正しく解釈できた時のみ broadcast: 期待形式に部分一致するが map 特定でき
+                # ないケースで無駄な reload を避ける (#173 Round 1 / 2 medium)。
+                self._broadcast_sse_event('config_changed')
         except Exception as e:
             self.get_logger().warn(f'Failed to parse config path: {e}')
 
