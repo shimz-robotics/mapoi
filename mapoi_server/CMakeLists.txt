@@ -94,6 +94,9 @@ if(BUILD_TESTING)
   add_launch_test(
     test/test_poi_event_integration.py
   )
+  add_launch_test(
+    test/test_reload_clears_initialpose.py
+  )
 
   # Install test config
   install(
