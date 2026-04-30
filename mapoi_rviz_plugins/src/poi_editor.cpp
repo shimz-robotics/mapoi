@@ -98,7 +98,7 @@ void PoiEditorPanel::onInitialize()
   LoadTagDefinitions();
 
   config_path_sub_ = node_->create_subscription<std_msgs::msg::String>(
-    "mapoi_config_path", 10,
+    "mapoi_config_path", rclcpp::QoS(1).transient_local(),
     std::bind(&PoiEditorPanel::ConfigPathCallback, this, std::placeholders::_1));
 
   // Display Settings group: mapoi_rviz2_publisher の表示系 parameter を Panel から制御 (#99)

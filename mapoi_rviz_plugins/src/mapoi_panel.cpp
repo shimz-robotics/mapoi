@@ -75,7 +75,7 @@ void MapoiPanel::onInitialize()
   mapoi_highlight_route_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_highlight_route", 1);
 
   config_path_sub_ = node_->create_subscription<std_msgs::msg::String>(
-      "mapoi_config_path", 10,
+      "mapoi_config_path", rclcpp::QoS(1).transient_local(),
       std::bind(&MapoiPanel::ConfigPathCallback, this, std::placeholders::_1));
 
   // QoS は mapoi_nav_server と同じ transient_local。後起動 panel でも latched 値を受信できる。

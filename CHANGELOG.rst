@@ -19,6 +19,22 @@ Unreleased
 Breaking changes
 ----------------
 
+* ``mapoi_server`` の ``pub_interval_ms`` parameter を廃止 (#135)。
+
+  - 旧: ``mapoi_config_path`` topic を ``pub_interval_ms`` (default 5000ms、
+    sample launch では 500ms) 間隔で定期 publish
+  - 新: 起動時 / ``SwitchMap`` / ``reload_map_info`` で明示 publish。
+    publisher は ``transient_local`` QoS のまま、subscriber 側も
+    ``transient_local`` に統一 (``poi_editor`` / ``mapoi_panel`` /
+    ``mapoi_webui_node`` を default QoS から変更)
+  - 移行: launch ファイル / param yaml で ``pub_interval_ms`` を指定して
+    いる場合は削除する (引き続き渡しても unused parameter として ROS が
+    warn するだけで動作には影響しない)
+  - 動機: 編集中の ``poi_editor`` table / ``mapoi_panel`` ComboBox が定期
+    publish trigger で再構築されて選択 / テキスト入力が中断される問題
+    (PR #168 動作確認で発覚)。``transient_local`` QoS で起動順序問題は解消
+    済みなので heartbeat 不要
+
 * ``initial_pose`` system tag を廃止 (#89 段階 3, #144)。
 
   - 旧: ``initial_pose`` タグ付き POI の pose を地図ロード/切替時に自動配信
