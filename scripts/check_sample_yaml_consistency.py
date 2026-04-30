@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""sample mapoi_config.yaml の整合性を検査する (#146 / PR #160 review follow-up)。
+"""sample mapoi_config.yaml を validation する (#146 / PR #160 / #163 / #170 follow-up)。
 
-mapoi_server / mapoi_turtlebot3_example 配下の同名サンプル yaml は ``map_file``
-行を除いて同期している必要がある。また個別 yaml も以下を満たすべき:
+**注意**: 名称は歴史的経緯で ``check_sample_yaml_consistency.py`` のまま残してい
+るが、現在は ``mapoi_turtlebot3_example`` 配下の sample yaml の **個別 validation**
+のみ行う。PR #170 (#163) 以前は ``mapoi_server`` / ``mapoi_turtlebot3_example`` の
+**pair sync** 検査も含んでいたが、``mapoi_server`` から sample を廃止して single
+source of truth に集約したため pair sync は不要になった。server 側に sample が
+再発生していないか検知する仕組みは別 issue (#171) で計画。
+
+mapoi_turtlebot3_example 配下のサンプル yaml が以下を満たすべき:
 
 - POI 名のユニーク性
 - ``route.waypoints`` / ``route.landmarks`` が POI 一覧に存在する
@@ -31,21 +37,16 @@ from __future__ import annotations
 import math
 import sys
 from pathlib import Path
-from typing import Any
 
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-SAMPLE_PAIRS = [
-    (
-        REPO_ROOT / 'mapoi_server' / 'maps' / 'turtlebot3_world' / 'mapoi_config.yaml',
-        REPO_ROOT / 'mapoi_turtlebot3_example' / 'maps' / 'turtlebot3_world' / 'mapoi_config.yaml',
-    ),
-    (
-        REPO_ROOT / 'mapoi_server' / 'maps' / 'turtlebot3_dqn_stage1' / 'mapoi_config.yaml',
-        REPO_ROOT / 'mapoi_turtlebot3_example' / 'maps' / 'turtlebot3_dqn_stage1' / 'mapoi_config.yaml',
-    ),
+# mapoi_server/maps の sample は #163 で廃止し、example 側のみが single source of truth。
+# 本 script は example 側の individual validation のみ行う (旧 server / example pair sync は廃止)。
+SAMPLE_FILES = [
+    REPO_ROOT / 'mapoi_turtlebot3_example' / 'maps' / 'turtlebot3_world' / 'mapoi_config.yaml',
+    REPO_ROOT / 'mapoi_turtlebot3_example' / 'maps' / 'turtlebot3_dqn_stage1' / 'mapoi_config.yaml',
 ]
 
 TOL_MIN = 0.001
@@ -155,37 +156,14 @@ def _validate_single(path: Path, data: dict) -> list[str]:
     return issues
 
 
-def _validate_pair_sync(server_path: Path, example_path: Path) -> list[str]:
-    issues: list[str] = []
-    server = _load(server_path)
-    example = _load(example_path)
-
-    rel_s = server_path.relative_to(REPO_ROOT)
-    rel_e = example_path.relative_to(REPO_ROOT)
-
-    for key in ('custom_tags', 'route', 'gazebo', 'poi'):
-        if server.get(key) != example.get(key):
-            issues.append(
-                f'{rel_s} と {rel_e} の "{key}" が同期していない '
-                f'(server / example で同一であるべき)'
-            )
-    return issues
-
-
 def main() -> int:
     issues: list[str] = []
 
-    for server_path, example_path in SAMPLE_PAIRS:
-        if not server_path.exists():
-            issues.append(f'sample yaml が存在しない: {server_path.relative_to(REPO_ROOT)}')
+    for path in SAMPLE_FILES:
+        if not path.exists():
+            issues.append(f'sample yaml が存在しない: {path.relative_to(REPO_ROOT)}')
             continue
-        if not example_path.exists():
-            issues.append(f'sample yaml が存在しない: {example_path.relative_to(REPO_ROOT)}')
-            continue
-        # server を代表として individual validation。example 側は同期 check に
-        # 委ねる (両方を走らせると同一違反を 2 重 report してしまうため)。
-        issues.extend(_validate_single(server_path, _load(server_path)))
-        issues.extend(_validate_pair_sync(server_path, example_path))
+        issues.extend(_validate_single(path, _load(path)))
 
     if issues:
         print('sample yaml consistency check failed:', file=sys.stderr)
@@ -193,7 +171,7 @@ def main() -> int:
             print(f'  - {i}', file=sys.stderr)
         return 1
 
-    print(f'OK: {len(SAMPLE_PAIRS)} sample yaml pair(s) are consistent.')
+    print(f'OK: {len(SAMPLE_FILES)} sample yaml file(s) are valid.')
     return 0
 
 

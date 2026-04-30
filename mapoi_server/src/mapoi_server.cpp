@@ -1,13 +1,15 @@
 #include "mapoi_server/mapoi_server.hpp"
 
 #include <cmath>
+#include <cstdio>
 
 using namespace std::chrono_literals;
 
 MapoiServer::MapoiServer() : Node("mapoi_server") {
   // parameters
   mapoi_server_pkg_ = ament_index_cpp::get_package_share_directory("mapoi_server");
-  this->declare_parameter<std::string>("maps_path", mapoi_server_pkg_ + "/maps");
+  // maps_path は REQUIRED (#163 で sample maps を mapoi_server から削除したため default 廃止)。
+  this->declare_parameter<std::string>("maps_path", "");
   this->declare_parameter<std::string>("map_name", "turtlebot3_world");
   this->declare_parameter<std::string>("config_file", "mapoi_config.yaml");
 
@@ -15,6 +17,38 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   maps_path_ = this->get_parameter("maps_path").as_string();
   map_name_ = this->get_parameter("map_name").as_string();
   config_file_ = this->get_parameter("config_file").as_string();
+  // 空白のみの値も REQUIRED 違反として扱う (#170 Round 4 low)。
+  if (maps_path_.find_first_not_of(" \t\r\n") == std::string::npos) {
+    maps_path_.clear();
+  }
+  if (maps_path_.empty()) {
+    RCLCPP_FATAL(this->get_logger(),
+      "maps_path parameter is REQUIRED. mapoi_server は #163 から sample maps を "
+      "提供しなくなったため、起動時に必ず maps_path を指定する必要があります "
+      "(例: $(find-pkg-share mapoi_turtlebot3_example)/maps)。");
+    throw std::runtime_error("maps_path parameter is required");
+  }
+  // maps_path の存在 + ディレクトリ性を起動時に検査。後段 (load_mapoi_config_file 等)
+  // で不明瞭な YAML::BadFile になる前に明示的に fail させる (#163 / Cursor review medium)。
+  std::error_code ec;
+  bool path_exists = std::filesystem::exists(maps_path_, ec);
+  if (ec) {
+    // 権限不足 (EACCES) / IO エラー等で stat 自体が失敗した場合 (#170 Round 3 medium)。
+    // 「存在しない」ではなく権限/IO 系として明示し、現場での復旧導線を分かりやすく。
+    RCLCPP_FATAL(this->get_logger(),
+      "maps_path '%s' could not be accessed: %s "
+      "(権限不足 / IO エラーの可能性)。",
+      maps_path_.c_str(), ec.message().c_str());
+    throw std::runtime_error("maps_path access error");
+  }
+  if (!path_exists || !std::filesystem::is_directory(maps_path_, ec)) {
+    RCLCPP_FATAL(this->get_logger(),
+      "maps_path '%s' does not exist or is not a directory. "
+      "正しい maps ディレクトリ path を指定してください "
+      "(例: $(find-pkg-share mapoi_turtlebot3_example)/maps)。",
+      maps_path_.c_str());
+    throw std::runtime_error("maps_path is not a valid directory");
+  }
 
   load_tag_definitions();
   load_mapoi_config_file();
@@ -510,7 +544,20 @@ void MapoiServer::get_tag_definitions_service(
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<MapoiServer>());
+  // try は ctor のみに限定する (#170 Round 4 high): spin 中 (callback 等) の例外まで
+  // catch すると std::terminate ベースのデバッグ性が落ちるため。MapoiServer のコンストラ
+  // クタは設定不備 (maps_path REQUIRED 違反 / 不在 dir 等) 時に std::runtime_error を
+  // throw する (#163)。fatal log は ctor 内で出力済 + ここで what() を stderr に出して
+  // clean shutdown + exit code 1。
+  std::shared_ptr<MapoiServer> node;
+  try {
+    node = std::make_shared<MapoiServer>();
+  } catch (const std::exception & e) {
+    fprintf(stderr, "[mapoi_server] FATAL: %s\n", e.what());
+    rclcpp::shutdown();
+    return 1;
+  }
+  rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;
 }

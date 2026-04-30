@@ -17,7 +17,7 @@ route:
   waypoints: [start_zone, checkpoint_east, north_goal]
 
 map:
-- {node_name: /map_server, map_file: turtlebot3.yaml}
+- {node_name: /map_server, map_file: turtlebot3_dqn_stage1.yaml}
 
 # mapoi_gazebo_bridge が SwitchMap 時に読む (ground_plane / sun は共通、world を構成する主モデルのみ swap)
 gazebo:
