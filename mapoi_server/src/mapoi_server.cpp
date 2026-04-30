@@ -22,6 +22,14 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
       "提供しなくなったため、起動時に必ず maps_path を指定する必要があります。");
     throw std::runtime_error("maps_path parameter is required");
   }
+  // maps_path の存在 + ディレクトリ性を起動時に検査。後段 (load_mapoi_config_file 等)
+  // で不明瞭な YAML::BadFile になる前に明示的に fail させる (#163 / Cursor review medium)。
+  std::error_code ec;
+  if (!std::filesystem::exists(maps_path_, ec) || !std::filesystem::is_directory(maps_path_, ec)) {
+    RCLCPP_FATAL(this->get_logger(),
+      "maps_path '%s' does not exist or is not a directory.", maps_path_.c_str());
+    throw std::runtime_error("maps_path is not a valid directory");
+  }
 
   load_tag_definitions();
   load_mapoi_config_file();
@@ -517,7 +525,15 @@ void MapoiServer::get_tag_definitions_service(
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<MapoiServer>());
+  // MapoiServer のコンストラクタは設定不備 (maps_path REQUIRED 違反 / 不在 dir 等) 時に
+  // std::runtime_error を throw する (#163)。fatal log は ctor 内で出力済なので、ここでは
+  // catch して clean に shutdown + exit code 1 で抜ける。
+  try {
+    rclcpp::spin(std::make_shared<MapoiServer>());
+  } catch (const std::runtime_error &) {
+    rclcpp::shutdown();
+    return 1;
+  }
   rclcpp::shutdown();
   return 0;
 }
