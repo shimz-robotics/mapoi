@@ -19,6 +19,30 @@ Unreleased
 Breaking changes
 ----------------
 
+* ``mapoi_server`` から sample maps を廃止し、``maps_path`` parameter を必須化 (#163 段階 1)。
+
+  - 旧: ``mapoi_server`` package に ``maps/turtlebot3_world/`` /
+    ``maps/turtlebot3_dqn_stage1/`` を同梱、``maps_path`` の default は
+    ``{pkg_share}/maps``
+  - 新: sample maps は ``mapoi_turtlebot3_example`` に集約 (single source of truth)。
+    ``mapoi_server`` の ``maps_path`` は default なしで起動時必須、未指定で fatal
+  - 残置: ``mapoi_server/maps/tag_definitions.yaml`` のみ system tag 定義として
+    package-internal で残す
+  - 移行: launch / param で ``maps_path`` を明示指定する。``mapoi_turtlebot3_example``
+    の sample を流用するなら ``$(find-pkg-share mapoi_turtlebot3_example)/maps``
+
+* ``mapoi_turtlebot3_example`` の sample map_file 名をワールド別差別化 (#163 段階 2)。
+
+  - 旧: ``turtlebot3_world/turtlebot3.{pgm,yaml}`` /
+    ``turtlebot3_dqn_stage1/turtlebot3.{pgm,yaml}`` (両 world で同名)
+  - 新: ``turtlebot3_world/turtlebot3_world.{pgm,yaml}`` /
+    ``turtlebot3_dqn_stage1/turtlebot3_dqn_stage1.{pgm,yaml}`` (ディレクトリ名と一致)
+  - 各 ``mapoi_config.yaml`` の ``map_file`` 値、``image:`` 行も連動更新
+  - 移行: 自前 launch で ``map_file`` を hardcode していなければ影響なし
+    (``mapoi_config.yaml`` 経由で参照される)
+  - 関連: ``scripts/check_sample_yaml_consistency.py`` の server / example pair
+    sync 検査を廃止し、example 側 individual validation のみに簡素化
+
 * ``mapoi_server`` の ``pub_interval_ms`` parameter を廃止 (#135)。
 
   - 旧: ``mapoi_config_path`` topic を ``pub_interval_ms`` (default 5000ms、

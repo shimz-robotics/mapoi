@@ -7,7 +7,8 @@ using namespace std::chrono_literals;
 MapoiServer::MapoiServer() : Node("mapoi_server") {
   // parameters
   mapoi_server_pkg_ = ament_index_cpp::get_package_share_directory("mapoi_server");
-  this->declare_parameter<std::string>("maps_path", mapoi_server_pkg_ + "/maps");
+  // maps_path は REQUIRED (#163 で sample maps を mapoi_server から削除したため default 廃止)。
+  this->declare_parameter<std::string>("maps_path", "");
   this->declare_parameter<std::string>("map_name", "turtlebot3_world");
   this->declare_parameter<std::string>("config_file", "mapoi_config.yaml");
 
@@ -15,6 +16,12 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   maps_path_ = this->get_parameter("maps_path").as_string();
   map_name_ = this->get_parameter("map_name").as_string();
   config_file_ = this->get_parameter("config_file").as_string();
+  if (maps_path_.empty()) {
+    RCLCPP_FATAL(this->get_logger(),
+      "maps_path parameter is REQUIRED. mapoi_server は #163 から sample maps を "
+      "提供しなくなったため、起動時に必ず maps_path を指定する必要があります。");
+    throw std::runtime_error("maps_path parameter is required");
+  }
 
   load_tag_definitions();
   load_mapoi_config_file();
