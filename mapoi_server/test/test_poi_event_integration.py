@@ -1,6 +1,7 @@
 import os
-import unittest
+import threading
 import time
+import unittest
 
 import launch
 import launch_ros.actions
@@ -9,7 +10,7 @@ import launch_testing.actions
 import launch_testing.markers
 
 import rclpy
-from tf2_ros import StaticTransformBroadcaster
+from tf2_ros import TransformBroadcaster
 from geometry_msgs.msg import TransformStamped
 from mapoi_interfaces.msg import PoiEvent
 from ament_index_python.packages import get_package_share_directory
@@ -50,7 +51,18 @@ def generate_test_description():
 
 
 class TestPoiEventIntegration(unittest.TestCase):
-    """mapoi_poi_events トピックの発行を検証する統合テスト"""
+    """mapoi_poi_events トピックの発行を検証する統合テスト。
+
+    flaky 対策の経緯 (#153) は :meth:`_wait_for_event` の docstring を参照。
+    要点: dynamic TF を別スレッドで周期 publish + event 駆動 wait で
+    取りこぼしを防ぐ。
+    """
+
+    # event 待ちの timeout。CI の CPU 負荷時にも `radius_check_hz=10` × 数周期分の
+    # マージンが取れる長さ。低めにすると nav_server の初期 fetch race で flaky 化する。
+    EVENT_WAIT_TIMEOUT = 5.0
+    # dynamic TF publish 周期。radius_check_hz=10 (=100ms) より十分速くして取りこぼしを防ぐ。
+    TF_PUBLISH_INTERVAL = 0.05
 
     @classmethod
     def setUpClass(cls):
@@ -60,73 +72,116 @@ class TestPoiEventIntegration(unittest.TestCase):
         cls.sub = cls.node.create_subscription(
             PoiEvent, 'mapoi_poi_events',
             lambda msg: cls.received_events.append(msg), 10)
-        cls.tf_broadcaster = StaticTransformBroadcaster(cls.node)
+        cls.tf_broadcaster = TransformBroadcaster(cls.node)
+        cls._robot_xy = (100.0, 100.0)  # 初期は全 POI から十分遠い座標
+        cls._tf_lock = threading.Lock()
+        cls._tf_stop = threading.Event()
+        cls._tf_thread = threading.Thread(target=cls._tf_publish_loop, daemon=True)
+        cls._tf_thread.start()
 
     @classmethod
     def tearDownClass(cls):
-        cls.node.destroy_node()
-        rclpy.shutdown()
+        cls._tf_stop.set()
+        cls._tf_thread.join(timeout=2.0)
+        thread_alive = cls._tf_thread.is_alive()
+        try:
+            cls.node.destroy_node()
+        finally:
+            rclpy.shutdown()
+        if thread_alive:
+            # Event.wait(0.05) 周期なので join 2 秒以内で必ず止まるはず。
+            # 残った場合は publish loop の bug か deadlock を疑う。
+            raise RuntimeError(
+                "TF publish thread did not terminate within 2.0s; resource leak suspected.")
+
+    @classmethod
+    def _tf_publish_loop(cls):
+        while not cls._tf_stop.is_set():
+            with cls._tf_lock:
+                x, y = cls._robot_xy
+            t = TransformStamped()
+            t.header.stamp = cls.node.get_clock().now().to_msg()
+            t.header.frame_id = 'map'
+            t.child_frame_id = 'base_link'
+            t.transform.translation.x = x
+            t.transform.translation.y = y
+            t.transform.translation.z = 0.0
+            t.transform.rotation.w = 1.0
+            cls.tf_broadcaster.sendTransform(t)
+            cls._tf_stop.wait(cls.TF_PUBLISH_INTERVAL)
 
     def setUp(self):
         self.received_events.clear()
 
-    def _publish_tf(self, x, y):
-        """map -> base_link のTFを発行"""
-        t = TransformStamped()
-        t.header.stamp = self.node.get_clock().now().to_msg()
-        t.header.frame_id = 'map'
-        t.child_frame_id = 'base_link'
-        t.transform.translation.x = x
-        t.transform.translation.y = y
-        t.transform.translation.z = 0.0
-        t.transform.rotation.w = 1.0
-        self.tf_broadcaster.sendTransform(t)
+    def _set_robot_pose(self, x, y):
+        """publish スレッドが次周期から拾う robot 位置を更新する"""
+        with self._tf_lock:
+            type(self)._robot_xy = (x, y)
 
-    def _spin_and_wait(self, timeout_sec=3.0):
-        """指定秒数spinしてイベントを待つ"""
-        end_time = time.time() + timeout_sec
-        while time.time() < end_time:
+    def _wait_for_event(self, predicate, timeout_sec=None):
+        """述語を満たす PoiEvent を受信するまで spin する。受信時点で即 True、
+        timeout したら False を返す。
+
+        flaky 対策の背景 (#153):
+        - 旧実装は `_spin_and_wait(2.0)` の固定時間 spin で、TF buffer の反映や
+          nav_server の初期 POI fetch のタイミング次第で取りこぼしていた。
+        - StaticTransformBroadcaster で同 child_frame_id を別座標で再 publish しても
+          subscriber 側の TF buffer cache 更新が伝播せず、前 test の pose が残って
+          ENTER 判定が成立しないケースがあった。これは setUpClass で dynamic TF を
+          周期 publish することで解消している。
+        - timeout は wall clock 調整の影響を受けないよう `time.monotonic()` で計測。
+        """
+        if timeout_sec is None:
+            timeout_sec = self.EVENT_WAIT_TIMEOUT
+        end_time = time.monotonic() + timeout_sec
+        while time.monotonic() < end_time:
             rclpy.spin_once(self.node, timeout_sec=0.1)
+            if any(predicate(e) for e in self.received_events):
+                return True
+        return False
 
     def test_enter_event_goal_only_poi(self):
         """goalタグのみのPOI (1.0, 0.0) 付近 → ENTER イベント発行"""
-        self._publish_tf(1.0, 0.0)
-        self._spin_and_wait(3.0)
-        enter_events = [e for e in self.received_events
-                        if e.event_type == PoiEvent.EVENT_ENTER
-                        and e.poi.name == 'poi_goal_only']
-        self.assertGreater(len(enter_events), 0,
-                           "goal-only POI の ENTER イベントが発行されるべき")
+        self._set_robot_pose(1.0, 0.0)
+        found = self._wait_for_event(
+            lambda e: (e.event_type == PoiEvent.EVENT_ENTER
+                       and e.poi.name == 'poi_goal_only'))
+        self.assertTrue(found,
+                        "goal-only POI の ENTER イベントが発行されるべき")
 
     def test_enter_event_pause_poi(self):
         """pauseタグ付きPOI (0.0, 2.0) 付近 → ENTER イベント発行"""
-        self._publish_tf(0.0, 2.0)
-        self._spin_and_wait(3.0)
-        enter_events = [e for e in self.received_events
-                        if e.event_type == PoiEvent.EVENT_ENTER
-                        and e.poi.name == 'poi_with_pause']
-        self.assertGreater(len(enter_events), 0,
-                           "pause POI の ENTER イベントが発行されるべき")
+        self._set_robot_pose(0.0, 2.0)
+        found = self._wait_for_event(
+            lambda e: (e.event_type == PoiEvent.EVENT_ENTER
+                       and e.poi.name == 'poi_with_pause'))
+        self.assertTrue(found,
+                        "pause POI の ENTER イベントが発行されるべき")
 
     def test_enter_event_custom_poi(self):
         """custom_tag付きPOI (3.0, 0.0) 付近 → ENTER イベント発行"""
-        self._publish_tf(3.0, 0.0)
-        self._spin_and_wait(3.0)
-        enter_events = [e for e in self.received_events
-                        if e.event_type == PoiEvent.EVENT_ENTER
-                        and e.poi.name == 'poi_with_custom']
-        self.assertGreater(len(enter_events), 0,
-                           "custom_tag POI の ENTER イベントが発行されるべき")
+        self._set_robot_pose(3.0, 0.0)
+        found = self._wait_for_event(
+            lambda e: (e.event_type == PoiEvent.EVENT_ENTER
+                       and e.poi.name == 'poi_with_custom'))
+        self.assertTrue(found,
+                        "custom_tag POI の ENTER イベントが発行されるべき")
 
     def test_exit_event(self):
         """POI内 → radius外 に移動 → EXIT イベント発行"""
-        self._publish_tf(1.0, 0.0)
-        self._spin_and_wait(2.0)
+        # 後段の EXIT 条件 (was_inside && dist > radius*hyst) は前段で ENTER して
+        # was_inside=true を成立させないと永遠に満たせない。前提を assert で固定する。
+        self._set_robot_pose(1.0, 0.0)
+        enter_found = self._wait_for_event(
+            lambda e: (e.event_type == PoiEvent.EVENT_ENTER
+                       and e.poi.name == 'poi_goal_only'))
+        self.assertTrue(enter_found,
+                        "前提: poi_goal_only が ENTER 状態になっていること")
         self.received_events.clear()
         # radius=0.5, hysteresis=1.15 → 0.575m以上離れる
-        self._publish_tf(5.0, 5.0)
-        self._spin_and_wait(2.0)
-        exit_events = [e for e in self.received_events
-                       if e.event_type == PoiEvent.EVENT_EXIT]
-        self.assertGreater(len(exit_events), 0,
-                           "EXIT イベントが発行されるべき")
+        self._set_robot_pose(5.0, 5.0)
+        exit_found = self._wait_for_event(
+            lambda e: (e.event_type == PoiEvent.EVENT_EXIT
+                       and e.poi.name == 'poi_goal_only'))
+        self.assertTrue(exit_found,
+                        "poi_goal_only の EXIT イベントが発行されるべき")
