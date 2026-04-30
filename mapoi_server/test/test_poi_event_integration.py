@@ -82,9 +82,13 @@ class TestPoiEventIntegration(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.node.destroy_timer(cls._tf_timer)
-        cls.node.destroy_node()
-        rclpy.shutdown()
+        try:
+            cls.node.destroy_timer(cls._tf_timer)
+            cls.node.destroy_node()
+        finally:
+            # destroy 過程で例外が出ても rclpy context は確実に閉じる。
+            # 後続の test class や launch_testing fixture への汚染を防ぐ。
+            rclpy.shutdown()
 
     @classmethod
     def _tf_publish_callback(cls):
@@ -105,27 +109,59 @@ class TestPoiEventIntegration(unittest.TestCase):
     def tearDown(self):
         """各 test 後に nav_server の poi_inside_state_ をリセットする (#165)。
 
-        pose を全 POI から十分遠い座標に動かし、radius_check の周期で inside POI
-        が EXIT 判定されるまで spin する。これで次 test は「全 POI inside=false」
-        を前提に始められる。
-
-        この tearDown が無いと、unittest の実行順 (alphabet 順) と「各 test が
-        別々の POI を使う」前提に依存していた。順序変更や同 POI test 追加で
-        前段 ENTER が出ず flaky 化するリスクがあったため明示的に隔離する。
+        unittest の実行順 (alphabet) と「各 test が別 POI を使う」前提への暗黙
+        依存を切るため、明示的に隔離する。実体は :meth:`_reset_inside_state` 側。
         """
-        self._set_robot_pose(100.0, 100.0)
-        # radius_check_hz=10 (= 100ms 周期) で全 inside POI が EXIT に転じるのに
-        # 必要な時間。余裕をもって 1.0 秒 (10 周期分)。
-        end = time.monotonic() + 1.0
-        while time.monotonic() < end:
-            rclpy.spin_once(self.node, timeout_sec=0.1)
+        self._reset_inside_state()
 
     def _set_robot_pose(self, x, y):
         """publish callback が次周期から拾う robot 位置を更新する。
 
-        callback と読み出しは同じ executor 上の単一スレッドで動くため lock 不要。
+        全アクセスは unittest main thread 上で行われ、timer callback も
+        `rclpy.spin_once` 経由でしか実行されない (SingleThreadedExecutor 前提)
+        ため lock 不要。MultiThreadedExecutor や background spin に戻す場合は
+        改めて同期が必要。
         """
         type(self)._robot_xy = (x, y)
+
+    def _compute_inside_pois(self):
+        """`received_events` の履歴から、現時点で inside と推定される POI 名集合
+        を返す。EVENT_ENTER で True、EVENT_EXIT で False に更新した最終状態。
+
+        nav_server 側の `poi_inside_state_` を直接覗けないため、subscriber 視点の
+        近似として使う。test 中に発生した event のみを見るので、setUp で必ず
+        `received_events.clear()` した状態で開始する前提。
+        """
+        state = {}
+        for ev in self.received_events:
+            if ev.event_type == PoiEvent.EVENT_ENTER:
+                state[ev.poi.name] = True
+            elif ev.event_type == PoiEvent.EVENT_EXIT:
+                state[ev.poi.name] = False
+        return {name for name, inside in state.items() if inside}
+
+    def _reset_inside_state(self, exit_timeout_sec=3.0):
+        """nav_server 側の `poi_inside_state_` を全 false に戻す helper。
+
+        現在 inside と推定される POI を列挙し、pose を全 POI から十分遠い
+        `(100, 100)` に動かしてから、各 POI の EVENT_EXIT を bounded timeout で
+        待つ。fixed sleep ではなく完了条件付き待機にすることで、TF 反映や
+        radius_check 遅延時にも tearDown 側で fail を検出できる (#165)。
+
+        tearDown と test 内 (順序非依存な isolation 検証) で共有する。
+        """
+        inside_pois = self._compute_inside_pois()
+        self._set_robot_pose(100.0, 100.0)
+        for poi_name in inside_pois:
+            ok = self._wait_for_event(
+                lambda e, n=poi_name: (e.event_type == PoiEvent.EVENT_EXIT
+                                       and e.poi.name == n),
+                timeout_sec=exit_timeout_sec)
+            self.assertTrue(
+                ok,
+                f"isolation reset: {poi_name} の EVENT_EXIT が"
+                f" {exit_timeout_sec}s 以内に観測されなかった")
+        self.received_events.clear()
 
     def _wait_for_event(self, predicate, timeout_sec=None):
         """述語を満たす PoiEvent を受信するまで spin する。受信時点で即 True、
@@ -158,20 +194,31 @@ class TestPoiEventIntegration(unittest.TestCase):
         self.assertTrue(found,
                         "goal-only POI の ENTER イベントが発行されるべき")
 
-    def test_enter_event_goal_only_poi_again(self):
-        """isolation 検証 (#165): 直前の test_enter_event_goal_only_poi で
-        inside だった poi_goal_only に再 ENTER できることを確認する。
+    def test_isolation_re_enter_same_poi(self):
+        """isolation 検証 (#165): 同 POI に ENTER → reset → 再 ENTER できる
+        ことを 1 test 内で完結確認する。実行順や個別実行に依存しない。
 
-        tearDown で nav_server の inside_state がリセットされていない場合、
-        inside_state[poi_goal_only]=true が残って ENTER の再発火条件
-        (was_inside=false && dist <= radius) を満たせず timeout する。
+        reset helper で `poi_inside_state_` を false に戻していなければ
+        ENTER の再発火条件 (was_inside=false && dist <= radius) を満たせず
+        2 回目の `_wait_for_event` が timeout する。helper を tearDown とも
+        共有しているので、本 test が PASS する限り tearDown isolation も
+        実装上等価に検証できる。
         """
         self._set_robot_pose(1.0, 0.0)
-        found = self._wait_for_event(
+        found1 = self._wait_for_event(
             lambda e: (e.event_type == PoiEvent.EVENT_ENTER
                        and e.poi.name == 'poi_goal_only'))
-        self.assertTrue(found,
-                        "tearDown isolation: poi_goal_only への再 ENTER が観測されるべき")
+        self.assertTrue(found1,
+                        "1 回目: poi_goal_only に ENTER できるべき")
+
+        self._reset_inside_state()
+
+        self._set_robot_pose(1.0, 0.0)
+        found2 = self._wait_for_event(
+            lambda e: (e.event_type == PoiEvent.EVENT_ENTER
+                       and e.poi.name == 'poi_goal_only'))
+        self.assertTrue(found2,
+                        "reset 後: 同 POI への再 ENTER が観測されるべき")
 
     def test_enter_event_pause_poi(self):
         """pauseタグ付きPOI (0.0, 2.0) 付近 → ENTER イベント発行"""
