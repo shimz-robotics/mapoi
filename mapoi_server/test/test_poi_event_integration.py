@@ -1,5 +1,4 @@
 import os
-import threading
 import time
 import unittest
 
@@ -54,7 +53,7 @@ class TestPoiEventIntegration(unittest.TestCase):
     """mapoi_poi_events トピックの発行を検証する統合テスト。
 
     flaky 対策の経緯 (#153) は :meth:`_wait_for_event` の docstring を参照。
-    要点: dynamic TF を別スレッドで周期 publish + event 駆動 wait で
+    要点: dynamic TF を rclpy timer で周期 publish + event 駆動 wait で
     取りこぼしを防ぐ。
     """
 
@@ -74,49 +73,59 @@ class TestPoiEventIntegration(unittest.TestCase):
             lambda msg: cls.received_events.append(msg), 10)
         cls.tf_broadcaster = TransformBroadcaster(cls.node)
         cls._robot_xy = (100.0, 100.0)  # 初期は全 POI から十分遠い座標
-        cls._tf_lock = threading.Lock()
-        cls._tf_stop = threading.Event()
-        cls._tf_thread = threading.Thread(target=cls._tf_publish_loop, daemon=True)
-        cls._tf_thread.start()
+        # rclpy timer で周期 publish。別 thread で sendTransform を呼ぶと
+        # rclpy publisher の thread safety 制約に違反し、jazzy 環境で TF buffer
+        # の反映が時々壊れて test_exit_event が flaky 化していた (#165 検証時に観測)。
+        # executor 内 (spin_once 経由) で publish することで安全側に倒す。
+        cls._tf_timer = cls.node.create_timer(
+            cls.TF_PUBLISH_INTERVAL, cls._tf_publish_callback)
 
     @classmethod
     def tearDownClass(cls):
-        cls._tf_stop.set()
-        cls._tf_thread.join(timeout=2.0)
-        thread_alive = cls._tf_thread.is_alive()
-        try:
-            cls.node.destroy_node()
-        finally:
-            rclpy.shutdown()
-        if thread_alive:
-            # Event.wait(0.05) 周期なので join 2 秒以内で必ず止まるはず。
-            # 残った場合は publish loop の bug か deadlock を疑う。
-            raise RuntimeError(
-                "TF publish thread did not terminate within 2.0s; resource leak suspected.")
+        cls.node.destroy_timer(cls._tf_timer)
+        cls.node.destroy_node()
+        rclpy.shutdown()
 
     @classmethod
-    def _tf_publish_loop(cls):
-        while not cls._tf_stop.is_set():
-            with cls._tf_lock:
-                x, y = cls._robot_xy
-            t = TransformStamped()
-            t.header.stamp = cls.node.get_clock().now().to_msg()
-            t.header.frame_id = 'map'
-            t.child_frame_id = 'base_link'
-            t.transform.translation.x = x
-            t.transform.translation.y = y
-            t.transform.translation.z = 0.0
-            t.transform.rotation.w = 1.0
-            cls.tf_broadcaster.sendTransform(t)
-            cls._tf_stop.wait(cls.TF_PUBLISH_INTERVAL)
+    def _tf_publish_callback(cls):
+        x, y = cls._robot_xy
+        t = TransformStamped()
+        t.header.stamp = cls.node.get_clock().now().to_msg()
+        t.header.frame_id = 'map'
+        t.child_frame_id = 'base_link'
+        t.transform.translation.x = x
+        t.transform.translation.y = y
+        t.transform.translation.z = 0.0
+        t.transform.rotation.w = 1.0
+        cls.tf_broadcaster.sendTransform(t)
 
     def setUp(self):
         self.received_events.clear()
 
+    def tearDown(self):
+        """各 test 後に nav_server の poi_inside_state_ をリセットする (#165)。
+
+        pose を全 POI から十分遠い座標に動かし、radius_check の周期で inside POI
+        が EXIT 判定されるまで spin する。これで次 test は「全 POI inside=false」
+        を前提に始められる。
+
+        この tearDown が無いと、unittest の実行順 (alphabet 順) と「各 test が
+        別々の POI を使う」前提に依存していた。順序変更や同 POI test 追加で
+        前段 ENTER が出ず flaky 化するリスクがあったため明示的に隔離する。
+        """
+        self._set_robot_pose(100.0, 100.0)
+        # radius_check_hz=10 (= 100ms 周期) で全 inside POI が EXIT に転じるのに
+        # 必要な時間。余裕をもって 1.0 秒 (10 周期分)。
+        end = time.monotonic() + 1.0
+        while time.monotonic() < end:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+
     def _set_robot_pose(self, x, y):
-        """publish スレッドが次周期から拾う robot 位置を更新する"""
-        with self._tf_lock:
-            type(self)._robot_xy = (x, y)
+        """publish callback が次周期から拾う robot 位置を更新する。
+
+        callback と読み出しは同じ executor 上の単一スレッドで動くため lock 不要。
+        """
+        type(self)._robot_xy = (x, y)
 
     def _wait_for_event(self, predicate, timeout_sec=None):
         """述語を満たす PoiEvent を受信するまで spin する。受信時点で即 True、
@@ -128,7 +137,7 @@ class TestPoiEventIntegration(unittest.TestCase):
         - StaticTransformBroadcaster で同 child_frame_id を別座標で再 publish しても
           subscriber 側の TF buffer cache 更新が伝播せず、前 test の pose が残って
           ENTER 判定が成立しないケースがあった。これは setUpClass で dynamic TF を
-          周期 publish することで解消している。
+          rclpy timer で周期 publish することで解消している。
         - timeout は wall clock 調整の影響を受けないよう `time.monotonic()` で計測。
         """
         if timeout_sec is None:
@@ -148,6 +157,21 @@ class TestPoiEventIntegration(unittest.TestCase):
                        and e.poi.name == 'poi_goal_only'))
         self.assertTrue(found,
                         "goal-only POI の ENTER イベントが発行されるべき")
+
+    def test_enter_event_goal_only_poi_again(self):
+        """isolation 検証 (#165): 直前の test_enter_event_goal_only_poi で
+        inside だった poi_goal_only に再 ENTER できることを確認する。
+
+        tearDown で nav_server の inside_state がリセットされていない場合、
+        inside_state[poi_goal_only]=true が残って ENTER の再発火条件
+        (was_inside=false && dist <= radius) を満たせず timeout する。
+        """
+        self._set_robot_pose(1.0, 0.0)
+        found = self._wait_for_event(
+            lambda e: (e.event_type == PoiEvent.EVENT_ENTER
+                       and e.poi.name == 'poi_goal_only'))
+        self.assertTrue(found,
+                        "tearDown isolation: poi_goal_only への再 ENTER が観測されるべき")
 
     def test_enter_event_pause_poi(self):
         """pauseタグ付きPOI (0.0, 2.0) 付近 → ENTER イベント発行"""
