@@ -241,11 +241,12 @@ class MapoiWebNode(Node):
                         self.map_name_ = new_map
                         self.get_logger().info(f'Map switched externally to: {new_map}')
                     break
+            # 内容変更 (POI / route の save 後 reload による再 publish) でも frontend に通知して
+            # loadPois / loadRoutes / loadTagDefinitions を再実行させる (#135 (B))。
+            # parse 成功時のみ broadcast: 異常メッセージで無駄な reload を避ける (#173 Round 1 medium)。
+            self._broadcast_sse_event('config_changed')
         except Exception as e:
             self.get_logger().warn(f'Failed to parse config path: {e}')
-        # 内容変更 (POI / route の save 後 reload による再 publish) でも frontend に通知して
-        # loadPois / loadRoutes / loadTagDefinitions を再実行させる (#135 (B))。
-        self._broadcast_sse_event('config_changed')
 
     def _broadcast_sse_event(self, event_type, payload=None):
         """SSE で接続中の全 frontend client にイベントを broadcast する (#135 (B))。
@@ -635,20 +636,35 @@ class MapoiWebNode(Node):
             """SSE endpoint: rviz / 外部 save 由来の config 変更を frontend に push (#135 (B))。
 
             EventSource (frontend) で接続して、{"type": "config_changed"} 等のイベントを受信する。
-            client 切断時は generator の finally で client queue を discard する。
+            client 切断時は heartbeat (30s 周期) の write error で generator が例外を受け、
+            finally で client queue を discard する (#173 Round 1 high)。
             """
             def gen():
-                q = queue.Queue()
+                # bounded queue: 遅いクライアントで event が積み上がる場合の DoS 対策 (#173 Round 1 high)。
+                # 通常は frontend が即座に drain するので 10 件以内に収まる、overflow は drop。
+                q = queue.Queue(maxsize=10)
                 with node._sse_lock:
                     node._sse_clients.add(q)
                 try:
                     while True:
-                        data = q.get()
-                        yield f'data: {json.dumps(data)}\n\n'
+                        try:
+                            # 30s timeout + heartbeat: client 切断検知 + プロキシバッファ flush。
+                            # timeout 時は SSE comment (`:\n\n`) を yield することで socket write を発火し、
+                            # client 切断時は ConnectionResetError → finally で discard される。
+                            data = q.get(timeout=30)
+                            yield f'data: {json.dumps(data)}\n\n'
+                        except queue.Empty:
+                            yield ': heartbeat\n\n'
                 finally:
                     with node._sse_lock:
                         node._sse_clients.discard(q)
-            return Response(gen(), mimetype='text/event-stream')
+            # SSE response headers: プロキシ (nginx 等) のバッファリング無効化 + cache 無効化
+            # (#173 Round 1 medium)。
+            return Response(gen(), mimetype='text/event-stream',
+                            headers={
+                                'Cache-Control': 'no-cache',
+                                'X-Accel-Buffering': 'no',
+                            })
 
         return app
 

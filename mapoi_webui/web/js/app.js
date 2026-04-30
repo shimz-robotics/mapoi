@@ -495,13 +495,23 @@
   // --- SSE: rviz / 外部 save 由来の config 変更で再 fetch (#135 (B)) ---
   // mapoi_webui_node が mapoi_config_path topic 受信時に push する。EventSource は
   // browser が自動 reconnect するので最初の setup のみ。
+  // 短時間のバースト時は 200ms にまとめて 1 回だけ fetch する debounce (#173 Round 1 medium)。
+  let configChangedTimer = null;
+  function scheduleConfigChangedReload() {
+    if (configChangedTimer) clearTimeout(configChangedTimer);
+    configChangedTimer = setTimeout(() => {
+      configChangedTimer = null;
+      Promise.all([loadTagDefinitions(), loadPois(), loadRoutes()])
+        .catch((err) => console.error('SSE reload failed:', err));
+    }, 200);
+  }
+
   const evtSrc = new EventSource('/api/events');
   evtSrc.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data);
       if (data.type === 'config_changed') {
-        Promise.all([loadTagDefinitions(), loadPois(), loadRoutes()])
-          .catch((err) => console.error('SSE reload failed:', err));
+        scheduleConfigChangedReload();
       }
     } catch (err) {
       console.error('Invalid SSE event:', err);
