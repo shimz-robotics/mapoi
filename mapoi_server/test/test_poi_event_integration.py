@@ -36,7 +36,7 @@ def generate_test_description():
         executable='mapoi_nav_server',
         name='mapoi_nav_server',
         parameters=[{
-            'radius_check_hz': 10.0,
+            'tolerance_check_hz': 10.0,
             'map_frame': 'map',
             'base_frame': 'base_link',
         }],
@@ -57,10 +57,10 @@ class TestPoiEventIntegration(unittest.TestCase):
     取りこぼしを防ぐ。
     """
 
-    # event 待ちの timeout。CI の CPU 負荷時にも `radius_check_hz=10` × 数周期分の
+    # event 待ちの timeout。CI の CPU 負荷時にも `tolerance_check_hz=10` × 数周期分の
     # マージンが取れる長さ。低めにすると nav_server の初期 fetch race で flaky 化する。
     EVENT_WAIT_TIMEOUT = 5.0
-    # dynamic TF publish 周期。radius_check_hz=10 (=100ms) より十分速くして取りこぼしを防ぐ。
+    # dynamic TF publish 周期。tolerance_check_hz=10 (=100ms) より十分速くして取りこぼしを防ぐ。
     TF_PUBLISH_INTERVAL = 0.05
 
     @classmethod
@@ -146,7 +146,7 @@ class TestPoiEventIntegration(unittest.TestCase):
         現在 inside と推定される POI を列挙し、pose を全 POI から十分遠い
         `(100, 100)` に動かしてから、各 POI の EVENT_EXIT を bounded timeout で
         待つ。fixed sleep ではなく完了条件付き待機にすることで、TF 反映や
-        radius_check 遅延時にも tearDown 側で fail を検出できる (#165)。
+        tolerance_check 遅延時にも tearDown 側で fail を検出できる (#165)。
 
         tearDown と test 内 (順序非依存な isolation 検証) で共有する。
         """

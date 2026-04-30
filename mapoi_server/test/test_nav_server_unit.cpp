@@ -237,6 +237,53 @@ TEST_F(NavServerTestFixture, ResetNavStateClearsRouteContext)
   EXPECT_DOUBLE_EQ(node_->paused_goal_pose_.pose.position.x, 0.0);
 }
 
+// --- compute_stopped_transition (#140) ---
+// STOPPED/RESUMED 判定の純関数 state machine の test。副作用なしで inside / was_stopped /
+// zero_velocity_dwelled の組み合わせから次の遷移を返すだけなので Node 不要 (TEST で十分)。
+
+TEST_F(NavServerTestFixture, ComputeStoppedTransitionNoOutside)
+{
+  using S = MapoiNavServer::StoppedDetectionInputs;
+  using T = MapoiNavServer::StoppedTransition;
+  // !inside の場合は state に関わらず NONE (EXIT で別途 stopped state を reset する規約)。
+  EXPECT_EQ(MapoiNavServer::compute_stopped_transition(S{false, false, false}), T::NONE);
+  EXPECT_EQ(MapoiNavServer::compute_stopped_transition(S{false, false, true}),  T::NONE);
+  EXPECT_EQ(MapoiNavServer::compute_stopped_transition(S{false, true, false}),  T::NONE);
+  EXPECT_EQ(MapoiNavServer::compute_stopped_transition(S{false, true, true}),   T::NONE);
+}
+
+TEST_F(NavServerTestFixture, ComputeStoppedTransitionEnterStopped)
+{
+  using S = MapoiNavServer::StoppedDetectionInputs;
+  using T = MapoiNavServer::StoppedTransition;
+  // inside + !was_stopped + dwelled → TO_STOPPED
+  EXPECT_EQ(MapoiNavServer::compute_stopped_transition(S{true, false, true}), T::TO_STOPPED);
+}
+
+TEST_F(NavServerTestFixture, ComputeStoppedTransitionEnterMoving)
+{
+  using S = MapoiNavServer::StoppedDetectionInputs;
+  using T = MapoiNavServer::StoppedTransition;
+  // inside + !was_stopped + !dwelled → NONE (停止が dwell 経過するまで何もしない)
+  EXPECT_EQ(MapoiNavServer::compute_stopped_transition(S{true, false, false}), T::NONE);
+}
+
+TEST_F(NavServerTestFixture, ComputeStoppedTransitionResumeOnVelocity)
+{
+  using S = MapoiNavServer::StoppedDetectionInputs;
+  using T = MapoiNavServer::StoppedTransition;
+  // inside + was_stopped + !dwelled (動き始めた) → TO_RESUMED (即時、dwell 不要)
+  EXPECT_EQ(MapoiNavServer::compute_stopped_transition(S{true, true, false}), T::TO_RESUMED);
+}
+
+TEST_F(NavServerTestFixture, ComputeStoppedTransitionStaysStopped)
+{
+  using S = MapoiNavServer::StoppedDetectionInputs;
+  using T = MapoiNavServer::StoppedTransition;
+  // inside + was_stopped + dwelled (停止継続) → NONE (重複 STOPPED 発火しない)
+  EXPECT_EQ(MapoiNavServer::compute_stopped_transition(S{true, true, true}), T::NONE);
+}
+
 int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

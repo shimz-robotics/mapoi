@@ -126,6 +126,12 @@ Breaking changes
   削除。yaml load で違反値を検出した場合は ``0.001`` に補正 + WARN ログ。
   (#138)
 
+* ``mapoi_nav_server`` の ROS parameter ``radius_check_hz`` を
+  ``tolerance_check_hz`` にリネーム (#140)。``PointOfInterest.radius``
+  field 廃止 (#87) → ``tolerance.xy`` 化に伴う命名整合。default 値 / 単位
+  / 動作は変更なし。launch / yaml で ``radius_check_hz`` を指定している場合
+  は ``tolerance_check_hz`` への置換が必要。
+
 Interfaces
 ----------
 
@@ -222,6 +228,37 @@ Fixes
   subscriber 側 (``mapoi_nav_server`` / ``mapoi_gazebo_bridge`` /
   ``mapoi_gz_bridge``) は元々 ``poi_name`` 空を無視する規約のため、運用中の
   自己位置巻き戻しは発生しない (#149 round 4 で確立した invariant を維持)。
+
+Navigation server
+-----------------
+
+* ``mapoi_nav_server`` で ``EVENT_STOPPED`` / ``EVENT_RESUMED`` の publish 判定
+  logic を実装 (#140)。``PoiEvent.msg`` に #87 で追加済の定数を実際に発火
+  させる。判定 source は OR で 2 系統:
+
+  - **Nav2 action SUCCEEDED**: ``FollowWaypoints`` / ``NavigateToPose`` の
+    result_callback で SUCCEEDED を検知したら、現在 inside 状態の全 POI に
+    ``EVENT_STOPPED`` を即時 publish (cmd_vel dwell 待ちを経由しない)
+  - **cmd_vel ベース**: 線速・角速の両方が ``stopped_speed_threshold``
+    (default ``0.01``) 未満の状態が ``stopped_dwell_time_sec`` (default
+    ``1.0`` 秒) 続いたら ``EVENT_STOPPED`` を publish。tolerance_check_callback
+    の各 tick で判定
+  - **EVENT_RESUMED**: STOPPED 状態の POI で速度が閾値超に戻ったら即時
+    publish (dwell 不要)。新規 ``mapoi_goal_pose_poi`` / ``mapoi_route``
+    受信時にも全 STOPPED POI に対して RESUMED を publish (subscriber 側で
+    「停止解除」を即時検知できるようにする)
+  - **EXIT 時**: poi_inside_state_ → false と同時に poi_stopped_state_ も
+    reset。EXIT イベントが「停止解除」を兼ねる扱い (RESUMED は明示 publish
+    しない、ライフサイクルを ENTER → STOPPED → EXIT に整理)
+
+  新規 ROS parameter:
+
+  - ``stopped_speed_threshold`` (default ``0.01`` m/s 相当)
+  - ``stopped_dwell_time_sec`` (default ``1.0``)
+  - ``cmd_vel_topic`` (default ``cmd_vel``)
+
+  state machine 純関数 ``compute_stopped_transition`` を切り出し、
+  ``test_nav_server_unit`` で unit test カバレッジ確保 (5 件追加)。
 
 Internal
 --------
