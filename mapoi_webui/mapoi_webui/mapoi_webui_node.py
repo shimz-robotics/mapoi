@@ -3,7 +3,9 @@
 
 import math
 import os
+import json
 import logging
+import queue
 import threading
 import time
 
@@ -178,6 +180,12 @@ class MapoiWebNode(Node):
         self.config_path_sub_ = self.create_subscription(
             String, 'mapoi_config_path', self.config_path_callback, config_path_qos)
 
+        # SSE clients (#135 (B)): rviz / 外部 save 由来の config 変更を frontend に push するための
+        # client queue 集合。/api/events で接続された client ごとに queue を 1 つ持ち、
+        # config_path_callback で全 client queue に broadcast する。
+        self._sse_clients = set()
+        self._sse_lock = threading.Lock()
+
         # If maps_path not set, try to get it from get_maps_info service or use default
         if not self.maps_path_:
             self.get_logger().warn('maps_path parameter not set. Set it to use the web editor.')
@@ -220,7 +228,7 @@ class MapoiWebNode(Node):
             self.robot_pose_ = None
 
     def config_path_callback(self, msg):
-        """Detect external map switches via mapoi_config_path topic."""
+        """Detect external map switches via mapoi_config_path topic + frontend に push (#135 (B))."""
         # Extract map_name from path: .../maps/<map_name>/mapoi_config.yaml
         path = msg.data
         try:
@@ -235,6 +243,26 @@ class MapoiWebNode(Node):
                     break
         except Exception as e:
             self.get_logger().warn(f'Failed to parse config path: {e}')
+        # 内容変更 (POI / route の save 後 reload による再 publish) でも frontend に通知して
+        # loadPois / loadRoutes / loadTagDefinitions を再実行させる (#135 (B))。
+        self._broadcast_sse_event('config_changed')
+
+    def _broadcast_sse_event(self, event_type, payload=None):
+        """SSE で接続中の全 frontend client にイベントを broadcast する (#135 (B))。
+
+        各 client の queue.Queue に put_nowait で event を流す。client 切断は
+        /api/events generator の finally で自動 discard されるので queue 漏れなし。
+        queue は unbounded (現状) なので Full 例外は通常発火しない。
+        """
+        data = {'type': event_type}
+        if payload is not None:
+            data['payload'] = payload
+        with self._sse_lock:
+            for q in self._sse_clients:
+                try:
+                    q.put_nowait(data)
+                except queue.Full:
+                    pass  # bounded queue にした場合の安全弁、現在は unbounded で発火しない
 
     def get_config_path(self, map_name=None):
         """Get the full path to mapoi_config.yaml for a given map."""
@@ -348,7 +376,8 @@ class MapoiWebNode(Node):
             host=self.web_host_,
             port=self.web_port_,
             debug=False,
-            use_reloader=False)
+            use_reloader=False,
+            threaded=True)  # SSE long-lived connection と他 request の並行のため明示 (#135 (B))
 
     def create_flask_app(self):
         """Create and configure the Flask application."""
@@ -600,6 +629,26 @@ class MapoiWebNode(Node):
                 node.initialpose_poi_pub_, msg, 'mapoi_initialpose_poi')
             node.get_logger().info(f'Initial pose: {data["poi_name"]}')
             return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
+
+        @app.route('/api/events')
+        def api_events():
+            """SSE endpoint: rviz / 外部 save 由来の config 変更を frontend に push (#135 (B))。
+
+            EventSource (frontend) で接続して、{"type": "config_changed"} 等のイベントを受信する。
+            client 切断時は generator の finally で client queue を discard する。
+            """
+            def gen():
+                q = queue.Queue()
+                with node._sse_lock:
+                    node._sse_clients.add(q)
+                try:
+                    while True:
+                        data = q.get()
+                        yield f'data: {json.dumps(data)}\n\n'
+                finally:
+                    with node._sse_lock:
+                        node._sse_clients.discard(q)
+            return Response(gen(), mimetype='text/event-stream')
 
         return app
 

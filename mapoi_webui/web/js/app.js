@@ -492,6 +492,26 @@
   setupSectionToggle('btn-nav-toggle', document.getElementById('nav-body'));
   startNavStatusPolling();
 
+  // --- SSE: rviz / 外部 save 由来の config 変更で再 fetch (#135 (B)) ---
+  // mapoi_webui_node が mapoi_config_path topic 受信時に push する。EventSource は
+  // browser が自動 reconnect するので最初の setup のみ。
+  const evtSrc = new EventSource('/api/events');
+  evtSrc.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'config_changed') {
+        Promise.all([loadTagDefinitions(), loadPois(), loadRoutes()])
+          .catch((err) => console.error('SSE reload failed:', err));
+      }
+    } catch (err) {
+      console.error('Invalid SSE event:', err);
+    }
+  };
+  evtSrc.onerror = (err) => {
+    // EventSource は readyState=CONNECTING に戻って自動 reconnect する
+    console.warn('SSE connection error, browser will auto-reconnect:', err);
+  };
+
   // --- Initialize ---
   await loadMaps();
 })();

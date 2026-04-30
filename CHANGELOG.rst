@@ -160,6 +160,18 @@ WebUI / rviz_plugins
     ``[-π, π]`` で表現するのが慣習で、それを超えるユースケースは事実上ない想定)。
     soft warning にせず hard reject を選んだ理由は typo 防止を優先するため。
 
+* WebUI で rviz / 外部 save 由来の config 変更を SSE で受信し即時反映 (#135 (B))。
+
+  - 旧: rviz の PoiEditor で save しても WebUI 側はブラウザ更新するまで反映されない
+  - 新: ``mapoi_webui_node`` に ``/api/events`` SSE endpoint を追加。
+    ``mapoi_config_path`` topic 受信時に ``{type: "config_changed"}`` を全 client に
+    broadcast。frontend (``app.js``) は ``EventSource`` で受信して
+    ``loadTagDefinitions / loadPois / loadRoutes`` を再 fetch
+  - 関連: ``Flask app.run(threaded=True)`` を明示 (SSE long-lived connection と他
+    request の並行処理のため)
+  - PR #168 で対応した #135 (A) (PoiEditor / MapoiPanel の callback 修正) と
+    合わせて #135 全体を close
+
 Samples
 -------
 
