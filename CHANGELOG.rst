@@ -132,6 +132,15 @@ Breaking changes
   / 動作は変更なし。launch / yaml で ``radius_check_hz`` を指定している場合
   は ``tolerance_check_hz`` への置換が必要。
 
+* ``mapoi_rviz2_publisher`` の ``arrow_size_ratio`` parameter を廃止 (#136)。
+
+  - 旧: ``arrow_size_ratio`` (double, default 1.0) で POI 矢印サイズを
+    ``radius × ratio`` に動的調整
+  - 新: 矢印は固定 scale (length=0.15, shaft/head=0.04) で扇形 visualization の
+    方向補助に位置付け (radius 連動の倍率は不要)
+  - 移行: 既存 launch / yaml で ``arrow_size_ratio`` を declare / set している場合は
+    削除する (parameter 自体が無くなる)
+
 Interfaces
 ----------
 
@@ -177,6 +186,17 @@ WebUI / rviz_plugins
     request の並行処理のため)
   - PR #168 で対応した #135 (A) (PoiEditor / MapoiPanel の callback 修正) と
     合わせて #135 全体を close
+
+* ``mapoi_rviz2_publisher`` / ``mapoi_webui`` で POI tolerance を扇形 (sector) で描画 (#136)。
+
+  - 半径 = ``tolerance.xy``、扇角 = ``2 * tolerance.yaw``、中心線 = ``pose.yaw``
+  - ``waypoint`` = 塗り扇形、``landmark`` = 中抜き扇形、``pause`` = 太い点線 outline
+    の重ね描き (主 glyph は細い実線で対比)
+  - ``tolerance.yaw == 0`` または ``>= π`` → 完全円 (yaw 不問、``pass_through`` 表現可能)
+  - ``mapoi_rviz2_publisher`` に ``show_tolerance_sector`` parameter (bool, default true)
+    を追加 — 扇形描画を runtime トグル
+  - follow-up: ロボットの tolerance 判定は xy のみなので、円 (xy 判定領域) + 扇形
+    (yaw 制約) の重ね描きへの分解を別 issue (#179) で検討中
 
 Samples
 -------

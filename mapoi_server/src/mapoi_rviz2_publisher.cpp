@@ -288,6 +288,8 @@ void MapoiRviz2Publisher::timer_callback(){
 
   // Pose の orientation (quaternion) から 2D yaw を取り出す。
   // tf2 を引かずに済むよう atan2(2(wz+xy), 1-2(y^2+z^2)) を直書き。
+  // 前提: POI は 2D (roll/pitch=0)、quaternion は正規化済 (mapoi_server / Editor 側で保証)。
+  // 3D POI 対応や未正規化入力が必要になれば tf2 経由に書き換える。
   auto get_yaw_from_pose = [](const geometry_msgs::msg::Pose & p) -> double {
     const double w = p.orientation.w;
     const double x = p.orientation.x;
