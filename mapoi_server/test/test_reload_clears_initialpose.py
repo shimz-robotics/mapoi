@@ -57,7 +57,12 @@ def _transient_local_qos():
 
 class TestReloadClearsInitialpose(unittest.TestCase):
     """reload_map_info 後に新規 subscribe する late subscriber が、起動時の
-    POI 名ではなく skip message (poi_name="") を latched 受信することを確認する (#154)。"""
+    POI 名ではなく skip message (poi_name="") を latched 受信することを確認する (#154)。
+
+    mapoi_server は launch_test 内で 1 プロセスのみ起動するため、状態遷移
+    (起動時 latched → reload 後 latched) を 1 メソッドで順次検証する形にする
+    (#174 review r2 high #1 対応: メソッドを分けると実行順序依存になるため)。
+    """
 
     SPIN_TIMEOUT = 5.0
 
@@ -82,7 +87,11 @@ class TestReloadClearsInitialpose(unittest.TestCase):
         return False
 
     def _take_one_latched(self, timeout=None):
-        """新規 subscription を作って transient_local の latched 値を 1 個受信する。"""
+        """新規 subscription を作って transient_local の latched 値を 1 個受信する。
+
+        毎回新しい subscription を作って destroy することで、後起動の subscriber が
+        latched 値をどう受信するかをシナリオとして直接検証できる。
+        """
         received = []
         sub = self.node.create_subscription(
             InitialPoseRequest, 'mapoi_initialpose_poi',
@@ -95,31 +104,29 @@ class TestReloadClearsInitialpose(unittest.TestCase):
         finally:
             self.node.destroy_subscription(sub)
 
-    def test_initial_latched_is_first_poi_name(self):
-        # 前提条件: 起動直後の latched は POI list 先頭 ("poi_goal_only")。
-        # この test が壊れた場合は publish_initial_poi_name 側の regression を疑う。
+    def test_reload_overwrites_latched_with_skip_message(self):
         self.assertTrue(
             self.reload_client.wait_for_service(timeout_sec=self.SPIN_TIMEOUT),
             "reload_map_info service did not become available")
+
+        # 1) 起動直後の latched は POI list 先頭 ("poi_goal_only")。
+        #    publish_initial_poi_name の回帰検知も兼ねる (起動時 publish のガード)。
         msg = self._take_one_latched()
-        self.assertEqual(msg.poi_name, "poi_goal_only",
-                         f"Initial latched poi_name should be POI list first, got '{msg.poi_name}'")
+        self.assertEqual(
+            msg.poi_name, "poi_goal_only",
+            f"Initial latched poi_name should be POI list first, got '{msg.poi_name}'")
 
-    def test_reload_clears_latched_for_late_subscriber(self):
-        # 起動時 publish が完了するまで service の準備を待つ。
-        self.assertTrue(
-            self.reload_client.wait_for_service(timeout_sec=self.SPIN_TIMEOUT),
-            "reload_map_info service did not become available")
-
-        # reload を呼ぶ。reload_map_info_service 内で publish_initialpose_clear が呼ばれ、
-        # transient_local の latched 値が skip message (poi_name="") に上書きされる。
+        # 2) reload_map_info を呼ぶ。reload_map_info_service 内で publish_initialpose_clear が
+        #    呼ばれ、transient_local の latched 値が skip message (poi_name="") に上書きされる。
         future = self.reload_client.call_async(Trigger.Request())
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=self.SPIN_TIMEOUT)
         result = future.result()
         self.assertIsNotNone(result, "reload_map_info call did not complete")
         self.assertTrue(result.success, f"reload_map_info failed: {result.message}")
 
-        # reload 後に subscribe する late subscriber は、上書きされた skip message を受信する。
+        # 3) reload 後に subscribe する late subscriber は、上書きされた skip message を受信する。
+        #    これが #154 本旨の直接検証。
         msg = self._take_one_latched()
-        self.assertEqual(msg.poi_name, "",
-                         f"Expected empty poi_name after reload (skip message), got '{msg.poi_name}'")
+        self.assertEqual(
+            msg.poi_name, "",
+            f"Expected empty poi_name after reload (skip message), got '{msg.poi_name}'")
