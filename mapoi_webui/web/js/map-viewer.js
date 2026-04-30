@@ -486,8 +486,9 @@ class MapViewer {
     }
 
     // pause overlay: xy 円沿いに dot pattern を重ね描き (#179)。
-    // 旧 dashArray '6, 4' (1.5:1 dash) は dot として識別しづらく潰れて見える feedback (#178 PR コメント)
-    // を受け、'2, 6' (1:3 dot) で短い dot + 大きい gap に変更。
+    // 旧 dashArray '6, 4' (cycle 比 60% on, 1.5:1 dash) は dot として識別しづらく潰れて見える feedback
+    // (#178 PR コメント) を受け、'2, 6' (cycle 比 25% on, 1:3 on:off) で短い dot + 大きい gap に変更。
+    // RViz 側 (dot 0.02m / step 0.10m, 20% on / 1:4) と厳密比率は僅差だが共に sparse dot で整合。
     if (isPause) {
       const pauseOutline = L.polyline(circlePoints, {
         color,

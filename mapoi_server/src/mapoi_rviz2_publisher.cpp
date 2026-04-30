@@ -432,7 +432,9 @@ void MapoiRviz2Publisher::timer_callback(){
                                 visualization_msgs::msg::MarkerArray & target) {
     if (radius <= 0.0) return;
 
-    // dot 中心間隔 0.10m、dot 長 0.02m → 1:4 の on:off (WebUI dashArray '2, 6' 相当の dot 比率)。
+    // dot 中心間隔 0.10m、dot 長 0.02m → cycle 比 20% on (1:4 on:off)。
+    // WebUI 側 (dashArray '2, 6') は 25% on (1:3 on:off) で厳密には僅差あるが、
+    // どちらも sparse dot pattern として視覚的に同方向で整合 (#179 cursor review round 2)。
     // typical radius (0.1-2m) で dot として識別可能な粒度。
     constexpr double DOT_STEP = 0.10;
     constexpr double DOT_LENGTH = 0.02;

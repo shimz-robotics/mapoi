@@ -204,13 +204,20 @@ WebUI / rviz_plugins
   - 円 outline (細実線・薄め): ロボットの ``tolerance.xy`` 進入判定領域を常時表示。
     判定 logic (Euclidean < ``tolerance.xy``) の視覚的根拠として yaw 不問で描画
   - 扇形 (塗り or 中抜き): yaw 制約を強調。``0 < tolerance.yaw < π`` の時のみ
-    重ね描き (完全円との情報冗長を回避、yaw 不問なら円のみ表示)
+    重ね描き (完全円との情報冗長を回避)
+  - **見た目の変化点**: 旧 (#178) では yaw 不問 POI (``tolerance.yaw == 0`` または ``>= π``)
+    も塗り扇形 = 完全円塗り (waypoint なら緑塗り) として描画されていた。本 PR では
+    yaw 不問なら**円アウトラインのみ**表示 (塗りなし)。判定 semantics と一致するが、
+    旧表示に慣れた利用者には印象変化あり
   - pause overlay: 旧 dash (``dashArray: '6, 4'`` / RViz segment 0.05m, 1:1 比率) は
     「点と感じない、潰れて見える」user feedback (#178 PR コメント) を受け、
-    dot 形式 (WebUI ``dashArray: '2, 6'`` + ``lineCap: round`` / RViz dot 長 0.02m +
-    間隔 0.10m, 1:4 比率) に変更。pause 発火条件 (xy 円内) と境界が一致する xy 円沿いに重畳
+    sparse dot 形式に変更。WebUI ``dashArray: '2, 6'`` + ``lineCap: round`` (cycle 比
+    25% on)、RViz dot 長 0.02m + 間隔 0.10m + line 0.04m (cycle 比 20% on)。
+    pause 発火条件 (xy 円内) と境界が一致する xy 円沿いに重畳
   - ``show_tolerance_sector`` parameter は名称据え置きで制御対象を 円 + 扇形 + pause overlay
     全体に拡張 (backward compat 維持)
+  - **保守注**: 描画仕様は ``mapoi_rviz2_publisher.cpp`` (RViz) / ``map-viewer.js`` (WebUI)
+    で二重実装。仕様変更時はペアで更新する (#136 から継続、共通化は #70 と合わせて検討)
 
 Samples
 -------
