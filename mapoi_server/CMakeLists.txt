@@ -15,6 +15,7 @@ endif()
 
 ament_auto_add_executable(mapoi_server
   src/mapoi_server.cpp
+  src/initial_pose_resolver.cpp
 )
 target_link_libraries(mapoi_server ${_mapoi_yaml_cpp_target})
 
@@ -33,6 +34,7 @@ find_package(gazebo_msgs QUIET)
 if(gazebo_msgs_FOUND)
   ament_auto_add_executable(mapoi_gazebo_bridge
     src/mapoi_gazebo_bridge.cpp
+    src/initial_pose_resolver.cpp
   )
   target_link_libraries(mapoi_gazebo_bridge ${_mapoi_yaml_cpp_target})
   ament_target_dependencies(mapoi_gazebo_bridge gazebo_msgs)
@@ -50,6 +52,7 @@ find_package(ros_gz_interfaces QUIET)
 if(ros_gz_interfaces_FOUND AND NOT "$ENV{ROS_DISTRO}" STREQUAL "humble")
   ament_auto_add_executable(mapoi_gz_bridge
     src/mapoi_gz_bridge.cpp
+    src/initial_pose_resolver.cpp
   )
   target_link_libraries(mapoi_gz_bridge ${_mapoi_yaml_cpp_target})
   ament_target_dependencies(mapoi_gz_bridge ros_gz_interfaces)
@@ -78,12 +81,14 @@ if(BUILD_TESTING)
   )
   target_compile_definitions(test_nav_server_unit PRIVATE UNIT_TEST)
 
+  # initial_pose_resolver は純関数なので test には resolver の cpp だけを link する
+  # (#150 で mapoi_server.cpp 全体 link から軽量化、Node 依存を test から排除)。
   ament_auto_add_gtest(test_mapoi_server_unit
     test/test_mapoi_server_unit.cpp
-    src/mapoi_server.cpp
+    src/initial_pose_resolver.cpp
   )
   target_compile_definitions(test_mapoi_server_unit PRIVATE UNIT_TEST)
-  # mapoi_server.cpp は yaml-cpp 依存。本体 executable と同じく test binary にも明示 link
+  # initial_pose_resolver.cpp は yaml-cpp 依存。本体 executable と同じく test binary にも明示 link
   # (#149 で見落とし、別 PC clean build で undefined reference 発覚 → hotfix)。
   # NOTE: humble の `ament_auto_add_gtest` 内で plain signature の target_link_libraries
   # が使われているため、ここも plain (= PUBLIC/PRIVATE/INTERFACE 無し) で揃える必要がある。

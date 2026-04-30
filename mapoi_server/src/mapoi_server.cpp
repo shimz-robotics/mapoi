@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstdio>
 
+#include "mapoi_server/initial_pose_resolver.hpp"
+
 using namespace std::chrono_literals;
 
 MapoiServer::MapoiServer() : Node("mapoi_server") {
@@ -432,63 +434,12 @@ void MapoiServer::reload_map_info_service(
   RCLCPP_INFO(this->get_logger(), "Reloaded mapoi config: %s", config_path_.c_str());
 }
 
-// static (純関数). pois_list と requested_name から initial POI 名を決定。
-// state を持たないため unit test で直接呼び出せる (#149 round 4 high 対応)。
-std::string MapoiServer::compute_initial_poi_name(
-  const YAML::Node & pois_list, const std::string & requested_name)
-{
-  if (!pois_list || !pois_list.IsSequence()) {
-    return "";
-  }
-  auto is_landmark_poi = [](const YAML::Node & poi) {
-    if (!poi["tags"] || !poi["tags"].IsSequence()) return false;
-    for (const auto & t : poi["tags"]) {
-      if (t.as<std::string>() == "landmark") return true;
-    }
-    return false;
-  };
-  // pose ノード + x / y / yaw 全てを numeric として読めるかを確認する。
-  // bridge 側は欠落時 0.0 fallback なので、ここで弾けば「意図しない (0,0) spawn」を防げる。
-  auto has_valid_pose = [](const YAML::Node & poi) {
-    if (!poi["pose"]) return false;
-    const auto & pose = poi["pose"];
-    if (!pose.IsMap()) return false;
-    for (const char * k : {"x", "y", "yaw"}) {
-      if (!pose[k]) return false;
-      try {
-        (void)pose[k].as<double>();
-      } catch (const YAML::Exception &) {
-        return false;
-      }
-    }
-    return true;
-  };
-  if (!requested_name.empty()) {
-    bool found = false;
-    for (const auto & poi : pois_list) {
-      if (poi["name"].as<std::string>("") != requested_name) continue;
-      found = true;
-      if (is_landmark_poi(poi)) break;     // landmark → fall back
-      if (!has_valid_pose(poi)) break;     // pose 欠落 → fall back
-      return requested_name;
-    }
-    (void)found;  // not-found 警告は呼び出し側で扱う (state-less 化のため log は出さない)
-  }
-  for (const auto & poi : pois_list) {
-    if (is_landmark_poi(poi)) continue;     // landmark は到達不可、initial pose 候補から除外
-    if (!has_valid_pose(poi)) continue;     // pose 欠落 POI もスキップ
-    const std::string n = poi["name"].as<std::string>("");
-    if (!n.empty()) return n;
-  }
-  return "";
-}
-
 void MapoiServer::publish_initial_poi_name(const std::string & requested_name)
 {
   // requested_name は SwitchMap.initial_poi_name (空 = default、POI list 先頭採用)。
   // shared state を持たず、呼び出し側が直接渡す形にして thread safety / lifecycle race を排除
-  // (Cursor review #149 round 2 high 対応)。
-  const std::string target = compute_initial_poi_name(pois_list_, requested_name);
+  // (Cursor review #149 round 2 high 対応)。選定 logic は bridge 2 つと共通化済 (#150)。
+  const std::string target = mapoi::select_initial_poi_name(pois_list_, requested_name);
   // ログ順序: target.empty() の WARN は下流に任せ、ここでは「requested 不採用かつ fallback 候補が
   // 存在する」ケースのみ WARN を出す (#149 round 5 low: target.empty() 時に紛らわしい両 WARN が
   // 出るのを避ける)。
