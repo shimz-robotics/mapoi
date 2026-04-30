@@ -540,9 +540,13 @@ void PoiEditorPanel::SaveButton()
   // 短い窓 + Save 直後の操作頻度低さから許容。必要なら future PR で member QTimer + cancel
   // pattern に拡張可能。
   ui_->SaveButton->setEnabled(false);
+  // SAVED! の green feedback を 1.5 秒見せる間、外部 (mapoi_config_path 再 publish 由来) からの
+  // UpdatePoiTable trigger を抑制する。1.5 秒後に rebuild + flag リセットで通常 flow に戻る。
+  suppress_config_callback_update_ = true;
   QTimer::singleShot(1500, this, [this]() {
     UpdatePoiTable();
     ui_->SaveButton->setEnabled(true);
+    suppress_config_callback_update_ = false;
   });
 }
 
@@ -580,10 +584,12 @@ void PoiEditorPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
   // 同じ map で path も同じ場合 (= save 後の reload_map_info で再 publish される flow)
   // でも POI 内容が変わっている可能性があるため UpdatePoiTable で table を再 fetch する (#135)。
   // map 切替 / 初回受信時は MapComboBox 同期 + FileComboBox 再構築も必要なので InitConfigs を呼ぶ。
+  // 自分自身が save 直後 (suppress_config_callback_update_) は 1.5 秒の SAVED! feedback を
+  // 守るため UpdatePoiTable を skip する (QTimer 末尾で rebuild + flag クリアされる)。
   QMetaObject::invokeMethod(this, [this, map_name, map_changed, first_config]() {
     if (map_changed || first_config) {
       InitConfigs(map_name);
-    } else {
+    } else if (!suppress_config_callback_update_) {
       UpdatePoiTable();
     }
   }, Qt::QueuedConnection);
