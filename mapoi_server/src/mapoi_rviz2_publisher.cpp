@@ -8,9 +8,10 @@ using std::placeholders::_2;
 MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
   id_buf_ = 0;
 
-  // POI 矢印の大きさを radius に対する比率で指定する (arrow_size = radius × ratio)。
-  // default 1.0 = radius と同じ長さ。Route 矢印 (waypoint 間) は radius 概念を持たないので対象外。
-  this->declare_parameter<double>("arrow_size_ratio", 1.0);
+  // POI tolerance (xy + yaw) の扇形 visualization (#136) を表示するか。
+  // false: 主 glyph (扇形) と pause overlay を全 POI で抑制。Editor 中心の使い方や
+  // RViz が情報過多な時に false にする想定。default true。
+  this->declare_parameter<bool>("show_tolerance_sector", true);
 
   // POI label の表示形式: "index" (POI Editor 行番号、1-based) / "name" / "both" (= "<index>: <name>") / "none"。
   // default "index" は WebUI 上の行と RViz label を直接対応させ、文字長を抑えて重なりを減らす。
@@ -252,24 +253,14 @@ void MapoiRviz2Publisher::timer_callback(){
   default_arrow_marker.header.stamp = rclcpp::Clock().now();
   default_arrow_marker.action = visualization_msgs::msg::Marker::ADD;
   default_arrow_marker.type = visualization_msgs::msg::Marker::ARROW;
-  // Default scale (radius が無い / 0 の POI 用 fallback)。比率 (length:shaft:head) = 0.3:0.2:0.1
-  default_arrow_marker.scale.x = 0.3; default_arrow_marker.scale.y = 0.2; default_arrow_marker.scale.z = 0.1;
+  // 矢印は扇形 (#136) の方向補助なので細く短く固定 (POI 中心線として yaw のみ示す)。
+  // 比率 (length:shaft:head) = 0.15:0.04:0.04。radius 連動の倍率は廃止 (arrow_size_ratio 廃止)。
+  default_arrow_marker.scale.x = 0.15; default_arrow_marker.scale.y = 0.04; default_arrow_marker.scale.z = 0.04;
   default_arrow_marker.color.r = 0.0; default_arrow_marker.color.g = 1.0; default_arrow_marker.color.b = 0.0; default_arrow_marker.color.a = 0.7;
   default_arrow_marker.lifetime.sec = 2.0;
 
-  // POI radius に基づく arrow scale 適用 helper。
-  // 既存 default 比率 (length:shaft:head = 0.3:0.2:0.1) を保ち、length を radius × ratio に。
-  const double arrow_size_ratio =
-    this->get_parameter("arrow_size_ratio").as_double();
-  auto apply_radius_scale = [&](visualization_msgs::msg::Marker & m, double radius) {
-    if (radius <= 0.0 || arrow_size_ratio <= 0.0) {
-      return;  // default scale を維持
-    }
-    const double length = radius * arrow_size_ratio;
-    m.scale.x = length;
-    m.scale.y = length * (0.2 / 0.3);  // shaft diameter
-    m.scale.z = length * (0.1 / 0.3);  // head diameter
-  };
+  // 扇形 visualization (#136) の表示制御。false で全 POI の主 glyph + pause overlay を抑制。
+  const bool show_sector = this->get_parameter("show_tolerance_sector").as_bool();
 
   // POI label の format ("index" / "name" / "both" / "none") を runtime parameter で切替。
   // 空文字列を返した場合は label を生成しない (none モード)。
@@ -376,7 +367,7 @@ void MapoiRviz2Publisher::timer_callback(){
       m.type = visualization_msgs::msg::Marker::LINE_STRIP;
       m.id = marker_id_base + n_added;
       m.pose.orientation.w = 1.0;
-      m.scale.x = 0.03;  // line width (m)
+      m.scale.x = 0.02;  // line width (m)、pause overlay (太い点線) との対比で細め (#136)
       m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = stroke_alpha;
       m.lifetime.sec = 2;
       if (is_full_circle) {
@@ -425,7 +416,7 @@ void MapoiRviz2Publisher::timer_callback(){
     m.type = visualization_msgs::msg::Marker::LINE_LIST;
     m.id = marker_id;
     m.pose.orientation.w = 1.0;
-    m.scale.x = 0.04;  // やや太め (line width)
+    m.scale.x = 0.06;  // 太い点線 (主 glyph 細い実線との対比、#136 user feedback)
     m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = a;
     m.lifetime.sec = 2;
 
@@ -459,7 +450,7 @@ void MapoiRviz2Publisher::timer_callback(){
     //   - その他 (旧 event 等): scope 外 (色 / glyph 整理は #70)
     // pause tag があれば主 glyph の上に破線 outline を重ね描きする。
     // 色は本 PR では既存 hardcode を継承 (整理は #70)。
-    if (poi.tolerance.xy > 0.0) {
+    if (show_sector && poi.tolerance.xy > 0.0) {
       const auto has_tag = [&poi](const std::string & target) {
         for (const auto & t : poi.tags) {
           if (t == target) return true;
@@ -500,7 +491,6 @@ void MapoiRviz2Publisher::timer_callback(){
         visualization_msgs::msg::Marker m_waypoint = default_arrow_marker;
         m_waypoint.pose = pose;
         m_waypoint.pose.position.z = 0.1;
-        apply_radius_scale(m_waypoint, poi.tolerance.xy);
         {
           bool is_goal = highlighted_goal_names_.count(poi.name) > 0;
           if (is_goal) {
@@ -526,7 +516,6 @@ void MapoiRviz2Publisher::timer_callback(){
         visualization_msgs::msg::Marker m_event = default_arrow_marker;
         m_event.pose = pose;
         m_event.pose.position.z = 0.1;
-        apply_radius_scale(m_event, poi.tolerance.xy);
         m_event.color.r = 0.0; m_event.color.g = 0.0; m_event.color.b = 1.0; m_event.color.a = 0.7;
         m_event.id = id;
         ma_events.markers.push_back(m_event);
@@ -549,7 +538,6 @@ void MapoiRviz2Publisher::timer_callback(){
         visualization_msgs::msg::Marker m_landmark = default_arrow_marker;
         m_landmark.pose = pose;
         m_landmark.pose.position.z = 0.1;
-        apply_radius_scale(m_landmark, poi.tolerance.xy);
         m_landmark.color.r = 0.5; m_landmark.color.g = 0.5; m_landmark.color.b = 0.5; m_landmark.color.a = 0.7;
         m_landmark.id = id;
         ma_events.markers.push_back(m_landmark);

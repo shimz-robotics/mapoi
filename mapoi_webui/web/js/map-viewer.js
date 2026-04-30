@@ -451,9 +451,10 @@ class MapViewer {
     const color = this.getPoiColor(poi);
 
     // 主 glyph: waypoint = 塗り、landmark = 中抜き
+    // 細い実線で pause overlay (太い点線) との対比を強める (#136 user feedback)。
     const polygon = L.polygon(points, {
       color,
-      weight: 2,
+      weight: 1,
       opacity: 0.7,
       fillColor: color,
       fillOpacity: isWaypoint ? 0.25 : 0,
@@ -462,13 +463,14 @@ class MapViewer {
     polygon.bringToBack();
     this.sectorLayers.push(polygon);
 
-    // pause overlay: 主 glyph と同色で dashed outline を重ね描き
+    // pause overlay: 主 glyph と同色で太い点線 outline を重ね描き
+    // 主 glyph (細い実線) と weight + dashArray の両軸で区別する (#136 user feedback)。
     if (isPause) {
       const outlinePoints = points.slice();
       outlinePoints.push(points[0]);  // 閉じる
       const outline = L.polyline(outlinePoints, {
         color,
-        weight: 3,
+        weight: 5,
         opacity: 0.9,
         dashArray: '6, 4',
         interactive: false,
