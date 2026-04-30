@@ -573,13 +573,20 @@ void PoiEditorPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
   std::filesystem::path resolved_p(resolved_path);
   std::string map_name = resolved_p.parent_path().filename().string();
   bool first_config = config_path_.empty();
+  bool map_changed = (current_map_ != map_name);
   config_path_ = resolved_path;
-  if(current_map_ != map_name || first_config){
-    current_map_ = map_name;
-    QMetaObject::invokeMethod(this, [this, map_name]() {
+  current_map_ = map_name;
+
+  // 同じ map で path も同じ場合 (= save 後の reload_map_info で再 publish される flow)
+  // でも POI 内容が変わっている可能性があるため UpdatePoiTable で table を再 fetch する (#135)。
+  // map 切替 / 初回受信時は MapComboBox 同期 + FileComboBox 再構築も必要なので InitConfigs を呼ぶ。
+  QMetaObject::invokeMethod(this, [this, map_name, map_changed, first_config]() {
+    if (map_changed || first_config) {
       InitConfigs(map_name);
-    }, Qt::QueuedConnection);
-  }
+    } else {
+      UpdatePoiTable();
+    }
+  }, Qt::QueuedConnection);
 }
 
 // Tag Filter

@@ -245,12 +245,21 @@ void MapoiPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
 {
   std::filesystem::path config_path(msg->data);
   std::string map_name = config_path.parent_path().filename().string();
-  if(current_map_ != map_name){
-    current_map_ = map_name;
-    QMetaObject::invokeMethod(this, [this, map_name]() {
+  bool map_changed = (current_map_ != map_name);
+  current_map_ = map_name;
+
+  // 同じ map で path も同じ場合 (= save 後の reload_map_info で再 publish される flow) でも
+  // POI / route list が変わっている可能性があるため Nav2GoalComboBox / MapoiRouteComboBox を
+  // 再 fetch する (#135)。map 切替時は highlight クリア + MapComboBox 同期も必要なので
+  // SetMapComboBox を呼ぶ。
+  QMetaObject::invokeMethod(this, [this, map_name, map_changed]() {
+    if (map_changed) {
       SetMapComboBox(map_name);
-    }, Qt::QueuedConnection);
-  }
+    } else {
+      SetNav2GoalComboBox();
+      SetMapoiRouteComboBox();
+    }
+  }, Qt::QueuedConnection);
 }
 
 void MapoiPanel::SetMapComboBox(std::string map_name)
