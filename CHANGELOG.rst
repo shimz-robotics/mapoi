@@ -223,6 +223,16 @@ Fixes
   ``mapoi_gz_bridge``) は元々 ``poi_name`` 空を無視する規約のため、運用中の
   自己位置巻き戻しは発生しない (#149 round 4 で確立した invariant を維持)。
 
+Internal
+--------
+
+* initial pose 選定ロジックを共通ヘッダ
+  ``mapoi_server/include/mapoi_server/initial_pose_resolver.hpp`` に切り出し、
+  ``mapoi_server`` / ``mapoi_gazebo_bridge`` / ``mapoi_gz_bridge`` の 3 箇所の
+  重複実装を統合 (#150)。今後 ``initial_poi_name`` 仕様 (除外条件 / fallback)
+  が拡張された場合の simulator spawn と ``/initialpose`` の挙動乖離を防ぐ。
+  挙動は同一 (純関数の rename + 物理配置移動のみ、unit test 互換)。
+
 
 0.2.0 (2026-04-29)
 ==================
