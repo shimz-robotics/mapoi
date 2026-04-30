@@ -515,6 +515,9 @@ void MapoiServer::publish_initial_poi_name(const std::string & requested_name)
 
 void MapoiServer::publish_initialpose_clear()
 {
+  // initialpose_poi_publisher_ は constructor で先に生成済み (publish_initial_poi_name と同じ
+  // invariant)。service callback は spin 開始後にしか呼ばれないため、reload_map_info_service
+  // 経由でここに来た時点で publisher は必ず存在する (#174 review high 対応)。
   // poi_name 空 = 「採用候補なし、subscriber は無視」(InitialPoseRequest.msg コメント参照)。
   // transient_local depth=1 の latched 値をこの skip message で上書きすることで、
   // reload 直前の古い POI 名が後起動の subscriber に latched 配信される stale 問題を排除する。
