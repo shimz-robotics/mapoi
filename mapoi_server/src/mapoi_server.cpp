@@ -19,7 +19,8 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   if (maps_path_.empty()) {
     RCLCPP_FATAL(this->get_logger(),
       "maps_path parameter is REQUIRED. mapoi_server は #163 から sample maps を "
-      "提供しなくなったため、起動時に必ず maps_path を指定する必要があります。");
+      "提供しなくなったため、起動時に必ず maps_path を指定する必要があります "
+      "(例: $(find-pkg-share mapoi_turtlebot3_example)/maps)。");
     throw std::runtime_error("maps_path parameter is required");
   }
   // maps_path の存在 + ディレクトリ性を起動時に検査。後段 (load_mapoi_config_file 等)
@@ -27,7 +28,10 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   std::error_code ec;
   if (!std::filesystem::exists(maps_path_, ec) || !std::filesystem::is_directory(maps_path_, ec)) {
     RCLCPP_FATAL(this->get_logger(),
-      "maps_path '%s' does not exist or is not a directory.", maps_path_.c_str());
+      "maps_path '%s' does not exist or is not a directory. "
+      "正しい maps ディレクトリ path を指定してください "
+      "(例: $(find-pkg-share mapoi_turtlebot3_example)/maps)。",
+      maps_path_.c_str());
     throw std::runtime_error("maps_path is not a valid directory");
   }
 
@@ -526,11 +530,12 @@ int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
   // MapoiServer のコンストラクタは設定不備 (maps_path REQUIRED 違反 / 不在 dir 等) 時に
-  // std::runtime_error を throw する (#163)。fatal log は ctor 内で出力済なので、ここでは
-  // catch して clean に shutdown + exit code 1 で抜ける。
+  // std::runtime_error を throw する (#163)。将来別例外型を投げるようになっても abort
+  // に戻らないよう std::exception で広く catch する (#170 Round 2 high)。
+  // fatal log は ctor 内で出力済なので、ここでは clean shutdown + exit code 1。
   try {
     rclcpp::spin(std::make_shared<MapoiServer>());
-  } catch (const std::runtime_error &) {
+  } catch (const std::exception &) {
     rclcpp::shutdown();
     return 1;
   }
