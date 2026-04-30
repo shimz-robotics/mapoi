@@ -1,6 +1,7 @@
 #include "mapoi_server/mapoi_server.hpp"
 
 #include <cmath>
+#include <cstdio>
 
 using namespace std::chrono_literals;
 
@@ -16,6 +17,10 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   maps_path_ = this->get_parameter("maps_path").as_string();
   map_name_ = this->get_parameter("map_name").as_string();
   config_file_ = this->get_parameter("config_file").as_string();
+  // 空白のみの値も REQUIRED 違反として扱う (#170 Round 4 low)。
+  if (maps_path_.find_first_not_of(" \t\r\n") == std::string::npos) {
+    maps_path_.clear();
+  }
   if (maps_path_.empty()) {
     RCLCPP_FATAL(this->get_logger(),
       "maps_path parameter is REQUIRED. mapoi_server は #163 から sample maps を "
@@ -539,19 +544,20 @@ void MapoiServer::get_tag_definitions_service(
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
-  // MapoiServer のコンストラクタは設定不備 (maps_path REQUIRED 違反 / 不在 dir 等) 時に
-  // std::runtime_error を throw する (#163)。将来別例外型を投げるようになっても abort
-  // に戻らないよう std::exception で広く catch する (#170 Round 2 high)。
-  // fatal log は ctor 内で出力済なので、ここでは clean shutdown + exit code 1。
+  // try は ctor のみに限定する (#170 Round 4 high): spin 中 (callback 等) の例外まで
+  // catch すると std::terminate ベースのデバッグ性が落ちるため。MapoiServer のコンストラ
+  // クタは設定不備 (maps_path REQUIRED 違反 / 不在 dir 等) 時に std::runtime_error を
+  // throw する (#163)。fatal log は ctor 内で出力済 + ここで what() を stderr に出して
+  // clean shutdown + exit code 1。
+  std::shared_ptr<MapoiServer> node;
   try {
-    rclcpp::spin(std::make_shared<MapoiServer>());
+    node = std::make_shared<MapoiServer>();
   } catch (const std::exception & e) {
-    // ctor 以外の例外時にも調査性を保つため what() を stderr に出力する (#170 Round 3 high)。
-    // ctor 内 fatal log と二重になるが、stderr 1 行のみで運用面の害は小さい。
     fprintf(stderr, "[mapoi_server] FATAL: %s\n", e.what());
     rclcpp::shutdown();
     return 1;
   }
+  rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;
 }
