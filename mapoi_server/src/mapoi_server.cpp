@@ -416,11 +416,17 @@ void MapoiServer::reload_map_info_service(
   // mapoi_config_path を再 publish (transient_local で latched 値更新)。subscriber が
   // table / ComboBox を再 fetch することで save 後の内容更新が反映される (#135)。
   publish_config_path();
-  // reload は POI 編集後の再読込 trigger。ここで `mapoi_initialpose_poi` を再 publish すると、
-  // mapoi_nav_server 側で /initialpose が再配信され **運用中の自己位置が巻き戻される** 回帰がある
-  // (Cursor review #149 round 4 medium 対応)。
+  // reload は POI 編集後の再読込 trigger。ここで `mapoi_initialpose_poi` を「採用候補あり」で
+  // 再 publish すると、mapoi_nav_server 側で /initialpose が再配信され **運用中の自己位置が
+  // 巻き戻される** 回帰がある (Cursor review #149 round 4 medium 対応)。
+  // 一方で latched message は古い POI 名のまま残り、reload 後に nav_server が再起動 / 再 connection
+  // すると stale な POI 名が配信される問題が残っていた (#154)。
+  // 対策: skip message (poi_name 空、subscriber 側で無視される規約) を明示 publish して
+  // transient_local の latched 値を上書きする。運用中 subscriber には影響なく (空は無視)、
+  // 後起動 subscriber も古い POI 名を拾わない。
   // 初期姿勢の (再) 設定は SwitchMap (= 地図切替) または手動経路 (RViz / WebUI / mapoi_initialpose_poi
-  // 直接 publish) を使うのが正しい運用。ここでは publish_initial_poi_name を呼ばない。
+  // 直接 publish) を使うのが正しい運用。
+  publish_initialpose_clear();
   response->success = true;
   response->message = config_path_;
   RCLCPP_INFO(this->get_logger(), "Reloaded mapoi config: %s", config_path_.c_str());
@@ -505,6 +511,20 @@ void MapoiServer::publish_initial_poi_name(const std::string & requested_name)
   RCLCPP_INFO(this->get_logger(),
     "Published initial pose POI name '%s' for map '%s' (#144).",
     target.c_str(), map_name_.c_str());
+}
+
+void MapoiServer::publish_initialpose_clear()
+{
+  // poi_name 空 = 「採用候補なし、subscriber は無視」(InitialPoseRequest.msg コメント参照)。
+  // transient_local depth=1 の latched 値をこの skip message で上書きすることで、
+  // reload 直前の古い POI 名が後起動の subscriber に latched 配信される stale 問題を排除する。
+  auto msg = mapoi_interfaces::msg::InitialPoseRequest();
+  msg.map_name = map_name_;
+  msg.poi_name = "";
+  initialpose_poi_publisher_->publish(msg);
+  RCLCPP_INFO(this->get_logger(),
+    "Cleared latched mapoi_initialpose_poi for map '%s' (#154 stale guard on reload).",
+    map_name_.c_str());
 }
 
 void MapoiServer::load_tag_definitions()

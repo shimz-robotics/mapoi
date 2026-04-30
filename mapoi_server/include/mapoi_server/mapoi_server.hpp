@@ -58,6 +58,10 @@ private:
 
   // initial pose 用の POI 名 publish (#144)。compute_initial_poi_name は class-level public static。
   void publish_initial_poi_name(const std::string & requested_name);
+  // transient_local の latched 値を「採用候補なし」を示す skip message (poi_name 空) で
+  // 上書きする (#154)。reload で呼び、reload 直前の古い POI 名が late subscriber に
+  // 配信される問題を防ぐ。
+  void publish_initialpose_clear();
 
   // mapoi_config_path topic の publish (transient_local QoS で latched)。起動時 / SwitchMap /
   // reload_map_info で呼ぶ。定期 publish は subscriber を transient_local に揃えて廃止 (#135)。

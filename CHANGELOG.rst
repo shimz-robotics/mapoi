@@ -211,6 +211,18 @@ Samples
   (``waypoint × landmark``、``landmark × pause``)、``tolerance.{xy,yaw}``
   の min 制約 (>= 0.001) を pull request / push で自動検証。
 
+Fixes
+-----
+
+* ``mapoi_server`` の ``reload_map_info`` service で ``mapoi_initialpose_poi``
+  topic に skip message (``poi_name`` 空) を明示 publish するように修正
+  (#154)。``transient_local`` (depth=1) の latched 値が reload 直前の古い
+  POI 名のまま残り、reload 後に起動する nav_server / 再 connection した
+  RViz が編集前の POI 名を受信してしまう stale message 問題を排除する。
+  subscriber 側 (``mapoi_nav_server`` / ``mapoi_gazebo_bridge`` /
+  ``mapoi_gz_bridge``) は元々 ``poi_name`` 空を無視する規約のため、運用中の
+  自己位置巻き戻しは発生しない (#149 round 4 で確立した invariant を維持)。
+
 
 0.2.0 (2026-04-29)
 ==================
