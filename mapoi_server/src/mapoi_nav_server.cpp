@@ -308,6 +308,39 @@ bool MapoiNavServer::has_landmark_tag(const mapoi_interfaces::msg::PointOfIntere
   return false;
 }
 
+std::unordered_set<std::string> MapoiNavServer::build_route_poi_names(
+  const std::vector<mapoi_interfaces::msg::PointOfInterest> & waypoints,
+  const std::vector<mapoi_interfaces::msg::PointOfInterest> & landmarks)
+{
+  std::unordered_set<std::string> result;
+  for (const auto & p : waypoints) {
+    result.insert(p.name);
+  }
+  for (const auto & p : landmarks) {
+    result.insert(p.name);
+  }
+  return result;
+}
+
+bool MapoiNavServer::is_pause_eligible(
+  const mapoi_interfaces::msg::PointOfInterest & poi,
+  NavMode nav_mode,
+  const std::unordered_set<std::string> & active_route_poi_names)
+{
+  if (nav_mode != NavMode::ROUTE) {
+    return false;
+  }
+  if (active_route_poi_names.count(poi.name) == 0) {
+    return false;
+  }
+  for (const auto & tag : poi.tags) {
+    if (tag == "pause") {
+      return true;
+    }
+  }
+  return false;
+}
+
 void MapoiNavServer::publish_initial_pose(
   const geometry_msgs::msg::Pose & pose, const std::string & source)
 {
@@ -450,15 +483,10 @@ void MapoiNavServer::on_route_received(
 
   // active route の POI 名 set を構築 (waypoints + landmarks 両方を radius_check で
   // pause 発火対象として扱う)。lock 下で書き込み (#143)。
+  // 構築ロジックは pure helper に切り出し、unit test で検証する (#148)。
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
-    current_route_poi_names_.clear();
-    for (const auto & p : route_poi) {
-      current_route_poi_names_.insert(p.name);
-    }
-    for (const auto & p : route_landmarks) {
-      current_route_poi_names_.insert(p.name);
-    }
+    current_route_poi_names_ = build_route_poi_names(route_poi, route_landmarks);
   }
 
   current_route_waypoints_ = waypoints;
@@ -918,16 +946,9 @@ void MapoiNavServer::radius_check_callback()
       double dist = distance_2d(poi.pose, rx, ry);
       bool was_inside = poi_inside_state_[poi.name];
 
-      // pause タグを持つかつ active route の POI かを確認 (#143):
-      //   - pause 自動発火は **ROUTE 走行中の active route POI のみ** に厳格化
-      //   - 別 route で pause タグが付いた POI に偶然 ENTER しても発火しない
-      //   - GOAL 走行 / IDLE では発火しない (操作者の意図しない停止を避ける)
-      bool is_pause_poi = false;
-      if (nav_mode_ == NavMode::ROUTE && current_route_poi_names_.count(poi.name) > 0) {
-        for (const auto & tag : poi.tags) {
-          if (tag == "pause") { is_pause_poi = true; break; }
-        }
-      }
+      // pause 自動発火は ROUTE 走行中 + active route POI + "pause" タグの 3 条件 (#143)。
+      // 判定 logic は is_pause_eligible に切り出して unit test (#148)。
+      const bool is_pause_poi = is_pause_eligible(poi, nav_mode_, current_route_poi_names_);
 
       if (!was_inside && dist <= poi.tolerance.xy) {
         // ENTER event: 全POIでPoiEvent発行
