@@ -190,13 +190,26 @@ WebUI / rviz_plugins
 * ``mapoi_rviz2_publisher`` / ``mapoi_webui`` で POI tolerance を扇形 (sector) で描画 (#136)。
 
   - 半径 = ``tolerance.xy``、扇角 = ``2 * tolerance.yaw``、中心線 = ``pose.yaw``
-  - ``waypoint`` = 塗り扇形、``landmark`` = 中抜き扇形、``pause`` = 太い点線 outline
+  - ``waypoint`` = 塗り扇形、``landmark`` = 中抜き扇形、``pause`` = 点線 outline
     の重ね描き (主 glyph は細い実線で対比)
   - ``tolerance.yaw == 0`` または ``>= π`` → 完全円 (yaw 不問、``pass_through`` 表現可能)
   - ``mapoi_rviz2_publisher`` に ``show_tolerance_sector`` parameter (bool, default true)
-    を追加 — 扇形描画を runtime トグル
-  - follow-up: ロボットの tolerance 判定は xy のみなので、円 (xy 判定領域) + 扇形
-    (yaw 制約) の重ね描きへの分解を別 issue (#179) で検討中
+    を追加 — tolerance visualization を runtime トグル
+  - 続く #179 で 円 (xy 判定領域) + 扇形 (yaw 制約) の重ね描きに分解 (下記参照)
+
+* ``mapoi_rviz2_publisher`` / ``mapoi_webui`` で POI tolerance を 円 + 扇形 の重ね描きに
+  分解 + pause overlay を dot 形式に変更 (#179、#178 user feedback 対応)。
+
+  - 円 outline (細実線・薄め): ロボットの ``tolerance.xy`` 進入判定領域を常時表示。
+    判定 logic (Euclidean < ``tolerance.xy``) の視覚的根拠として yaw 不問で描画
+  - 扇形 (塗り or 中抜き): yaw 制約を強調。``0 < tolerance.yaw < π`` の時のみ
+    重ね描き (完全円との情報冗長を回避、yaw 不問なら円のみ表示)
+  - pause overlay: 旧 dash (``dashArray: '6, 4'`` / RViz segment 0.05m, 1:1 比率) は
+    「点と感じない、潰れて見える」user feedback (#178 PR コメント) を受け、
+    dot 形式 (WebUI ``dashArray: '2, 6'`` + ``lineCap: round`` / RViz dot 長 0.02m +
+    間隔 0.10m, 1:4 比率) に変更。pause 発火条件 (xy 円内) と境界が一致する xy 円沿いに重畳
+  - ``show_tolerance_sector`` parameter は名称据え置きで制御対象を 円 + 扇形 + pause overlay
+    全体に拡張 (backward compat 維持)
 
 Samples
 -------
