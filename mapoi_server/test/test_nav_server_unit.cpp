@@ -202,9 +202,11 @@ TEST_F(NavServerTestFixture, IsPauseEligibleIdleMode)
 
 TEST_F(NavServerTestFixture, ResetNavStateClearsRouteContext)
 {
-  // route 走行中に相当する状態を fixture から直接 set し、reset_nav_state() が
-  // route lifecycle 終了時 (cancel / SUCCEEDED / ABORTED / GOAL 切替) に走らせる
-  // クリーンアップ動作を再現する。
+  // route 走行中 + pause 中に相当する状態を fixture から直接 set し、
+  // reset_nav_state() が route lifecycle 終了時 (cancel / SUCCEEDED / ABORTED /
+  // GOAL 切替) に行うクリーンアップ動作を再現する。`reset_nav_state()` の
+  // 契約に含まれる全 member をまとめて検証することで、将来 reset 対象が漏れた
+  // 場合を unit test で検出できる。
   {
     std::lock_guard<std::mutex> lock(node_->data_mutex_);
     node_->current_route_poi_names_.insert("wp1");
@@ -214,12 +216,25 @@ TEST_F(NavServerTestFixture, ResetNavStateClearsRouteContext)
   node_->is_paused_ = true;
   node_->current_waypoint_index_ = 3;
 
+  geometry_msgs::msg::PoseStamped wp;
+  wp.pose.position.x = 1.0;
+  node_->current_route_waypoints_.push_back(wp);
+  node_->paused_waypoints_.push_back(wp);
+
+  geometry_msgs::msg::PoseStamped paused_goal;
+  paused_goal.pose.position.x = 9.0;
+  node_->paused_goal_pose_ = paused_goal;
+
   node_->reset_nav_state();
 
   EXPECT_TRUE(node_->current_route_poi_names_.empty());
   EXPECT_EQ(node_->nav_mode_, MapoiNavServer::NavMode::IDLE);
   EXPECT_FALSE(node_->is_paused_);
   EXPECT_EQ(node_->current_waypoint_index_, 0u);
+  EXPECT_TRUE(node_->current_route_waypoints_.empty());
+  EXPECT_TRUE(node_->paused_waypoints_.empty());
+  // paused_goal_pose_ は default-constructed PoseStamped に戻る (pose.position は 0)。
+  EXPECT_DOUBLE_EQ(node_->paused_goal_pose_.pose.position.x, 0.0);
 }
 
 int main(int argc, char ** argv)
