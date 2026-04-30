@@ -11,7 +11,7 @@ MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
   // POI tolerance visualization (#136 / #179) を表示するか。
   // 描画 layer (false で全 POI 抑制):
   //   - xy 判定円 outline (細い実線、薄め): tolerance.xy = ロボット進入判定の境界
-  //   - yaw 制約扇形 (塗り or 中抜き): tolerance.yaw < π の時のみ重ね描き
+  //   - yaw 制約扇形 (塗り or 中抜き): 0 < tolerance.yaw < π の時のみ重ね描き
   //   - pause overlay (点線 dot): pause tag POI の xy 円沿いに dot pattern
   // Editor 中心の使い方や RViz が情報過多な時に false にする想定。default true。
   this->declare_parameter<bool>("show_tolerance_sector", true);
@@ -337,8 +337,8 @@ void MapoiRviz2Publisher::timer_callback(){
 
   // 扇形 (sector) marker を描画する helper (#136 / #179)。
   // - radius = tolerance.xy、扇角 = 2 * yaw_tolerance、中心線 = pose.yaw
-  // - 完全円 (yaw_tolerance <= 0 または >= π) は呼び出し側で add_radius_circle に分岐させ、
-  //   この helper は yaw 制約あり (0 < yaw_tolerance < π) のみ扱う (#179: 円 + 扇形重ね描き)
+  // - 0 < yaw_tolerance < π の時のみ描画。yaw 不問 (それ以外の値) は呼び出し側で
+  //   add_radius_circle に分岐させる (#179: 円 + 扇形重ね描き)
   // - fill_alpha > 0 → TRIANGLE_LIST で塗り (waypoint 用)
   // - stroke_alpha > 0 → LINE_STRIP で境界線 (中心 → 弧 → 中心、yaw 範囲を半径線で強調)
   // 戻り値: target.markers に push した marker 数 (id 消費数、yaw 不問入力は 0)
@@ -438,7 +438,11 @@ void MapoiRviz2Publisher::timer_callback(){
     constexpr double DOT_LENGTH = 0.02;
     const double total_arc_len = 2.0 * M_PI * radius;
     const int n_dots = std::max(12, static_cast<int>(std::ceil(total_arc_len / DOT_STEP)));
-    const double dot_angle_span = DOT_LENGTH / radius;  // dot 1 個分の弧角度
+    // dot 1 個分の弧角度。極小半径 (Tolerance min 0.001m など) で DOT_LENGTH/radius が
+    // セル角を超えると dot が連結して dash 化するため、cell の 40% を cap として保つ
+    // (1:4 比率を維持できなくなる場合でも dot 識別性 ≧ on:off 分離を優先)。
+    const double cell_angle = (2.0 * M_PI) / n_dots;
+    const double dot_angle_span = std::min(DOT_LENGTH / radius, 0.4 * cell_angle);
 
     visualization_msgs::msg::Marker m;
     m.header.frame_id = "map";
@@ -508,7 +512,7 @@ void MapoiRviz2Publisher::timer_callback(){
         id += 1;
 
         // 扇形 (yaw 制約、#136): 0 < yaw < π の時のみ重ね描き。
-        // yaw 不問 (yaw_tolerance == 0 または >= π) の場合、扇形 = 円となり情報冗長なため省略。
+        // それ以外 (yaw 不問、扇形 = 円となり情報冗長) は円 outline のみで表現。
         const bool has_yaw_constraint =
           (poi.tolerance.yaw > 0.0 && poi.tolerance.yaw < M_PI);
         if (has_yaw_constraint) {

@@ -192,7 +192,8 @@ WebUI / rviz_plugins
   - 半径 = ``tolerance.xy``、扇角 = ``2 * tolerance.yaw``、中心線 = ``pose.yaw``
   - ``waypoint`` = 塗り扇形、``landmark`` = 中抜き扇形、``pause`` = 点線 outline
     の重ね描き (主 glyph は細い実線で対比)
-  - ``tolerance.yaw == 0`` または ``>= π`` → 完全円 (yaw 不問、``pass_through`` 表現可能)
+  - ``0 < tolerance.yaw < π`` の時のみ扇形描画、それ以外 (yaw 不問) は完全円扱い
+    (``pass_through`` 表現可能)
   - ``mapoi_rviz2_publisher`` に ``show_tolerance_sector`` parameter (bool, default true)
     を追加 — tolerance visualization を runtime トグル
   - 続く #179 で 円 (xy 判定領域) + 扇形 (yaw 制約) の重ね描きに分解 (下記参照)
