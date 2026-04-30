@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""sample mapoi_config.yaml の整合性を検査する (#146 / PR #160 / #163 follow-up)。
+"""sample mapoi_config.yaml を validation する (#146 / PR #160 / #163 / #170 follow-up)。
 
-mapoi_turtlebot3_example 配下のサンプル yaml が以下を満たすべき (#163 で
-mapoi_server/maps の sample を廃止し、example 側のみが single source of truth):
+**注意**: 名称は歴史的経緯で ``check_sample_yaml_consistency.py`` のまま残してい
+るが、現在は ``mapoi_turtlebot3_example`` 配下の sample yaml の **個別 validation**
+のみ行う。PR #170 (#163) 以前は ``mapoi_server`` / ``mapoi_turtlebot3_example`` の
+**pair sync** 検査も含んでいたが、``mapoi_server`` から sample を廃止して single
+source of truth に集約したため pair sync は不要になった。server 側に sample が
+再発生していないか検知する仕組みは別 issue (#171) で計画。
+
+mapoi_turtlebot3_example 配下のサンプル yaml が以下を満たすべき:
 
 - POI 名のユニーク性
 - ``route.waypoints`` / ``route.landmarks`` が POI 一覧に存在する

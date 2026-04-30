@@ -26,7 +26,17 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   // maps_path の存在 + ディレクトリ性を起動時に検査。後段 (load_mapoi_config_file 等)
   // で不明瞭な YAML::BadFile になる前に明示的に fail させる (#163 / Cursor review medium)。
   std::error_code ec;
-  if (!std::filesystem::exists(maps_path_, ec) || !std::filesystem::is_directory(maps_path_, ec)) {
+  bool path_exists = std::filesystem::exists(maps_path_, ec);
+  if (ec) {
+    // 権限不足 (EACCES) / IO エラー等で stat 自体が失敗した場合 (#170 Round 3 medium)。
+    // 「存在しない」ではなく権限/IO 系として明示し、現場での復旧導線を分かりやすく。
+    RCLCPP_FATAL(this->get_logger(),
+      "maps_path '%s' could not be accessed: %s "
+      "(権限不足 / IO エラーの可能性)。",
+      maps_path_.c_str(), ec.message().c_str());
+    throw std::runtime_error("maps_path access error");
+  }
+  if (!path_exists || !std::filesystem::is_directory(maps_path_, ec)) {
     RCLCPP_FATAL(this->get_logger(),
       "maps_path '%s' does not exist or is not a directory. "
       "正しい maps ディレクトリ path を指定してください "
@@ -535,7 +545,10 @@ int main(int argc, char **argv)
   // fatal log は ctor 内で出力済なので、ここでは clean shutdown + exit code 1。
   try {
     rclcpp::spin(std::make_shared<MapoiServer>());
-  } catch (const std::exception &) {
+  } catch (const std::exception & e) {
+    // ctor 以外の例外時にも調査性を保つため what() を stderr に出力する (#170 Round 3 high)。
+    // ctor 内 fatal log と二重になるが、stderr 1 行のみで運用面の害は小さい。
+    fprintf(stderr, "[mapoi_server] FATAL: %s\n", e.what());
     rclcpp::shutdown();
     return 1;
   }
