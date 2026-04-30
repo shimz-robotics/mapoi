@@ -8,9 +8,10 @@ using std::placeholders::_2;
 MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
   id_buf_ = 0;
 
-  // POI 矢印の大きさを radius に対する比率で指定する (arrow_size = radius × ratio)。
-  // default 1.0 = radius と同じ長さ。Route 矢印 (waypoint 間) は radius 概念を持たないので対象外。
-  this->declare_parameter<double>("arrow_size_ratio", 1.0);
+  // POI tolerance (xy + yaw) の扇形 visualization (#136) を表示するか。
+  // false: 主 glyph (扇形) と pause overlay を全 POI で抑制。Editor 中心の使い方や
+  // RViz が情報過多な時に false にする想定。default true。
+  this->declare_parameter<bool>("show_tolerance_sector", true);
 
   // POI label の表示形式: "index" (POI Editor 行番号、1-based) / "name" / "both" (= "<index>: <name>") / "none"。
   // default "index" は WebUI 上の行と RViz label を直接対応させ、文字長を抑えて重なりを減らす。
@@ -252,24 +253,14 @@ void MapoiRviz2Publisher::timer_callback(){
   default_arrow_marker.header.stamp = rclcpp::Clock().now();
   default_arrow_marker.action = visualization_msgs::msg::Marker::ADD;
   default_arrow_marker.type = visualization_msgs::msg::Marker::ARROW;
-  // Default scale (radius が無い / 0 の POI 用 fallback)。比率 (length:shaft:head) = 0.3:0.2:0.1
-  default_arrow_marker.scale.x = 0.3; default_arrow_marker.scale.y = 0.2; default_arrow_marker.scale.z = 0.1;
+  // 矢印は扇形 (#136) の方向補助なので細く短く固定 (POI 中心線として yaw のみ示す)。
+  // 比率 (length:shaft:head) = 0.15:0.04:0.04。radius 連動の倍率は廃止 (arrow_size_ratio 廃止)。
+  default_arrow_marker.scale.x = 0.15; default_arrow_marker.scale.y = 0.04; default_arrow_marker.scale.z = 0.04;
   default_arrow_marker.color.r = 0.0; default_arrow_marker.color.g = 1.0; default_arrow_marker.color.b = 0.0; default_arrow_marker.color.a = 0.7;
   default_arrow_marker.lifetime.sec = 2.0;
 
-  // POI radius に基づく arrow scale 適用 helper。
-  // 既存 default 比率 (length:shaft:head = 0.3:0.2:0.1) を保ち、length を radius × ratio に。
-  const double arrow_size_ratio =
-    this->get_parameter("arrow_size_ratio").as_double();
-  auto apply_radius_scale = [&](visualization_msgs::msg::Marker & m, double radius) {
-    if (radius <= 0.0 || arrow_size_ratio <= 0.0) {
-      return;  // default scale を維持
-    }
-    const double length = radius * arrow_size_ratio;
-    m.scale.x = length;
-    m.scale.y = length * (0.2 / 0.3);  // shaft diameter
-    m.scale.z = length * (0.1 / 0.3);  // head diameter
-  };
+  // 扇形 visualization (#136) の表示制御。false で全 POI の主 glyph + pause overlay を抑制。
+  const bool show_sector = this->get_parameter("show_tolerance_sector").as_bool();
 
   // POI label の format ("index" / "name" / "both" / "none") を runtime parameter で切替。
   // 空文字列を返した場合は label を生成しない (none モード)。
@@ -288,39 +279,163 @@ void MapoiRviz2Publisher::timer_callback(){
   default_text_marker.scale.x = 0.2; default_text_marker.scale.y = 0.2; default_text_marker.scale.z = 0.2;
   default_text_marker.color.r = 0.0; default_text_marker.color.g = 0.0; default_text_marker.color.b = 0.0; default_text_marker.color.a = 1.0;
 
-  // POI radius を床面の円 (LINE_STRIP) で描画する template。
-  // CYLINDER と異なり top-down view で map / costmap と Z 重なりにくく、視界を遮らない。
-  visualization_msgs::msg::Marker default_circle_marker = default_arrow_marker;
-  default_circle_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
-  default_circle_marker.scale.x = 0.03;  // line width (m)
-  default_circle_marker.scale.y = 0.0; default_circle_marker.scale.z = 0.0;
-  default_circle_marker.pose.orientation.w = 1.0;  // identity (LINE_STRIP の point は world 座標で指定するため)
-
   visualization_msgs::msg::MarkerArray ma_waypoints;
   visualization_msgs::msg::MarkerArray ma_events;
   int id = 0;
 
-  // 円の頂点数 (滑らかさと marker サイズの trade-off、36 角形 = 10度刻みで十分)
-  constexpr int CIRCLE_SEGMENTS = 36;
-  // 円を描く床面の z (map / costmap よりわずかに上、0.01m)
-  constexpr double CIRCLE_Z = 0.01;
-  // 円の透明度 (薄めにして他 marker や map を遮らない)
-  constexpr float CIRCLE_ALPHA = 0.5f;
-  auto add_radius_circle = [&](const geometry_msgs::msg::Pose & p, double radius,
-                               float r, float g, float b,
-                               int marker_id,
-                               visualization_msgs::msg::MarkerArray & target) {
-    visualization_msgs::msg::Marker m = default_circle_marker;
+  // 扇形 (sector) の床面 z (map / costmap よりわずかに上、0.01m)
+  constexpr double SECTOR_Z = 0.01;
+
+  // Pose の orientation (quaternion) から 2D yaw を取り出す。
+  // tf2 を引かずに済むよう atan2(2(wz+xy), 1-2(y^2+z^2)) を直書き。
+  // 前提: POI は 2D (roll/pitch=0)、quaternion は正規化済 (mapoi_server / Editor 側で保証)。
+  // 3D POI 対応や未正規化入力が必要になれば tf2 経由に書き換える。
+  auto get_yaw_from_pose = [](const geometry_msgs::msg::Pose & p) -> double {
+    const double w = p.orientation.w;
+    const double x = p.orientation.x;
+    const double y = p.orientation.y;
+    const double z = p.orientation.z;
+    return std::atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z));
+  };
+
+  // 扇形 (sector) marker を描画する helper (#136)。
+  // - radius = tolerance.xy、扇角 = 2 * yaw_tolerance、中心線 = pose.yaw
+  // - yaw_tolerance == 0 (未指定) または yaw_tolerance >= π → 完全円 (yaw 不問)
+  // - fill_alpha > 0 → TRIANGLE_LIST で塗り (waypoint 用)
+  // - stroke_alpha > 0 → LINE_STRIP で境界線 (landmark の中抜き用 / 塗りの輪郭強調用)
+  // 戻り値: target.markers に push した marker 数 (id 消費数)
+  auto add_sector = [&](const geometry_msgs::msg::Pose & pose,
+                        double radius, double yaw_tolerance,
+                        float r, float g, float b,
+                        float fill_alpha, float stroke_alpha,
+                        int marker_id_base,
+                        visualization_msgs::msg::MarkerArray & target) -> int {
+    if (radius <= 0.0) return 0;
+
+    const double half_angle = (yaw_tolerance <= 0.0 || yaw_tolerance >= M_PI)
+      ? M_PI : yaw_tolerance;
+    const bool is_full_circle = (half_angle >= M_PI);
+    const double yaw_center = get_yaw_from_pose(pose);
+
+    const double total_angle = is_full_circle ? 2.0 * M_PI : 2.0 * half_angle;
+    // 弧の頂点数: 0.1 rad 刻み相当 (約 5.7 度)、最低 8 (扇形でも視認可能)
+    const int n_seg = std::max(8, static_cast<int>(std::ceil(total_angle / 0.1)));
+
+    const double start_angle = is_full_circle ? 0.0 : (yaw_center - half_angle);
+    std::vector<geometry_msgs::msg::Point> arc_pts;
+    arc_pts.reserve(n_seg + 1);
+    for (int i = 0; i <= n_seg; ++i) {
+      const double a = start_angle + total_angle * i / n_seg;
+      geometry_msgs::msg::Point p;
+      p.x = pose.position.x + radius * std::cos(a);
+      p.y = pose.position.y + radius * std::sin(a);
+      p.z = SECTOR_Z;
+      arc_pts.push_back(p);
+    }
+
+    geometry_msgs::msg::Point center;
+    center.x = pose.position.x;
+    center.y = pose.position.y;
+    center.z = SECTOR_Z;
+
+    int n_added = 0;
+
+    if (fill_alpha > 0.0f) {
+      visualization_msgs::msg::Marker m;
+      m.header.frame_id = "map";
+      m.header.stamp = rclcpp::Clock().now();
+      m.action = visualization_msgs::msg::Marker::ADD;
+      m.type = visualization_msgs::msg::Marker::TRIANGLE_LIST;
+      m.id = marker_id_base + n_added;
+      m.pose.orientation.w = 1.0;
+      m.scale.x = m.scale.y = m.scale.z = 1.0;
+      m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = fill_alpha;
+      m.lifetime.sec = 2;
+      m.points.reserve(static_cast<size_t>(n_seg) * 3);
+      for (int i = 0; i < n_seg; ++i) {
+        m.points.push_back(center);
+        m.points.push_back(arc_pts[i]);
+        m.points.push_back(arc_pts[i + 1]);
+      }
+      target.markers.push_back(m);
+      n_added += 1;
+    }
+
+    if (stroke_alpha > 0.0f) {
+      visualization_msgs::msg::Marker m;
+      m.header.frame_id = "map";
+      m.header.stamp = rclcpp::Clock().now();
+      m.action = visualization_msgs::msg::Marker::ADD;
+      m.type = visualization_msgs::msg::Marker::LINE_STRIP;
+      m.id = marker_id_base + n_added;
+      m.pose.orientation.w = 1.0;
+      m.scale.x = 0.02;  // line width (m)、pause overlay (太い点線) との対比で細め (#136)
+      m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = stroke_alpha;
+      m.lifetime.sec = 2;
+      if (is_full_circle) {
+        // 円の境界: 弧点列のみ (arc_pts の最初と最後が一致するので閉じる)
+        m.points.reserve(arc_pts.size());
+        for (const auto & p : arc_pts) m.points.push_back(p);
+      } else {
+        // 扇形の境界: 中心 → 弧端 → 弧上 → 弧端 → 中心
+        m.points.reserve(arc_pts.size() + 2);
+        m.points.push_back(center);
+        for (const auto & p : arc_pts) m.points.push_back(p);
+        m.points.push_back(center);
+      }
+      target.markers.push_back(m);
+      n_added += 1;
+    }
+
+    return n_added;
+  };
+
+  // 扇形/円の弧を破線 outline で重ね描きする helper (pause tag overlay 用、#136)。
+  // LINE_LIST で偶数番 segment だけ描画して dash pattern を表現。
+  // 主 glyph (add_sector) より僅かに上 (z + 0.001) に置いて隠れ防止。
+  auto add_dashed_outline = [&](const geometry_msgs::msg::Pose & pose,
+                                double radius, double yaw_tolerance,
+                                float r, float g, float b, float a,
+                                int marker_id,
+                                visualization_msgs::msg::MarkerArray & target) {
+    if (radius <= 0.0) return;
+
+    const double half_angle = (yaw_tolerance <= 0.0 || yaw_tolerance >= M_PI)
+      ? M_PI : yaw_tolerance;
+    const bool is_full_circle = (half_angle >= M_PI);
+    const double yaw_center = get_yaw_from_pose(pose);
+    const double total_angle = is_full_circle ? 2.0 * M_PI : 2.0 * half_angle;
+
+    // segment 長 = 0.05m を目安。typical radius (0.1-2m) で識別できる粒度。
+    const double total_arc_len = total_angle * radius;
+    int n_total = std::max(16, static_cast<int>(std::ceil(total_arc_len / 0.05)));
+    if (n_total % 2 != 0) n_total += 1;  // ON/OFF 交互で偶数必要
+
+    visualization_msgs::msg::Marker m;
+    m.header.frame_id = "map";
+    m.header.stamp = rclcpp::Clock().now();
+    m.action = visualization_msgs::msg::Marker::ADD;
+    m.type = visualization_msgs::msg::Marker::LINE_LIST;
     m.id = marker_id;
-    m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = CIRCLE_ALPHA;
-    m.points.reserve(CIRCLE_SEGMENTS + 1);
-    for (int i = 0; i <= CIRCLE_SEGMENTS; ++i) {
-      const double angle = 2.0 * M_PI * static_cast<double>(i) / CIRCLE_SEGMENTS;
-      geometry_msgs::msg::Point pt;
-      pt.x = p.position.x + radius * std::cos(angle);
-      pt.y = p.position.y + radius * std::sin(angle);
-      pt.z = CIRCLE_Z;
-      m.points.push_back(pt);
+    m.pose.orientation.w = 1.0;
+    m.scale.x = 0.06;  // 太い点線 (主 glyph 細い実線との対比、#136 user feedback)
+    m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = a;
+    m.lifetime.sec = 2;
+
+    const double start_angle = is_full_circle ? 0.0 : (yaw_center - half_angle);
+    m.points.reserve(static_cast<size_t>(n_total));
+    for (int i = 0; i < n_total; i += 2) {
+      const double a1 = start_angle + total_angle * i / n_total;
+      const double a2 = start_angle + total_angle * (i + 1) / n_total;
+      geometry_msgs::msg::Point p1, p2;
+      p1.x = pose.position.x + radius * std::cos(a1);
+      p1.y = pose.position.y + radius * std::sin(a1);
+      p1.z = SECTOR_Z + 0.001;
+      p2.x = pose.position.x + radius * std::cos(a2);
+      p2.y = pose.position.y + radius * std::sin(a2);
+      p2.z = SECTOR_Z + 0.001;
+      m.points.push_back(p1);
+      m.points.push_back(p2);
     }
     target.markers.push_back(m);
   };
@@ -330,10 +445,14 @@ void MapoiRviz2Publisher::timer_callback(){
     poi_index_one_based += 1;  // POI Editor (mapoi_config.yaml の poi: 順) 行番号、1-based、tag フィルタ非依存
     geometry_msgs::msg::Pose pose = poi.pose;
 
-    // POI radius を床面の円で描画 (全 POI 共通)。
-    // primary tag の color を採用。優先順位は tags 配列の順序ではなく
-    // waypoint > event で固定 (poi.tags が ["event", "waypoint"] のような順でも waypoint が勝つ)。
-    if (poi.tolerance.xy > 0.0) {
+    // POI tolerance (xy + yaw) を扇形 (sector) で描画 (#136、全 POI 共通)。
+    // 主 glyph は waypoint > landmark の優先順で 1 つだけ:
+    //   - waypoint: 塗り扇形 (緑)
+    //   - landmark: 中抜き扇形 (灰)
+    //   - その他 (旧 event 等): scope 外 (色 / glyph 整理は #70)
+    // pause tag があれば主 glyph の上に破線 outline を重ね描きする。
+    // 色は本 PR では既存 hardcode を継承 (整理は #70)。
+    if (show_sector && poi.tolerance.xy > 0.0) {
       const auto has_tag = [&poi](const std::string & target) {
         for (const auto & t : poi.tags) {
           if (t == target) return true;
@@ -341,17 +460,32 @@ void MapoiRviz2Publisher::timer_callback(){
         return false;
       };
 
-      float cr = 0.5f, cg = 0.5f, cb = 0.5f;  // default gray (recognized tag none)
-      visualization_msgs::msg::MarkerArray * circle_target = &ma_events;
+      float sr = 0.5f, sg = 0.5f, sb = 0.5f;
+      float fill_a = 0.0f, stroke_a = 0.0f;
+      visualization_msgs::msg::MarkerArray * sector_target = nullptr;
       if (has_tag("waypoint")) {
-        cr = 0.0f; cg = 1.0f; cb = 0.0f;
-        circle_target = &ma_waypoints;
-      } else if (has_tag("event")) {
-        cr = 0.0f; cg = 0.0f; cb = 1.0f;
-        circle_target = &ma_events;
+        sr = 0.0f; sg = 1.0f; sb = 0.0f;
+        fill_a = 0.4f; stroke_a = 0.7f;
+        sector_target = &ma_waypoints;
+      } else if (has_tag("landmark")) {
+        sr = 0.5f; sg = 0.5f; sb = 0.5f;
+        fill_a = 0.0f; stroke_a = 0.7f;  // 中抜き
+        sector_target = &ma_events;
       }
-      add_radius_circle(pose, poi.tolerance.xy, cr, cg, cb, id, *circle_target);
-      id += 1;
+
+      if (sector_target != nullptr) {
+        id += add_sector(pose, poi.tolerance.xy, poi.tolerance.yaw,
+                         sr, sg, sb,
+                         fill_a, stroke_a,
+                         id, *sector_target);
+
+        if (has_tag("pause")) {
+          add_dashed_outline(pose, poi.tolerance.xy, poi.tolerance.yaw,
+                             sr, sg, sb, 0.9f,
+                             id, *sector_target);
+          id += 1;
+        }
+      }
     }
 
     for(const auto & tag : poi.tags){
@@ -359,7 +493,6 @@ void MapoiRviz2Publisher::timer_callback(){
         visualization_msgs::msg::Marker m_waypoint = default_arrow_marker;
         m_waypoint.pose = pose;
         m_waypoint.pose.position.z = 0.1;
-        apply_radius_scale(m_waypoint, poi.tolerance.xy);
         {
           bool is_goal = highlighted_goal_names_.count(poi.name) > 0;
           if (is_goal) {
@@ -385,7 +518,6 @@ void MapoiRviz2Publisher::timer_callback(){
         visualization_msgs::msg::Marker m_event = default_arrow_marker;
         m_event.pose = pose;
         m_event.pose.position.z = 0.1;
-        apply_radius_scale(m_event, poi.tolerance.xy);
         m_event.color.r = 0.0; m_event.color.g = 0.0; m_event.color.b = 1.0; m_event.color.a = 0.7;
         m_event.id = id;
         ma_events.markers.push_back(m_event);
@@ -408,7 +540,6 @@ void MapoiRviz2Publisher::timer_callback(){
         visualization_msgs::msg::Marker m_landmark = default_arrow_marker;
         m_landmark.pose = pose;
         m_landmark.pose.position.z = 0.1;
-        apply_radius_scale(m_landmark, poi.tolerance.xy);
         m_landmark.color.r = 0.5; m_landmark.color.g = 0.5; m_landmark.color.b = 0.5; m_landmark.color.a = 0.7;
         m_landmark.id = id;
         ma_events.markers.push_back(m_landmark);

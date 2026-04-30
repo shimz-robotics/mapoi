@@ -14,6 +14,7 @@ class MapViewer {
 
     this.imageOverlay = null;
     this.poiMarkers = [];  // { marker, poi, index }
+    this.sectorLayers = []; // POI tolerance を扇形描画した Leaflet layer (#136)
     this.routeLayers = []; // Leaflet layers for route lines and labels
     this.metadata = null;
     this.tagColors = {};  // tag_name -> color, built from definitions
@@ -217,6 +218,9 @@ class MapViewer {
       if (!poi.pose) return;
       if (visibleSet && !visibleSet.has(index)) return;
 
+      // 扇形 (sector) を arrow icon の背景に描画 (#136)
+      this._drawSectorForPoi(poi);
+
       const latlng = this.worldToLatLng(poi.pose.x, poi.pose.y);
       const color = this.getPoiColor(poi);
       const yaw = poi.pose.yaw || 0;
@@ -394,6 +398,86 @@ class MapViewer {
       this.map.removeLayer(item.marker);
     });
     this.poiMarkers = [];
+    // POI 扇形 layer も同時に clear (#136)
+    if (this.sectorLayers) {
+      this.sectorLayers.forEach((l) => this.map.removeLayer(l));
+    }
+    this.sectorLayers = [];
+  }
+
+  /**
+   * POI の tolerance (xy + yaw) を扇形 (sector) で描画する (#136)。
+   *
+   * - 半径 = `tolerance.xy`、扇角 = `2 × tolerance.yaw`、中心線 = `pose.yaw`
+   * - `tolerance.yaw == 0` (未指定) または `tolerance.yaw >= π` → 完全円 (yaw 不問)
+   * - 主 glyph: waypoint > landmark の優先順で 1 つ
+   *   - waypoint: 塗り扇形 (`fillOpacity` 高)
+   *   - landmark: 中抜き扇形 (`fillOpacity = 0`、stroke のみ)
+   *   - その他 (旧 event 等): 描画しない (#70 で別途整理)
+   * - pause tag があれば主 glyph の上に dashed outline を重ね描き
+   *
+   * `tolerance.xy <= 0` または対象 tag 無しなら no-op。
+   */
+  _drawSectorForPoi(poi) {
+    if (!poi.pose) return;
+    if (!poi.tolerance || typeof poi.tolerance.xy !== 'number' || poi.tolerance.xy <= 0) return;
+
+    const tags = poi.tags || [];
+    const isWaypoint = tags.includes('waypoint');
+    const isLandmark = tags.includes('landmark');
+    const isPause = tags.includes('pause');
+    if (!isWaypoint && !isLandmark) return;
+
+    const yawCenter = poi.pose.yaw || 0;
+    const yawTol = (typeof poi.tolerance.yaw === 'number') ? poi.tolerance.yaw : 0;
+    const halfAngle = (yawTol <= 0 || yawTol >= Math.PI) ? Math.PI : yawTol;
+    const isFullCircle = halfAngle >= Math.PI;
+    const r = poi.tolerance.xy;
+    const totalAngle = isFullCircle ? (2 * Math.PI) : (2 * halfAngle);
+    const N = Math.max(8, Math.ceil(totalAngle / 0.1));
+    const startAngle = isFullCircle ? 0 : (yawCenter - halfAngle);
+
+    const points = [];
+    if (!isFullCircle) {
+      points.push(this.worldToLatLng(poi.pose.x, poi.pose.y));  // 扇形の中心点
+    }
+    for (let i = 0; i <= N; i += 1) {
+      const a = startAngle + (totalAngle * i) / N;
+      const wx = poi.pose.x + r * Math.cos(a);
+      const wy = poi.pose.y + r * Math.sin(a);
+      points.push(this.worldToLatLng(wx, wy));
+    }
+
+    const color = this.getPoiColor(poi);
+
+    // 主 glyph: waypoint = 塗り、landmark = 中抜き
+    // 細い実線で pause overlay (太い点線) との対比を強める (#136 user feedback)。
+    const polygon = L.polygon(points, {
+      color,
+      weight: 1,
+      opacity: 0.7,
+      fillColor: color,
+      fillOpacity: isWaypoint ? 0.25 : 0,
+      interactive: false,
+    }).addTo(this.map);
+    polygon.bringToBack();
+    this.sectorLayers.push(polygon);
+
+    // pause overlay: 主 glyph と同色で太い点線 outline を重ね描き
+    // 主 glyph (細い実線) と weight + dashArray の両軸で区別する (#136 user feedback)。
+    if (isPause) {
+      const outlinePoints = points.slice();
+      outlinePoints.push(points[0]);  // 閉じる
+      const outline = L.polyline(outlinePoints, {
+        color,
+        weight: 5,
+        opacity: 0.9,
+        dashArray: '6, 4',
+        interactive: false,
+      }).addTo(this.map);
+      outline.bringToBack();
+      this.sectorLayers.push(outline);
+    }
   }
 
   /**
