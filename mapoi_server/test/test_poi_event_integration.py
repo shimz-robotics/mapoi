@@ -51,10 +51,15 @@ def generate_test_description():
 
 
 class TestPoiEventIntegration(unittest.TestCase):
-    """mapoi_poi_events トピックの発行を検証する統合テスト"""
+    """mapoi_poi_events トピックの発行を検証する統合テスト。
+
+    flaky 対策の経緯 (#153) は :meth:`_wait_for_event` の docstring を参照。
+    要点: dynamic TF を別スレッドで周期 publish + event 駆動 wait で
+    取りこぼしを防ぐ。
+    """
 
     # event 待ちの timeout。CI の CPU 負荷時にも `radius_check_hz=10` × 数周期分の
-    # マージンが取れる長さ。低めにすると nav_server の初期 fetch race で flaky 化する (#153)。
+    # マージンが取れる長さ。低めにすると nav_server の初期 fetch race で flaky 化する。
     EVENT_WAIT_TIMEOUT = 5.0
     # dynamic TF publish 周期。radius_check_hz=10 (=100ms) より十分速くして取りこぼしを防ぐ。
     TF_PUBLISH_INTERVAL = 0.05
@@ -67,10 +72,6 @@ class TestPoiEventIntegration(unittest.TestCase):
         cls.sub = cls.node.create_subscription(
             PoiEvent, 'mapoi_poi_events',
             lambda msg: cls.received_events.append(msg), 10)
-        # static TF だと同 child_frame_id の再 publish で buffer 内 cache の更新が
-        # 伝播しないことがあり flaky 化する (#153)。dynamic TF を別スレッドで周期 publish
-        # することで、nav_server の lookupTransform(TimePointZero) が常に最新を取れる
-        # ようにする。
         cls.tf_broadcaster = TransformBroadcaster(cls.node)
         cls._robot_xy = (100.0, 100.0)  # 初期は全 POI から十分遠い座標
         cls._tf_lock = threading.Lock()
@@ -82,8 +83,16 @@ class TestPoiEventIntegration(unittest.TestCase):
     def tearDownClass(cls):
         cls._tf_stop.set()
         cls._tf_thread.join(timeout=2.0)
-        cls.node.destroy_node()
-        rclpy.shutdown()
+        thread_alive = cls._tf_thread.is_alive()
+        try:
+            cls.node.destroy_node()
+        finally:
+            rclpy.shutdown()
+        if thread_alive:
+            # Event.wait(0.05) 周期なので join 2 秒以内で必ず止まるはず。
+            # 残った場合は publish loop の bug か deadlock を疑う。
+            raise RuntimeError(
+                "TF publish thread did not terminate within 2.0s; resource leak suspected.")
 
     @classmethod
     def _tf_publish_loop(cls):
@@ -110,16 +119,22 @@ class TestPoiEventIntegration(unittest.TestCase):
             type(self)._robot_xy = (x, y)
 
     def _wait_for_event(self, predicate, timeout_sec=None):
-        """述語を満たす PoiEvent を受信するまで spin する。
+        """述語を満たす PoiEvent を受信するまで spin する。受信時点で即 True、
+        timeout したら False を返す。
 
-        受信時点で即 True を返し、timeout したら False。固定時間 spin だと
-        nav_server の TF buffer 反映や初期 POI fetch のタイミング次第で取りこぼし
-        flaky 化するため、event 駆動で抜ける (#153)。
+        flaky 対策の背景 (#153):
+        - 旧実装は `_spin_and_wait(2.0)` の固定時間 spin で、TF buffer の反映や
+          nav_server の初期 POI fetch のタイミング次第で取りこぼしていた。
+        - StaticTransformBroadcaster で同 child_frame_id を別座標で再 publish しても
+          subscriber 側の TF buffer cache 更新が伝播せず、前 test の pose が残って
+          ENTER 判定が成立しないケースがあった。これは setUpClass で dynamic TF を
+          周期 publish することで解消している。
+        - timeout は wall clock 調整の影響を受けないよう `time.monotonic()` で計測。
         """
         if timeout_sec is None:
             timeout_sec = self.EVENT_WAIT_TIMEOUT
-        end_time = time.time() + timeout_sec
-        while time.time() < end_time:
+        end_time = time.monotonic() + timeout_sec
+        while time.monotonic() < end_time:
             rclpy.spin_once(self.node, timeout_sec=0.1)
             if any(predicate(e) for e in self.received_events):
                 return True
@@ -154,10 +169,8 @@ class TestPoiEventIntegration(unittest.TestCase):
 
     def test_exit_event(self):
         """POI内 → radius外 に移動 → EXIT イベント発行"""
-        # 前段: (1.0, 0.0) の poi_goal_only を ENTER 状態にする。
-        # 単に固定 spin するだけだと TF 反映や radius_check の周期次第で was_inside が
-        # false のまま後段に進み、後段で EXIT 条件 (was_inside && dist > radius*hyst) が
-        # 永遠に成立せず flaky 化していた (#153)。ここで ENTER を assert で確認する。
+        # 後段の EXIT 条件 (was_inside && dist > radius*hyst) は前段で ENTER して
+        # was_inside=true を成立させないと永遠に満たせない。前提を assert で固定する。
         self._set_robot_pose(1.0, 0.0)
         enter_found = self._wait_for_event(
             lambda e: (e.event_type == PoiEvent.EVENT_ENTER
