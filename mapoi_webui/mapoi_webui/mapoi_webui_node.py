@@ -172,9 +172,11 @@ class MapoiWebNode(Node):
         self.nav_status_sub_ = self.create_subscription(
             String, 'mapoi_nav_status', self.nav_status_callback, nav_status_qos)
 
-        # Subscribe to mapoi_config_path for external map switches
+        # Subscribe to mapoi_config_path for external map switches.
+        # transient_local QoS で publisher (mapoi_server) の latched 値を受信する (#135)。
+        config_path_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.config_path_sub_ = self.create_subscription(
-            String, 'mapoi_config_path', self.config_path_callback, 10)
+            String, 'mapoi_config_path', self.config_path_callback, config_path_qos)
 
         # If maps_path not set, try to get it from get_maps_info service or use default
         if not self.maps_path_:

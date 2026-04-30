@@ -55,10 +55,13 @@ private:
   // mapoi_initialpose_poi topic に publish。mapoi_nav_server がそれを受けて /initialpose を流す。
   // QoS: transient_local (depth=1) で後起動 subscriber でも受信できる。
   rclcpp::Publisher<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr initialpose_poi_publisher_;
-  rclcpp::TimerBase::SharedPtr timer_;
 
   // initial pose 用の POI 名 publish (#144)。compute_initial_poi_name は class-level public static。
   void publish_initial_poi_name(const std::string & requested_name);
+
+  // mapoi_config_path topic の publish (transient_local QoS で latched)。起動時 / SwitchMap /
+  // reload_map_info で呼ぶ。定期 publish は subscriber を transient_local に揃えて廃止 (#135)。
+  void publish_config_path();
 
   // methods
   void load_mapoi_config_file();

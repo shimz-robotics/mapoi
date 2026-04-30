@@ -75,7 +75,7 @@ void MapoiPanel::onInitialize()
   mapoi_highlight_route_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_highlight_route", 1);
 
   config_path_sub_ = node_->create_subscription<std_msgs::msg::String>(
-      "mapoi_config_path", 10,
+      "mapoi_config_path", rclcpp::QoS(1).transient_local(),
       std::bind(&MapoiPanel::ConfigPathCallback, this, std::placeholders::_1));
 
   // QoS は mapoi_nav_server と同じ transient_local。後起動 panel でも latched 値を受信できる。
@@ -245,12 +245,21 @@ void MapoiPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
 {
   std::filesystem::path config_path(msg->data);
   std::string map_name = config_path.parent_path().filename().string();
-  if(current_map_ != map_name){
-    current_map_ = map_name;
-    QMetaObject::invokeMethod(this, [this, map_name]() {
+  bool map_changed = (current_map_ != map_name);
+  current_map_ = map_name;
+
+  // 同じ map で path も同じ場合 (= save 後の reload_map_info で再 publish される flow) でも
+  // POI / route list が変わっている可能性があるため Nav2GoalComboBox / MapoiRouteComboBox を
+  // 再 fetch する (#135)。map 切替時は highlight クリア + MapComboBox 同期も必要なので
+  // SetMapComboBox を呼ぶ。
+  QMetaObject::invokeMethod(this, [this, map_name, map_changed]() {
+    if (map_changed) {
       SetMapComboBox(map_name);
-    }, Qt::QueuedConnection);
-  }
+    } else {
+      SetNav2GoalComboBox();
+      SetMapoiRouteComboBox();
+    }
+  }, Qt::QueuedConnection);
 }
 
 void MapoiPanel::SetMapComboBox(std::string map_name)
@@ -279,6 +288,11 @@ void MapoiPanel::SetMapComboBox(std::string map_name)
 
 void MapoiPanel::SetNav2GoalComboBox()
 {
+  // 再構築前に現在 selection を保存し、同名項目があれば復元する (#135 副作用対応)。
+  // 他クライアント save (POI 追加 / pose 変更など) の reload で goal 選択が消えるのを防ぐ。
+  // 削除 / 名前変更で同名項目が消えた場合は currentIndex 0 (default) に fallback。
+  QString prev_selection = ui_->Nav2GoalComboBox->currentText();
+
   auto request_gtp = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
 
   if (!get_pois_info_client_->wait_for_service(3s)) {
@@ -307,7 +321,11 @@ void MapoiPanel::SetNav2GoalComboBox()
         ui_->Nav2GoalComboBox->addItem(QString::fromStdString(p.name));
       }
     }
-    goal_combobox_ind_ = 0;
+    int idx = ui_->Nav2GoalComboBox->findText(prev_selection);
+    if (idx >= 0) {
+      ui_->Nav2GoalComboBox->setCurrentIndex(idx);
+    }
+    goal_combobox_ind_ = ui_->Nav2GoalComboBox->currentIndex();
   }else{
     RCLCPP_ERROR(LOGGER, "Failed to call service get_pois_info");
   }
@@ -315,6 +333,10 @@ void MapoiPanel::SetNav2GoalComboBox()
 
 void MapoiPanel::SetMapoiRouteComboBox()
 {
+  // 再構築前に現在 selection を保存し、同名項目があれば復元する (#135 副作用対応)。
+  // 他クライアント save (route 追加 / 内容変更) の reload で route 選択が消えるのを防ぐ。
+  QString prev_selection = ui_->MapoiRouteComboBox->currentText();
+
   if (!get_routes_info_client_->wait_for_service(3s)) {
     RCLCPP_ERROR(LOGGER, "get_routes_info service not available after 3s timeout.");
     return;
@@ -330,7 +352,11 @@ void MapoiPanel::SetMapoiRouteComboBox()
     for(const auto & route : route_name_list_){
       ui_->MapoiRouteComboBox->addItem(QString::fromStdString(route));
     }
-    route_combobox_ind_ = 0;
+    int idx = ui_->MapoiRouteComboBox->findText(prev_selection);
+    if (idx >= 0) {
+      ui_->MapoiRouteComboBox->setCurrentIndex(idx);
+    }
+    route_combobox_ind_ = ui_->MapoiRouteComboBox->currentIndex();
   }else{
     RCLCPP_ERROR(LOGGER, "Failed to call service get_routes_info");
   }

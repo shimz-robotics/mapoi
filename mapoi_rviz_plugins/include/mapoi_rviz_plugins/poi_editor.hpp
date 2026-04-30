@@ -110,6 +110,11 @@ protected:
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr config_path_sub_;
   void ConfigPathCallback(std_msgs::msg::String::SharedPtr msg);
 
+  // Save 直後の 1.5 秒間は config_path callback 経由の UpdatePoiTable を抑制し、
+  // SAVED! の green feedback を維持する (#135 副作用対応)。1.5 秒後の QTimer 末尾で
+  // rebuild + flag クリアされる。
+  bool suppress_config_callback_update_ = false;
+
   // Functions
   void InitConfigs(std::string map_name);
   void UpdatePoiTable();

@@ -14,7 +14,6 @@ mapoi のメインパッケージです。
       - {name: maps_path, value: "/path/to/your/maps"}    # REQUIRED
       - {name: map_name, value: "initial_map_name"}        # REQUIRED
       - {name: config_file, value: "mapoi_config.yaml"}    # optional
-      - {name: pub_interval_ms, value: "500"}              # optional
       - {name: simulator, value: "none"}                   # gazebo|gz|none (default: none)
       - {name: robot_entity_name, value: "burger"}         # simulator=gazebo|gz のとき必要
       - {name: robot_sdf_path, value: "/path/.../model.sdf"} # simulator=gazebo のとき必要

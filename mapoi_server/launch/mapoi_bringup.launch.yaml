@@ -31,11 +31,6 @@ launch:
     description: "Config file name inside each map directory"
 
 - arg:
-    name: pub_interval_ms
-    default: "500"
-    description: "mapoi_config_path publish interval (ms)"
-
-- arg:
     name: simulator
     default: "none"
     description: >
@@ -86,7 +81,6 @@ launch:
       - {name: maps_path, value: "$(var maps_path)"}
       - {name: map_name, value: "$(var map_name)"}
       - {name: config_file, value: "$(var config_file)"}
-      - {name: pub_interval_ms, value: "$(var pub_interval_ms)"}
 
 - node:
     pkg: mapoi_server

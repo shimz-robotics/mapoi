@@ -274,7 +274,6 @@ maps/
       - {name: maps_path, value: "$(find-pkg-share your_package)/maps"}
       - {name: map_name, value: "site_a"}
       - {name: config_file, value: "mapoi_config.yaml"}
-      - {name: pub_interval_ms, value: 500}
 
 - node:
     pkg: mapoi_server

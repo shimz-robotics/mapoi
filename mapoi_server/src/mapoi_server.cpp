@@ -10,7 +10,6 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   this->declare_parameter<std::string>("maps_path", mapoi_server_pkg_ + "/maps");
   this->declare_parameter<std::string>("map_name", "turtlebot3_world");
   this->declare_parameter<std::string>("config_file", "mapoi_config.yaml");
-  this->declare_parameter<int>("pub_interval_ms", 5000);
 
   // initial maps path
   maps_path_ = this->get_parameter("maps_path").as_string();
@@ -20,19 +19,17 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   load_tag_definitions();
   load_mapoi_config_file();
 
-  // Publish config_path_
+  // Publish config_path_ (transient_local QoS で latched、subscriber も transient_local に揃え
+  // たので定期 publish は廃止、起動時 / SwitchMap / reload_map_info で明示 publish する仕様に
+  // 移行 (#135))。
   config_path_publisher_ = this->create_publisher<std_msgs::msg::String>(
     "mapoi_config_path", rclcpp::QoS(1).transient_local());
+  publish_config_path();  // 起動時に latched 値として publish
+
   // Publish initial pose POI name (#144): mapoi_nav_server がこれを受けて /initialpose を流す。
   // 起動時 / SwitchMap / reload で publish する。後起動 subscriber でも受信できるよう transient_local。
   initialpose_poi_publisher_ = this->create_publisher<mapoi_interfaces::msg::InitialPoseRequest>(
     "mapoi_initialpose_poi", rclcpp::QoS(1).transient_local());
-  int pub_interval_ms = this->get_parameter("pub_interval_ms").as_int();
-  timer_ = this->create_wall_timer(std::chrono::milliseconds(pub_interval_ms), [this]() {
-    auto msg = std_msgs::msg::String();
-    msg.data = config_path_;
-    config_path_publisher_->publish(msg);
-  });
 
   // 起動時の最初の map に対する initial pose POI を publish (#144)。
   // 順序保証: load_mapoi_config_file() (line 21) → publish_initial_poi_name() の順に実行。
@@ -134,6 +131,13 @@ mapoi_interfaces::msg::PointOfInterest MapoiServer::yaml_to_poi_msg(const YAML::
   msg.tags = poi["tags"].as<std::vector<std::string>>(std::vector<std::string>{});
   msg.description = poi["description"].as<std::string>("");
   return msg;
+}
+
+void MapoiServer::publish_config_path()
+{
+  auto msg = std_msgs::msg::String();
+  msg.data = config_path_;
+  config_path_publisher_->publish(msg);
 }
 
 void MapoiServer::load_mapoi_config_file()
@@ -360,6 +364,10 @@ void MapoiServer::switch_map_service(const std::shared_ptr<mapoi_interfaces::srv
   // send_load_map_request 全件成功後にここへ来る。失敗 (上の return) では publish しない。
   publish_initial_poi_name(request->initial_poi_name);
 
+  // mapoi_config_path を再 publish (transient_local で latched 値更新)。subscriber は新 path を
+  // 受け取って table / ComboBox を再 fetch する (#135)。
+  publish_config_path();
+
   RCLCPP_INFO(this->get_logger(), "The map was switched into %s", map_name_.c_str());
   response->success = true;
 }
@@ -371,6 +379,9 @@ void MapoiServer::reload_map_info_service(
 {
   (void)request;
   load_mapoi_config_file();
+  // mapoi_config_path を再 publish (transient_local で latched 値更新)。subscriber が
+  // table / ComboBox を再 fetch することで save 後の内容更新が反映される (#135)。
+  publish_config_path();
   // reload は POI 編集後の再読込 trigger。ここで `mapoi_initialpose_poi` を再 publish すると、
   // mapoi_nav_server 側で /initialpose が再配信され **運用中の自己位置が巻き戻される** 回帰がある
   // (Cursor review #149 round 4 medium 対応)。
