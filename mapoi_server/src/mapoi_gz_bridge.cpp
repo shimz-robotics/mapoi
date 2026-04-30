@@ -230,7 +230,7 @@ ConfigLoadStatus MapoiGzBridge::load_gazebo_info(
     }
     // initial pose は (1) latched mapoi_initialpose_poi (= SwitchMap.initial_poi_name 指定) があれば
     // それを優先、(2) なければ POI list 先頭 (landmark 除外、pose 妥当性 check) を採用。選定 logic は
-    // `mapoi_server::select_initial_poi_name` で共通化 (#144 / #149 round 7 ヘビー high / #150)。
+    // `mapoi::select_initial_poi_name` で共通化 (#144 / #149 round 7 ヘビー high / #150)。
     // 注: map_name による世代検証は #149 round 10 で取り下げ (#174 で publisher 側 latched 上書きに移行)。
     //   stale 排除は publisher 上書き (transient_local depth=1) に依存する。
     std::string requested;

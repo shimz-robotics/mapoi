@@ -14,6 +14,12 @@
 //   2) fall back: POI list 先頭で「landmark なし & pose 完備」の POI を採用
 //   3) 候補なしなら空文字列を返す
 //
+// 前提: POI 名はマップ内で一意 (project 全体の暗黙前提、`mapoi_nav_server` /
+//   bridge / WebUI の lookup は全て「先頭一致で break」する design)。同名 POI
+//   が複数定義された場合、本関数は先頭一致で判定するため、後続の同名 POI は
+//   探索しない。yaml schema validation は ``scripts/check_sample_yaml_consistency.py``
+//   等で別途担保する。
+//
 // state を持たないため呼び出し側で test しやすい (#149 round 4 high の意図を
 // 維持)。
 
