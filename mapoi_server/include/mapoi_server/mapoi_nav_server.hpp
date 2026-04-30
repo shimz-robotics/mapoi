@@ -180,13 +180,19 @@ private:
   // --- STOPPED/RESUMED 判定 (#140) ---
   // cmd_vel subscriber: 速度判定の source の一つ。Nav2 action SUCCEEDED もう一つの source は
   // result_callback / ntp_result_callback で hook する (両方 OR で STOPPED 判定)。
+  // dwell 判定は robot 全体で 1 つ (POI ごとには持たない)。線速ノルムと角速度絶対値の両方が
+  // 同じ閾値 ``stopped_speed_threshold`` 未満のとき停止扱い。線速 (m/s) と角速 (rad/s) に
+  // 単位の異なる同一閾値を使う割り切りは、撮影シナリオで「その場旋回も停止扱いしたくない」
+  // 用途と整合する (param 説明 / CHANGELOG にも明記)。
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
   void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
-  // 最後に観測した速度 (m/s 換算、|linear| + |angular|*r_eff の単純合算で近似)。
-  double last_cmd_vel_speed_ {0.0};
   // 速度が閾値以下になり始めた時刻 (steady_clock)。閾値超えに戻ったら reset。
   std::chrono::steady_clock::time_point last_zero_velocity_start_ {};
   bool zero_velocity_active_ {false};
+  // STOPPED 判定 param のキャッシュ (cmd_vel callback で毎 tick 取得すると lock コストが高いため
+  // constructor で読み込んで保持。ROS 動的 reconfigure で変更したい場合は再起動が必要)。
+  double stopped_speed_threshold_ {0.01};
+  double stopped_dwell_time_sec_ {1.0};
 
   // 状態遷移判定の純関数 (unit test 用、#140)。inputs から transition を返すだけで副作用なし。
   enum class StoppedTransition { NONE, TO_STOPPED, TO_RESUMED };
@@ -197,9 +203,11 @@ private:
   };
   static StoppedTransition compute_stopped_transition(const StoppedDetectionInputs & in);
 
-  // 全 inside POI に対して STOPPED publish (Nav2 SUCCEEDED 受信時)。
-  // 既に STOPPED state の POI は idempotent に skip。``reason`` は log 用 ("Nav2 succeeded" 等)。
-  void stop_all_inside_pois(const std::string & reason);
+  // STOPPED publish (Nav2 SUCCEEDED 受信時)。``target_poi_name`` が指定された場合、その POI は
+  // inside check を skip して強制的に STOPPED publish する (SUCCEEDED と tolerance_check tick の
+  // 非同期で「まだ inside と判定されていない」瞬間に SUCCEEDED が来ても取りこぼさない)。それ以外
+  // の inside POI は通常通り poi_inside_state_ を見て publish。``reason`` は log 用。
+  void stop_all_inside_pois(const std::string & reason, const std::string & target_poi_name = "");
   // 全 stopped POI に対して RESUMED publish (新規 goal 受信時)。
   void resume_all_stopped_pois();
 

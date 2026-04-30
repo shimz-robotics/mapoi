@@ -70,10 +70,16 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   this->declare_parameter<double>("hysteresis_exit_multiplier", 1.15);
   this->declare_parameter<std::string>("map_frame", "map");
   this->declare_parameter<std::string>("base_frame", "base_link");
-  // STOPPED/RESUMED 判定 (#140): cmd_vel 速度閾値 (m/s 換算) と継続時間閾値、購読 topic 名。
+  // STOPPED/RESUMED 判定 (#140): 線速ノルムと角速度絶対値の両方が ``stopped_speed_threshold``
+  // 未満の状態が ``stopped_dwell_time_sec`` 続いたら EVENT_STOPPED publish。線速 (m/s) と角速
+  // (rad/s) に同一閾値を使う割り切りで「その場旋回も停止扱いしない」用途を表現する。
   this->declare_parameter<double>("stopped_speed_threshold", 0.01);
   this->declare_parameter<double>("stopped_dwell_time_sec", 1.0);
   this->declare_parameter<std::string>("cmd_vel_topic", "cmd_vel");
+  // パラメータを cmd_vel_callback / tolerance_check_callback の hot path で毎回取得すると
+  // lock コストが高いため、起動時にキャッシュして以降は member を読む (#176 review low #4)。
+  stopped_speed_threshold_ = this->get_parameter("stopped_speed_threshold").as_double();
+  stopped_dwell_time_sec_ = this->get_parameter("stopped_dwell_time_sec").as_double();
 
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -610,9 +616,10 @@ void MapoiNavServer::result_callback(std::string target, size_t nav_generation,
       reset_nav_state();
       publish_nav_status("succeeded", target);
       RCLCPP_INFO(this->get_logger(), "Navigation SUCCEEDED!");
-      // Nav2 SUCCEEDED 時点で robot は goal で停止している。現在 inside の POI に対して
-      // STOPPED publish (#140)。cmd_vel ベースの dwell 待ちを経由せず即時に発火する。
-      stop_all_inside_pois("Nav2 FollowWaypoints succeeded");
+      // Nav2 SUCCEEDED 時点で robot は goal で停止している。target POI に対して強制 publish
+      // (inside check skip で取りこぼし防止) + 他の inside POI にも STOPPED publish (#140)。
+      // cmd_vel ベースの dwell 待ちを経由せず即時発火。
+      stop_all_inside_pois("Nav2 FollowWaypoints succeeded", target);
       break;
     case rclcpp_action::ResultCode::ABORTED:
       reset_nav_state();
@@ -674,7 +681,7 @@ void MapoiNavServer::ntp_result_callback(std::string target, size_t nav_generati
       reset_nav_state();
       publish_nav_status("succeeded", target);
       RCLCPP_INFO(this->get_logger(), "NavigateToPose SUCCEEDED!");
-      stop_all_inside_pois("Nav2 NavigateToPose succeeded");
+      stop_all_inside_pois("Nav2 NavigateToPose succeeded", target);
       break;
     case rclcpp_action::ResultCode::ABORTED:
       reset_nav_state();
@@ -954,15 +961,13 @@ void MapoiNavServer::tolerance_check_callback()
   double rx = transform.transform.translation.x;
   double ry = transform.transform.translation.y;
   double hysteresis = this->get_parameter("hysteresis_exit_multiplier").as_double();
-  // STOPPED 判定の dwell threshold (#140)。zero_velocity が dwell 以上続いたら停止扱い。
-  const double dwell_threshold_sec =
-    this->get_parameter("stopped_dwell_time_sec").as_double();
-  // 現在 cmd_vel が閾値以下で dwell threshold 経過済か (timer tick 内で 1 回計算して使い回す)。
+  // STOPPED 判定: zero_velocity が dwell threshold 以上続いたら停止扱い (#140)。
+  // 全 POI 共通の判定なので timer tick 内で 1 回計算して使い回す。
   bool zero_velocity_dwelled = false;
   if (zero_velocity_active_) {
     const double dwell = std::chrono::duration<double>(
       std::chrono::steady_clock::now() - last_zero_velocity_start_).count();
-    zero_velocity_dwelled = (dwell >= dwell_threshold_sec);
+    zero_velocity_dwelled = (dwell >= stopped_dwell_time_sec_);
   }
 
   // pause タグ POI の ENTER を収集（mutex 外で処理するため）
@@ -1065,16 +1070,16 @@ double MapoiNavServer::distance_2d(const geometry_msgs::msg::Pose & poi_pose, do
 
 void MapoiNavServer::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
-  // 線速 (3D) と角速 (yaw 軸) の両方が閾値以下のとき「停止」とみなす。撮影シナリオでは
-  // その場旋回もしない前提のため、angular.z も判定に含める。
-  const double threshold = this->get_parameter("stopped_speed_threshold").as_double();
+  // 線速ノルム (3D) と角速度絶対値 (yaw 軸) の両方が閾値以下のとき「停止」とみなす。
+  // 撮影シナリオでは「その場旋回も停止扱いしない」前提のため、angular.z も判定に含める。
+  // 単位が異なるが同一閾値を使う割り切り (param 説明参照、#140)。
   const double linear_norm = std::sqrt(
     msg->linear.x * msg->linear.x +
     msg->linear.y * msg->linear.y +
     msg->linear.z * msg->linear.z);
   const double angular_norm = std::abs(msg->angular.z);
-  last_cmd_vel_speed_ = linear_norm + angular_norm;
-  const bool zero_now = (linear_norm < threshold) && (angular_norm < threshold);
+  const bool zero_now =
+    (linear_norm < stopped_speed_threshold_) && (angular_norm < stopped_speed_threshold_);
   if (zero_now) {
     if (!zero_velocity_active_) {
       zero_velocity_active_ = true;
@@ -1104,18 +1109,29 @@ MapoiNavServer::StoppedTransition MapoiNavServer::compute_stopped_transition(
   return in.zero_velocity_dwelled ? StoppedTransition::NONE : StoppedTransition::TO_RESUMED;
 }
 
-void MapoiNavServer::stop_all_inside_pois(const std::string & reason)
+void MapoiNavServer::stop_all_inside_pois(
+  const std::string & reason, const std::string & target_poi_name)
 {
   // Nav2 SUCCEEDED 受信時に呼ぶ: 現在 inside の全 POI に対して STOPPED publish
   // (既に STOPPED state の POI は idempotent に skip)。
+  // ``target_poi_name`` が指定された場合は、その POI は inside check を skip して
+  // 強制的に STOPPED publish する (SUCCEEDED と tolerance_check tick の非同期による
+  // 取りこぼし防止、#176 review medium #1)。
   // event_pois_ / poi_inside_state_ / poi_stopped_state_ を lock で守って snapshot を
   // 取り、publish は lock 外で実行 (既存 tolerance_check の pattern と整合)。
   std::vector<mapoi_interfaces::msg::PointOfInterest> to_stop;
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
     for (const auto & poi : event_pois_) {
-      if (poi_inside_state_[poi.name] && !poi_stopped_state_[poi.name]) {
+      const bool is_target = !target_poi_name.empty() && poi.name == target_poi_name;
+      const bool eligible = is_target || poi_inside_state_[poi.name];
+      if (eligible && !poi_stopped_state_[poi.name]) {
         poi_stopped_state_[poi.name] = true;
+        // target POI は SUCCEEDED で確実に到達済なので、念のため inside_state も true に
+        // 同期させる (まだ TF が tick で観測されていないケース対応)。
+        if (is_target) {
+          poi_inside_state_[poi.name] = true;
+        }
         to_stop.push_back(poi);
       }
     }
