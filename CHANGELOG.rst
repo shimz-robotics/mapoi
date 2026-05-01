@@ -225,6 +225,18 @@ WebUI / rviz_plugins
     本 PR で同 UI を ``show_tolerance_sector`` の CheckBox に置換 (display layer の
     runtime トグルが Panel から可能に)
 
+* ``mapoi_rviz2_publisher`` から legacy ``event`` tag elif 分岐を削除 (#180)。
+
+  - ``event`` tag は元々 system tag だったが #89 段階 1 で system tag から外れて custom tag 扱いに
+    なっていた。RViz publisher 側に hardcode で青色 arrow + label を描画する分岐が残っており、
+    PR #178 の cursor review で「legacy 残置」として high 指摘された follow-up
+  - 本 PR で elif 分岐を削除。``event`` tag を持つ POI は他の system tag (``waypoint`` /
+    ``landmark``) があれば従来通り扇形 + arrow が描画され、それらが無ければ visualization に
+    出ない (custom tag 共通の挙動と一致)
+  - ``hazard_south`` のような複合 tag POI は ``[landmark, hazard]`` に整理 (sample 側変更、
+    Samples セクション参照)
+  - 色 / glyph の整理は #70 で扱う
+
 Samples
 -------
 
@@ -240,7 +252,8 @@ Samples
     (waypoints + landmarks 両方持ち) と ``tour_short`` (landmarks 省略) の対比。
     custom tag ``capture_trigger`` / ``capture_target`` を追加。
   - ``turtlebot3_dqn_stage1`` (障害物 sandbox での回避): POI 5 → 7 に拡張。
-    複合 tag (``event + landmark + hazard``) のハザード、``tolerance.yaw=π`` で
+    複合 tag (``landmark + hazard``、当初 ``[event, landmark, hazard]`` だったが #180 で
+    ``event`` tag 削除に伴い ``[landmark, hazard]`` に整理) のハザード、``tolerance.yaw=π`` で
     yaw 不問の通過点 (= pass_through 代替) として ``checkpoint_west/east``、
     pause 中継 (``pause_intersection``)、route ``avoidance_a``
     (waypoints + landmarks) と ``avoidance_b`` (waypoints のみ)。custom tag

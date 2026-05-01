@@ -101,7 +101,7 @@ TEST_F(NavServerTestFixture, HasLandmarkTagDetection)
   EXPECT_TRUE(MapoiNavServer::has_landmark_tag(
     make_poi("landmark_only", 0.0, 0.0, 0.5, {"landmark"})));
   EXPECT_TRUE(MapoiNavServer::has_landmark_tag(
-    make_poi("landmark_combo", 0.0, 0.0, 0.5, {"event", "landmark", "hazard"})));
+    make_poi("landmark_combo", 0.0, 0.0, 0.5, {"landmark", "hazard"})));
 }
 
 // --- build_route_poi_names (#143 / #148) ---
