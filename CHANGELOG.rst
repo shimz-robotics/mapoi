@@ -19,6 +19,54 @@ Unreleased
 Breaking changes
 ----------------
 
+* Runtime topic naming を ``/mapoi/...`` namespace に再編 (#185、#70、#102)。
+  旧 flat ``/mapoi_*`` runtime topic は互換 alias なしで削除したため、launch /
+  script / RViz 設定 / 外部 node は下表の新 topic に移行する必要がある。
+
+  - marker topic は PR #186 で ``/mapoi/markers/pois`` と
+    ``/mapoi/markers/routes`` に整理
+  - marker 以外の mapoi topic は PR #187 で ``/mapoi/highlight/*`` /
+    ``/mapoi/nav/*`` / ``/mapoi/events`` / ``/mapoi/config_path`` /
+    ``/mapoi/initialpose_poi`` に移行
+  - RViz PoseTool 由来の ``mapoi_rviz_pose`` は mapoi runtime topic namespace
+    再編の対象外のため変更なし
+
+  .. list-table::
+     :header-rows: 1
+
+     * - 旧 topic
+       - 新 topic
+     * - ``/mapoi_goal_marks``
+       - ``/mapoi/markers/pois``
+     * - ``/mapoi_event_marks``
+       - ``/mapoi/markers/pois``
+     * - ``/mapoi_route_marks``
+       - ``/mapoi/markers/routes``
+     * - ``/mapoi_highlight_goal``
+       - ``/mapoi/highlight/goal``
+     * - ``/mapoi_highlight_route``
+       - ``/mapoi/highlight/route``
+     * - ``/mapoi_goal_pose_poi``
+       - ``/mapoi/nav/goal_pose_poi``
+     * - ``/mapoi_route``
+       - ``/mapoi/nav/route``
+     * - ``/mapoi_cancel``
+       - ``/mapoi/nav/cancel``
+     * - ``/mapoi_pause``
+       - ``/mapoi/nav/pause``
+     * - ``/mapoi_resume``
+       - ``/mapoi/nav/resume``
+     * - ``/mapoi_switch_map``
+       - ``/mapoi/nav/switch_map``
+     * - ``/mapoi_nav_status``
+       - ``/mapoi/nav/status``
+     * - ``/mapoi_poi_events``
+       - ``/mapoi/events``
+     * - ``/mapoi_config_path``
+       - ``/mapoi/config_path``
+     * - ``/mapoi_initialpose_poi``
+       - ``/mapoi/initialpose_poi``
+
 * ``mapoi_server`` から sample maps を廃止し、``maps_path`` parameter を必須化 (#163 段階 1)。
 
   - 旧: ``mapoi_server`` package に ``maps/turtlebot3_world/`` /
@@ -45,7 +93,7 @@ Breaking changes
 
 * ``mapoi_server`` の ``pub_interval_ms`` parameter を廃止 (#135)。
 
-  - 旧: ``mapoi_config_path`` topic を ``pub_interval_ms`` (default 5000ms、
+  - 旧: ``/mapoi_config_path`` topic を ``pub_interval_ms`` (default 5000ms、
     sample launch では 500ms) 間隔で定期 publish
   - 新: 起動時 / ``SwitchMap`` / ``reload_map_info`` で明示 publish。
     publisher は ``transient_local`` QoS のまま、subscriber 側も
@@ -65,23 +113,24 @@ Breaking changes
   - 新: 新 map の **POI list 先頭** (landmark タグ POI は除外) を default として
     採用。``SwitchMap.srv`` に追加した ``initial_poi_name`` で明示指定も可
   - 配信経路: ``mapoi_server`` が新 map ロード時に POI 名を
-    ``mapoi_initialpose_poi`` (transient_local) に publish、
+    ``/mapoi/initialpose_poi`` (transient_local) に publish、
     ``mapoi_nav_server`` がそれを受けて ``/initialpose`` に流す
   - YAML migration: ``tags: [..., initial_pose]`` 行から ``initial_pose`` を
     削除し、開始 POI を ``poi:`` 配下の先頭に並べる
   - ``mapoi_gazebo_bridge`` / ``mapoi_gz_bridge`` の robot spawn 位置も同
     semantics (POI list 先頭) に移行
   - ``reload_map_info`` service の挙動変更: POI 編集後の reload で
-    ``mapoi_initialpose_poi`` を再 publish しなくなった (運用中の自己位置を
+    ``/mapoi/initialpose_poi`` を再 publish しなくなった (運用中の自己位置を
     巻き戻すリスクを排除)。再設定は ``SwitchMap`` (= 地図切替) または
-    手動経路 (RViz / WebUI / ``mapoi_initialpose_poi`` 直接 publish) で
+    手動経路 (RViz / WebUI / ``/mapoi/initialpose_poi`` 直接 publish) で
   - ``mapoi_nav_server`` parameter 変更:
     ``initial_pose_subscriber_wait_timeout_sec`` を削除し、async retry
     timer ベースの新 parameter に置換 (``initialpose_retry_interval_sec``,
     ``initialpose_retry_max_attempts``,
     ``initialpose_post_subscribe_republish_count``)。blocking wait による
     他 callback 停止の回帰を防止
-  - ``mapoi_initialpose_poi`` topic の型変更: ``std_msgs/String`` →
+  - 旧 ``/mapoi_initialpose_poi`` は新 ``/mapoi/initialpose_poi`` に移行し、
+    topic 型も ``std_msgs/String`` →
     ``mapoi_interfaces/InitialPoseRequest`` (``{map_name, poi_name}``)。
     SwitchMap 中の topic 同期 race (bridge / nav_server が古い世代の POI 名を
     採用してしまう) を防ぐため、subscriber 側は ``map_name`` で世代を検証する。
@@ -95,7 +144,7 @@ Breaking changes
   - 新: ``nav_mode_ == ROUTE`` かつ active route の ``waypoints`` / ``landmarks``
     に含まれる POI でのみ発火。GOAL 走行や IDLE では発火しない
 
-  既存挙動からの変更点として、単発 ``mapoi_goal_pose_poi`` で偶然 ``pause`` POI に
+  既存挙動からの変更点として、単発 ``/mapoi/nav/goal_pose_poi`` で偶然 ``pause`` POI に
   進入しても自動 pause しなくなる。route ベースのシナリオでのみ pause が走る形に
   整理した。
 
@@ -110,7 +159,7 @@ Breaking changes
   targets and route waypoints share this tag (Nav2 navigation 到達対象).
   YAML ``tags: [goal, ...]`` must be migrated to ``tags: [waypoint, ...]``.
   Topic / service / action names referring to "goal" (e.g.
-  ``mapoi_goal_pose_poi``, ``goal_pose``) remain unchanged because they
+  ``/mapoi/nav/goal_pose_poi``, ``goal_pose``) remain unchanged because they
   follow Nav2 native terminology. (#89 段階 1, #142)
 * System tag ``origin`` removed. Map origin reference points should be
   expressed with ``landmark`` system tag plus a custom tag (e.g.
@@ -179,7 +228,7 @@ WebUI / rviz_plugins
 
   - 旧: rviz の PoiEditor で save しても WebUI 側はブラウザ更新するまで反映されない
   - 新: ``mapoi_webui_node`` に ``/api/events`` SSE endpoint を追加。
-    ``mapoi_config_path`` topic 受信時に ``{type: "config_changed"}`` を全 client に
+    ``/mapoi/config_path`` topic 受信時に ``{type: "config_changed"}`` を全 client に
     broadcast。frontend (``app.js``) は ``EventSource`` で受信して
     ``loadTagDefinitions / loadPois / loadRoutes`` を再 fetch
   - 関連: ``Flask app.run(threaded=True)`` を明示 (SSE long-lived connection と他
@@ -280,7 +329,7 @@ Samples
 Fixes
 -----
 
-* ``mapoi_server`` の ``reload_map_info`` service で ``mapoi_initialpose_poi``
+* ``mapoi_server`` の ``reload_map_info`` service で ``/mapoi/initialpose_poi``
   topic に skip message (``poi_name`` 空) を明示 publish するように修正
   (#154)。``transient_local`` (depth=1) の latched 値が reload 直前の古い
   POI 名のまま残り、reload 後に起動する nav_server / 再 connection した
@@ -304,7 +353,7 @@ Navigation server
     ``1.0`` 秒) 続いたら ``EVENT_STOPPED`` を publish。tolerance_check_callback
     の各 tick で判定
   - **EVENT_RESUMED**: STOPPED 状態の POI で速度が閾値超に戻ったら即時
-    publish (dwell 不要)。新規 ``mapoi_goal_pose_poi`` / ``mapoi_route``
+    publish (dwell 不要)。新規 ``/mapoi/nav/goal_pose_poi`` / ``/mapoi/nav/route``
     受信時にも全 STOPPED POI に対して RESUMED を publish (subscriber 側で
     「停止解除」を即時検知できるようにする)
   - **EXIT 時**: poi_inside_state_ → false と同時に poi_stopped_state_ も
