@@ -16,6 +16,10 @@ For releases prior to v0.2.0, see the
 Unreleased
 ==========
 
+
+0.3.0 (2026-05-02)
+==================
+
 Breaking changes
 ----------------
 
