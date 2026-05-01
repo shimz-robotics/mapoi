@@ -2,7 +2,6 @@
 # 検証カバレッジ (#146): system tag 単独 / 複合、tolerance.yaw 厳密 ↔ 緩い、route の
 # waypoints + landmarks 両方持ち、連続 pause、撮影 / 音声 / 観察対象の custom tag。
 custom_tags:
-- {name: event, description: Event trigger area}
 - {name: destination, description: General destination point}
 - {name: audio_info, description: Audio guide trigger (POI 進入で音声再生)}
 - {name: capture_trigger, description: Capture action trigger (POI 進入で撮影起動)}

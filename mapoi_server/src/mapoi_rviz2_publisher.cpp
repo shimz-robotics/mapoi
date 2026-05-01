@@ -561,26 +561,6 @@ void MapoiRviz2Publisher::timer_callback(){
           id += 1;
         }
       }
-      else if(tag == "event"){
-        visualization_msgs::msg::Marker m_event = default_arrow_marker;
-        m_event.pose = pose;
-        m_event.pose.position.z = 0.1;
-        m_event.color.r = 0.0; m_event.color.g = 0.0; m_event.color.b = 1.0; m_event.color.a = 0.7;
-        m_event.id = id;
-        ma_events.markers.push_back(m_event);
-        id += 1;
-
-        const std::string label_text = build_label(poi_index_one_based, poi.name);
-        if (!label_text.empty()) {
-          visualization_msgs::msg::Marker m_text = default_text_marker;
-          m_text.text = label_text;
-          m_text.pose = pose;
-          m_text.pose.position.z = 0.1;
-          m_text.id = id;
-          ma_events.markers.push_back(m_text);
-          id += 1;
-        }
-      }
       else if(tag == "landmark"){
         // landmark POI も矢印 + label を描画する (#85)。reference 専用なので
         // ma_events 側に置く。color は default gray、tag 別 color の整理は #70 で扱う。

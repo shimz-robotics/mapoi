@@ -1,5 +1,5 @@
 # シナリオ: 障害物 sandbox での回避走行 (ハザード回避 + 観察 + 通過点)。
-# 検証カバレッジ (#146): 複合 tag (event + landmark + custom hazard)、tolerance.yaw=π で
+# 検証カバレッジ (#146): 複合 tag (landmark + custom hazard)、tolerance.yaw=π で
 # yaw 不問の通過点 (= pass_through 代替)、pause 中継、route の landmarks 利用。
 custom_tags:
 - {name: hazard, description: Hazard zone (avoidance target)}
@@ -61,10 +61,10 @@ poi:
 # 以下 landmark 群: Nav2 navigation 不可な reference 点 (#85, #143)。
 # avoidance_a の landmarks: [...] で route 走行中だけ radius event 監視対象。
 - name: hazard_south
-  description: 南側ハザード (event + landmark + custom hazard、Nav2 goal 不可な複合 tag)
+  description: 南側ハザード (landmark + custom hazard、Nav2 goal 不可な複合 tag)
   pose: {x: 0.5, y: -1.3, yaw: 0.0}
   tolerance: {xy: 0.45, yaw: 0.785}
-  tags: [event, landmark, hazard]
+  tags: [landmark, hazard]
 - name: observation_point
   description: 観察対象 (landmark + observation、route 走行中の参照点)
   pose: {x: -1.0, y: -0.6, yaw: 0.0}
