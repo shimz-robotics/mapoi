@@ -152,7 +152,7 @@ RViz2 上に POI のマーカーを表示するためのノードです。
 | --- | --- | --- | --- |
 | `show_tolerance_sector` | `bool` | `true` | POI tolerance visualization (#136 / #179) を表示するか。対象 layer = xy 判定円 outline + yaw 制約扇形 (`0 < tolerance.yaw < π` の時のみ重ね描き) + pause overlay (xy 円沿いの dot pattern)。`false` で全 POI のこれら 3 layer を抑制 (Editor 中心の使い方や RViz が情報過多な時の用途)。WebUI 側にも同等の描画仕様 (`mapoi_webui/web/js/map-viewer.js`) があるため、仕様変更時はペアで更新する |
 | `poi_label_format` | `string` | `"index"` | POI label の表示形式: `"index"` = POI Editor 行番号 (1-based 通し、tag フィルタ非依存) / `"name"` = POI 名 / `"both"` = `"<index>: <name>"` / `"none"` = 非表示 |
-| `route_display_mode` | `string` | `"selected"` | Route polyline の表示形式: `"all"` = 全 route 表示 (active route は太線 + 不透明で強調) / `"selected"` = active route のみ表示 / `"none"` = 表示しない |
+| `route_display_mode` | `string` | `"selected"` | Route marker の表示形式: `"all"` = 全 route 表示 (active route は太線 + 不透明で強調) / `"selected"` = active route のみ表示 / `"none"` = 表示しない |
 
 #### サブスクライバー
 
@@ -165,8 +165,17 @@ RViz2 上に POI のマーカーを表示するためのノードです。
 
 | トピック名 | 型 | 説明 |
 | --- | --- | --- |
-| `mapoi_goal_marks` | `visualization_msgs/MarkerArray` | goal タグの POI マーカー |
-| `mapoi_event_marks` | `visualization_msgs/MarkerArray` | event / landmark タグの POI マーカー（半径表示含む） |
+| `mapoi/markers/pois` | `visualization_msgs/MarkerArray` | POI マーカー。`waypoint` は緑、`landmark` は灰、custom tag のみの POI は青で描画 |
+| `mapoi/markers/routes` | `visualization_msgs/MarkerArray` | Route マーカー。route line と選択中 route の方向矢印を描画 |
+
+`mapoi/markers/pois` は Marker namespace で layer を分けています。RViz の `Namespaces` toggle で layer 単位に表示を切り替えられます。
+
+| Marker namespace | 説明 |
+| --- | --- |
+| `arrow/<poi_name>` | POI の向き矢印と label |
+| `tolerance_xy/<poi_name>` | `tolerance.xy` の判定円 |
+| `tolerance_yaw/<poi_name>` | `tolerance.yaw` の扇形 |
+| `status_paused/<poi_name>` | `pause` tag POI の dot overlay |
 
 ## タグシステム
 
