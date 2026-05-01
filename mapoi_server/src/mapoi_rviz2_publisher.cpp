@@ -21,14 +21,13 @@ MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
   // ("off" は ros2 param CLI で bool として解釈されるため "none" を採用)
   this->declare_parameter<std::string>("poi_label_format", "index");
 
-  // Route polyline の表示形式: "all" (全 route 表示、active は強調) / "selected" (active のみ) / "none"。
+  // Route marker の表示形式: "all" (全 route 表示、active は強調) / "selected" (active のみ) / "none"。
   // default "selected": RViz 起動時の clutter を抑え、user が選択した route だけを示す。
   // 全 route を見たい場合は ros2 param set /mapoi_rviz2_publisher route_display_mode all で切替。
   this->declare_parameter<std::string>("route_display_mode", "selected");
 
-  marker_goals_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_goal_marks", 10);
-  marker_events_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_event_marks", 10);
-  marker_routes_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi_route_marks", 10);
+  marker_pois_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi/markers/pois", 10);
+  marker_routes_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi/markers/routes", 10);
 
   this->poi_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
   this->routes_info_client_ = this->create_client<mapoi_interfaces::srv::GetRoutesInfo>("get_routes_info");
@@ -263,8 +262,7 @@ void MapoiRviz2Publisher::timer_callback(){
   default_arrow_marker.lifetime.sec = 2.0;
 
   // tolerance visualization (#136 / #179) の表示制御。false で全 POI の円 + 扇形 + pause overlay を抑制。
-  // parameter 名は backward compat のため `show_tolerance_sector` のまま (制御対象は scope 拡張、
-  // CHANGELOG 参照)。
+  // `show_tolerance_sector` は現在、yaw sector だけでなく POI tolerance layer 全体を制御する。
   const bool show_sector = this->get_parameter("show_tolerance_sector").as_bool();
 
   // POI label の format ("index" / "name" / "both" / "none") を runtime parameter で切替。
@@ -284,8 +282,7 @@ void MapoiRviz2Publisher::timer_callback(){
   default_text_marker.scale.x = 0.2; default_text_marker.scale.y = 0.2; default_text_marker.scale.z = 0.2;
   default_text_marker.color.r = 0.0; default_text_marker.color.g = 0.0; default_text_marker.color.b = 0.0; default_text_marker.color.a = 1.0;
 
-  visualization_msgs::msg::MarkerArray ma_waypoints;
-  visualization_msgs::msg::MarkerArray ma_events;
+  visualization_msgs::msg::MarkerArray ma_pois;
   int id = 0;
 
   // 扇形 (sector) の床面 z (map / costmap よりわずかに上、0.01m)
@@ -307,9 +304,14 @@ void MapoiRviz2Publisher::timer_callback(){
   // - radius = tolerance.xy = ロボット進入判定の境界 (yaw 不問)
   // - 扇形 (yaw 制約) と重ね描きする前提で、薄めの alpha + 細い実線で控えめに
   // - LINE_STRIP の頂点列で 36 角形 (10 度刻み) を構成
+  auto poi_marker_ns = [](const std::string & layer, const std::string & poi_name) {
+    return layer + "/" + poi_name;
+  };
+
   auto add_radius_circle = [&](const geometry_msgs::msg::Pose & pose, double radius,
                                float r, float g, float b, float a,
                                int marker_id,
+                               const std::string & marker_ns,
                                visualization_msgs::msg::MarkerArray & target) {
     if (radius <= 0.0) return;
     constexpr int N_SEG = 36;
@@ -319,6 +321,7 @@ void MapoiRviz2Publisher::timer_callback(){
     m.action = visualization_msgs::msg::Marker::ADD;
     m.type = visualization_msgs::msg::Marker::LINE_STRIP;
     m.id = marker_id;
+    m.ns = marker_ns;
     m.pose.orientation.w = 1.0;
     m.scale.x = 0.02;  // 細い実線 (扇形 stroke と同じ太さ)
     m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = a;
@@ -347,6 +350,7 @@ void MapoiRviz2Publisher::timer_callback(){
                         float r, float g, float b,
                         float fill_alpha, float stroke_alpha,
                         int marker_id_base,
+                        const std::string & marker_ns,
                         visualization_msgs::msg::MarkerArray & target) -> int {
     if (radius <= 0.0) return 0;
     if (yaw_tolerance <= 0.0 || yaw_tolerance >= M_PI) return 0;
@@ -383,6 +387,7 @@ void MapoiRviz2Publisher::timer_callback(){
       m.action = visualization_msgs::msg::Marker::ADD;
       m.type = visualization_msgs::msg::Marker::TRIANGLE_LIST;
       m.id = marker_id_base + n_added;
+      m.ns = marker_ns;
       m.pose.orientation.w = 1.0;
       m.scale.x = m.scale.y = m.scale.z = 1.0;
       m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = fill_alpha;
@@ -404,6 +409,7 @@ void MapoiRviz2Publisher::timer_callback(){
       m.action = visualization_msgs::msg::Marker::ADD;
       m.type = visualization_msgs::msg::Marker::LINE_STRIP;
       m.id = marker_id_base + n_added;
+      m.ns = marker_ns;
       m.pose.orientation.w = 1.0;
       m.scale.x = 0.02;  // line width (m)、xy 円 outline と同じ太さ
       m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = stroke_alpha;
@@ -429,6 +435,7 @@ void MapoiRviz2Publisher::timer_callback(){
   auto add_dotted_outline = [&](const geometry_msgs::msg::Pose & pose, double radius,
                                 float r, float g, float b, float a,
                                 int marker_id,
+                                const std::string & marker_ns,
                                 visualization_msgs::msg::MarkerArray & target) {
     if (radius <= 0.0) return;
 
@@ -452,6 +459,7 @@ void MapoiRviz2Publisher::timer_callback(){
     m.action = visualization_msgs::msg::Marker::ADD;
     m.type = visualization_msgs::msg::Marker::LINE_LIST;
     m.id = marker_id;
+    m.ns = marker_ns;
     m.pose.orientation.w = 1.0;
     m.scale.x = 0.04;  // dot 線幅 (旧 dash の 0.06m から短縮、dot として丸みを出す)
     m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = a;
@@ -474,120 +482,143 @@ void MapoiRviz2Publisher::timer_callback(){
     target.markers.push_back(m);
   };
 
+  const auto has_tag = [](const mapoi_interfaces::msg::PointOfInterest & poi,
+                          const std::string & target) {
+    for (const auto & tag : poi.tags) {
+      if (tag == target) return true;
+    }
+    return false;
+  };
+
+  auto apply_poi_color = [&](visualization_msgs::msg::Marker & marker,
+                             const mapoi_interfaces::msg::PointOfInterest & poi) {
+    if (highlighted_goal_names_.count(poi.name) > 0) {
+      marker.color.r = 1.0; marker.color.g = 0.6; marker.color.b = 0.0; marker.color.a = 0.7;
+    } else if (has_tag(poi, "waypoint")) {
+      marker.color.r = 0.0; marker.color.g = 1.0; marker.color.b = 0.0; marker.color.a = 0.7;
+    } else if (has_tag(poi, "landmark")) {
+      marker.color.r = 0.5; marker.color.g = 0.5; marker.color.b = 0.5; marker.color.a = 0.7;
+    } else {
+      marker.color.r = 0.1; marker.color.g = 0.45; marker.color.b = 1.0; marker.color.a = 0.7;
+    }
+  };
+
+  auto poi_color = [&](const mapoi_interfaces::msg::PointOfInterest & poi) {
+    std::array<float, 3> color = {0.1f, 0.45f, 1.0f};
+    if (has_tag(poi, "waypoint")) {
+      color = {0.0f, 1.0f, 0.0f};
+    } else if (has_tag(poi, "landmark")) {
+      color = {0.5f, 0.5f, 0.5f};
+    }
+    return color;
+  };
+
   size_t poi_index_one_based = 0;
   for (const auto & poi : pois_list_) {
     poi_index_one_based += 1;  // POI Editor (mapoi_config.yaml の poi: 順) 行番号、1-based、tag フィルタ非依存
     geometry_msgs::msg::Pose pose = poi.pose;
 
     // POI tolerance を 円 (xy 判定領域) + 扇形 (yaw 制約) で重ね描き (#136 / #179、全 POI 共通)。
-    // 主 glyph は waypoint > landmark の優先順:
+    // 主 glyph は waypoint > landmark > custom/default の優先順:
     //   - waypoint: 塗り扇形 (緑)
-    //   - landmark: 中抜き扇形 (灰)
-    //   - その他 (旧 event 等): scope 外 (色 / glyph 整理は #70)
+    //   - landmark: 薄塗り扇形 (灰)
+    //   - custom/default: 薄塗り扇形 (青)
     // 円 outline は判定 semantics (xy 境界) を控えめに常時表示し、扇形は yaw 制約あり時のみ
     // 重ね描きする。pause tag があれば xy 円沿いに dot pattern overlay を追加。
-    // 色は既存 hardcode を継承 (整理は #70)。
     if (show_sector && poi.tolerance.xy > 0.0) {
-      const auto has_tag = [&poi](const std::string & target) {
-        for (const auto & t : poi.tags) {
-          if (t == target) return true;
-        }
-        return false;
-      };
+      const auto color = poi_color(poi);
+      const float sr = color[0];
+      const float sg = color[1];
+      const float sb = color[2];
+      const float fill_a = has_tag(poi, "waypoint") ? 0.4f : 0.15f;
+      const float stroke_a = 0.7f;
 
-      float sr = 0.5f, sg = 0.5f, sb = 0.5f;
-      float fill_a = 0.0f, stroke_a = 0.0f;
-      visualization_msgs::msg::MarkerArray * sector_target = nullptr;
-      if (has_tag("waypoint")) {
-        sr = 0.0f; sg = 1.0f; sb = 0.0f;
-        fill_a = 0.4f; stroke_a = 0.7f;
-        sector_target = &ma_waypoints;
-      } else if (has_tag("landmark")) {
-        sr = 0.5f; sg = 0.5f; sb = 0.5f;
-        fill_a = 0.15f; stroke_a = 0.7f;  // 透過度高めの薄塗り (#179 ユーザー確認 2: 中抜きから薄塗りに変更)
-        sector_target = &ma_events;
+      // 円 outline (xy 判定領域、#179): 常時描画。半透明 + 細実線で控えめに「進入判定境界」を示す。
+      add_radius_circle(pose, poi.tolerance.xy, sr, sg, sb, 0.4f, id,
+                        poi_marker_ns("tolerance_xy", poi.name), ma_pois);
+      id += 1;
+
+      // 扇形 (yaw 制約、#136): 0 < yaw < π の時のみ重ね描き。
+      // それ以外 (yaw 不問、扇形 = 円となり情報冗長) は円 outline のみで表現。
+      const bool has_yaw_constraint =
+        (poi.tolerance.yaw > 0.0 && poi.tolerance.yaw < M_PI);
+      if (has_yaw_constraint) {
+        id += add_sector(pose, poi.tolerance.xy, poi.tolerance.yaw,
+                         sr, sg, sb,
+                         fill_a, stroke_a,
+                         id, poi_marker_ns("tolerance_yaw", poi.name), ma_pois);
       }
 
-      if (sector_target != nullptr) {
-        // 円 outline (xy 判定領域、#179): 常時描画。半透明 + 細実線で控えめに「進入判定境界」を示す。
-        add_radius_circle(pose, poi.tolerance.xy, sr, sg, sb, 0.4f, id, *sector_target);
+      if (has_tag(poi, "pause")) {
+        // pause overlay は xy 円沿いに dot pattern (#179)。
+        // pause 発火条件 (xy 円内) と境界が一致するため自然な視覚的根拠になる。
+        add_dotted_outline(pose, poi.tolerance.xy,
+                           sr, sg, sb, 0.9f,
+                           id, poi_marker_ns("status_paused", poi.name), ma_pois);
         id += 1;
-
-        // 扇形 (yaw 制約、#136): 0 < yaw < π の時のみ重ね描き。
-        // それ以外 (yaw 不問、扇形 = 円となり情報冗長) は円 outline のみで表現。
-        const bool has_yaw_constraint =
-          (poi.tolerance.yaw > 0.0 && poi.tolerance.yaw < M_PI);
-        if (has_yaw_constraint) {
-          id += add_sector(pose, poi.tolerance.xy, poi.tolerance.yaw,
-                           sr, sg, sb,
-                           fill_a, stroke_a,
-                           id, *sector_target);
-        }
-
-        if (has_tag("pause")) {
-          // pause overlay は xy 円沿いに dot pattern (#179)。
-          // pause 発火条件 (xy 円内) と境界が一致するため自然な視覚的根拠になる。
-          add_dotted_outline(pose, poi.tolerance.xy,
-                             sr, sg, sb, 0.9f,
-                             id, *sector_target);
-          id += 1;
-        }
       }
     }
 
-    for(const auto & tag : poi.tags){
-      if(tag == "waypoint"){
-        visualization_msgs::msg::Marker m_waypoint = default_arrow_marker;
-        m_waypoint.pose = pose;
-        m_waypoint.pose.position.z = 0.1;
-        {
-          bool is_goal = highlighted_goal_names_.count(poi.name) > 0;
-          if (is_goal) {
-            m_waypoint.color.r = 1.0; m_waypoint.color.g = 0.6; m_waypoint.color.b = 0.0; m_waypoint.color.a = 0.7;
-          }
-        }
-        m_waypoint.id = id;
-        ma_waypoints.markers.push_back(m_waypoint);
-        id += 1;
+    const std::string arrow_ns = poi_marker_ns("arrow", poi.name);
+    visualization_msgs::msg::Marker m_arrow = default_arrow_marker;
+    m_arrow.pose = pose;
+    m_arrow.pose.position.z = 0.1;
+    m_arrow.ns = arrow_ns;
+    apply_poi_color(m_arrow, poi);
+    m_arrow.id = id;
+    ma_pois.markers.push_back(m_arrow);
+    id += 1;
 
-        const std::string label_text = build_label(poi_index_one_based, poi.name);
-        if (!label_text.empty()) {
-          visualization_msgs::msg::Marker m_text = default_text_marker;
-          m_text.text = label_text;
-          m_text.pose = pose;
-          m_text.pose.position.z = 0.1;
-          m_text.id = id;
-          ma_waypoints.markers.push_back(m_text);
-          id += 1;
-        }
-      }
-      else if(tag == "landmark"){
-        // landmark POI も矢印 + label を描画する (#85)。reference 専用なので
-        // ma_events 側に置く。color は default gray、tag 別 color の整理は #70 で扱う。
-        visualization_msgs::msg::Marker m_landmark = default_arrow_marker;
-        m_landmark.pose = pose;
-        m_landmark.pose.position.z = 0.1;
-        m_landmark.color.r = 0.5; m_landmark.color.g = 0.5; m_landmark.color.b = 0.5; m_landmark.color.a = 0.7;
-        m_landmark.id = id;
-        ma_events.markers.push_back(m_landmark);
-        id += 1;
-
-        const std::string label_text = build_label(poi_index_one_based, poi.name);
-        if (!label_text.empty()) {
-          visualization_msgs::msg::Marker m_text = default_text_marker;
-          m_text.text = label_text;
-          m_text.pose = pose;
-          m_text.pose.position.z = 0.1;
-          m_text.id = id;
-          ma_events.markers.push_back(m_text);
-          id += 1;
-        }
-      }
+    const std::string label_text = build_label(poi_index_one_based, poi.name);
+    if (!label_text.empty()) {
+      visualization_msgs::msg::Marker m_text = default_text_marker;
+      m_text.text = label_text;
+      m_text.pose = pose;
+      m_text.pose.position.z = 0.1;
+      m_text.ns = arrow_ns;
+      m_text.id = id;
+      ma_pois.markers.push_back(m_text);
+      id += 1;
     }
   }
 
+  // delete remaining incorrect marker
+  if(id_buf_ > id) {
+    visualization_msgs::msg::Marker m_del;
+    m_del.action = visualization_msgs::msg::Marker::DELETEALL;
+    visualization_msgs::msg::MarkerArray ma_del;
+    ma_del.markers.push_back(m_del);
+    marker_pois_pub_->publish(ma_del);
+  }
+  id_buf_ = id;
+
+  marker_pois_pub_->publish(ma_pois);
+
+  // Route markers (mapoi/markers/routes topic)。
+  // route_display_mode parameter で表示制御:
+  //   "all"      : 全 route 表示、active route (highlighted_route_names_ に含む) は太線+不透明で強調
+  //   "selected" : active route のみ表示
+  //   "none"     : 表示しない (DELETEALL で既存も消す)
+  // POI marker (waypoint=green / landmark=gray / default=blue) と被らない palette を使う。
+  static constexpr std::array<std::array<float, 3>, 6> ROUTE_PALETTE = {{
+    {1.0f, 0.5f, 0.0f},   // orange
+    {1.0f, 0.0f, 1.0f},   // magenta
+    {0.0f, 1.0f, 1.0f},   // cyan
+    {1.0f, 1.0f, 0.0f},   // yellow
+    {0.7f, 0.3f, 1.0f},   // purple
+    {0.0f, 0.7f, 0.3f},   // teal
+  }};
+  auto pick_route_color = [](const std::string & name) {
+    std::hash<std::string> h;
+    return ROUTE_PALETTE[h(name) % ROUTE_PALETTE.size()];
+  };
+
+  const std::string route_mode = this->get_parameter("route_display_mode").as_string();
+  visualization_msgs::msg::MarkerArray ma_routes;
+  int route_id = 0;
+
   // ルート経由点間の矢印マーカー生成
-  if (highlighted_route_ordered_.size() >= 2) {
+  if (route_mode != "none" && highlighted_route_ordered_.size() >= 2) {
     // POI名→poseのルックアップマップを構築
     std::map<std::string, geometry_msgs::msg::Pose> poi_pose_map;
     for (const auto & poi : pois_list_) {
@@ -606,6 +637,7 @@ void MapoiRviz2Publisher::timer_callback(){
       m_arrow.header.stamp = rclcpp::Clock().now();
       m_arrow.action = visualization_msgs::msg::Marker::ADD;
       m_arrow.type = visualization_msgs::msg::Marker::ARROW;
+      m_arrow.ns = "highlight_direction";
       m_arrow.scale.x = 0.05;  // shaft diameter
       m_arrow.scale.y = 0.1;   // head diameter
       m_arrow.scale.z = 0.1;   // head length
@@ -623,48 +655,10 @@ void MapoiRviz2Publisher::timer_callback(){
 
       m_arrow.points.push_back(p_start);
       m_arrow.points.push_back(p_end);
-      m_arrow.id = id;
-      ma_waypoints.markers.push_back(m_arrow);
-      id += 1;
+      m_arrow.id = route_id++;
+      ma_routes.markers.push_back(m_arrow);
     }
   }
-
-  // delete remaining incorrect marker
-  if(id_buf_ > id) {
-    visualization_msgs::msg::Marker m_del;
-    m_del.action = visualization_msgs::msg::Marker::DELETEALL;
-    visualization_msgs::msg::MarkerArray ma_del;
-    ma_del.markers.push_back(m_del);
-    marker_goals_pub_->publish(ma_del);
-    marker_events_pub_->publish(ma_del);
-  }
-  id_buf_ = id;
-
-  marker_goals_pub_->publish(ma_waypoints);
-  marker_events_pub_->publish(ma_events);
-
-  // Route LINE_STRIP markers (mapoi_route_marks topic)。
-  // route_display_mode parameter で表示制御:
-  //   "all"      : 全 route 表示、active route (highlighted_route_names_ に含む) は太線+不透明で強調
-  //   "selected" : active route のみ表示
-  //   "none"     : 表示しない (DELETEALL で既存も消す)
-  // POI marker (goal=green / event=blue / landmark=gray) と被らない palette を使う。
-  static constexpr std::array<std::array<float, 3>, 6> ROUTE_PALETTE = {{
-    {1.0f, 0.5f, 0.0f},   // orange
-    {1.0f, 0.0f, 1.0f},   // magenta
-    {0.0f, 1.0f, 1.0f},   // cyan
-    {1.0f, 1.0f, 0.0f},   // yellow
-    {0.7f, 0.3f, 1.0f},   // purple
-    {0.0f, 0.7f, 0.3f},   // teal
-  }};
-  auto pick_route_color = [](const std::string & name) {
-    std::hash<std::string> h;
-    return ROUTE_PALETTE[h(name) % ROUTE_PALETTE.size()];
-  };
-
-  const std::string route_mode = this->get_parameter("route_display_mode").as_string();
-  visualization_msgs::msg::MarkerArray ma_routes;
-  int route_id = 0;
 
   if (route_mode != "none") {
     constexpr double ROUTE_LINE_Z = 0.05;  // map / costmap よりわずかに上
@@ -679,6 +673,7 @@ void MapoiRviz2Publisher::timer_callback(){
       m.header.stamp = rclcpp::Clock().now();
       m.action = visualization_msgs::msg::Marker::ADD;
       m.type = visualization_msgs::msg::Marker::LINE_STRIP;
+      m.ns = "route/" + name;
       m.id = route_id++;
       m.lifetime.sec = 2.0;
       m.pose.orientation.w = 1.0;  // identity (LINE_STRIP の point は world 座標)

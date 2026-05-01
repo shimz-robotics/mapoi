@@ -513,7 +513,7 @@ Visualization Manager:
       Name: Realsense
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
-      Name: MarkerArray
+      Name: POI Markers
       Namespaces:
         {}
       Topic:
@@ -521,23 +521,11 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /waypoints
+        Value: /mapoi/markers/pois
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
-      Name: POI Goals
-      Namespaces:
-        "": true
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /mapoi_goal_marks
-      Value: true
-    - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
-      Name: POI Events
+      Name: Route Markers
       Namespaces:
         {}
       Topic:
@@ -545,19 +533,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /mapoi_event_marks
-      Value: true
-    - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
-      Name: Routes
-      Namespaces:
-        {}
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /mapoi_route_marks
+        Value: /mapoi/markers/routes
       Value: true
   Enabled: true
   Global Options:
