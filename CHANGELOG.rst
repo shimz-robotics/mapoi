@@ -190,13 +190,40 @@ WebUI / rviz_plugins
 * ``mapoi_rviz2_publisher`` / ``mapoi_webui`` で POI tolerance を扇形 (sector) で描画 (#136)。
 
   - 半径 = ``tolerance.xy``、扇角 = ``2 * tolerance.yaw``、中心線 = ``pose.yaw``
-  - ``waypoint`` = 塗り扇形、``landmark`` = 中抜き扇形、``pause`` = 太い点線 outline
+  - ``waypoint`` = 塗り扇形、``landmark`` = 中抜き扇形、``pause`` = 点線 outline
     の重ね描き (主 glyph は細い実線で対比)
-  - ``tolerance.yaw == 0`` または ``>= π`` → 完全円 (yaw 不問、``pass_through`` 表現可能)
+  - ``0 < tolerance.yaw < π`` の時のみ扇形描画、それ以外 (yaw 不問) は完全円扱い
+    (``pass_through`` 表現可能)
   - ``mapoi_rviz2_publisher`` に ``show_tolerance_sector`` parameter (bool, default true)
-    を追加 — 扇形描画を runtime トグル
-  - follow-up: ロボットの tolerance 判定は xy のみなので、円 (xy 判定領域) + 扇形
-    (yaw 制約) の重ね描きへの分解を別 issue (#179) で検討中
+    を追加 — tolerance visualization を runtime トグル
+  - 続く #179 で 円 (xy 判定領域) + 扇形 (yaw 制約) の重ね描きに分解 (下記参照)
+
+* ``mapoi_rviz2_publisher`` / ``mapoi_webui`` で POI tolerance を 円 + 扇形 の重ね描きに
+  分解 + pause overlay を dot 形式に変更 (#179、#178 user feedback 対応)。
+
+  - 円 outline (細実線・薄め): ロボットの ``tolerance.xy`` 進入判定領域を常時表示。
+    判定 logic (Euclidean < ``tolerance.xy``) の視覚的根拠として yaw 不問で描画
+  - 扇形 (塗り or 中抜き): yaw 制約を強調。``0 < tolerance.yaw < π`` の時のみ
+    重ね描き (完全円との情報冗長を回避)
+  - **見た目の変化点**: 旧 (#178) では yaw 不問 POI (``tolerance.yaw == 0`` または ``>= π``)
+    も扇形 = 完全円として描画されていた (waypoint = 緑塗り完全円、landmark = 灰
+    中抜き完全円)。本 PR では yaw 不問なら **円アウトライン (細実線・薄め) のみ**表示で、
+    塗り / 中抜き stroke は描画しない。判定 semantics (xy のみ) と一致するが、
+    旧表示に慣れた利用者には印象変化あり (デモ・スクリーンショット用途は要確認)
+  - pause overlay: 旧 dash (``dashArray: '6, 4'`` / RViz segment 0.05m, 1:1 比率) は
+    「点と感じない、潰れて見える」user feedback (#178 PR コメント) を受け、
+    sparse dot 形式に変更。WebUI ``dashArray: '2, 6'`` + ``lineCap: round`` (cycle 比
+    25% on)、RViz dot 長 0.02m + 間隔 0.10m + line 0.04m (cycle 比 20% on)。
+    pause 発火条件 (xy 円内) と境界が一致する xy 円沿いに重畳
+  - ``show_tolerance_sector`` parameter は名称据え置きで制御対象を 円 + 扇形 + pause overlay
+    全体に拡張 (backward compat 維持)
+  - **保守注**: 描画仕様は ``mapoi_rviz2_publisher.cpp`` (RViz) / ``map-viewer.js`` (WebUI)
+    で二重実装。仕様変更時はペアで更新する (#136 から継続、共通化は #70 と合わせて検討)
+  - **POI Editor Panel の Display Settings UI 改修**: PR #178 で ``arrow_size_ratio``
+    parameter を publisher から削除した際、Panel の DoubleSpinBox UI が取り残されており
+    ``get_parameters / set_parameters`` 呼び出しが失敗する regression があった。
+    本 PR で同 UI を ``show_tolerance_sector`` の CheckBox に置換 (display layer の
+    runtime トグルが Panel から可能に)
 
 Samples
 -------

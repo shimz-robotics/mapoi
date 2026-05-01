@@ -149,8 +149,9 @@ RViz2 上に POI のマーカーを表示するためのノードです。
 
 | パラメータ名 | 型 | デフォルト | 説明 |
 | --- | --- | --- | --- |
-| `arrow_size_ratio` | `double` | `1.0` | POI 矢印の scale を tolerance.xy に対する比率で指定 (`arrow_length = tolerance.xy × ratio`)。Route 矢印 (waypoint 間) は tolerance 概念を持たないので対象外。`ros2 param set` で runtime 変更も次周期に反映 |
+| `show_tolerance_sector` | `bool` | `true` | POI tolerance visualization (#136 / #179) を表示するか。対象 layer = xy 判定円 outline + yaw 制約扇形 (`0 < tolerance.yaw < π` の時のみ重ね描き) + pause overlay (xy 円沿いの dot pattern)。`false` で全 POI のこれら 3 layer を抑制 (Editor 中心の使い方や RViz が情報過多な時の用途)。WebUI 側にも同等の描画仕様 (`mapoi_webui/web/js/map-viewer.js`) があるため、仕様変更時はペアで更新する |
 | `poi_label_format` | `string` | `"index"` | POI label の表示形式: `"index"` = POI Editor 行番号 (1-based 通し、tag フィルタ非依存) / `"name"` = POI 名 / `"both"` = `"<index>: <name>"` / `"none"` = 非表示 |
+| `route_display_mode` | `string` | `"selected"` | Route polyline の表示形式: `"all"` = 全 route 表示 (active route は太線 + 不透明で強調) / `"selected"` = active route のみ表示 / `"none"` = 表示しない |
 
 #### サブスクライバー
 

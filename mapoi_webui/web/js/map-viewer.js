@@ -406,17 +406,21 @@ class MapViewer {
   }
 
   /**
-   * POI の tolerance (xy + yaw) を扇形 (sector) で描画する (#136)。
+   * POI の tolerance を 円 (xy 判定領域) + 扇形 (yaw 制約) の重ね描きで描画する (#136 / #179)。
    *
-   * - 半径 = `tolerance.xy`、扇角 = `2 × tolerance.yaw`、中心線 = `pose.yaw`
-   * - `tolerance.yaw == 0` (未指定) または `tolerance.yaw >= π` → 完全円 (yaw 不問)
-   * - 主 glyph: waypoint > landmark の優先順で 1 つ
+   * - 円 outline: 半径 = `tolerance.xy` (xy 進入判定の境界、yaw 不問)、
+   *   `L.polyline` で 36 角形を構成して常時描画 (細実線・薄め)
+   * - 扇形: `tolerance.yaw` が `0 < yaw < π` の時のみ重ね描き (`L.polygon`)
    *   - waypoint: 塗り扇形 (`fillOpacity` 高)
    *   - landmark: 中抜き扇形 (`fillOpacity = 0`、stroke のみ)
    *   - その他 (旧 event 等): 描画しない (#70 で別途整理)
-   * - pause tag があれば主 glyph の上に dashed outline を重ね描き
+   * - pause tag があれば xy 円沿いに dot pattern overlay (#179: 旧 dash → dot 形式)
    *
    * `tolerance.xy <= 0` または対象 tag 無しなら no-op。
+   *
+   * `L.circle` ではなく polyline で実装するのは、`L.circle` の radius が pixel/meter 換算に
+   * `crs` 依存の挙動を持つ一方、扇形は world 座標を `worldToLatLng` で変換して描画するため。
+   * 同じ計算式で円と扇形の弧を生成すれば視覚的整合 (両者の弧が完全一致) が保証される。
    */
   _drawSectorForPoi(poi) {
     if (!poi.pose) return;
@@ -428,55 +432,74 @@ class MapViewer {
     const isPause = tags.includes('pause');
     if (!isWaypoint && !isLandmark) return;
 
+    const r = poi.tolerance.xy;
     const yawCenter = poi.pose.yaw || 0;
     const yawTol = (typeof poi.tolerance.yaw === 'number') ? poi.tolerance.yaw : 0;
-    const halfAngle = (yawTol <= 0 || yawTol >= Math.PI) ? Math.PI : yawTol;
-    const isFullCircle = halfAngle >= Math.PI;
-    const r = poi.tolerance.xy;
-    const totalAngle = isFullCircle ? (2 * Math.PI) : (2 * halfAngle);
-    const N = Math.max(8, Math.ceil(totalAngle / 0.1));
-    const startAngle = isFullCircle ? 0 : (yawCenter - halfAngle);
-
-    const points = [];
-    if (!isFullCircle) {
-      points.push(this.worldToLatLng(poi.pose.x, poi.pose.y));  // 扇形の中心点
-    }
-    for (let i = 0; i <= N; i += 1) {
-      const a = startAngle + (totalAngle * i) / N;
-      const wx = poi.pose.x + r * Math.cos(a);
-      const wy = poi.pose.y + r * Math.sin(a);
-      points.push(this.worldToLatLng(wx, wy));
-    }
+    const hasYawConstraint = yawTol > 0 && yawTol < Math.PI;
 
     const color = this.getPoiColor(poi);
 
-    // 主 glyph: waypoint = 塗り、landmark = 中抜き
-    // 細い実線で pause overlay (太い点線) との対比を強める (#136 user feedback)。
-    const polygon = L.polygon(points, {
+    // 円の頂点列 (36 角形 = 10 度刻み)。i = N_CIRCLE で起点に戻り polyline が自然に閉じる。
+    const N_CIRCLE = 36;
+    const circlePoints = [];
+    for (let i = 0; i <= N_CIRCLE; i += 1) {
+      const a = (2 * Math.PI * i) / N_CIRCLE;
+      const wx = poi.pose.x + r * Math.cos(a);
+      const wy = poi.pose.y + r * Math.sin(a);
+      circlePoints.push(this.worldToLatLng(wx, wy));
+    }
+
+    // xy 判定領域 (円 outline): 控えめな細実線で常時表示 (#179)
+    const circle = L.polyline(circlePoints, {
       color,
       weight: 1,
-      opacity: 0.7,
-      fillColor: color,
-      fillOpacity: isWaypoint ? 0.25 : 0,
+      opacity: 0.4,
       interactive: false,
     }).addTo(this.map);
-    polygon.bringToBack();
-    this.sectorLayers.push(polygon);
+    circle.bringToBack();
+    this.sectorLayers.push(circle);
 
-    // pause overlay: 主 glyph と同色で太い点線 outline を重ね描き
-    // 主 glyph (細い実線) と weight + dashArray の両軸で区別する (#136 user feedback)。
-    if (isPause) {
-      const outlinePoints = points.slice();
-      outlinePoints.push(points[0]);  // 閉じる
-      const outline = L.polyline(outlinePoints, {
+    // 扇形 (yaw 制約): 0 < yaw < π の時のみ重ね描き (#179)。
+    // 完全円 (yaw 不問) なら扇形 = 円で情報冗長になるため省略。
+    if (hasYawConstraint) {
+      const totalAngle = 2 * yawTol;
+      const N = Math.max(8, Math.ceil(totalAngle / 0.1));
+      const startAngle = yawCenter - yawTol;
+      const centerLatLng = this.worldToLatLng(poi.pose.x, poi.pose.y);
+      const sectorPoints = [centerLatLng];  // 中心点 → 弧 → 中心 (polygon で自動閉じる)
+      for (let i = 0; i <= N; i += 1) {
+        const a = startAngle + (totalAngle * i) / N;
+        const wx = poi.pose.x + r * Math.cos(a);
+        const wy = poi.pose.y + r * Math.sin(a);
+        sectorPoints.push(this.worldToLatLng(wx, wy));
+      }
+      const sector = L.polygon(sectorPoints, {
         color,
-        weight: 5,
-        opacity: 0.9,
-        dashArray: '6, 4',
+        weight: 1,
+        opacity: 0.7,
+        fillColor: color,
+        fillOpacity: isWaypoint ? 0.25 : 0.10,  // waypoint=塗り、landmark=薄塗り (#179 ユーザー確認 2)
         interactive: false,
       }).addTo(this.map);
-      outline.bringToBack();
-      this.sectorLayers.push(outline);
+      sector.bringToBack();
+      this.sectorLayers.push(sector);
+    }
+
+    // pause overlay: xy 円沿いに dot pattern を重ね描き (#179)。
+    // 旧 dashArray '6, 4' (cycle 比 60% on, 1.5:1 dash) は dot として識別しづらく潰れて見える feedback
+    // (#178 PR コメント) を受け、'2, 6' (cycle 比 25% on, 1:3 on:off) で短い dot + 大きい gap に変更。
+    // RViz 側 (dot 0.02m / step 0.10m, 20% on / 1:4) と厳密比率は僅差だが共に sparse dot で整合。
+    if (isPause) {
+      const pauseOutline = L.polyline(circlePoints, {
+        color,
+        weight: 4,
+        opacity: 0.9,
+        dashArray: '2, 6',
+        lineCap: 'round',  // dot を丸く描画して角ばった dash 感を消す
+        interactive: false,
+      }).addTo(this.map);
+      pauseOutline.bringToBack();
+      this.sectorLayers.push(pauseOutline);
     }
   }
 

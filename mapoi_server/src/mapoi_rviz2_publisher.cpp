@@ -8,9 +8,12 @@ using std::placeholders::_2;
 MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
   id_buf_ = 0;
 
-  // POI tolerance (xy + yaw) の扇形 visualization (#136) を表示するか。
-  // false: 主 glyph (扇形) と pause overlay を全 POI で抑制。Editor 中心の使い方や
-  // RViz が情報過多な時に false にする想定。default true。
+  // POI tolerance visualization (#136 / #179) を表示するか。
+  // 描画 layer (false で全 POI 抑制):
+  //   - xy 判定円 outline (細い実線、薄め): tolerance.xy = ロボット進入判定の境界
+  //   - yaw 制約扇形 (塗り or 中抜き): 0 < tolerance.yaw < π の時のみ重ね描き
+  //   - pause overlay (点線 dot): pause tag POI の xy 円沿いに dot pattern
+  // Editor 中心の使い方や RViz が情報過多な時に false にする想定。default true。
   this->declare_parameter<bool>("show_tolerance_sector", true);
 
   // POI label の表示形式: "index" (POI Editor 行番号、1-based) / "name" / "both" (= "<index>: <name>") / "none"。
@@ -259,7 +262,9 @@ void MapoiRviz2Publisher::timer_callback(){
   default_arrow_marker.color.r = 0.0; default_arrow_marker.color.g = 1.0; default_arrow_marker.color.b = 0.0; default_arrow_marker.color.a = 0.7;
   default_arrow_marker.lifetime.sec = 2.0;
 
-  // 扇形 visualization (#136) の表示制御。false で全 POI の主 glyph + pause overlay を抑制。
+  // tolerance visualization (#136 / #179) の表示制御。false で全 POI の円 + 扇形 + pause overlay を抑制。
+  // parameter 名は backward compat のため `show_tolerance_sector` のまま (制御対象は scope 拡張、
+  // CHANGELOG 参照)。
   const bool show_sector = this->get_parameter("show_tolerance_sector").as_bool();
 
   // POI label の format ("index" / "name" / "both" / "none") を runtime parameter で切替。
@@ -298,12 +303,45 @@ void MapoiRviz2Publisher::timer_callback(){
     return std::atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z));
   };
 
-  // 扇形 (sector) marker を描画する helper (#136)。
+  // xy 判定円 outline を細い実線で描画する helper (#179)。
+  // - radius = tolerance.xy = ロボット進入判定の境界 (yaw 不問)
+  // - 扇形 (yaw 制約) と重ね描きする前提で、薄めの alpha + 細い実線で控えめに
+  // - LINE_STRIP の頂点列で 36 角形 (10 度刻み) を構成
+  auto add_radius_circle = [&](const geometry_msgs::msg::Pose & pose, double radius,
+                               float r, float g, float b, float a,
+                               int marker_id,
+                               visualization_msgs::msg::MarkerArray & target) {
+    if (radius <= 0.0) return;
+    constexpr int N_SEG = 36;
+    visualization_msgs::msg::Marker m;
+    m.header.frame_id = "map";
+    m.header.stamp = rclcpp::Clock().now();
+    m.action = visualization_msgs::msg::Marker::ADD;
+    m.type = visualization_msgs::msg::Marker::LINE_STRIP;
+    m.id = marker_id;
+    m.pose.orientation.w = 1.0;
+    m.scale.x = 0.02;  // 細い実線 (扇形 stroke と同じ太さ)
+    m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = a;
+    m.lifetime.sec = 2;
+    m.points.reserve(N_SEG + 1);
+    for (int i = 0; i <= N_SEG; ++i) {
+      const double angle = 2.0 * M_PI * i / N_SEG;
+      geometry_msgs::msg::Point p;
+      p.x = pose.position.x + radius * std::cos(angle);
+      p.y = pose.position.y + radius * std::sin(angle);
+      p.z = SECTOR_Z;
+      m.points.push_back(p);
+    }
+    target.markers.push_back(m);
+  };
+
+  // 扇形 (sector) marker を描画する helper (#136 / #179)。
   // - radius = tolerance.xy、扇角 = 2 * yaw_tolerance、中心線 = pose.yaw
-  // - yaw_tolerance == 0 (未指定) または yaw_tolerance >= π → 完全円 (yaw 不問)
+  // - 0 < yaw_tolerance < π の時のみ描画。yaw 不問 (それ以外の値) は呼び出し側で
+  //   add_radius_circle に分岐させる (#179: 円 + 扇形重ね描き)
   // - fill_alpha > 0 → TRIANGLE_LIST で塗り (waypoint 用)
-  // - stroke_alpha > 0 → LINE_STRIP で境界線 (landmark の中抜き用 / 塗りの輪郭強調用)
-  // 戻り値: target.markers に push した marker 数 (id 消費数)
+  // - stroke_alpha > 0 → LINE_STRIP で境界線 (中心 → 弧 → 中心、yaw 範囲を半径線で強調)
+  // 戻り値: target.markers に push した marker 数 (id 消費数、yaw 不問入力は 0)
   auto add_sector = [&](const geometry_msgs::msg::Pose & pose,
                         double radius, double yaw_tolerance,
                         float r, float g, float b,
@@ -311,17 +349,15 @@ void MapoiRviz2Publisher::timer_callback(){
                         int marker_id_base,
                         visualization_msgs::msg::MarkerArray & target) -> int {
     if (radius <= 0.0) return 0;
+    if (yaw_tolerance <= 0.0 || yaw_tolerance >= M_PI) return 0;
 
-    const double half_angle = (yaw_tolerance <= 0.0 || yaw_tolerance >= M_PI)
-      ? M_PI : yaw_tolerance;
-    const bool is_full_circle = (half_angle >= M_PI);
+    const double half_angle = yaw_tolerance;
     const double yaw_center = get_yaw_from_pose(pose);
-
-    const double total_angle = is_full_circle ? 2.0 * M_PI : 2.0 * half_angle;
+    const double total_angle = 2.0 * half_angle;
     // 弧の頂点数: 0.1 rad 刻み相当 (約 5.7 度)、最低 8 (扇形でも視認可能)
     const int n_seg = std::max(8, static_cast<int>(std::ceil(total_angle / 0.1)));
 
-    const double start_angle = is_full_circle ? 0.0 : (yaw_center - half_angle);
+    const double start_angle = yaw_center - half_angle;
     std::vector<geometry_msgs::msg::Point> arc_pts;
     arc_pts.reserve(n_seg + 1);
     for (int i = 0; i <= n_seg; ++i) {
@@ -369,20 +405,14 @@ void MapoiRviz2Publisher::timer_callback(){
       m.type = visualization_msgs::msg::Marker::LINE_STRIP;
       m.id = marker_id_base + n_added;
       m.pose.orientation.w = 1.0;
-      m.scale.x = 0.02;  // line width (m)、pause overlay (太い点線) との対比で細め (#136)
+      m.scale.x = 0.02;  // line width (m)、xy 円 outline と同じ太さ
       m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = stroke_alpha;
       m.lifetime.sec = 2;
-      if (is_full_circle) {
-        // 円の境界: 弧点列のみ (arc_pts の最初と最後が一致するので閉じる)
-        m.points.reserve(arc_pts.size());
-        for (const auto & p : arc_pts) m.points.push_back(p);
-      } else {
-        // 扇形の境界: 中心 → 弧端 → 弧上 → 弧端 → 中心
-        m.points.reserve(arc_pts.size() + 2);
-        m.points.push_back(center);
-        for (const auto & p : arc_pts) m.points.push_back(p);
-        m.points.push_back(center);
-      }
+      // 扇形の境界: 中心 → 弧端 → 弧上 → 弧端 → 中心 (半径線で yaw 範囲を強調)
+      m.points.reserve(arc_pts.size() + 2);
+      m.points.push_back(center);
+      for (const auto & p : arc_pts) m.points.push_back(p);
+      m.points.push_back(center);
       target.markers.push_back(m);
       n_added += 1;
     }
@@ -390,26 +420,31 @@ void MapoiRviz2Publisher::timer_callback(){
     return n_added;
   };
 
-  // 扇形/円の弧を破線 outline で重ね描きする helper (pause tag overlay 用、#136)。
-  // LINE_LIST で偶数番 segment だけ描画して dash pattern を表現。
-  // 主 glyph (add_sector) より僅かに上 (z + 0.001) に置いて隠れ防止。
-  auto add_dashed_outline = [&](const geometry_msgs::msg::Pose & pose,
-                                double radius, double yaw_tolerance,
+  // pause overlay を xy 円沿いに点線 (dot 形式) で重ね描き (#179)。
+  // LINE_LIST で短い segment + 長い gap で dot 表現:
+  //   旧 add_dashed_outline (#136) は segment 長 0.05m + 1:1 比率の dash で「点と感じない、
+  //   潰れて見える」user feedback (#178 PR コメント) を受け、dot 長を短くし on:off 比率を 1:4 に拡大。
+  // pause 発火条件は xy 円内 (#84 hysteresis) なので xy 境界 (= add_radius_circle と同じ円) に重畳する。
+  // 主 glyph より僅かに上 (z + 0.001) に置いて隠れ防止。
+  auto add_dotted_outline = [&](const geometry_msgs::msg::Pose & pose, double radius,
                                 float r, float g, float b, float a,
                                 int marker_id,
                                 visualization_msgs::msg::MarkerArray & target) {
     if (radius <= 0.0) return;
 
-    const double half_angle = (yaw_tolerance <= 0.0 || yaw_tolerance >= M_PI)
-      ? M_PI : yaw_tolerance;
-    const bool is_full_circle = (half_angle >= M_PI);
-    const double yaw_center = get_yaw_from_pose(pose);
-    const double total_angle = is_full_circle ? 2.0 * M_PI : 2.0 * half_angle;
-
-    // segment 長 = 0.05m を目安。typical radius (0.1-2m) で識別できる粒度。
-    const double total_arc_len = total_angle * radius;
-    int n_total = std::max(16, static_cast<int>(std::ceil(total_arc_len / 0.05)));
-    if (n_total % 2 != 0) n_total += 1;  // ON/OFF 交互で偶数必要
+    // dot 中心間隔 0.10m、dot 長 0.02m → cycle 比 20% on (1:4 on:off)。
+    // WebUI 側 (dashArray '2, 6') は 25% on (1:3 on:off) で厳密には僅差あるが、
+    // どちらも sparse dot pattern として視覚的に同方向で整合 (#179 cursor review round 2)。
+    // typical radius (0.1-2m) で dot として識別可能な粒度。
+    constexpr double DOT_STEP = 0.10;
+    constexpr double DOT_LENGTH = 0.02;
+    const double total_arc_len = 2.0 * M_PI * radius;
+    const int n_dots = std::max(12, static_cast<int>(std::ceil(total_arc_len / DOT_STEP)));
+    // dot 1 個分の弧角度。極小半径 (Tolerance min 0.001m など) で DOT_LENGTH/radius が
+    // セル角を超えると dot が連結して dash 化するため、cell の 40% を cap として保つ
+    // (1:4 比率を維持できなくなる場合でも dot 識別性 ≧ on:off 分離を優先)。
+    const double cell_angle = (2.0 * M_PI) / n_dots;
+    const double dot_angle_span = std::min(DOT_LENGTH / radius, 0.4 * cell_angle);
 
     visualization_msgs::msg::Marker m;
     m.header.frame_id = "map";
@@ -418,15 +453,14 @@ void MapoiRviz2Publisher::timer_callback(){
     m.type = visualization_msgs::msg::Marker::LINE_LIST;
     m.id = marker_id;
     m.pose.orientation.w = 1.0;
-    m.scale.x = 0.06;  // 太い点線 (主 glyph 細い実線との対比、#136 user feedback)
+    m.scale.x = 0.04;  // dot 線幅 (旧 dash の 0.06m から短縮、dot として丸みを出す)
     m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = a;
     m.lifetime.sec = 2;
 
-    const double start_angle = is_full_circle ? 0.0 : (yaw_center - half_angle);
-    m.points.reserve(static_cast<size_t>(n_total));
-    for (int i = 0; i < n_total; i += 2) {
-      const double a1 = start_angle + total_angle * i / n_total;
-      const double a2 = start_angle + total_angle * (i + 1) / n_total;
+    m.points.reserve(static_cast<size_t>(n_dots) * 2);
+    for (int i = 0; i < n_dots; ++i) {
+      const double a1 = (2.0 * M_PI) * i / n_dots;
+      const double a2 = a1 + dot_angle_span;
       geometry_msgs::msg::Point p1, p2;
       p1.x = pose.position.x + radius * std::cos(a1);
       p1.y = pose.position.y + radius * std::sin(a1);
@@ -445,13 +479,14 @@ void MapoiRviz2Publisher::timer_callback(){
     poi_index_one_based += 1;  // POI Editor (mapoi_config.yaml の poi: 順) 行番号、1-based、tag フィルタ非依存
     geometry_msgs::msg::Pose pose = poi.pose;
 
-    // POI tolerance (xy + yaw) を扇形 (sector) で描画 (#136、全 POI 共通)。
-    // 主 glyph は waypoint > landmark の優先順で 1 つだけ:
+    // POI tolerance を 円 (xy 判定領域) + 扇形 (yaw 制約) で重ね描き (#136 / #179、全 POI 共通)。
+    // 主 glyph は waypoint > landmark の優先順:
     //   - waypoint: 塗り扇形 (緑)
     //   - landmark: 中抜き扇形 (灰)
     //   - その他 (旧 event 等): scope 外 (色 / glyph 整理は #70)
-    // pause tag があれば主 glyph の上に破線 outline を重ね描きする。
-    // 色は本 PR では既存 hardcode を継承 (整理は #70)。
+    // 円 outline は判定 semantics (xy 境界) を控えめに常時表示し、扇形は yaw 制約あり時のみ
+    // 重ね描きする。pause tag があれば xy 円沿いに dot pattern overlay を追加。
+    // 色は既存 hardcode を継承 (整理は #70)。
     if (show_sector && poi.tolerance.xy > 0.0) {
       const auto has_tag = [&poi](const std::string & target) {
         for (const auto & t : poi.tags) {
@@ -469,18 +504,30 @@ void MapoiRviz2Publisher::timer_callback(){
         sector_target = &ma_waypoints;
       } else if (has_tag("landmark")) {
         sr = 0.5f; sg = 0.5f; sb = 0.5f;
-        fill_a = 0.0f; stroke_a = 0.7f;  // 中抜き
+        fill_a = 0.15f; stroke_a = 0.7f;  // 透過度高めの薄塗り (#179 ユーザー確認 2: 中抜きから薄塗りに変更)
         sector_target = &ma_events;
       }
 
       if (sector_target != nullptr) {
-        id += add_sector(pose, poi.tolerance.xy, poi.tolerance.yaw,
-                         sr, sg, sb,
-                         fill_a, stroke_a,
-                         id, *sector_target);
+        // 円 outline (xy 判定領域、#179): 常時描画。半透明 + 細実線で控えめに「進入判定境界」を示す。
+        add_radius_circle(pose, poi.tolerance.xy, sr, sg, sb, 0.4f, id, *sector_target);
+        id += 1;
+
+        // 扇形 (yaw 制約、#136): 0 < yaw < π の時のみ重ね描き。
+        // それ以外 (yaw 不問、扇形 = 円となり情報冗長) は円 outline のみで表現。
+        const bool has_yaw_constraint =
+          (poi.tolerance.yaw > 0.0 && poi.tolerance.yaw < M_PI);
+        if (has_yaw_constraint) {
+          id += add_sector(pose, poi.tolerance.xy, poi.tolerance.yaw,
+                           sr, sg, sb,
+                           fill_a, stroke_a,
+                           id, *sector_target);
+        }
 
         if (has_tag("pause")) {
-          add_dashed_outline(pose, poi.tolerance.xy, poi.tolerance.yaw,
+          // pause overlay は xy 円沿いに dot pattern (#179)。
+          // pause 発火条件 (xy 円内) と境界が一致するため自然な視覚的根拠になる。
+          add_dotted_outline(pose, poi.tolerance.xy,
                              sr, sg, sb, 0.9f,
                              id, *sector_target);
           id += 1;
