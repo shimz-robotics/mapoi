@@ -504,7 +504,7 @@ void MapoiRviz2Publisher::timer_callback(){
         sector_target = &ma_waypoints;
       } else if (has_tag("landmark")) {
         sr = 0.5f; sg = 0.5f; sb = 0.5f;
-        fill_a = 0.0f; stroke_a = 0.7f;  // 中抜き
+        fill_a = 0.15f; stroke_a = 0.7f;  // 透過度高めの薄塗り (#179 ユーザー確認 2: 中抜きから薄塗りに変更)
         sector_target = &ma_events;
       }
 

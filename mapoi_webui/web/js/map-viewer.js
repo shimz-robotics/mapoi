@@ -478,7 +478,7 @@ class MapViewer {
         weight: 1,
         opacity: 0.7,
         fillColor: color,
-        fillOpacity: isWaypoint ? 0.25 : 0,  // waypoint=塗り、landmark=中抜き
+        fillOpacity: isWaypoint ? 0.25 : 0.10,  // waypoint=塗り、landmark=薄塗り (#179 ユーザー確認 2)
         interactive: false,
       }).addTo(this.map);
       sector.bringToBack();
