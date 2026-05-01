@@ -1,9 +1,0 @@
-# Switch the active map and reload all associated configuration
-string map_name              # Name of the map directory to switch to
-string initial_poi_name      # (optional) POI name whose pose should be used as the new map's
-                             # initial pose. Empty string falls back to the first POI in the new
-                             # map's POI list (#144 で initial_pose system tag を廃止し、yaml 順序で
-                             # default を表現する形に移行)。
----
-bool success                 # True if the map was switched successfully
-string error_message         # Non-empty on failure with description of the error

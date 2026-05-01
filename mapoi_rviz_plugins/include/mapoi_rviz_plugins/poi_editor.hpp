@@ -14,7 +14,7 @@
 #include <std_msgs/msg/string.hpp>
 #include <std_srvs/srv/trigger.hpp>
 #include <mapoi_interfaces/msg/point_of_interest.hpp>
-#include <mapoi_interfaces/srv/switch_map.hpp>
+#include <mapoi_interfaces/srv/select_map.hpp>
 #include <mapoi_interfaces/srv/get_pois_info.hpp>
 #include <mapoi_interfaces/srv/get_maps_info.hpp>
 #include <mapoi_interfaces/srv/get_tag_definitions.hpp>
@@ -80,7 +80,7 @@ protected:
 
   // Shared service node and persistent clients
   rclcpp::Node::SharedPtr service_node_;
-  rclcpp::Client<mapoi_interfaces::srv::SwitchMap>::SharedPtr switch_map_client_;
+  rclcpp::Client<mapoi_interfaces::srv::SelectMap>::SharedPtr select_map_client_;
   rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr get_pois_info_client_;
   rclcpp::Client<mapoi_interfaces::srv::GetMapsInfo>::SharedPtr get_maps_info_client_;
   rclcpp::Client<mapoi_interfaces::srv::GetTagDefinitions>::SharedPtr get_tag_defs_client_;

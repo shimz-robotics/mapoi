@@ -104,11 +104,18 @@
       mapSelect.appendChild(opt);
     });
     currentMap = data.current_map;
-    await switchMap(currentMap);
+    await switchMap(currentMap, { selectBackend: false });
   }
 
   // --- Switch map ---
-  async function switchMap(mapName) {
+  async function switchMap(mapName, options = {}) {
+    const { selectBackend = true } = options;
+    if (selectBackend) {
+      const result = await MapoiApi.selectMap(mapName);
+      if (result.error) {
+        throw new Error(result.error);
+      }
+    }
     currentMap = mapName;
     await mapViewer.loadMap(mapName);
     await loadTagDefinitions();
@@ -175,7 +182,10 @@
         return;
       }
     }
-    switchMap(mapSelect.value);
+    switchMap(mapSelect.value, { selectBackend: true }).catch((e) => {
+      alert('Failed to switch map: ' + e.message);
+      mapSelect.value = currentMap;
+    });
   });
 
   // --- Wire callbacks ---
@@ -423,6 +433,9 @@
     aborted: 'Aborted',
     canceled: 'Canceled',
     paused: 'Paused',
+    map_switching: 'Switching map',
+    map_switch_succeeded: 'Map switched',
+    map_switch_failed: 'Map switch failed',
   };
 
   function updateNavStatus(status, target) {

@@ -102,10 +102,17 @@ if(BUILD_TESTING)
   add_launch_test(
     test/test_reload_clears_initialpose.py
   )
+  add_launch_test(
+    test/test_select_map_no_nav2.py
+  )
 
   # Install test config
   install(
     FILES test/test_mapoi_config.yaml
+    DESTINATION share/${PROJECT_NAME}/test
+  )
+  install(
+    DIRECTORY test/select_map_maps
     DESTINATION share/${PROJECT_NAME}/test
   )
 endif()

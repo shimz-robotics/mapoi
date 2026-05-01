@@ -53,7 +53,7 @@ void PoiEditorPanel::onInitialize()
 
   // Create shared service node and persistent clients
   service_node_ = rclcpp::Node::make_shared("poieditor_service_client");
-  switch_map_client_ = service_node_->create_client<mapoi_interfaces::srv::SwitchMap>("switch_map");
+  select_map_client_ = service_node_->create_client<mapoi_interfaces::srv::SelectMap>("select_map");
   get_pois_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
   get_maps_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetMapsInfo>("get_maps_info");
   get_tag_defs_client_ = service_node_->create_client<mapoi_interfaces::srv::GetTagDefinitions>("get_tag_definitions");
@@ -323,16 +323,20 @@ void PoiEditorPanel::onDisable()
 
 void PoiEditorPanel::MapComboBox()
 {
-  auto request_sm = std::make_shared<mapoi_interfaces::srv::SwitchMap::Request>();
+  auto request_sm = std::make_shared<mapoi_interfaces::srv::SelectMap::Request>();
   request_sm->map_name = map_name_list_[ui_->MapComboBox->currentIndex()];
 
-  if (!switch_map_client_->wait_for_service(3s)) {
-    RCLCPP_ERROR(LOGGER, "switch_map service not available after 3s timeout.");
+  if (!select_map_client_->wait_for_service(3s)) {
+    RCLCPP_ERROR(LOGGER, "select_map service not available after 3s timeout.");
     return;
   }
 
-  auto result_sm = switch_map_client_->async_send_request(request_sm);
-  rclcpp::spin_until_future_complete(service_node_, result_sm);
+  auto result_sm = select_map_client_->async_send_request(request_sm);
+  if (rclcpp::spin_until_future_complete(service_node_, result_sm) != rclcpp::FutureReturnCode::SUCCESS ||
+      !result_sm.get()->success) {
+    RCLCPP_ERROR(LOGGER, "Failed to call service select_map");
+    return;
+  }
   PoiEditorPanel::UpdatePoiTable();
 }
 

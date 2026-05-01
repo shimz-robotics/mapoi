@@ -5,8 +5,6 @@
 
 #include "mapoi_server/initial_pose_resolver.hpp"
 
-using namespace std::chrono_literals;
-
 MapoiServer::MapoiServer() : Node("mapoi_server") {
   // parameters
   mapoi_server_pkg_ = ament_index_cpp::get_package_share_directory("mapoi_server");
@@ -56,14 +54,16 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   load_mapoi_config_file();
 
   // Publish config_path_ (transient_local QoS で latched、subscriber も transient_local に揃え
-  // たので定期 publish は廃止、起動時 / SwitchMap / reload_map_info で明示 publish する仕様に
+  // たので定期 publish は廃止、起動時 / select_map / reload_map_info で明示 publish する仕様に
   // 移行 (#135))。
   config_path_publisher_ = this->create_publisher<std_msgs::msg::String>(
     "mapoi_config_path", rclcpp::QoS(1).transient_local());
   publish_config_path();  // 起動時に latched 値として publish
 
   // Publish initial pose POI name (#144): mapoi_nav_server がこれを受けて /initialpose を流す。
-  // 起動時 / SwitchMap / reload で publish する。後起動 subscriber でも受信できるよう transient_local。
+  // 起動時は初期 map の候補を publish し、select_map / reload では stale 防止の clear message を流す。
+  // operator map switch 完了後の publish は mapoi_nav_server が担当する。
+  // 後起動 subscriber でも受信できるよう transient_local。
   initialpose_poi_publisher_ = this->create_publisher<mapoi_interfaces::msg::InitialPoseRequest>(
     "mapoi_initialpose_poi", rclcpp::QoS(1).transient_local());
 
@@ -88,8 +88,8 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   get_routes_info_service_ = this->create_service<mapoi_interfaces::srv::GetRoutesInfo>("get_routes_info",
     std::bind(&MapoiServer::get_routes_info_service, this, std::placeholders::_1, std::placeholders::_2));
 
-  switch_map_service_ = this->create_service<mapoi_interfaces::srv::SwitchMap>("switch_map",
-    std::bind(&MapoiServer::switch_map_service, this, std::placeholders::_1, std::placeholders::_2));
+  select_map_service_ = this->create_service<mapoi_interfaces::srv::SelectMap>("select_map",
+    std::bind(&MapoiServer::select_map_service, this, std::placeholders::_1, std::placeholders::_2));
 
   reload_map_info_service_ = this->create_service<std_srvs::srv::Trigger>("reload_map_info",
     std::bind(&MapoiServer::reload_map_info_service, this, std::placeholders::_1, std::placeholders::_2));
@@ -341,70 +341,59 @@ void MapoiServer::get_routes_info_service(
   RCLCPP_DEBUG(this->get_logger(), "sending back response '%zu' routes", response->routes_list.size());
 }
 
-// Map
-bool MapoiServer::send_load_map_request(rclcpp::Node::SharedPtr node, const std::string& server_name, const std::string& map_file)
-{
-  auto load_map_client = node->create_client<nav2_msgs::srv::LoadMap>(server_name + "/load_map");
-  auto req = std::make_shared<nav2_msgs::srv::LoadMap::Request>();
-  req->map_url = map_file;
-
-  if (!load_map_client->wait_for_service(10s)) {
-    RCLCPP_INFO(node->get_logger(), "%s/load_map service could not available.", server_name.c_str());
-    return false;
-  }
-  auto future = load_map_client->async_send_request(req);
-  if (rclcpp::spin_until_future_complete(node, future, 1s) == rclcpp::FutureReturnCode::SUCCESS) {
-    RCLCPP_INFO(node->get_logger(), "[%s] Request has been accepted.", __func__);
-    return true;
-  } else {
-    RCLCPP_ERROR(node->get_logger(), "[%s] Didn't return request.", __func__);
-    return false;
-  }
-}
-
-void MapoiServer::switch_map_service(const std::shared_ptr<mapoi_interfaces::srv::SwitchMap::Request> request,
-          std::shared_ptr<mapoi_interfaces::srv::SwitchMap::Response> response)
+void MapoiServer::select_map_service(const std::shared_ptr<mapoi_interfaces::srv::SelectMap::Request> request,
+          std::shared_ptr<mapoi_interfaces::srv::SelectMap::Response> response)
 {
   auto map_name_new = request->map_name;
-  RCLCPP_INFO(this->get_logger(), "Incoming request: %s", map_name_new.c_str());
-  if (map_name_ == map_name_new) {
+  RCLCPP_INFO(this->get_logger(), "Incoming select_map request: %s", map_name_new.c_str());
+  if (map_name_new.empty()) {
     response->success = false;
-    response->error_message = "The map is already " + map_name_new;
-    RCLCPP_INFO(this->get_logger(), "The map is already %s", map_name_new.c_str());
+    response->error_message = "map_name is empty";
+    return;
+  }
+  const std::string config_path_new = maps_path_ + "/" + map_name_new + "/" + config_file_;
+  std::error_code ec;
+  if (!std::filesystem::exists(config_path_new, ec) ||
+      !std::filesystem::is_regular_file(config_path_new, ec) || ec) {
+    response->success = false;
+    response->error_message = "Config file not found: " + config_path_new;
     return;
   }
 
   map_name_ = map_name_new;
   load_mapoi_config_file();
+  response->config_path = config_path_;
+  response->initial_poi_name = resolve_initial_poi_name(request->initial_poi_name);
 
-  auto node = rclcpp::Node::make_shared("sc_map_client");
-  if (!nav2_map_list_ || !nav2_map_list_.IsSequence()) {
-    response->success = false;
-    response->error_message = "No map entries defined in config for " + map_name_new;
-    return;
-  }
-  for (const auto& map : nav2_map_list_) {
-    auto map_url = maps_path_ + "/" + map_name_new + "/" + map["map_file"].as<std::string>("");
-    bool result = MapoiServer::send_load_map_request(node, map["node_name"].as<std::string>(""), map_url);
-    if (!result) {
-      RCLCPP_ERROR(this->get_logger(), "Failed to load map for %s", map_url.c_str());
-      response->success = false;
-      response->error_message = "Failed to load map: " + map_url;
-      return;
+  if (nav2_map_list_ && nav2_map_list_.IsSequence()) {
+    for (const auto & map : nav2_map_list_) {
+      const std::string node_name = map["node_name"].as<std::string>("");
+      const std::string map_file = map["map_file"].as<std::string>("");
+      if (node_name.empty() || map_file.empty()) {
+        RCLCPP_WARN(this->get_logger(),
+          "Map entry for '%s' is missing node_name or map_file; skipping.",
+          map_name_new.c_str());
+        continue;
+      }
+      response->nav2_node_names.push_back(node_name);
+      response->nav2_map_urls.push_back(maps_path_ + "/" + map_name_new + "/" + map_file);
     }
-    RCLCPP_INFO(this->get_logger(), "Loaded map for %s", map_url.c_str());
+  } else {
+    RCLCPP_WARN(this->get_logger(),
+      "No Nav2 map entries defined in config for '%s'. Editor context selection remains valid.",
+      map_name_new.c_str());
   }
-
-  // Nav2 LoadMap 完了後に initial pose POI 名を publish する (#144 + Cursor review #149 round 2 high
-  // 対応)。Nav2 が新 map に切り替わってから AMCL に initial pose が届くようにするため、必ず
-  // send_load_map_request 全件成功後にここへ来る。失敗 (上の return) では publish しない。
-  publish_initial_poi_name(request->initial_poi_name);
 
   // mapoi_config_path を再 publish (transient_local で latched 値更新)。subscriber は新 path を
   // 受け取って table / ComboBox を再 fetch する (#135)。
   publish_config_path();
 
-  RCLCPP_INFO(this->get_logger(), "The map was switched into %s", map_name_.c_str());
+  // select_map は Nav2-free の context 更新入口。ここでは AMCL に initial pose を流さず、
+  // stale な latched initial pose だけを clear する。operator mode では mapoi_nav_server が
+  // Nav2 LoadMap 成功後に response->initial_poi_name を mapoi_initialpose_poi へ publish する。
+  publish_initialpose_clear();
+
+  RCLCPP_INFO(this->get_logger(), "Selected map context: %s", map_name_.c_str());
   response->success = true;
 }
 
@@ -426,17 +415,17 @@ void MapoiServer::reload_map_info_service(
   // 対策: skip message (poi_name 空、subscriber 側で無視される規約) を明示 publish して
   // transient_local の latched 値を上書きする。運用中 subscriber には影響なく (空は無視)、
   // 後起動 subscriber も古い POI 名を拾わない。
-  // 初期姿勢の (再) 設定は SwitchMap (= 地図切替) または手動経路 (RViz / WebUI / mapoi_initialpose_poi
-  // 直接 publish) を使うのが正しい運用。
+  // 初期姿勢の (再) 設定は operator map switch または手動経路 (RViz / WebUI /
+  // mapoi_initialpose_poi 直接 publish) を使うのが正しい運用。
   publish_initialpose_clear();
   response->success = true;
   response->message = config_path_;
   RCLCPP_INFO(this->get_logger(), "Reloaded mapoi config: %s", config_path_.c_str());
 }
 
-void MapoiServer::publish_initial_poi_name(const std::string & requested_name)
+std::string MapoiServer::resolve_initial_poi_name(const std::string & requested_name)
 {
-  // requested_name は SwitchMap.initial_poi_name (空 = default、POI list 先頭採用)。
+  // requested_name は select_map.initial_poi_name (空 = default、POI list 先頭採用)。
   // shared state を持たず、呼び出し側が直接渡す形にして thread safety / lifecycle race を排除
   // (Cursor review #149 round 2 high 対応)。選定 logic は bridge 2 つと共通化済 (#150)。
   const std::string target = mapoi::select_initial_poi_name(pois_list_, requested_name);
@@ -451,8 +440,17 @@ void MapoiServer::publish_initial_poi_name(const std::string & requested_name)
   }
   if (target.empty()) {
     RCLCPP_WARN(this->get_logger(),
-      "No POI available for initial pose in map '%s'; skipping mapoi_initialpose_poi publish.",
+      "No POI available for initial pose in map '%s'.",
       map_name_.c_str());
+    return "";
+  }
+  return target;
+}
+
+void MapoiServer::publish_initial_poi_name(const std::string & requested_name)
+{
+  const std::string target = resolve_initial_poi_name(requested_name);
+  if (target.empty()) {
     return;
   }
   auto msg = mapoi_interfaces::msg::InitialPoseRequest();

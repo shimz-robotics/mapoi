@@ -16,8 +16,8 @@ ament_auto_add_executable(print_initialpose
   src/print_initialpose.cpp
 )
 
-ament_auto_add_executable(switch_map_client
-  src/switch_map_client.cpp
+ament_auto_add_executable(mapoi_switch_map_client
+  src/mapoi_switch_map_client.cpp
 )
 
 ament_auto_add_executable(navigate_to_pose_client

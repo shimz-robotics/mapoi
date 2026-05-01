@@ -16,6 +16,15 @@ const MapoiApi = {
     return `/api/maps/${encodeURIComponent(mapName)}/image`;
   },
 
+  async selectMap(mapName) {
+    const res = await fetch('/api/maps/select', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ map_name: mapName }),
+    });
+    return res.json();
+  },
+
   async getPois() {
     const res = await fetch('/api/pois');
     return res.json();
