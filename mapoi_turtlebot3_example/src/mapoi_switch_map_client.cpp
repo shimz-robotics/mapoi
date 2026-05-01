@@ -16,7 +16,7 @@ int main(int argc, char ** argv)
   }
 
   auto node = rclcpp::Node::make_shared("mapoi_switch_map_client");
-  auto pub = node->create_publisher<std_msgs::msg::String>("mapoi_switch_map", 1);
+  auto pub = node->create_publisher<std_msgs::msg::String>("mapoi/nav/switch_map", 1);
 
   const auto deadline = std::chrono::steady_clock::now() + 2s;
   while (rclcpp::ok() && pub->get_subscription_count() == 0 &&
@@ -27,7 +27,7 @@ int main(int argc, char ** argv)
 
   if (pub->get_subscription_count() == 0) {
     RCLCPP_WARN(node->get_logger(),
-      "mapoi_switch_map has no subscribers; mapoi_nav_server may not be running.");
+      "mapoi/nav/switch_map has no subscribers; mapoi_nav_server may not be running.");
   }
 
   std_msgs::msg::String msg;

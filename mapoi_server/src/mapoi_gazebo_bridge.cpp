@@ -1,13 +1,13 @@
 // mapoi_gazebo_bridge: operator map switch 時に Gazebo Classic (gazebo_msgs) の entity を入れ替える。
 //
-// mapoi_config_path topic を購読し、map_name 変化を検知すると:
+// mapoi/config_path topic を購読し、map_name 変化を検知すると:
 // - 旧マップの world_model entity を /delete_entity で削除
 // - 新マップの world_model entity を /spawn_entity で生成 (model://... URI で)
 // - ロボットも /delete_entity + /spawn_entity で initial_pose POI 座標に再生成
 // Gazebo 本体は無停止で /clock, /tf, /odom, /scan の継続性を保つ。
 //
 // map 依存情報 (world_model の URI / name) は各 map の mapoi_config.yaml の
-// gazebo: セクションに置き、mapoi_config_path 受信時に本 node が直接 parse する。
+// gazebo: セクションに置き、mapoi/config_path 受信時に本 node が直接 parse する。
 // ロボット依存情報 (entity_name / SDF path) は launch から parameter で渡す。
 //
 // NOTE: Humble (Gazebo Classic) 専用。Jazzy (gz-sim) 用は別 node
@@ -54,13 +54,13 @@ MapoiGazeboBridge::MapoiGazeboBridge()
   // 直近の config_path を latched 値として受け取れるようにする。
   auto sub_qos = rclcpp::QoS(rclcpp::KeepLast(10)).transient_local().reliable();
   config_path_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi_config_path", sub_qos,
+    "mapoi/config_path", sub_qos,
     std::bind(&MapoiGazeboBridge::on_config_path, this, _1),
     sub_opts);
-  // mapoi_initialpose_poi (transient_local) を subscribe して、SelectMap.initial_poi_name
+  // mapoi/initialpose_poi (transient_local) を subscribe して、SelectMap.initial_poi_name
   // 指定時に bridge も同じ POI を spawn 位置に採用する (#149 round 7 ヘビー high 対応)。
   initialpose_poi_sub_ = this->create_subscription<mapoi_interfaces::msg::InitialPoseRequest>(
-    "mapoi_initialpose_poi", sub_qos,
+    "mapoi/initialpose_poi", sub_qos,
     std::bind(&MapoiGazeboBridge::on_initialpose_poi, this, _1),
     sub_opts);
 
@@ -215,7 +215,7 @@ ConfigLoadStatus MapoiGazeboBridge::load_gazebo_info(
       out.world_model.name = wm["name"] ? wm["name"].as<std::string>() : "";
       out.has_gazebo = !out.world_model.uri.empty();
     }
-    // initial pose は (1) latched mapoi_initialpose_poi (= SelectMap.initial_poi_name 指定) があれば
+    // initial pose は (1) latched mapoi/initialpose_poi (= SelectMap.initial_poi_name 指定) があれば
     // それを優先、(2) なければ POI list 先頭 (landmark 除外、pose 妥当性 check) を採用。選定 logic は
     // `mapoi::select_initial_poi_name` で共通化 (#144 / #149 round 7 ヘビー high / #150)。
     // 注: map_name による世代検証は #149 round 10 で取り下げ (#174 で publisher 側 latched 上書きに移行)。

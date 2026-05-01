@@ -1,7 +1,7 @@
 #pragma once
 
 // initial pose 候補 POI 名の選定 (#144 / #149 / #150)。
-// `mapoi_server` (mapoi_initialpose_poi 配信) と `mapoi_gazebo_bridge` /
+// `mapoi_server` (mapoi/initialpose_poi 配信) と `mapoi_gazebo_bridge` /
 // `mapoi_gz_bridge` (robot spawn 位置決定) で共通する選定ロジックを純関数
 // として切り出したもの。3 箇所の重複を排除して、`initial_poi_name` 仕様
 // (除外条件 / fallback) が拡張された場合の simulator spawn と /initialpose の

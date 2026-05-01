@@ -40,7 +40,7 @@ private:
   // publishers
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr config_path_publisher_;
   // initial pose POI 名 publisher (#144): mapoi_server が新 map の初期 POI 名を決定して
-  // mapoi_initialpose_poi topic に publish。mapoi_nav_server がそれを受けて /initialpose を流す。
+  // mapoi/initialpose_poi topic に publish。mapoi_nav_server がそれを受けて /initialpose を流す。
   // QoS: transient_local (depth=1) で後起動 subscriber でも受信できる。
   rclcpp::Publisher<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr initialpose_poi_publisher_;
 
@@ -52,7 +52,7 @@ private:
   // 配信される問題を防ぐ。
   void publish_initialpose_clear();
 
-  // mapoi_config_path topic の publish (transient_local QoS で latched)。起動時 / select_map /
+  // mapoi/config_path topic の publish (transient_local QoS で latched)。起動時 / select_map /
   // reload_map_info で呼ぶ。定期 publish は subscriber を transient_local に揃えて廃止 (#135)。
   void publish_config_path();
 

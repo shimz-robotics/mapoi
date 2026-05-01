@@ -44,7 +44,7 @@ POI tolerance.xy 半径への侵入・退出 / 停止 / 再開イベントを表
 
 ### SelectMap.srv
 
-現在の地図 context を切り替える Nav2-free サービスです。Operator mode の地図切替は `/mapoi_switch_map` topic で指示し、`mapoi_nav_server` がこの service を呼んだ後に Nav2 `LoadMap` を実行します。
+現在の地図 context を切り替える Nav2-free サービスです。Operator mode の地図切替は `/mapoi/nav/switch_map` topic で指示し、`mapoi_nav_server` がこの service を呼んだ後に Nav2 `LoadMap` を実行します。
 
 | 方向 | フィールド | 型 | 説明 |
 | --- | --- | --- | --- |
