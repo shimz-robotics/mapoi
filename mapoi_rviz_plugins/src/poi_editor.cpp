@@ -104,7 +104,8 @@ void PoiEditorPanel::onInitialize()
   // Display Settings group: mapoi_rviz2_publisher の表示系 parameter を Panel から制御 (#99)
   // - route_display_mode (all / selected / none): RadioButton
   // - poi_label_format (index / name / both / none): RadioButton
-  // - arrow_size_ratio (double 0.0〜5.0): DoubleSpinBox
+  // - show_tolerance_sector (bool): CheckBox (#179: 旧 arrow_size_ratio UI を置換、
+  //   PR #178 で publisher 側 parameter は廃止済だったが Panel UI が取り残されていた regression を修正)
   rviz2_pub_param_client_ =
     std::make_shared<rclcpp::AsyncParametersClient>(service_node_, "/mapoi_rviz2_publisher");
 
@@ -149,15 +150,10 @@ void PoiEditorPanel::onInitialize()
   label_h->addStretch();
   display_form->addRow("POI label:", label_h);
 
-  // Arrow size ratio
-  arrow_size_spin_ = new QDoubleSpinBox(this);
-  arrow_size_spin_->setRange(0.0, 5.0);
-  arrow_size_spin_->setSingleStep(0.1);
-  arrow_size_spin_->setDecimals(2);
-  arrow_size_spin_->setValue(1.0);  // default in mapoi_rviz2_publisher
-  // keyboard 入力中は valueChanged を発火させず、Enter / focus loss / stepper 操作のみで反応 (Codex round 1 低)
-  arrow_size_spin_->setKeyboardTracking(false);
-  display_form->addRow("Arrow size:", arrow_size_spin_);
+  // Tolerance visualization toggle (#179: 旧 arrow_size_ratio UI を置換)
+  tolerance_sector_check_ = new QCheckBox(this);
+  tolerance_sector_check_->setChecked(true);  // default in mapoi_rviz2_publisher
+  display_form->addRow("Tolerance:", tolerance_sector_check_);
 
   // Display Settings group を verticalLayout に append (Save 行の下)
   if (auto * panel_layout = qobject_cast<QVBoxLayout *>(this->layout())) {
@@ -199,14 +195,14 @@ void PoiEditorPanel::onInitialize()
       cached_route_mode_ = value.get<std::string>();
     } else if (name == "poi_label_format") {
       cached_label_fmt_ = value.get<std::string>();
-    } else if (name == "arrow_size_ratio") {
-      cached_arrow_size_ = value.get<double>();
+    } else if (name == "show_tolerance_sector") {
+      cached_tolerance_sector_ = value.get<bool>();
     }
   };
   auto send_string_param = [send_param](const std::string & name, const std::string & value) {
     send_param(name, rclcpp::ParameterValue(value));
   };
-  auto send_double_param = [send_param](const std::string & name, double value) {
+  auto send_bool_param = [send_param](const std::string & name, bool value) {
     send_param(name, rclcpp::ParameterValue(value));
   };
 
@@ -228,9 +224,9 @@ void PoiEditorPanel::onInitialize()
   connect(label_radio_none_, &QRadioButton::toggled,
     [send_string_param](bool checked) { if (checked) send_string_param("poi_label_format", "none"); });
 
-  // arrow_size_ratio
-  connect(arrow_size_spin_, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-    [send_double_param](double value) { send_double_param("arrow_size_ratio", value); });
+  // show_tolerance_sector (#179)
+  connect(tolerance_sector_check_, &QCheckBox::toggled,
+    [send_bool_param](bool checked) { send_bool_param("show_tolerance_sector", checked); });
 
   // 初期同期: publisher から現在 parameter 値を読んで UI に反映
   SyncDisplaySettingsFromPublisher();
@@ -245,7 +241,7 @@ void PoiEditorPanel::SyncDisplaySettingsFromPublisher()
     return;  // 短い wait、ready でなければ skip
   }
   auto fut = rviz2_pub_param_client_->get_parameters(
-    {"route_display_mode", "poi_label_format", "arrow_size_ratio"});
+    {"route_display_mode", "poi_label_format", "show_tolerance_sector"});
   if (rclcpp::spin_until_future_complete(service_node_, fut, 200ms) !=
       rclcpp::FutureReturnCode::SUCCESS) {
     RCLCPP_WARN(LOGGER, "Sync of Display Settings parameters timed out");
@@ -257,12 +253,12 @@ void PoiEditorPanel::SyncDisplaySettingsFromPublisher()
   }
   const std::string route_mode = params[0].as_string();
   const std::string label_fmt = params[1].as_string();
-  const double arrow_size = params[2].as_double();
+  const bool tolerance_sector = params[2].as_bool();
 
   // cache 更新 (publisher 真値が記憶される、次回 SetParameters 失敗時の revert 元として使用)
   cached_route_mode_ = route_mode;
   cached_label_fmt_ = label_fmt;
-  cached_arrow_size_ = arrow_size;
+  cached_tolerance_sector_ = tolerance_sector;
 
   // QSignalBlocker で setChecked / setValue が SetParameters を再発火させないようにする
   QSignalBlocker b1(route_radio_all_);
@@ -272,7 +268,7 @@ void PoiEditorPanel::SyncDisplaySettingsFromPublisher()
   QSignalBlocker b5(label_radio_name_);
   QSignalBlocker b6(label_radio_both_);
   QSignalBlocker b7(label_radio_none_);
-  QSignalBlocker b8(arrow_size_spin_);
+  QSignalBlocker b8(tolerance_sector_check_);
 
   if (route_mode == "all") route_radio_all_->setChecked(true);
   else if (route_mode == "none") route_radio_none_->setChecked(true);
@@ -283,7 +279,7 @@ void PoiEditorPanel::SyncDisplaySettingsFromPublisher()
   else if (label_fmt == "none") label_radio_none_->setChecked(true);
   else label_radio_index_->setChecked(true);  // default fallback
 
-  arrow_size_spin_->setValue(arrow_size);
+  tolerance_sector_check_->setChecked(tolerance_sector);
 }
 
 void PoiEditorPanel::RevertDisplaySettingsUiFromCache()
@@ -299,7 +295,7 @@ void PoiEditorPanel::RevertDisplaySettingsUiFromCache()
   QSignalBlocker b5(label_radio_name_);
   QSignalBlocker b6(label_radio_both_);
   QSignalBlocker b7(label_radio_none_);
-  QSignalBlocker b8(arrow_size_spin_);
+  QSignalBlocker b8(tolerance_sector_check_);
 
   if (cached_route_mode_ == "all") route_radio_all_->setChecked(true);
   else if (cached_route_mode_ == "none") route_radio_none_->setChecked(true);
@@ -310,7 +306,7 @@ void PoiEditorPanel::RevertDisplaySettingsUiFromCache()
   else if (cached_label_fmt_ == "none") label_radio_none_->setChecked(true);
   else label_radio_index_->setChecked(true);
 
-  arrow_size_spin_->setValue(cached_arrow_size_);
+  tolerance_sector_check_->setChecked(cached_tolerance_sector_);
 }
 
 void PoiEditorPanel::onEnable()

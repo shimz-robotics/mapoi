@@ -27,7 +27,7 @@
 #include <QMessageBox>
 #include <QLabel>
 #include <QRadioButton>
-#include <QDoubleSpinBox>
+#include <QCheckBox>
 
 namespace Ui {
 class PoiEditorUi;
@@ -97,13 +97,13 @@ protected:
   QRadioButton * label_radio_name_ = nullptr;
   QRadioButton * label_radio_both_ = nullptr;
   QRadioButton * label_radio_none_ = nullptr;
-  QDoubleSpinBox * arrow_size_spin_ = nullptr;
+  QCheckBox * tolerance_sector_check_ = nullptr;
 
   // 最後に publisher と一致が確認できた値の cache。SetParameters 失敗時に UI を revert する元になる。
   // 初期値は publisher の declare_parameter default と一致 (sync 成功すればその値で更新される)。
   std::string cached_route_mode_ = "selected";
   std::string cached_label_fmt_ = "index";
-  double cached_arrow_size_ = 1.0;
+  bool cached_tolerance_sector_ = true;
 
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr poi_pose_sub_;
   void PoiPoseCallback(geometry_msgs::msg::PoseStamped::SharedPtr msg);

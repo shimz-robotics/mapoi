@@ -219,6 +219,11 @@ WebUI / rviz_plugins
     全体に拡張 (backward compat 維持)
   - **保守注**: 描画仕様は ``mapoi_rviz2_publisher.cpp`` (RViz) / ``map-viewer.js`` (WebUI)
     で二重実装。仕様変更時はペアで更新する (#136 から継続、共通化は #70 と合わせて検討)
+  - **POI Editor Panel の Display Settings UI 改修**: PR #178 で ``arrow_size_ratio``
+    parameter を publisher から削除した際、Panel の DoubleSpinBox UI が取り残されており
+    ``get_parameters / set_parameters`` 呼び出しが失敗する regression があった。
+    本 PR で同 UI を ``show_tolerance_sector`` の CheckBox に置換 (display layer の
+    runtime トグルが Panel から可能に)
 
 Samples
 -------
