@@ -50,7 +50,7 @@ def generate_test_description():
 
 
 class TestPoiEventIntegration(unittest.TestCase):
-    """mapoi_poi_events トピックの発行を検証する統合テスト。
+    """mapoi/events トピックの発行を検証する統合テスト。
 
     flaky 対策の経緯 (#153) は :meth:`_wait_for_event` の docstring を参照。
     要点: dynamic TF を rclpy timer で周期 publish + event 駆動 wait で
@@ -69,7 +69,7 @@ class TestPoiEventIntegration(unittest.TestCase):
         cls.node = rclpy.create_node('test_poi_event_node')
         cls.received_events = []
         cls.sub = cls.node.create_subscription(
-            PoiEvent, 'mapoi_poi_events',
+            PoiEvent, 'mapoi/events',
             lambda msg: cls.received_events.append(msg), 10)
         cls.tf_broadcaster = TransformBroadcaster(cls.node)
         cls._robot_xy = (100.0, 100.0)  # 初期は全 POI から十分遠い座標

@@ -53,7 +53,7 @@ private:
   void request_pois_list();
 
   /**
-   * @brief mapoi_config_path topic の変化検出時に POI list を再取得する
+   * @brief mapoi/config_path topic の変化検出時に POI list を再取得する
    */
   void on_config_path_changed(const std_msgs::msg::String::SharedPtr msg);
 

@@ -1,7 +1,7 @@
 # Select the active map context and reload all associated configuration.
 #
 # This service is intentionally Nav2-free. Operator-mode map switching is driven
-# by publishing the map name to /mapoi_switch_map; mapoi_nav_server then calls
+# by publishing the map name to /mapoi/nav/switch_map; mapoi_nav_server then calls
 # this service, executes Nav2 LoadMap using the returned map URLs, and publishes
 # the initial pose request after Nav2 accepts the new map.
 string map_name              # Name of the map directory to select

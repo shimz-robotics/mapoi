@@ -37,19 +37,19 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 
 | トピック名 | 型 | 説明 |
 | --- | --- | --- |
-| `mapoi_goal_pose_poi` | `std_msgs/String` | ゴール POI 名の配信 |
-| `mapoi_route` | `std_msgs/String` | ルート走行の開始 |
-| `mapoi_pause` | `std_msgs/String` | ナビゲーションの一時停止 |
-| `mapoi_resume` | `std_msgs/String` | ナビゲーションの再開 |
-| `mapoi_cancel` | `std_msgs/String` | ナビゲーションのキャンセル |
-| `mapoi_initialpose_poi` | `mapoi_interfaces/InitialPoseRequest` | 初期位置に採用する POI 名 (`{map_name, poi_name}`)、transient_local QoS |
+| `mapoi/nav/goal_pose_poi` | `std_msgs/String` | ゴール POI 名の配信 |
+| `mapoi/nav/route` | `std_msgs/String` | ルート走行の開始 |
+| `mapoi/nav/pause` | `std_msgs/String` | ナビゲーションの一時停止 |
+| `mapoi/nav/resume` | `std_msgs/String` | ナビゲーションの再開 |
+| `mapoi/nav/cancel` | `std_msgs/String` | ナビゲーションのキャンセル |
+| `mapoi/initialpose_poi` | `mapoi_interfaces/InitialPoseRequest` | 初期位置に採用する POI 名 (`{map_name, poi_name}`)、transient_local QoS |
 
 #### サブスクライバー
 
 | トピック名 | 型 | 説明 |
 | --- | --- | --- |
-| `mapoi_nav_status` | `std_msgs/String` | ナビゲーション状態の受信（`"status"` / `"status:target"` 形式、transient_local QoS）。`:` split で target を抽出し REST `/api/nav/status` の `target` field として公開 |
-| `mapoi_config_path` | `std_msgs/String` | 外部からの地図切り替え検知 |
+| `mapoi/nav/status` | `std_msgs/String` | ナビゲーション状態の受信（`"status"` / `"status:target"` 形式、transient_local QoS）。`:` split で target を抽出し REST `/api/nav/status` の `target` field として公開 |
+| `mapoi/config_path` | `std_msgs/String` | 外部からの地図切り替え検知 |
 
 #### TF
 

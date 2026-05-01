@@ -34,16 +34,16 @@ MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
   this->route_pois_client_ = this->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
 
   highlight_goal_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi_highlight_goal", 10,
+    "mapoi/highlight/goal", 10,
     std::bind(&MapoiRviz2Publisher::on_highlight_goal_received, this, _1));
   highlight_route_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi_highlight_route", 10,
+    "mapoi/highlight/route", 10,
     std::bind(&MapoiRviz2Publisher::on_highlight_route_received, this, _1));
 
-  // mapoi_config_path 変化検出で POI list を再取得 (WebUI / Panel 並び替え保存 / map switch 対応)。
+  // mapoi/config_path 変化検出で POI list を再取得 (WebUI / Panel 並び替え保存 / map switch 対応)。
   // QoS は mapoi_nav_server と同じ transient_local。後起動でも latched 値を受信できる。
   config_path_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi_config_path", rclcpp::QoS(1).transient_local(),
+    "mapoi/config_path", rclcpp::QoS(1).transient_local(),
     std::bind(&MapoiRviz2Publisher::on_config_path_changed, this, _1));
 
   // 初期化シーケンスをデッドロック回避のため少し遅延させて開始

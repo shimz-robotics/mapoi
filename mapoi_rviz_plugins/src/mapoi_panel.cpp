@@ -66,21 +66,21 @@ void MapoiPanel::onInitialize()
   nav2_initialpose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("initialpose", 1);
   nav2_goal_pose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseStamped>("goal_pose", 1);
 
-  mapoi_cancel_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_cancel", 1);
-  mapoi_switch_map_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_switch_map", 1);
-  mapoi_pause_pub_  = node_->create_publisher<std_msgs::msg::String>("mapoi_pause",  1);
-  mapoi_resume_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_resume", 1);
-  mapoi_route_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_route", 1);
-  mapoi_highlight_goal_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_highlight_goal", 1);
-  mapoi_highlight_route_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_highlight_route", 1);
+  mapoi_cancel_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi/nav/cancel", 1);
+  mapoi_switch_map_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi/nav/switch_map", 1);
+  mapoi_pause_pub_  = node_->create_publisher<std_msgs::msg::String>("mapoi/nav/pause",  1);
+  mapoi_resume_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi/nav/resume", 1);
+  mapoi_route_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi/nav/route", 1);
+  mapoi_highlight_goal_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi/highlight/goal", 1);
+  mapoi_highlight_route_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi/highlight/route", 1);
 
   config_path_sub_ = node_->create_subscription<std_msgs::msg::String>(
-      "mapoi_config_path", rclcpp::QoS(1).transient_local(),
+      "mapoi/config_path", rclcpp::QoS(1).transient_local(),
       std::bind(&MapoiPanel::ConfigPathCallback, this, std::placeholders::_1));
 
   // QoS は mapoi_nav_server と同じ transient_local。後起動 panel でも latched 値を受信できる。
   nav_status_sub_ = node_->create_subscription<std_msgs::msg::String>(
-      "mapoi_nav_status", rclcpp::QoS(1).transient_local(),
+      "mapoi/nav/status", rclcpp::QoS(1).transient_local(),
       std::bind(&MapoiPanel::NavStatusCallback, this, std::placeholders::_1));
 
   current_nav_mode_ = "idle";
@@ -110,7 +110,7 @@ void MapoiPanel::MapComboBox()
   std_msgs::msg::String msg;
   msg.data = map_name_list_[index];
   if (mapoi_switch_map_pub_->get_subscription_count() == 0) {
-    RCLCPP_WARN(LOGGER, "mapoi_switch_map has no subscribers; mapoi_nav_server may not be running.");
+    RCLCPP_WARN(LOGGER, "mapoi/nav/switch_map has no subscribers; mapoi_nav_server may not be running.");
   }
   mapoi_switch_map_pub_->publish(msg);
   RCLCPP_INFO(LOGGER, "Published map switch request: %s", msg.data.c_str());

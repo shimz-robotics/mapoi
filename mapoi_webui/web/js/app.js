@@ -511,7 +511,7 @@
   // --- SSE: rviz / 外部 save 由来の config 変更で再 fetch (#135 (B)) ---
   // 初期 load (loadMaps → switchMap → loadPois/Routes/TagDefs) 完了後に setup する
   // (#173 Round 2 high: 初期化前の SSE 受信で reload が前提データ未 load 状態に
-  // なるのを回避)。mapoi_webui_node が mapoi_config_path topic 受信時に push する。
+  // なるのを回避)。mapoi_webui_node が mapoi/config_path topic 受信時に push する。
   // EventSource は browser が自動 reconnect するので最初の setup のみ。
   // 短時間のバースト時は 200ms にまとめて 1 回だけ fetch する debounce (#173 Round 1 medium)。
   let configChangedTimer = null;

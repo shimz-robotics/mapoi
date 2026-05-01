@@ -98,7 +98,7 @@ void PoiEditorPanel::onInitialize()
   LoadTagDefinitions();
 
   config_path_sub_ = node_->create_subscription<std_msgs::msg::String>(
-    "mapoi_config_path", rclcpp::QoS(1).transient_local(),
+    "mapoi/config_path", rclcpp::QoS(1).transient_local(),
     std::bind(&PoiEditorPanel::ConfigPathCallback, this, std::placeholders::_1));
 
   // Display Settings group: mapoi_rviz2_publisher の表示系 parameter を Panel から制御 (#99)
@@ -540,7 +540,7 @@ void PoiEditorPanel::SaveButton()
   // 短い窓 + Save 直後の操作頻度低さから許容。必要なら future PR で member QTimer + cancel
   // pattern に拡張可能。
   ui_->SaveButton->setEnabled(false);
-  // SAVED! の green feedback を 1.5 秒見せる間、外部 (mapoi_config_path 再 publish 由来) からの
+  // SAVED! の green feedback を 1.5 秒見せる間、外部 (mapoi/config_path 再 publish 由来) からの
   // UpdatePoiTable trigger を抑制する。1.5 秒後に rebuild + flag リセットで通常 flow に戻る。
   suppress_config_callback_update_ = true;
   QTimer::singleShot(1500, this, [this]() {

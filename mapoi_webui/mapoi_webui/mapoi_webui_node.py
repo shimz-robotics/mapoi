@@ -150,16 +150,16 @@ class MapoiWebNode(Node):
         self.select_map_client_ = self.create_client(SelectMap, 'select_map')
 
         # Navigation publishers
-        self.goal_poi_pub_ = self.create_publisher(String, 'mapoi_goal_pose_poi', 10)
-        self.route_pub_ = self.create_publisher(String, 'mapoi_route', 10)
-        self.cancel_pub_ = self.create_publisher(String, 'mapoi_cancel', 10)
-        self.pause_pub_  = self.create_publisher(String, 'mapoi_pause',  10)
-        self.resume_pub_ = self.create_publisher(String, 'mapoi_resume', 10)
-        # mapoi_initialpose_poi は #149 round 8 で {map_name, poi_name} 型に変更。
+        self.goal_poi_pub_ = self.create_publisher(String, 'mapoi/nav/goal_pose_poi', 10)
+        self.route_pub_ = self.create_publisher(String, 'mapoi/nav/route', 10)
+        self.cancel_pub_ = self.create_publisher(String, 'mapoi/nav/cancel', 10)
+        self.pause_pub_  = self.create_publisher(String, 'mapoi/nav/pause',  10)
+        self.resume_pub_ = self.create_publisher(String, 'mapoi/nav/resume', 10)
+        # mapoi/initialpose_poi は #149 round 8 で {map_name, poi_name} 型に変更。
         # transient_local QoS で後起動 subscriber (bridge / nav_server) も latched 値を拾える。
         initialpose_poi_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.initialpose_poi_pub_ = self.create_publisher(
-            InitialPoseRequest, 'mapoi_initialpose_poi', initialpose_poi_qos)
+            InitialPoseRequest, 'mapoi/initialpose_poi', initialpose_poi_qos)
 
         # TF for robot pose
         self.tf_buffer_ = tf2_ros.Buffer()
@@ -173,13 +173,13 @@ class MapoiWebNode(Node):
         self.nav_status_target_ = ''
         nav_status_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.nav_status_sub_ = self.create_subscription(
-            String, 'mapoi_nav_status', self.nav_status_callback, nav_status_qos)
+            String, 'mapoi/nav/status', self.nav_status_callback, nav_status_qos)
 
-        # Subscribe to mapoi_config_path for external map switches.
+        # Subscribe to mapoi/config_path for external map switches.
         # transient_local QoS で publisher (mapoi_server) の latched 値を受信する (#135)。
         config_path_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.config_path_sub_ = self.create_subscription(
-            String, 'mapoi_config_path', self.config_path_callback, config_path_qos)
+            String, 'mapoi/config_path', self.config_path_callback, config_path_qos)
 
         # SSE clients (#135 (B)): rviz / 外部 save 由来の config 変更を frontend に push するための
         # client queue 集合。/api/events で接続された client ごとに queue を 1 つ持ち、
@@ -202,7 +202,7 @@ class MapoiWebNode(Node):
         flask_thread.start()
 
     def nav_status_callback(self, msg):
-        """Update navigation status from mapoi_nav_status topic."""
+        """Update navigation status from mapoi/nav/status topic."""
         # Expected format: "status" or "status:target"
         parts = msg.data.split(':', 1)
         self.nav_status_ = parts[0]
@@ -229,7 +229,7 @@ class MapoiWebNode(Node):
             self.robot_pose_ = None
 
     def config_path_callback(self, msg):
-        """Detect external map switches via mapoi_config_path topic + frontend に push (#135 (B))."""
+        """Detect external map switches via mapoi/config_path topic + frontend に push (#135 (B))."""
         # Extract map_name from path: .../maps/<map_name>/mapoi_config.yaml
         path = msg.data
         try:
@@ -586,7 +586,7 @@ class MapoiWebNode(Node):
             msg = String()
             msg.data = data['poi_name']
             _, warning = node.publish_with_subscriber_check(
-                node.goal_poi_pub_, msg, 'mapoi_goal_pose_poi')
+                node.goal_poi_pub_, msg, 'mapoi/nav/goal_pose_poi')
             node.nav_status_ = 'navigating'
             node.nav_status_target_ = data['poi_name']
             node.get_logger().info(f'Nav goal: {data["poi_name"]}')
@@ -600,7 +600,7 @@ class MapoiWebNode(Node):
             msg = String()
             msg.data = data['route_name']
             _, warning = node.publish_with_subscriber_check(
-                node.route_pub_, msg, 'mapoi_route')
+                node.route_pub_, msg, 'mapoi/nav/route')
             node.nav_status_ = 'navigating'
             node.nav_status_target_ = data['route_name']
             node.get_logger().info(f'Nav route: {data["route_name"]}')
@@ -611,7 +611,7 @@ class MapoiWebNode(Node):
             msg = String()
             msg.data = 'cancel'
             _, warning = node.publish_with_subscriber_check(
-                node.cancel_pub_, msg, 'mapoi_cancel')
+                node.cancel_pub_, msg, 'mapoi/nav/cancel')
             node.nav_status_ = 'canceled'
             node.get_logger().info('Nav canceled')
             return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
@@ -621,7 +621,7 @@ class MapoiWebNode(Node):
             msg = String()
             msg.data = 'webui'
             _, warning = node.publish_with_subscriber_check(
-                node.pause_pub_, msg, 'mapoi_pause')
+                node.pause_pub_, msg, 'mapoi/nav/pause')
             node.get_logger().info('Nav pause requested')
             return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
 
@@ -630,7 +630,7 @@ class MapoiWebNode(Node):
             msg = String()
             msg.data = 'webui'
             _, warning = node.publish_with_subscriber_check(
-                node.resume_pub_, msg, 'mapoi_resume')
+                node.resume_pub_, msg, 'mapoi/nav/resume')
             node.get_logger().info('Nav resume requested')
             return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
 
@@ -655,7 +655,7 @@ class MapoiWebNode(Node):
             msg.map_name = node.map_name_
             msg.poi_name = data['poi_name']
             _, warning = node.publish_with_subscriber_check(
-                node.initialpose_poi_pub_, msg, 'mapoi_initialpose_poi')
+                node.initialpose_poi_pub_, msg, 'mapoi/initialpose_poi')
             node.get_logger().info(f'Initial pose: {data["poi_name"]}')
             return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
 

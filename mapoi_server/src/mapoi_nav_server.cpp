@@ -30,43 +30,43 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   // mapoi_server が initial pose POI 名を transient_local で publish する (#144) ので、
   // 後起動でも latched 値を受信できるよう sub も transient_local に揃える。
   mapoi_initialpose_poi_sub_ = this->create_subscription<mapoi_interfaces::msg::InitialPoseRequest>(
-    "mapoi_initialpose_poi", rclcpp::QoS(1).transient_local(),
+    "mapoi/initialpose_poi", rclcpp::QoS(1).transient_local(),
     std::bind(&MapoiNavServer::mapoi_initialpose_poi_cb, this, std::placeholders::_1));
   mapoi_initialpose_poi_pub_ = this->create_publisher<mapoi_interfaces::msg::InitialPoseRequest>(
-    "mapoi_initialpose_poi", rclcpp::QoS(1).transient_local());
+    "mapoi/initialpose_poi", rclcpp::QoS(1).transient_local());
   nav2_initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
     this->get_parameter("initial_pose_topic").as_string(), 1);
 
   // goal_pose subscriber and publisher
   mapoi_goal_pose_poi_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi_goal_pose_poi", 1, std::bind(&MapoiNavServer::mapoi_goal_pose_poi_cb, this, std::placeholders::_1));
+    "mapoi/nav/goal_pose_poi", 1, std::bind(&MapoiNavServer::mapoi_goal_pose_poi_cb, this, std::placeholders::_1));
   nav2_goal_pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("goal_pose", 1);
 
   // route subscriber
   mapoi_route_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi_route", 1, std::bind(&MapoiNavServer::mapoi_route_cb, this, std::placeholders::_1));
+    "mapoi/nav/route", 1, std::bind(&MapoiNavServer::mapoi_route_cb, this, std::placeholders::_1));
 
   // map switch subscriber
   mapoi_switch_map_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi_switch_map", 1, std::bind(&MapoiNavServer::mapoi_switch_map_cb, this, std::placeholders::_1));
+    "mapoi/nav/switch_map", 1, std::bind(&MapoiNavServer::mapoi_switch_map_cb, this, std::placeholders::_1));
 
   // cancel subscriber
   mapoi_cancel_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi_cancel", 1, std::bind(&MapoiNavServer::mapoi_cancel_cb, this, std::placeholders::_1));
+    "mapoi/nav/cancel", 1, std::bind(&MapoiNavServer::mapoi_cancel_cb, this, std::placeholders::_1));
 
   // pause / resume subscribers
   mapoi_pause_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi_pause", 1, std::bind(&MapoiNavServer::mapoi_pause_cb, this, _1));
+    "mapoi/nav/pause", 1, std::bind(&MapoiNavServer::mapoi_pause_cb, this, _1));
   mapoi_resume_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi_resume", 1, std::bind(&MapoiNavServer::mapoi_resume_cb, this, _1));
+    "mapoi/nav/resume", 1, std::bind(&MapoiNavServer::mapoi_resume_cb, this, _1));
 
   this->action_client_ = rclcpp_action::create_client<FollowWaypoints>(this, "follow_waypoints");
   this->nav_to_pose_client_ = rclcpp_action::create_client<NavigateToPose>(this, "navigate_to_pose");
 
   // Nav status publisher
-  // transient_local: 後起動 subscriber でも最後の状態を受信できる (mapoi_config_path と同 pattern)
+  // transient_local: 後起動 subscriber でも最後の状態を受信できる (mapoi/config_path と同 pattern)
   nav_status_pub_ = this->create_publisher<std_msgs::msg::String>(
-    "mapoi_nav_status", rclcpp::QoS(1).transient_local());
+    "mapoi/nav/status", rclcpp::QoS(1).transient_local());
 
   this->pois_info_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
   this->route_client_ = this->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
@@ -91,10 +91,10 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-  poi_event_pub_ = this->create_publisher<mapoi_interfaces::msg::PoiEvent>("mapoi_poi_events", 10);
+  poi_event_pub_ = this->create_publisher<mapoi_interfaces::msg::PoiEvent>("mapoi/events", 10);
 
   config_path_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi_config_path", rclcpp::QoS(1).transient_local(),
+    "mapoi/config_path", rclcpp::QoS(1).transient_local(),
     std::bind(&MapoiNavServer::on_config_path_changed, this, _1));
 
   // cmd_vel subscribe (#140): STOPPED 判定の source の一つ (もう一つは Nav2 SUCCEEDED)。
@@ -306,7 +306,7 @@ void MapoiNavServer::mapoi_switch_map_cb(const std_msgs::msg::String::SharedPtr 
 {
   const std::string map_name = msg->data;
   if (map_name.empty()) {
-    RCLCPP_ERROR(this->get_logger(), "mapoi_switch_map received empty map name.");
+    RCLCPP_ERROR(this->get_logger(), "mapoi/nav/switch_map received empty map name.");
     publish_nav_status("map_switch_failed", "empty_map_name");
     return;
   }
@@ -418,7 +418,7 @@ void MapoiNavServer::publish_initial_poi_request(const std::string & map_name, c
 {
   if (poi_name.empty()) {
     RCLCPP_WARN(this->get_logger(),
-      "No initial pose POI resolved for map '%s'; skipping mapoi_initialpose_poi publish.",
+      "No initial pose POI resolved for map '%s'; skipping mapoi/initialpose_poi publish.",
       map_name.c_str());
     return;
   }
@@ -450,7 +450,7 @@ void MapoiNavServer::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv:
   // start_sequence 経由の初回 fetch では pending_guard_active_ が false で、ここは no-op。
   // fetch 失敗 (result == nullptr) で早期 return した場合も pending を残し、次回 publish で retry する。
   // (#144 で auto_publish_initial_pose は廃止、initial pose は mapoi_server が
-  // mapoi_initialpose_poi topic に publish して mapoi_initialpose_poi_cb 経由で配信する。)
+  // mapoi/initialpose_poi topic に publish して mapoi_initialpose_poi_cb 経由で配信する。)
   if (pending_guard_active_) {
     last_config_path_ = pending_config_path_;
     last_config_mtime_ = pending_config_mtime_;
@@ -523,7 +523,7 @@ void MapoiNavServer::publish_initial_pose(
 
   // subscriber 未 ready の場合のみ async retry を起動 (#149 round 7 high 対応で round 6 を revert)。
   // 「常時 retry」は subscriber visible but not ready 取りこぼし対策には有効だが、運用中
-  // (AMCL fully ready) で `mapoi_initialpose_poi` が来た際に意図しない自己位置 jump を
+  // (AMCL fully ready) で `mapoi/initialpose_poi` が来た際に意図しない自己位置 jump を
   // 引き起こす副作用が大きい。グレーゾーン (起動直後の visible but not ready) は捨て、
   // 「count == 0 のみ retry」=「後起動 path のみ retry」のロバスト性を優先する。
   if (nav2_initialpose_pub_->get_subscription_count() == 0) {
@@ -603,7 +603,7 @@ void MapoiNavServer::initialpose_retry_callback()
   if (initialpose_retry_attempt_ >= max_attempts) {
     RCLCPP_WARN(this->get_logger(),
       "initialpose subscriber not detected after %d retries; giving up "
-      "(user can re-publish via WebUI/RViz/mapoi_initialpose_poi).",
+      "(user can re-publish via WebUI/RViz/mapoi/initialpose_poi).",
       max_attempts);
     initialpose_retry_timer_->cancel();
     initialpose_retry_timer_.reset();
@@ -891,7 +891,7 @@ void MapoiNavServer::mapoi_pause_cb(const std_msgs::msg::String::SharedPtr msg)
   (void)msg;
 
   if (is_paused_) {
-    RCLCPP_WARN(this->get_logger(), "Already paused — ignoring mapoi_pause.");
+    RCLCPP_WARN(this->get_logger(), "Already paused — ignoring mapoi/nav/pause.");
     return;
   }
 
@@ -916,7 +916,7 @@ void MapoiNavServer::mapoi_pause_cb(const std_msgs::msg::String::SharedPtr msg)
     publish_nav_status("paused", current_target_name_);
 
   } else {
-    RCLCPP_WARN(this->get_logger(), "mapoi_pause received but no active navigation.");
+    RCLCPP_WARN(this->get_logger(), "mapoi/nav/pause received but no active navigation.");
   }
 }
 
@@ -925,7 +925,7 @@ void MapoiNavServer::mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg)
   (void)msg;
 
   if (!is_paused_) {
-    RCLCPP_WARN(this->get_logger(), "Not paused — ignoring mapoi_resume.");
+    RCLCPP_WARN(this->get_logger(), "Not paused — ignoring mapoi/nav/resume.");
     return;
   }
   is_paused_ = false;
@@ -999,7 +999,7 @@ void MapoiNavServer::mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg)
     action_client_->async_send_goal(goal_msg, send_goal_options);
 
   } else {
-    RCLCPP_WARN(this->get_logger(), "mapoi_resume: inconsistent state (paused but IDLE).");
+    RCLCPP_WARN(this->get_logger(), "mapoi/nav/resume: inconsistent state (paused but IDLE).");
   }
 }
 
@@ -1033,7 +1033,7 @@ void MapoiNavServer::on_system_tags_received(
   system_tags_loaded_ = true;
   RCLCPP_INFO(this->get_logger(), "Loaded %zu system tags for POI event filtering.", system_tags_.size());
   rebuild_event_pois();
-  // 起動時に POI リストを取得（mapoi_config_path QoS 不一致のフォールバック）
+  // 起動時に POI リストを取得（mapoi/config_path QoS 不一致のフォールバック）
   get_pois_list();
 }
 

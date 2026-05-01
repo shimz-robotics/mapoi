@@ -76,7 +76,7 @@ private:
 
   // subscription
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr config_path_sub_;
-  // mapoi_initialpose_poi (#149 round 7-8 ヘビー high 対応): SelectMap.initial_poi_name 指定時に
+  // mapoi/initialpose_poi (#149 round 7-8 ヘビー high 対応): SelectMap.initial_poi_name 指定時に
   // mapoi_server がここに {map_name, poi_name} を publish するので、bridge も map 一致時に
   // 同じ POI を spawn 位置に採用する。
   rclcpp::Subscription<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr initialpose_poi_sub_;

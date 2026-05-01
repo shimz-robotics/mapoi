@@ -1,4 +1,4 @@
-# #154: reload_map_info で `mapoi_initialpose_poi` topic に skip message
+# #154: reload_map_info で `mapoi/initialpose_poi` topic に skip message
 # (poi_name="") が publish され、transient_local (depth=1) の latched 値が
 # 上書きされることを検証する launch_test。
 #
@@ -94,7 +94,7 @@ class TestReloadClearsInitialpose(unittest.TestCase):
         """
         received = []
         sub = self.node.create_subscription(
-            InitialPoseRequest, 'mapoi_initialpose_poi',
+            InitialPoseRequest, 'mapoi/initialpose_poi',
             lambda msg: received.append(msg),
             _transient_local_qos())
         try:
