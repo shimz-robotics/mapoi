@@ -41,7 +41,7 @@ MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
     "mapoi_highlight_route", 10,
     std::bind(&MapoiRviz2Publisher::on_highlight_route_received, this, _1));
 
-  // mapoi_config_path 変化検出で POI list を再取得 (WebUI / Panel 並び替え保存 / SwitchMap 対応)。
+  // mapoi_config_path 変化検出で POI list を再取得 (WebUI / Panel 並び替え保存 / map switch 対応)。
   // QoS は mapoi_nav_server と同じ transient_local。後起動でも latched 値を受信できる。
   config_path_sub_ = this->create_subscription<std_msgs::msg::String>(
     "mapoi_config_path", rclcpp::QoS(1).transient_local(),
@@ -161,7 +161,7 @@ void MapoiRviz2Publisher::on_routes_info_received(
 void MapoiRviz2Publisher::on_config_path_changed(const std_msgs::msg::String::SharedPtr msg)
 {
   // mapoi_server は config path 文字列を周期 publish (default 5s) する。path だけで dedup すると
-  // SwitchMap (path 変更) は拾えるが、WebUI/Panel Save (path 不変、内容のみ変更) を取りこぼす。
+  // map switch (path 変更) は拾えるが、WebUI/Panel Save (path 不変、内容のみ変更) を取りこぼす。
   // YAML ファイルの mtime も併せて比較し、両 case を検出する。
   const std::string & current_path = msg->data;
   std::filesystem::file_time_type current_mtime{};
@@ -203,7 +203,7 @@ void MapoiRviz2Publisher::on_config_path_changed(const std_msgs::msg::String::Sh
   last_config_path_ = current_path;
   last_config_mtime_ = current_mtime;
   request_pois_list();
-  request_routes_info();  // POI と同様、SwitchMap / Save で route 構成も変わる可能性あり
+  request_routes_info();  // POI と同様、map switch / Save で route 構成も変わる可能性あり
 }
 
 void MapoiRviz2Publisher::on_poi_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future)

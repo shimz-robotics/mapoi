@@ -92,7 +92,7 @@ launch:
     exec: mapoi_rviz2_publisher
     if: $(var with_rviz_publisher)
 
-# Gazebo Classic 連動 (Humble): SwitchMap 時に world_model entity を入れ替え +
+# Gazebo Classic 連動 (Humble): operator map switch 時に world_model entity を入れ替え +
 # ロボットを initial_pose POI 座標に再生成 (Gazebo 本体は無停止)。
 - node:
     pkg: mapoi_server
@@ -103,7 +103,7 @@ launch:
       - {name: robot_sdf_path, value: "$(var robot_sdf_path)"}
     if: $(eval "'$(var simulator)' == 'gazebo'")
 
-# gz-sim 連動 (Jazzy): SwitchMap 時に world_model entity を入れ替え +
+# gz-sim 連動 (Jazzy): operator map switch 時に world_model entity を入れ替え +
 # ロボットを SetEntityPose で initial_pose POI 座標に teleport (gz-sim 本体は無停止)。
 # parameter_bridge で gz native service (gz transport) を ROS 2 service として bridge する。
 - node:

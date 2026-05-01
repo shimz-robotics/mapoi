@@ -24,7 +24,6 @@ void MapoiPanel::onInitialize()
 
   // Create shared service node and persistent clients
   service_node_ = rclcpp::Node::make_shared("mapoi_panel_service_client");
-  switch_map_client_ = service_node_->create_client<mapoi_interfaces::srv::SwitchMap>("switch_map");
   get_pois_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
   get_maps_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetMapsInfo>("get_maps_info");
   get_routes_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetRoutesInfo>("get_routes_info");
@@ -68,6 +67,7 @@ void MapoiPanel::onInitialize()
   nav2_goal_pose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseStamped>("goal_pose", 1);
 
   mapoi_cancel_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_cancel", 1);
+  mapoi_switch_map_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_switch_map", 1);
   mapoi_pause_pub_  = node_->create_publisher<std_msgs::msg::String>("mapoi_pause",  1);
   mapoi_resume_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_resume", 1);
   mapoi_route_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi_route", 1);
@@ -103,21 +103,17 @@ void MapoiPanel::onDisable()
 
 void MapoiPanel::MapComboBox()
 {
-  auto request_sm = std::make_shared<mapoi_interfaces::srv::SwitchMap::Request>();
-  request_sm->map_name = map_name_list_[ui_->MapComboBox->currentIndex()];
-
-  if (!switch_map_client_->wait_for_service(3s)) {
-    RCLCPP_ERROR(LOGGER, "switch_map service not available after 3s timeout.");
+  const int index = ui_->MapComboBox->currentIndex();
+  if (index < 0 || index >= static_cast<int>(map_name_list_.size())) {
     return;
   }
-
-  auto result_sm = switch_map_client_->async_send_request(request_sm);
-  if(rclcpp::spin_until_future_complete(service_node_, result_sm) == rclcpp::FutureReturnCode::SUCCESS)
-  {
-    RCLCPP_INFO(LOGGER, "Success: %d", result_sm.get()->success);
-  }else{
-    RCLCPP_ERROR(LOGGER, "Failed to call service switch_map");
+  std_msgs::msg::String msg;
+  msg.data = map_name_list_[index];
+  if (mapoi_switch_map_pub_->get_subscription_count() == 0) {
+    RCLCPP_WARN(LOGGER, "mapoi_switch_map has no subscribers; mapoi_nav_server may not be running.");
   }
+  mapoi_switch_map_pub_->publish(msg);
+  RCLCPP_INFO(LOGGER, "Published map switch request: %s", msg.data.c_str());
 }
 
 void MapoiPanel::Nav2GoalComboBox()
@@ -405,6 +401,20 @@ void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
       ui_->NavStatusLabel->setText(
           target.empty() ? QString::fromStdString("一時停止中")
                          : QString::fromStdString("一時停止中: " + target));
+    } else if (status == "map_switching") {
+      ui_->NavStatusLabel->setText(
+          target.empty() ? QString::fromStdString("地図切替中")
+                         : QString::fromStdString("地図切替中: " + target));
+    } else if (status == "map_switch_succeeded") {
+      current_nav_mode_ = "idle";
+      ui_->NavStatusLabel->setText(
+          target.empty() ? QString::fromStdString("地図切替完了")
+                         : QString::fromStdString("地図切替完了: " + target));
+    } else if (status == "map_switch_failed") {
+      current_nav_mode_ = "idle";
+      ui_->NavStatusLabel->setText(
+          target.empty() ? QString::fromStdString("地図切替失敗")
+                         : QString::fromStdString("地図切替失敗: " + target));
     }
   }, Qt::QueuedConnection);
 }

@@ -14,7 +14,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
-from mapoi_interfaces.srv import GetMapsInfo, GetTagDefinitions
+from mapoi_interfaces.srv import GetMapsInfo, GetTagDefinitions, SelectMap
 from mapoi_interfaces.msg import InitialPoseRequest
 import tf2_ros
 
@@ -147,6 +147,7 @@ class MapoiWebNode(Node):
         self.reload_client_ = self.create_client(Trigger, 'reload_map_info')
         self.get_maps_client_ = self.create_client(GetMapsInfo, 'get_maps_info')
         self.tag_defs_client_ = self.create_client(GetTagDefinitions, 'get_tag_definitions')
+        self.select_map_client_ = self.create_client(SelectMap, 'select_map')
 
         # Navigation publishers
         self.goal_poi_pub_ = self.create_publisher(String, 'mapoi_goal_pose_poi', 10)
@@ -442,6 +443,30 @@ class MapoiWebNode(Node):
                 'origin': meta['origin'],
                 'width': meta['width'],
                 'height': meta['height'],
+            })
+
+        @app.route('/api/maps/select', methods=['POST'])
+        def api_select_map():
+            data = request.get_json()
+            if not data or 'map_name' not in data:
+                return jsonify({'error': 'map_name required'}), 400
+            map_name = str(data['map_name']).strip()
+            if not map_name:
+                return jsonify({'error': 'map_name required'}), 400
+            req = SelectMap.Request()
+            req.map_name = map_name
+            response = node._call_service_sync(
+                node.select_map_client_, req, 'select_map', timeout_sec=3.0)
+            if response is None:
+                return jsonify({'error': 'select_map service unavailable or timed out'}), 503
+            if not response.success:
+                return jsonify({'error': response.error_message or 'select_map failed'}), 400
+            node.map_name_ = map_name
+            return jsonify({
+                'success': True,
+                'map_name': map_name,
+                'config_path': response.config_path,
+                'initial_poi_name': response.initial_poi_name,
             })
 
         @app.route('/api/pois')

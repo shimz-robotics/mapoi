@@ -1,0 +1,9 @@
+map:
+  - {node_name: /missing_map_server, map_file: map_a.yaml}
+
+poi:
+  - name: a_start
+    pose: {x: 0.0, y: 0.0, yaw: 0.0}
+    tolerance: {xy: 0.5, yaw: 0.785}
+    tags: [waypoint]
+    description: "map a start"

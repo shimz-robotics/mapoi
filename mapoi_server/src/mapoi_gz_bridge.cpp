@@ -1,4 +1,4 @@
-// mapoi_gz_bridge: SwitchMap 時に gz-sim (ros_gz_interfaces) の entity を入れ替える。
+// mapoi_gz_bridge: operator map switch 時に gz-sim (ros_gz_interfaces) の entity を入れ替える。
 //
 // mapoi_config_path topic を購読し、map_name 変化を検知すると:
 // - 旧マップの world_model entity を /world/<init_world>/remove で削除
@@ -71,7 +71,7 @@ MapoiGzBridge::MapoiGzBridge()
     "mapoi_config_path", sub_qos,
     std::bind(&MapoiGzBridge::on_config_path, this, _1),
     sub_opts);
-  // mapoi_initialpose_poi (transient_local) を subscribe して、SwitchMap.initial_poi_name
+  // mapoi_initialpose_poi (transient_local) を subscribe して、SelectMap.initial_poi_name
   // 指定時に bridge も同じ POI を spawn 位置に採用する (#149 round 7 ヘビー high 対応)。
   initialpose_poi_sub_ = this->create_subscription<mapoi_interfaces::msg::InitialPoseRequest>(
     "mapoi_initialpose_poi", sub_qos,
@@ -228,7 +228,7 @@ ConfigLoadStatus MapoiGzBridge::load_gazebo_info(
       out.world_model.name = wm["name"] ? wm["name"].as<std::string>() : "";
       out.has_gazebo = !out.world_model.uri.empty();
     }
-    // initial pose は (1) latched mapoi_initialpose_poi (= SwitchMap.initial_poi_name 指定) があれば
+    // initial pose は (1) latched mapoi_initialpose_poi (= SelectMap.initial_poi_name 指定) があれば
     // それを優先、(2) なければ POI list 先頭 (landmark 除外、pose 妥当性 check) を採用。選定 logic は
     // `mapoi::select_initial_poi_name` で共通化 (#144 / #149 round 7 ヘビー high / #150)。
     // 注: map_name による世代検証は #149 round 10 で取り下げ (#174 で publisher 側 latched 上書きに移行)。

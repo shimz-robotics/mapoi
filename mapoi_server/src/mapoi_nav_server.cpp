@@ -32,6 +32,8 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   mapoi_initialpose_poi_sub_ = this->create_subscription<mapoi_interfaces::msg::InitialPoseRequest>(
     "mapoi_initialpose_poi", rclcpp::QoS(1).transient_local(),
     std::bind(&MapoiNavServer::mapoi_initialpose_poi_cb, this, std::placeholders::_1));
+  mapoi_initialpose_poi_pub_ = this->create_publisher<mapoi_interfaces::msg::InitialPoseRequest>(
+    "mapoi_initialpose_poi", rclcpp::QoS(1).transient_local());
   nav2_initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
     this->get_parameter("initial_pose_topic").as_string(), 1);
 
@@ -43,6 +45,10 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   // route subscriber
   mapoi_route_sub_ = this->create_subscription<std_msgs::msg::String>(
     "mapoi_route", 1, std::bind(&MapoiNavServer::mapoi_route_cb, this, std::placeholders::_1));
+
+  // map switch subscriber
+  mapoi_switch_map_sub_ = this->create_subscription<std_msgs::msg::String>(
+    "mapoi_switch_map", 1, std::bind(&MapoiNavServer::mapoi_switch_map_cb, this, std::placeholders::_1));
 
   // cancel subscriber
   mapoi_cancel_sub_ = this->create_subscription<std_msgs::msg::String>(
@@ -64,6 +70,7 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
 
   this->pois_info_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
   this->route_client_ = this->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
+  this->select_map_client_ = this->create_client<mapoi_interfaces::srv::SelectMap>("select_map");
 
   // --- POI radius event detection ---
   this->declare_parameter<double>("tolerance_check_hz", 5.0);
@@ -132,7 +139,7 @@ void MapoiNavServer::mapoi_initialpose_poi_cb(
     return;
   }
   // 注: map_name 世代検証は #149 round 10 で取り下げ (#155 で改めて検討)。
-  //   round 9 で「current map と不一致なら無視」とした実装は、SwitchMap 中に
+  //   round 9 で「current map と不一致なら無視」とした実装は、map switch 中に
   //   InitialPoseRequest が config_path より先に到着する正当ケースを「stale」と
   //   誤判定して捨てる regression を生むため。pending 戦略 (mismatch を保持して
   //   後で再評価) が必要だが scope が大きいので別 PR に分離する。
@@ -293,6 +300,135 @@ void MapoiNavServer::mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg)
       rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future) {
         this->on_route_received(route_name, future);
     });
+}
+
+void MapoiNavServer::mapoi_switch_map_cb(const std_msgs::msg::String::SharedPtr msg)
+{
+  const std::string map_name = msg->data;
+  if (map_name.empty()) {
+    RCLCPP_ERROR(this->get_logger(), "mapoi_switch_map received empty map name.");
+    publish_nav_status("map_switch_failed", "empty_map_name");
+    return;
+  }
+  RCLCPP_INFO(this->get_logger(), "Received map switch request: %s", map_name.c_str());
+
+  if (current_goal_handle_) {
+    action_client_->async_cancel_goal(current_goal_handle_);
+    current_goal_handle_.reset();
+  }
+  if (current_ntp_goal_handle_) {
+    nav_to_pose_client_->async_cancel_goal(current_ntp_goal_handle_);
+    current_ntp_goal_handle_.reset();
+  }
+  reset_nav_state();
+  ++nav_attempt_generation_;
+
+  if (!this->select_map_client_->wait_for_service(2s)) {
+    RCLCPP_ERROR(this->get_logger(), "select_map service not available");
+    publish_nav_status("map_switch_failed", map_name);
+    return;
+  }
+
+  publish_nav_status("map_switching", map_name);
+  auto request = std::make_shared<mapoi_interfaces::srv::SelectMap::Request>();
+  request->map_name = map_name;
+  select_map_client_->async_send_request(
+    request,
+    [this, map_name](rclcpp::Client<mapoi_interfaces::srv::SelectMap>::SharedFuture future) {
+      this->on_select_map_received(map_name, future);
+    });
+}
+
+void MapoiNavServer::on_select_map_received(
+  std::string map_name,
+  rclcpp::Client<mapoi_interfaces::srv::SelectMap>::SharedFuture future)
+{
+  auto result = future.get();
+  if (!result) {
+    RCLCPP_ERROR(this->get_logger(), "select_map returned no response for '%s'.", map_name.c_str());
+    publish_nav_status("map_switch_failed", map_name);
+    return;
+  }
+  if (!result->success) {
+    RCLCPP_ERROR(this->get_logger(),
+      "select_map failed for '%s': %s", map_name.c_str(), result->error_message.c_str());
+    publish_nav_status("map_switch_failed", map_name);
+    return;
+  }
+  if (result->nav2_node_names.size() != result->nav2_map_urls.size()) {
+    RCLCPP_ERROR(this->get_logger(),
+      "select_map returned mismatched Nav2 map lists for '%s' (%zu node names, %zu URLs).",
+      map_name.c_str(), result->nav2_node_names.size(), result->nav2_map_urls.size());
+    publish_nav_status("map_switch_failed", map_name);
+    return;
+  }
+  if (result->nav2_node_names.empty()) {
+    RCLCPP_ERROR(this->get_logger(),
+      "select_map returned no Nav2 map entries for '%s'. Operator map switch requires map entries.",
+      map_name.c_str());
+    publish_nav_status("map_switch_failed", map_name);
+    return;
+  }
+
+  for (size_t i = 0; i < result->nav2_node_names.size(); ++i) {
+    const auto & node_name = result->nav2_node_names[i];
+    const auto & map_url = result->nav2_map_urls[i];
+    if (!send_load_map_request(node_name, map_url)) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to load Nav2 map '%s' via '%s'.",
+        map_url.c_str(), node_name.c_str());
+      publish_nav_status("map_switch_failed", map_name);
+      return;
+    }
+    RCLCPP_INFO(this->get_logger(), "Loaded Nav2 map '%s' via '%s'.",
+      map_url.c_str(), node_name.c_str());
+  }
+
+  publish_initial_poi_request(map_name, result->initial_poi_name);
+  publish_nav_status("map_switch_succeeded", map_name);
+  RCLCPP_INFO(this->get_logger(), "Map switch completed: %s", map_name.c_str());
+}
+
+bool MapoiNavServer::send_load_map_request(const std::string & server_name, const std::string & map_file)
+{
+  auto node = rclcpp::Node::make_shared("mapoi_load_map_client");
+  auto load_map_client = node->create_client<nav2_msgs::srv::LoadMap>(server_name + "/load_map");
+  auto req = std::make_shared<nav2_msgs::srv::LoadMap::Request>();
+  req->map_url = map_file;
+
+  if (!load_map_client->wait_for_service(10s)) {
+    RCLCPP_ERROR(this->get_logger(), "%s/load_map service is not available.", server_name.c_str());
+    return false;
+  }
+  auto future = load_map_client->async_send_request(req);
+  if (rclcpp::spin_until_future_complete(node, future, 1s) != rclcpp::FutureReturnCode::SUCCESS) {
+    RCLCPP_ERROR(this->get_logger(), "%s/load_map did not return.", server_name.c_str());
+    return false;
+  }
+  auto response = future.get();
+  if (!response || response->result != nav2_msgs::srv::LoadMap::Response::RESULT_SUCCESS) {
+    const uint8_t result_code = response ? response->result : 0;
+    RCLCPP_ERROR(this->get_logger(),
+      "%s/load_map rejected '%s' (result=%u).", server_name.c_str(), map_file.c_str(), result_code);
+    return false;
+  }
+  return true;
+}
+
+void MapoiNavServer::publish_initial_poi_request(const std::string & map_name, const std::string & poi_name)
+{
+  if (poi_name.empty()) {
+    RCLCPP_WARN(this->get_logger(),
+      "No initial pose POI resolved for map '%s'; skipping mapoi_initialpose_poi publish.",
+      map_name.c_str());
+    return;
+  }
+  auto msg = mapoi_interfaces::msg::InitialPoseRequest();
+  msg.map_name = map_name;
+  msg.poi_name = poi_name;
+  mapoi_initialpose_poi_pub_->publish(msg);
+  RCLCPP_INFO(this->get_logger(),
+    "Published initial pose POI '%s' for switched map '%s'.",
+    poi_name.c_str(), map_name.c_str());
 }
 
 void MapoiNavServer::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future)
@@ -904,7 +1040,7 @@ void MapoiNavServer::on_system_tags_received(
 void MapoiNavServer::on_config_path_changed(const std_msgs::msg::String::SharedPtr msg)
 {
   // mapoi_server は config path 文字列を周期 publish (default 5s) する。path だけで dedup すると
-  // SwitchMap (path 変更) は拾えるが、WebUI/Panel Save (path 不変、内容のみ変更) を取りこぼし、
+  // map switch (path 変更) は拾えるが、WebUI/Panel Save (path 不変、内容のみ変更) を取りこぼし、
   // event_pois_ が古いまま radius event 監視が外れる。YAML mtime も併せて比較する (PR #78 と同 pattern)。
   const std::string & current_path = msg->data;
   std::filesystem::file_time_type current_mtime{};

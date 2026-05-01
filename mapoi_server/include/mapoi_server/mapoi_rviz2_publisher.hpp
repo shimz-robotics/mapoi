@@ -92,7 +92,7 @@ private:
 
   // Config path + mtime guard。
   // path だけ覚えると周期 publish に対して常に skip する一方、WebUI/Panel Save (内容のみ変更で path 不変)
-  // も skip してしまう。mtime も併せて見ることで SwitchMap (path 変更) と Save (mtime 変更) の両方を検出。
+  // も skip してしまう。mtime も併せて見ることで map switch (path 変更) と Save (mtime 変更) の両方を検出。
   // single-thread executor 前提で書き込みは callback context のみ。MultiThreadedExecutor 移行時は mutex が必要。
   std::string last_config_path_;
   std::filesystem::file_time_type last_config_mtime_{};

@@ -42,14 +42,20 @@ POI tolerance.xy 半径への侵入・退出 / 停止 / 再開イベントを表
 
 ## サービス (srv)
 
-### SwitchMap.srv
+### SelectMap.srv
 
-地図を切り替えるサービスです。
+現在の地図 context を切り替える Nav2-free サービスです。Operator mode の地図切替は `/mapoi_switch_map` topic で指示し、`mapoi_nav_server` がこの service を呼んだ後に Nav2 `LoadMap` を実行します。
 
 | 方向 | フィールド | 型 | 説明 |
 | --- | --- | --- | --- |
-| Request | `map_name` | `string` | 切り替え先の地図名 |
-| Response | `success` | `bool` | 切り替え成功の有無 |
+| Request | `map_name` | `string` | 選択する地図名 |
+| Request | `initial_poi_name` | `string` | 初期姿勢に使う POI 名。空なら先頭の有効 POI |
+| Response | `success` | `bool` | context 選択成功の有無 |
+| Response | `error_message` | `string` | 失敗時の理由 |
+| Response | `config_path` | `string` | 選択後の設定ファイル path |
+| Response | `initial_poi_name` | `string` | 解決済み初期姿勢 POI 名 |
+| Response | `nav2_node_names` | `string[]` | Nav2 map server node 名 |
+| Response | `nav2_map_urls` | `string[]` | 対応する map YAML path |
 
 ### GetMapsInfo.srv
 

@@ -11,7 +11,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <std_msgs/msg/string.hpp>
-#include <nav2_msgs/srv/load_map.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
 #include "mapoi_interfaces/srv/get_pois_info.hpp"
@@ -20,7 +19,7 @@
 #include "mapoi_interfaces/msg/initial_pose_request.hpp"
 #include "mapoi_interfaces/srv/get_maps_info.hpp"
 #include "mapoi_interfaces/srv/get_routes_info.hpp"
-#include "mapoi_interfaces/srv/switch_map.hpp"
+#include "mapoi_interfaces/srv/select_map.hpp"
 #include "mapoi_interfaces/srv/get_tag_definitions.hpp"
 #include "mapoi_interfaces/msg/tag_definition.hpp"
 
@@ -46,13 +45,14 @@ private:
   rclcpp::Publisher<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr initialpose_poi_publisher_;
 
   // initial pose 用の POI 名 publish (#144)。compute_initial_poi_name は class-level public static。
+  std::string resolve_initial_poi_name(const std::string & requested_name);
   void publish_initial_poi_name(const std::string & requested_name);
   // transient_local の latched 値を「採用候補なし」を示す skip message (poi_name 空) で
   // 上書きする (#154)。reload で呼び、reload 直前の古い POI 名が late subscriber に
   // 配信される問題を防ぐ。
   void publish_initialpose_clear();
 
-  // mapoi_config_path topic の publish (transient_local QoS で latched)。起動時 / SwitchMap /
+  // mapoi_config_path topic の publish (transient_local QoS で latched)。起動時 / select_map /
   // reload_map_info で呼ぶ。定期 publish は subscriber を transient_local に揃えて廃止 (#135)。
   void publish_config_path();
 
@@ -75,7 +75,7 @@ private:
   rclcpp::Service<mapoi_interfaces::srv::GetRoutePois>::SharedPtr get_route_pois_service_;
   rclcpp::Service<mapoi_interfaces::srv::GetMapsInfo>::SharedPtr get_maps_info_service_;
   rclcpp::Service<mapoi_interfaces::srv::GetRoutesInfo>::SharedPtr get_routes_info_service_;
-  rclcpp::Service<mapoi_interfaces::srv::SwitchMap>::SharedPtr switch_map_service_;
+  rclcpp::Service<mapoi_interfaces::srv::SelectMap>::SharedPtr select_map_service_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reload_map_info_service_;
   rclcpp::Service<mapoi_interfaces::srv::GetTagDefinitions>::SharedPtr get_tag_definitions_srv_;
 
@@ -92,20 +92,14 @@ private:
   void get_routes_info_service(
     const std::shared_ptr<mapoi_interfaces::srv::GetRoutesInfo::Request> request,
     std::shared_ptr<mapoi_interfaces::srv::GetRoutesInfo::Response> response);
-  void switch_map_service(
-    const std::shared_ptr<mapoi_interfaces::srv::SwitchMap::Request> request,
-    std::shared_ptr<mapoi_interfaces::srv::SwitchMap::Response> response);
+  void select_map_service(
+    const std::shared_ptr<mapoi_interfaces::srv::SelectMap::Request> request,
+    std::shared_ptr<mapoi_interfaces::srv::SelectMap::Response> response);
   void reload_map_info_service(
     const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
     std::shared_ptr<std_srvs::srv::Trigger::Response> response);
   void get_tag_definitions_service(
     const std::shared_ptr<mapoi_interfaces::srv::GetTagDefinitions::Request> request,
     std::shared_ptr<mapoi_interfaces::srv::GetTagDefinitions::Response> response);
-
-  // helper functions
-  bool send_load_map_request(
-    rclcpp::Node::SharedPtr node,
-    const std::string& server_name,
-    const std::string& map_file);
 
 };

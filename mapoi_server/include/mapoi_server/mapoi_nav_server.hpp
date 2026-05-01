@@ -21,6 +21,7 @@
 #include <geometry_msgs/msg/twist.hpp>
 #include <nav2_msgs/action/follow_waypoints.hpp>
 #include <nav2_msgs/action/navigate_to_pose.hpp>
+#include <nav2_msgs/srv/load_map.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
@@ -29,6 +30,7 @@
 
 #include "mapoi_interfaces/srv/get_pois_info.hpp"
 #include "mapoi_interfaces/srv/get_route_pois.hpp"
+#include "mapoi_interfaces/srv/select_map.hpp"
 #include "mapoi_interfaces/srv/get_tag_definitions.hpp"
 #include "mapoi_interfaces/msg/point_of_interest.hpp"
 #include "mapoi_interfaces/msg/poi_event.hpp"
@@ -55,6 +57,7 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr nav2_goal_pose_pub_;
 
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_route_sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_switch_map_sub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_cancel_sub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_pause_sub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_resume_sub_;
@@ -62,12 +65,16 @@ private:
   void mapoi_initialpose_poi_cb(const mapoi_interfaces::msg::InitialPoseRequest::SharedPtr msg);
   void mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedPtr msg);
   void mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg);
+  void mapoi_switch_map_cb(const std_msgs::msg::String::SharedPtr msg);
   void mapoi_cancel_cb(const std_msgs::msg::String::SharedPtr msg);
   void mapoi_pause_cb(const std_msgs::msg::String::SharedPtr msg);
   void mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg);
 
   // Service Callbacks
   void on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future);
+  void on_select_map_received(
+    std::string map_name,
+    rclcpp::Client<mapoi_interfaces::srv::SelectMap>::SharedFuture future);
   // route_name は #104 で current_target_name_ を action send 直前に更新するために
   // mapoi_route_cb から bind 経由で渡す。リクエスト時点で代入すると concurrent
   // request で active nav の target が汚染されるため、実際の send_goal 直前まで
@@ -107,6 +114,7 @@ private:
   GoalHandleNavigateToPose::SharedPtr current_ntp_goal_handle_;
   rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr pois_info_client_;
   rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedPtr route_client_;
+  rclcpp::Client<mapoi_interfaces::srv::SelectMap>::SharedPtr select_map_client_;
 
   // --- Pause / Resume state ---
   NavMode nav_mode_ = NavMode::IDLE;
@@ -138,6 +146,9 @@ private:
   // payload は target 空なら "status"、target 有りなら "status:target" を送る (#104)。
   // subscriber 側 (mapoi_panel / mapoi_webui_node) は : split で target を復元する。
   void publish_nav_status(const std::string & status, const std::string & target = "");
+  bool send_load_map_request(const std::string & server_name, const std::string & map_file);
+  void publish_initial_poi_request(const std::string & map_name, const std::string & poi_name);
+  rclcpp::Publisher<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr mapoi_initialpose_poi_pub_;
 
   // 現在 nav の target POI 名 / route 名。Acceptance 時 (goal_response_callback /
   // ntp_goal_response_callback) に更新され、pause / resume が active nav の target
