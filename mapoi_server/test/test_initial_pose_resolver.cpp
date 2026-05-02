@@ -1,15 +1,10 @@
 // initial pose 選定純関数 (mapoi::select_initial_poi_name) の unit test
 // (#149 round 4 high で導入、#150 で共通ヘッダに移行)。
 // rclcpp::Node の生成は不要 (= 純関数を直接叩ける)。
-//
-// system tag 契約 (mapoi::kSystemTags) の固定検証も同居 (#191)。
-#include <cstring>
-
 #include <gtest/gtest.h>
 #include <yaml-cpp/yaml.h>
 
 #include "mapoi_server/initial_pose_resolver.hpp"
-#include "mapoi_server/system_tags.hpp"
 
 using mapoi::select_initial_poi_name;
 
@@ -132,28 +127,4 @@ poi:
   - {name: lm2, pose: {x: 2.0, y: 0.0, yaw: 0.0}, tags: [landmark]}
 )");
   EXPECT_EQ(select_initial_poi_name(pois, ""), "");
-}
-
-// system tag 契約は mapoi_webui / mapoi_rviz_plugins / 既存 mapoi_config.yaml が
-// `waypoint` / `landmark` / `pause` の存在前提で書かれているため、kSystemTags の
-// 件数 / 順序 / name / description (空でないこと) を固定検証する (#191 medium #2)。
-// ここで失敗するなら get_tag_definitions service の応答契約が変わっており、
-// 受信側 (webui の編集 UI、rviz plugin、custom_tags 排他検査) が破綻する可能性がある。
-TEST(SystemTagsContract, ExpectedNamesAndOrder)
-{
-  using mapoi::kSystemTags;
-  ASSERT_EQ(kSystemTags.size(), 3u);
-  EXPECT_STREQ(kSystemTags[0].name, "waypoint");
-  EXPECT_STREQ(kSystemTags[1].name, "landmark");
-  EXPECT_STREQ(kSystemTags[2].name, "pause");
-}
-
-TEST(SystemTagsContract, DescriptionsAreNonEmpty)
-{
-  for (const auto & tag : mapoi::kSystemTags) {
-    ASSERT_NE(tag.name, nullptr);
-    ASSERT_NE(tag.description, nullptr);
-    EXPECT_GT(std::strlen(tag.description), 0u)
-      << "system tag '" << tag.name << "' description is empty";
-  }
 }

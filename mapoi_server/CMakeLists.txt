@@ -94,14 +94,11 @@ if(BUILD_TESTING)
   # PRIVATE 化は CMake が「all-keyword or all-plain」混在を error にするため不可。
   target_link_libraries(test_initial_pose_resolver ${_mapoi_yaml_cpp_target})
 
-  # System tag 定義は mapoi_server/maps/tag_definitions.yaml を source of truth とする。
-  # WebUI 側にも同 YAML との contract test を置き、言語横断の tag drift を検出する (#193)。
+  # System tag 定義は mapoi_server/system_tags.hpp を source of truth とする。
+  # WebUI 側にも同 header との contract test を置き、言語横断の tag drift を検出する (#193)。
   ament_auto_add_gtest(test_system_tags_contract
     test/test_system_tags_contract.cpp
   )
-  target_compile_definitions(test_system_tags_contract PRIVATE
-    MAPOI_SERVER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-  target_link_libraries(test_system_tags_contract ${_mapoi_yaml_cpp_target})
 
   # Level 2: launch_testing integration tests
   add_launch_test(

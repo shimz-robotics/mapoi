@@ -1,31 +1,20 @@
 #include <gtest/gtest.h>
-#include <yaml-cpp/yaml.h>
 
-#include <filesystem>
+#include <cstring>
 #include <set>
 #include <string>
 #include <vector>
 
-#ifndef MAPOI_SERVER_SOURCE_DIR
-#error "MAPOI_SERVER_SOURCE_DIR must be defined by CMake"
-#endif
+#include "mapoi_server/system_tags.hpp"
 
 namespace
 {
 
-YAML::Node load_tag_definitions()
-{
-  const auto path =
-    std::filesystem::path(MAPOI_SERVER_SOURCE_DIR) / "maps" / "tag_definitions.yaml";
-  return YAML::LoadFile(path.string());
-}
-
 std::vector<std::string> load_system_tag_names()
 {
-  const auto root = load_tag_definitions();
   std::vector<std::string> names;
-  for (const auto & tag : root["tags"]) {
-    names.push_back(tag["name"].as<std::string>());
+  for (const auto & tag : mapoi::kSystemTags) {
+    names.push_back(tag.name);
   }
   return names;
 }
@@ -51,14 +40,10 @@ TEST(SystemTagsContract, NamesAreUniqueAndNonEmpty)
 
 TEST(SystemTagsContract, DescriptionsArePresent)
 {
-  const auto root = load_tag_definitions();
-  ASSERT_TRUE(root["tags"]);
-  ASSERT_TRUE(root["tags"].IsSequence());
-
-  for (const auto & tag : root["tags"]) {
-    ASSERT_TRUE(tag["name"]);
-    EXPECT_TRUE(tag["description"]);
-    EXPECT_FALSE(tag["description"].as<std::string>("").empty())
-      << tag["name"].as<std::string>();
+  for (const auto & tag : mapoi::kSystemTags) {
+    ASSERT_NE(tag.name, nullptr);
+    ASSERT_NE(tag.description, nullptr);
+    EXPECT_GT(std::strlen(tag.description), 0u)
+      << "system tag '" << tag.name << "' description is empty";
   }
 }
