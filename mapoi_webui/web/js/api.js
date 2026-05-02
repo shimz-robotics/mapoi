@@ -25,6 +25,15 @@ const MapoiApi = {
     return res.json();
   },
 
+  async navSwitchMap(mapName) {
+    const res = await fetch('/api/nav/switch-map', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ map_name: mapName }),
+    });
+    return res.json();
+  },
+
   async getPois() {
     const res = await fetch('/api/pois');
     return res.json();
@@ -111,6 +120,11 @@ const MapoiApi = {
 
   async navStatus() {
     const res = await fetch('/api/nav/status');
+    return res.json();
+  },
+
+  async mode() {
+    const res = await fetch('/api/mode');
     return res.json();
   },
 };

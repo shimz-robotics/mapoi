@@ -10,6 +10,8 @@ mapoi の Web UI パッケージです。
 - **POI 編集**: POI の追加・編集・削除・保存（mapoi_server に自動リロード通知）
 - **ルート表示**: ルートのポリライン表示、矢印マーカー、表示/非表示の切り替え
 - **ナビゲーション操作**: POI へのゴール走行、ルート走行、一時停止・再開、停止
+- **スマホ表示**: Navigation を優先して開き、地図は画面の半分程度を確保
+- **ナビゲーション backend 検出**: command topic の subscriber 数から navigation 機能の有効/無効を UI に表示
 - **自己位置推定リセット**: POI 選択による Initial Pose の設定
 - **ロボット位置表示**: TF (`map` → `base_link`) によるリアルタイムのロボット位置マーカー表示
 - **タグシステム**: システムタグ・ユーザータグの表示、タグによる POI 色分け
@@ -42,6 +44,7 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 | `mapoi/nav/pause` | `std_msgs/String` | ナビゲーションの一時停止 |
 | `mapoi/nav/resume` | `std_msgs/String` | ナビゲーションの再開 |
 | `mapoi/nav/cancel` | `std_msgs/String` | ナビゲーションのキャンセル |
+| `mapoi/nav/switch_map` | `std_msgs/String` | Navigation map switch 指示。`mapoi_nav_server` 等の navigation backend が受信して地図切り替えを実行 |
 | `mapoi/initialpose_poi` | `mapoi_interfaces/InitialPoseRequest` | 初期位置に採用する POI 名 (`{map_name, poi_name}`)、transient_local QoS |
 
 #### サブスクライバー
@@ -75,6 +78,8 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 | POST | `/api/nav/resume` | ナビゲーションの再開 |
 | POST | `/api/nav/cancel` | ナビゲーションの停止 |
 | POST | `/api/nav/initialpose` | 自己位置推定のリセット |
+| POST | `/api/nav/switch-map` | Navigation map switch。`mapoi/nav/switch_map` に map 名を publish |
+| GET | `/api/mode` | navigation 機能の検出結果 (`navigation_available`, topic subscriber 数) |
 
 ## 起動方法 (3 つのシナリオ)
 
@@ -111,12 +116,14 @@ ros2 launch mapoi_webui mapoi_editor.launch.yaml maps_path:=/path/to/maps map_na
 | `POST /api/pois` `/api/routes` `/api/custom_tags` | **必要** | YAML 書き込み後に `reload_map_info` service を呼ぶ |
 | `GET /api/tag_definitions` | **必要** | `get_tag_definitions` service 経由 |
 | `POST /api/nav/{goal,route,cancel,pause,resume,initialpose}` | **必要 (mapoi_nav_server)** | publisher → nav_server が listener、subscriber 0 件なら warning を返す |
+| `POST /api/nav/switch-map` | **必要 (mapoi_nav_server 等)** | `mapoi/nav/switch_map` publisher → navigation backend が listener、subscriber 0 件なら warning を返す |
 | `GET /api/nav/status` | 不要 (subscriber 経由で受信値返却) | nav_server がいなければ default 値 |
+| `GET /api/mode` | 不要 | command topic の subscriber 数から best-effort で検出 |
 
 server / nav_server 不在時の挙動 (endpoint カテゴリ別):
 - `GET /api/tag_definitions`: `503 Service Unavailable` (service 必須、unavailable / timeout 時)
 - `POST /api/pois` / `/api/routes` / `/api/custom_tags`: `200 OK` + `warning` フィールド (YAML 書き込み自体は成功するため、`reload_map_info` の unavailable / timeout / failure は warning として通知)
-- `POST /api/nav/{goal,route,cancel,pause,resume,initialpose}`: `200 OK` + `warning` フィールド (publish 自体は成功扱い、subscriber 不在を best-effort で検出して通知)
+- `POST /api/nav/{goal,route,cancel,pause,resume,initialpose}` / `/api/nav/switch-map`: `200 OK` + `warning` フィールド (publish 自体は成功扱い、subscriber 不在を best-effort で検出して通知)
 
 ## 開発者規約
 

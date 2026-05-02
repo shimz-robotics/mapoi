@@ -8,12 +8,18 @@
   const routeEditor = new RouteEditor();
 
   const mapSelect = document.getElementById('map-select');
+  const navigationMapSelect = document.getElementById('navigation-map-select');
   const navGoalSelect = document.getElementById('nav-goal-select');
   const navRouteSelect = document.getElementById('nav-route-select');
   const navInitialPoseSelect = document.getElementById('nav-initialpose-select');
   const navStatusDot = document.getElementById('nav-status-dot');
   const navStatusText = document.getElementById('nav-status-text');
+  const navigationAvailability = document.getElementById('navigation-availability');
+  const navigationAvailabilityText = document.getElementById('navigation-availability-text');
+  const navigationWarning = document.getElementById('navigation-warning');
+  const compactMediaQuery = window.matchMedia('(max-width: 768px)');
   let currentMap = '';
+  let currentNavigationCapabilities = null;
 
   // --- Tag editor state ---
   let tagDirty = false;
@@ -93,18 +99,27 @@
   });
 
   // --- Load maps list ---
-  async function loadMaps() {
-    const data = await MapoiApi.getMaps();
-    mapSelect.innerHTML = '';
-    data.maps.forEach((name) => {
+  function populateMapSelect(selectEl, maps, selectedMap) {
+    if (!selectEl) return;
+    selectEl.innerHTML = '';
+    maps.forEach((name) => {
       const opt = document.createElement('option');
       opt.value = name;
       opt.textContent = name;
-      if (name === data.current_map) opt.selected = true;
-      mapSelect.appendChild(opt);
+      if (name === selectedMap) opt.selected = true;
+      selectEl.appendChild(opt);
     });
+  }
+
+  async function loadMaps() {
+    const data = await MapoiApi.getMaps();
+    populateMapSelect(mapSelect, data.maps, data.current_map);
+    populateMapSelect(navigationMapSelect, data.maps, data.current_map);
     currentMap = data.current_map;
     await switchMap(currentMap, { selectBackend: false });
+    if (currentNavigationCapabilities) {
+      updateNavControlsAvailability(currentNavigationCapabilities);
+    }
   }
 
   // --- Switch map ---
@@ -117,10 +132,13 @@
       }
     }
     currentMap = mapName;
+    if (mapSelect) mapSelect.value = mapName;
+    if (navigationMapSelect) navigationMapSelect.value = mapName;
     await mapViewer.loadMap(mapName);
     await loadTagDefinitions();
     await loadPois();
     await loadRoutes();
+    refreshResponsiveLayout();
   }
 
   // --- Load tag definitions ---
@@ -187,6 +205,12 @@
       mapSelect.value = currentMap;
     });
   });
+
+  if (navigationMapSelect) {
+    navigationMapSelect.addEventListener('change', () => {
+      requestNavigationMapSwitch(navigationMapSelect.value);
+    });
+  }
 
   // --- Wire callbacks ---
 
@@ -330,6 +354,21 @@
   };
 
   // --- Section toggles ---
+  function refreshResponsiveLayout() {
+    const header = document.querySelector('header');
+    if (header) {
+      document.documentElement.style.setProperty(
+        '--header-height',
+        `${Math.ceil(header.getBoundingClientRect().height)}px`
+      );
+    }
+    window.requestAnimationFrame(() => {
+      if (mapViewer.map && typeof mapViewer.map.invalidateSize === 'function') {
+        mapViewer.map.invalidateSize();
+      }
+    });
+  }
+
   function setupSectionToggle(toggleBtnId, bodyEl, initialOpen = true) {
     const btn = document.getElementById(toggleBtnId);
     let open = initialOpen;
@@ -341,11 +380,19 @@
       open = !open;
       bodyEl.style.display = open ? '' : 'none';
       btn.innerHTML = open ? '&#9660;' : '&#9654;';
+      refreshResponsiveLayout();
     });
   }
-  setupSectionToggle('btn-route-toggle', document.getElementById('route-body'));
-  setupSectionToggle('btn-poi-toggle', document.getElementById('poi-body'));
+
+  const compactInitial = compactMediaQuery.matches;
+  setupSectionToggle('btn-route-toggle', document.getElementById('route-body'), !compactInitial);
+  setupSectionToggle('btn-poi-toggle', document.getElementById('poi-body'), !compactInitial);
   setupSectionToggle('btn-tag-toggle', document.getElementById('tag-body'), false);
+  if (typeof compactMediaQuery.addEventListener === 'function') {
+    compactMediaQuery.addEventListener('change', refreshResponsiveLayout);
+  }
+  window.addEventListener('resize', refreshResponsiveLayout);
+  refreshResponsiveLayout();
 
   // --- All / None buttons ---
   // Routes
@@ -426,6 +473,82 @@
     });
   }
 
+  function setNavigationWarning(message) {
+    if (!navigationWarning) return;
+    navigationWarning.textContent = message || '';
+    navigationWarning.classList.toggle('hidden', !message);
+    refreshResponsiveLayout();
+  }
+
+  function updateNavControlsAvailability(navigation) {
+    currentNavigationCapabilities = navigation || currentNavigationCapabilities;
+    const capabilities = currentNavigationCapabilities || {};
+    const commandAvailable = !!capabilities.command_available;
+    const switchMapAvailable = !!capabilities.switch_map_available;
+    const navigationAvailable = !!capabilities.navigation_available;
+    const navBody = document.getElementById('nav-body');
+    if (navBody) {
+      navBody.classList.toggle('navigation-unavailable-state', !navigationAvailable);
+    }
+
+    if (navigationAvailability && navigationAvailabilityText) {
+      navigationAvailability.className = 'navigation-availability '
+        + (navigationAvailable ? 'navigation-available' : 'navigation-unavailable');
+      navigationAvailabilityText.textContent = navigationAvailable
+        ? 'Navigation connected'
+        : 'Navigation unavailable';
+      const topics = capabilities.topics || {};
+      navigationAvailability.title = Object.values(topics)
+        .map((topic) => `${topic.topic}: ${topic.subscribers}`)
+        .join('\n');
+    }
+
+    [
+      document.getElementById('btn-nav-go'),
+      document.getElementById('btn-nav-run'),
+      document.getElementById('btn-nav-pause'),
+      document.getElementById('btn-nav-resume'),
+      document.getElementById('btn-nav-stop'),
+      document.getElementById('btn-nav-setpose'),
+    ].forEach((btn) => {
+      if (btn) btn.disabled = !commandAvailable;
+    });
+
+    if (navigationMapSelect) navigationMapSelect.disabled = !switchMapAvailable;
+    refreshResponsiveLayout();
+  }
+
+  function ensureNoUnsavedChangesBeforeNavigationCommand() {
+    if (!(poiEditor.dirty || routeEditor.dirty || tagDirty)) return true;
+    return confirm('Unsaved changes may be replaced by the robot map switch. Continue?');
+  }
+
+  async function requestNavigationMapSwitch(mapName) {
+    if (!mapName) return;
+    if (!ensureNoUnsavedChangesBeforeNavigationCommand()) {
+      if (navigationMapSelect) navigationMapSelect.value = currentMap;
+      if (mapSelect) mapSelect.value = currentMap;
+      return;
+    }
+    try {
+      setNavigationWarning('');
+      const result = await MapoiApi.navSwitchMap(mapName);
+      if (result.error) {
+        throw new Error(result.error);
+      }
+      if (result.warning) {
+        setNavigationWarning(result.warning);
+        if (navigationMapSelect) navigationMapSelect.value = currentMap;
+        return;
+      }
+      updateNavStatus('map_switching', mapName);
+    } catch (e) {
+      setNavigationWarning('Map switch failed: ' + e.message);
+      if (navigationMapSelect) navigationMapSelect.value = currentMap;
+      if (mapSelect) mapSelect.value = currentMap;
+    }
+  }
+
   const statusLabels = {
     idle: 'Idle',
     navigating: 'Navigating',
@@ -449,22 +572,26 @@
   }
 
   let navPollingTimer = null;
+  async function pollNavStatus() {
+    try {
+      const data = await MapoiApi.navStatus();
+      updateNavStatus(data.status, data.target);
+      updateNavControlsAvailability(data.navigation);
+      // robot_radius は launch param 由来 (#117)。古い backend では key
+      // 不在になるが setRobotRadius が型 check で no-op にする。値が来る
+      // 前に updateRobotMarker が走っても map-viewer の default 0.15 で
+      // 描画されるので safe。
+      mapViewer.setRobotRadius(data.robot_radius);
+      mapViewer.updateRobotMarker(data.robot_pose);
+    } catch (e) {
+      // ignore fetch errors
+    }
+  }
+
   function startNavStatusPolling() {
     if (navPollingTimer) return;
-    navPollingTimer = setInterval(async () => {
-      try {
-        const data = await MapoiApi.navStatus();
-        updateNavStatus(data.status, data.target);
-        // robot_radius は launch param 由来 (#117)。古い backend では key
-        // 不在になるが setRobotRadius が型 check で no-op にする。値が来る
-        // 前に updateRobotMarker が走っても map-viewer の default 0.15 で
-        // 描画されるので safe。
-        mapViewer.setRobotRadius(data.robot_radius);
-        mapViewer.updateRobotMarker(data.robot_pose);
-      } catch (e) {
-        // ignore fetch errors
-      }
-    }, 1000);
+    pollNavStatus();
+    navPollingTimer = setInterval(pollNavStatus, 1000);
   }
 
   document.getElementById('btn-nav-go').addEventListener('click', async () => {
@@ -519,7 +646,7 @@
     if (configChangedTimer) clearTimeout(configChangedTimer);
     configChangedTimer = setTimeout(() => {
       configChangedTimer = null;
-      Promise.all([loadTagDefinitions(), loadPois(), loadRoutes()])
+      loadMaps()
         .catch((err) => console.error('SSE reload failed:', err));
     }, 200);
   }

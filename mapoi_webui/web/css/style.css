@@ -43,6 +43,10 @@ header h1 {
   font-size: 0.9rem;
 }
 
+.hidden {
+  display: none !important;
+}
+
 main {
   display: flex;
   flex-direction: row;
@@ -1026,6 +1030,74 @@ main {
 .nav-status-map_switch_succeeded { background: #27ae60; }
 .nav-status-map_switch_failed { background: #e74c3c; }
 
+.navigation-availability {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  background: #eef2f4;
+  color: #667;
+}
+
+.navigation-availability-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #95a5a6;
+  flex-shrink: 0;
+}
+
+.navigation-available {
+  background: #eafaf1;
+  color: #1e7e44;
+}
+
+.navigation-available .navigation-availability-dot {
+  background: #27ae60;
+}
+
+.navigation-unavailable {
+  background: #f7eeee;
+  color: #9b2d22;
+}
+
+.navigation-unavailable .navigation-availability-dot {
+  background: #e74c3c;
+}
+
+.navigation-warning {
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: #fff4d6;
+  color: #7a4b00;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.navigation-map-switch {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.navigation-map-switch label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #666;
+}
+
+.nav-body.navigation-unavailable-state .navigation-map-switch,
+.nav-body.navigation-unavailable-state .nav-control-group,
+.nav-body.navigation-unavailable-state .nav-pause-resume-row,
+.nav-body.navigation-unavailable-state .nav-btn-stop,
+.nav-body.navigation-unavailable-state .nav-control-label,
+.nav-body.navigation-unavailable-state .nav-control-label + .nav-control-row {
+  display: none;
+}
+
 .nav-control-group {
   display: flex;
   flex-direction: column;
@@ -1066,12 +1138,12 @@ main {
 }
 
 .nav-btn-go { background: #27ae60; }
-.nav-btn-go:hover { background: #219a52; }
+.nav-btn-go:hover:not(:disabled) { background: #219a52; }
 .nav-btn-run { background: #3498db; }
-.nav-btn-run:hover { background: #2980b9; }
+.nav-btn-run:hover:not(:disabled) { background: #2980b9; }
 
 .nav-btn-initialpose { background: #9b59b6; }
-.nav-btn-initialpose:hover { background: #8e44ad; }
+.nav-btn-initialpose:hover:not(:disabled) { background: #8e44ad; }
 
 .nav-control-label {
   font-size: 0.8rem;
@@ -1092,16 +1164,27 @@ main {
 }
 
 .nav-btn-pause { background: #f39c12; }
-.nav-btn-pause:hover { background: #d68910; }
+.nav-btn-pause:hover:not(:disabled) { background: #d68910; }
 .nav-btn-resume { background: #27ae60; }
-.nav-btn-resume:hover { background: #219a52; }
+.nav-btn-resume:hover:not(:disabled) { background: #219a52; }
 
 .nav-btn-stop {
   background: #e74c3c;
   width: 100%;
   min-height: 40px;
 }
-.nav-btn-stop:hover { background: #c0392b; }
+.nav-btn-stop:hover:not(:disabled) { background: #c0392b; }
+
+.nav-btn-go:disabled,
+.nav-btn-run:disabled,
+.nav-btn-initialpose:disabled,
+.nav-btn-pause:disabled,
+.nav-btn-resume:disabled,
+.nav-btn-stop:disabled,
+.nav-select:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 
 /* Mobile adjustments */
 @media (max-width: 768px) {
@@ -1135,6 +1218,46 @@ main {
 
   header h1 {
     font-size: 1rem;
+  }
+
+  #map-selector {
+    display: none;
+  }
+
+  .nav-body {
+    gap: 10px;
+    padding: 10px 12px 12px;
+  }
+
+  .nav-status {
+    font-size: 1rem;
+    padding: 6px 0;
+  }
+
+  .navigation-availability,
+  .navigation-warning {
+    font-size: 0.88rem;
+  }
+
+  .nav-control-row,
+  .nav-pause-resume-row {
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .nav-select {
+    min-height: 44px;
+    font-size: 0.95rem;
+  }
+
+  .nav-btn-go,
+  .nav-btn-run,
+  .nav-btn-initialpose,
+  .nav-btn-pause,
+  .nav-btn-resume,
+  .nav-btn-stop {
+    min-height: 44px;
+    font-size: 0.95rem;
   }
 
   .form-row {

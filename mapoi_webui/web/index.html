@@ -11,7 +11,7 @@
   <header>
     <h1>mapoi Web UI</h1>
     <div id="map-selector">
-      <label for="map-select">Map:</label>
+      <label id="map-select-label" for="map-select">Map:</label>
       <select id="map-select"></select>
     </div>
   </header>
@@ -36,6 +36,19 @@
           <div class="nav-status">
             <span id="nav-status-dot" class="nav-status-dot nav-status-idle"></span>
             <span id="nav-status-text">Idle</span>
+          </div>
+          <div id="navigation-availability" class="navigation-availability navigation-unknown">
+            <span id="navigation-availability-dot" class="navigation-availability-dot"></span>
+            <span id="navigation-availability-text">Checking navigation</span>
+          </div>
+          <div id="navigation-warning" class="navigation-warning hidden"></div>
+          <div id="navigation-map-switch" class="navigation-map-switch">
+            <label for="navigation-map-select">Robot Map</label>
+            <div class="nav-control-row">
+              <select id="navigation-map-select" class="nav-select">
+                <option value="">-- Select Map --</option>
+              </select>
+            </div>
           </div>
           <div class="nav-control-group">
             <div class="nav-control-row">

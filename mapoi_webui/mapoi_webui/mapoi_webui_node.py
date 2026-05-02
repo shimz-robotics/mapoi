@@ -155,6 +155,7 @@ class MapoiWebNode(Node):
         self.cancel_pub_ = self.create_publisher(String, 'mapoi/nav/cancel', 10)
         self.pause_pub_  = self.create_publisher(String, 'mapoi/nav/pause',  10)
         self.resume_pub_ = self.create_publisher(String, 'mapoi/nav/resume', 10)
+        self.switch_map_pub_ = self.create_publisher(String, 'mapoi/nav/switch_map', 1)
         # mapoi/initialpose_poi は #149 round 8 で {map_name, poi_name} 型に変更。
         # transient_local QoS で後起動 subscriber (bridge / nav_server) も latched 値を拾える。
         initialpose_poi_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -248,7 +249,7 @@ class MapoiWebNode(Node):
                 # loadPois / loadRoutes / loadTagDefinitions を再実行させる (#135 (B))。
                 # map 名が正しく解釈できた時のみ broadcast: 期待形式に部分一致するが map 特定でき
                 # ないケースで無駄な reload を避ける (#173 Round 1 / 2 medium)。
-                self._broadcast_sse_event('config_changed')
+                self._broadcast_sse_event('config_changed', {'map_name': map_name_parsed})
         except Exception as e:
             self.get_logger().warn(f'Failed to parse config path: {e}')
 
@@ -324,6 +325,38 @@ class MapoiWebNode(Node):
             self.get_logger().warn(warning)
             return True, warning
         return True, None
+
+    def get_navigation_capabilities(self):
+        """Return best-effort navigation backend availability from command subscribers."""
+        publishers = {
+            'switch_map': (self.switch_map_pub_, 'mapoi/nav/switch_map'),
+            'goal': (self.goal_poi_pub_, 'mapoi/nav/goal_pose_poi'),
+            'route': (self.route_pub_, 'mapoi/nav/route'),
+            'cancel': (self.cancel_pub_, 'mapoi/nav/cancel'),
+            'pause': (self.pause_pub_, 'mapoi/nav/pause'),
+            'resume': (self.resume_pub_, 'mapoi/nav/resume'),
+            'initialpose': (self.initialpose_poi_pub_, 'mapoi/initialpose_poi'),
+        }
+        topics = {}
+        for key, (pub, topic_name) in publishers.items():
+            count = pub.get_subscription_count()
+            topics[key] = {
+                'topic': topic_name,
+                'subscribers': count,
+                'available': count > 0,
+            }
+        # `mapoi/initialpose_poi` may still have simulator / localization bridge
+        # subscribers after mapoi_nav_server stops. Treat only navigation command
+        # topics as evidence that a navigation backend is available.
+        command_keys = ('goal', 'route', 'cancel', 'pause', 'resume')
+        command_available = any(topics[key]['available'] for key in command_keys)
+        switch_map_available = topics['switch_map']['available']
+        return {
+            'navigation_available': switch_map_available or command_available,
+            'switch_map_available': switch_map_available,
+            'command_available': command_available,
+            'topics': topics,
+        }
 
     def _call_service_sync(self, client, request, service_name, timeout_sec=3.0,
                            wait_for_service_sec=2.0):
@@ -467,6 +500,33 @@ class MapoiWebNode(Node):
                 'map_name': map_name,
                 'config_path': response.config_path,
                 'initial_poi_name': response.initial_poi_name,
+            })
+
+        @app.route('/api/nav/switch-map', methods=['POST'])
+        def api_nav_switch_map():
+            data = request.get_json()
+            if not isinstance(data, dict) or 'map_name' not in data:
+                return jsonify({'error': 'map_name required'}), 400
+            map_name = str(data['map_name']).strip()
+            if not map_name:
+                return jsonify({'error': 'map_name required'}), 400
+            maps = node.get_maps_list()
+            if maps and map_name not in maps:
+                return jsonify({'error': f'unknown map: {map_name}'}), 404
+            msg = String()
+            msg.data = map_name
+            _, warning = node.publish_with_subscriber_check(
+                node.switch_map_pub_, msg, 'mapoi/nav/switch_map')
+            node.get_logger().info(f'Navigation map switch requested: {map_name}')
+            payload = {'success': True, 'map_name': map_name}
+            if warning:
+                payload['warning'] = warning
+            return jsonify(payload)
+
+        @app.route('/api/mode')
+        def api_mode():
+            return jsonify({
+                'navigation': node.get_navigation_capabilities(),
             })
 
         @app.route('/api/pois')
@@ -644,6 +704,7 @@ class MapoiWebNode(Node):
                 # 別 endpoint を叩かなくて済むよう poll 結果に相乗りさせる。
                 # 値は float (m)、payload size 影響は無視できる (#117)。
                 'robot_radius': node.robot_radius_,
+                'navigation': node.get_navigation_capabilities(),
             })
 
         @app.route('/api/nav/initialpose', methods=['POST'])
