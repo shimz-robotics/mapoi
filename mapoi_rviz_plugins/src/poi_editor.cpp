@@ -577,8 +577,8 @@ void PoiEditorPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
 
   std::filesystem::path resolved_p(resolved_path);
   std::string map_name = resolved_p.parent_path().filename().string();
-  const auto action = detail::decide_poi_editor_config_path_action(
-    current_map_, map_name, config_path_, suppress_config_callback_update_);
+  const auto base_action = detail::decide_poi_editor_config_path_action(
+    current_map_, map_name, config_path_);
   config_path_ = resolved_path;
   current_map_ = map_name;
 
@@ -586,8 +586,10 @@ void PoiEditorPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
   // でも POI 内容が変わっている可能性があるため UpdatePoiTable で table を再 fetch する (#135)。
   // map 切替 / 初回受信時は MapComboBox 同期 + FileComboBox 再構築も必要なので InitConfigs を呼ぶ。
   // 自分自身が save 直後 (suppress_config_callback_update_) は 1.5 秒の SAVED! feedback を
-  // 守るため UpdatePoiTable を skip する (QTimer 末尾で rebuild + flag クリアされる)。
-  QMetaObject::invokeMethod(this, [this, map_name, action]() {
+  // 守るため UpdatePoiTable を skip する。旧挙動と同じく queued lambda 実行時の flag を見る。
+  QMetaObject::invokeMethod(this, [this, map_name, base_action]() {
+    const auto action = detail::apply_poi_editor_content_update_suppression(
+      base_action, suppress_config_callback_update_);
     if (action == detail::ConfigPathUpdateAction::ReinitializeMap) {
       InitConfigs(map_name);
     } else if (action == detail::ConfigPathUpdateAction::RefreshCurrentMap) {

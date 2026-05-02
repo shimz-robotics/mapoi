@@ -17,16 +17,22 @@ enum class ConfigPathUpdateAction
 inline ConfigPathUpdateAction decide_poi_editor_config_path_action(
   const std::string & current_map,
   const std::string & new_map,
-  const std::string & current_config_path,
-  bool suppress_content_update)
+  const std::string & current_config_path)
 {
   if (current_config_path.empty() || current_map != new_map) {
     return ConfigPathUpdateAction::ReinitializeMap;
   }
-  if (suppress_content_update) {
+  return ConfigPathUpdateAction::RefreshCurrentMap;
+}
+
+inline ConfigPathUpdateAction apply_poi_editor_content_update_suppression(
+  ConfigPathUpdateAction action,
+  bool suppress_content_update)
+{
+  if (action == ConfigPathUpdateAction::RefreshCurrentMap && suppress_content_update) {
     return ConfigPathUpdateAction::Noop;
   }
-  return ConfigPathUpdateAction::RefreshCurrentMap;
+  return action;
 }
 
 inline ConfigPathUpdateAction decide_mapoi_panel_config_path_action(
