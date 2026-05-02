@@ -201,10 +201,11 @@ Breaking changes
   ``poi.tolerance: {xy, yaw}``. (#87)
 * ``Tolerance.msg`` semantics: both ``xy`` and ``yaw`` are required to
   be ``>= 0.001`` (``xy``: 1 mm / ``yaw``: about 0.057°). Zero and
-  negative values are rejected (they would otherwise allow constructing
-  a practically unresponsive POI). The "unspecified -> Nav2 default
-  fallback" semantics is removed. Out-of-range values found at YAML
-  load time are clamped to ``0.001`` with a WARN log. (#138)
+  negative values are disallowed (they would otherwise allow
+  constructing a practically unresponsive POI). The "unspecified ->
+  Nav2 default fallback" semantics is removed. Out-of-range values
+  found at YAML load time are clamped to ``0.001`` with a WARN log.
+  (#138)
 
 * ``mapoi_nav_server`` ROS parameter ``radius_check_hz`` renamed to
   ``tolerance_check_hz`` (#140). Naming alignment for the
@@ -266,13 +267,13 @@ WebUI / rviz_plugins
     beyond that are practically never legitimate). A hard reject was
     chosen over a soft warning to prioritize typo prevention.
 
-* WebUI now picks up rviz / external-save config changes via SSE and
-  reloads immediately (#135 (B)).
+* WebUI now picks up config changes saved from RViz or external tools
+  via SSE and reloads immediately (#135 (B)).
 
   - Before: Saving in the rviz PoiEditor did not propagate to the
     WebUI until the browser was reloaded.
   - After: ``mapoi_webui_node`` exposes a new ``/api/events`` SSE
-    endpoint. On ``/mapoi/config_path`` reception, it broadcasts
+    endpoint. When ``/mapoi/config_path`` is received, it broadcasts
     ``{type: "config_changed"}`` to all connected clients. The
     frontend (``app.js``) consumes the event via ``EventSource`` and
     re-fetches via ``loadTagDefinitions / loadPois / loadRoutes``.
@@ -288,7 +289,7 @@ WebUI / rviz_plugins
   - Radius = ``tolerance.xy``; sector angle = ``2 * tolerance.yaw``;
     centerline = ``pose.yaw``.
   - ``waypoint`` = filled sector, ``landmark`` = hollow sector,
-    ``pause`` = dotted outline overlay (a thin solid line is used for
+    ``pause`` = dashed outline overlay (a thin solid line is used for
     the primary glyph for contrast).
   - The sector is drawn only when ``0 < tolerance.yaw < π``; otherwise
     (yaw-agnostic) the POI is treated as a full circle (allowing
