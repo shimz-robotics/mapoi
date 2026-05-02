@@ -1,4 +1,5 @@
 #include "mapoi_rviz_plugins/poi_editor.hpp"
+#include "mapoi_rviz_plugins/config_path_update_policy.hpp"
 #include "mapoi_rviz_plugins/poi_editor_helpers.hpp"
 #include <class_loader/class_loader.hpp>
 #include <cctype>
@@ -576,8 +577,8 @@ void PoiEditorPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
 
   std::filesystem::path resolved_p(resolved_path);
   std::string map_name = resolved_p.parent_path().filename().string();
-  bool first_config = config_path_.empty();
-  bool map_changed = (current_map_ != map_name);
+  const auto action = detail::decide_poi_editor_config_path_action(
+    current_map_, map_name, config_path_, suppress_config_callback_update_);
   config_path_ = resolved_path;
   current_map_ = map_name;
 
@@ -586,10 +587,10 @@ void PoiEditorPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
   // map 切替 / 初回受信時は MapComboBox 同期 + FileComboBox 再構築も必要なので InitConfigs を呼ぶ。
   // 自分自身が save 直後 (suppress_config_callback_update_) は 1.5 秒の SAVED! feedback を
   // 守るため UpdatePoiTable を skip する (QTimer 末尾で rebuild + flag クリアされる)。
-  QMetaObject::invokeMethod(this, [this, map_name, map_changed, first_config]() {
-    if (map_changed || first_config) {
+  QMetaObject::invokeMethod(this, [this, map_name, action]() {
+    if (action == detail::ConfigPathUpdateAction::ReinitializeMap) {
       InitConfigs(map_name);
-    } else if (!suppress_config_callback_update_) {
+    } else if (action == detail::ConfigPathUpdateAction::RefreshCurrentMap) {
       UpdatePoiTable();
     }
   }, Qt::QueuedConnection);
