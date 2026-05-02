@@ -1,25 +1,10 @@
 #include "mapoi_server/mapoi_server.hpp"
 
-#include <array>
 #include <cmath>
 #include <cstdio>
 
 #include "mapoi_server/initial_pose_resolver.hpp"
-
-namespace {
-// system tag 定義 (#191): 旧 mapoi_server/maps/tag_definitions.yaml をハードコード化。
-// system tag は変更非推奨 (削除/rename はコア機能の破壊的変更)、user tag は
-// mapoi_config.yaml の custom_tags で拡張する設計のため、yaml 外出しのメリットが無い。
-struct SystemTagDef {
-  const char * name;
-  const char * description;
-};
-constexpr std::array<SystemTagDef, 3> kSystemTags = {{
-  {"waypoint", "Nav2 navigation target (single goal or route waypoint)"},
-  {"landmark", "Reference point on the map (excluded from Nav2 navigation target)"},
-  {"pause",    "Automatically pause navigation when robot enters the POI radius"},
-}};
-}  // namespace
+#include "mapoi_server/system_tags.hpp"
 
 MapoiServer::MapoiServer() : Node("mapoi_server") {
   // maps_path は REQUIRED (#163 で sample maps を mapoi_server から削除したため default 廃止)。
@@ -495,10 +480,10 @@ void MapoiServer::publish_initialpose_clear()
 
 void MapoiServer::load_tag_definitions()
 {
-  // system tag はコンパイル時定数 kSystemTags から構築 (#191)。
+  // system tag はコンパイル時定数 mapoi::kSystemTags から構築 (#191)。
   // user tag は load_mapoi_config_file() 内で custom_tags から merge される。
   system_tags_.clear();
-  for (const auto & def : kSystemTags) {
+  for (const auto & def : mapoi::kSystemTags) {
     mapoi_interfaces::msg::TagDefinition td;
     td.name = def.name;
     td.description = def.description;
