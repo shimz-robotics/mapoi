@@ -1,4 +1,4 @@
-// initial pose 選定純関数 (mapoi_server::select_initial_poi_name) の unit test
+// initial pose 選定純関数 (mapoi::select_initial_poi_name) の unit test
 // (#149 round 4 high で導入、#150 で共通ヘッダに移行)。
 // rclcpp::Node の生成は不要 (= 純関数を直接叩ける)。
 #include <gtest/gtest.h>

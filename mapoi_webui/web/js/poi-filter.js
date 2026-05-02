@@ -12,9 +12,20 @@
 (function () {
   'use strict';
 
+  const SYSTEM_TAGS = Object.freeze({
+    WAYPOINT: 'waypoint',
+    LANDMARK: 'landmark',
+    PAUSE: 'pause',
+  });
+  const SYSTEM_TAG_NAMES = Object.freeze(Object.values(SYSTEM_TAGS));
+
+  function normalizedTags(poi) {
+    const tags = poi && Array.isArray(poi.tags) ? poi.tags : [];
+    return tags.map((t) => String(t).toLowerCase());
+  }
+
   function hasLandmarkTag(poi) {
-    const tags = (poi && poi.tags) || [];
-    return tags.some((t) => typeof t === 'string' && t.toLowerCase() === 'landmark');
+    return normalizedTags(poi).includes(SYSTEM_TAGS.LANDMARK);
   }
 
   // Nav2 navigation 候補 (= waypoint tag 付き / landmark なし) を抽出する (#142)。
@@ -22,8 +33,8 @@
   // 単発 nav goal も route 中間点も同じ tag で表現する semantics に統一した。
   function filterWaypointCandidates(pois) {
     return (pois || []).filter((p) => {
-      const tags = (p && p.tags ? p.tags : []).map((t) => String(t).toLowerCase());
-      return tags.includes('waypoint') && !tags.includes('landmark');
+      const tags = normalizedTags(p);
+      return tags.includes(SYSTEM_TAGS.WAYPOINT) && !tags.includes(SYSTEM_TAGS.LANDMARK);
     });
   }
 
@@ -69,22 +80,22 @@
 
   /**
    * POI tag combination 排他 check (#85)。
-   * `goal+landmark` / `initial_pose+landmark` は仕様上排他。save 前に
+   * `waypoint+landmark` / `pause+landmark` は仕様上排他。save 前に
    * 弾くことで mapoi_config.yaml に invalid な POI が永続化するのを防ぐ。
    *
    * @returns {{ ok: boolean, error?: string }}
    */
   function validatePoiTags(poi) {
-    const tags = (poi && poi.tags ? poi.tags : []).map((t) => String(t).toLowerCase());
+    const tags = normalizedTags(poi);
     const has = (n) => tags.includes(n);
-    if (has('waypoint') && has('landmark')) {
+    if (has(SYSTEM_TAGS.WAYPOINT) && has(SYSTEM_TAGS.LANDMARK)) {
       return {
         ok: false,
         error: '"waypoint" と "landmark" は併用できません (landmark は Nav2 navigation 不可な reference 専用)。',
       };
     }
     // landmark × pause 排他 (#143): landmark は到達不可なので pause 動作が成立しない。
-    if (has('pause') && has('landmark')) {
+    if (has(SYSTEM_TAGS.PAUSE) && has(SYSTEM_TAGS.LANDMARK)) {
       return {
         ok: false,
         error: '"pause" と "landmark" は併用できません (landmark は到達不可な reference のため pause 動作が成立しません)。',
@@ -95,6 +106,8 @@
   }
 
   const api = {
+    SYSTEM_TAGS,
+    SYSTEM_TAG_NAMES,
     hasLandmarkTag,
     filterWaypointCandidates,
     filterInitialPoseCandidates,

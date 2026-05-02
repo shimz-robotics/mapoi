@@ -83,17 +83,26 @@ if(BUILD_TESTING)
 
   # initial_pose_resolver は純関数なので test には resolver の cpp だけを link する
   # (#150 で mapoi_server.cpp 全体 link から軽量化、Node 依存を test から排除)。
-  ament_auto_add_gtest(test_mapoi_server_unit
-    test/test_mapoi_server_unit.cpp
+  ament_auto_add_gtest(test_initial_pose_resolver
+    test/test_initial_pose_resolver.cpp
     src/initial_pose_resolver.cpp
   )
-  target_compile_definitions(test_mapoi_server_unit PRIVATE UNIT_TEST)
+  target_compile_definitions(test_initial_pose_resolver PRIVATE UNIT_TEST)
   # initial_pose_resolver.cpp は yaml-cpp 依存。本体 executable と同じく test binary にも明示 link
   # (#149 で見落とし、別 PC clean build で undefined reference 発覚 → hotfix)。
   # NOTE: humble の `ament_auto_add_gtest` 内で plain signature の target_link_libraries
   # が使われているため、ここも plain (= PUBLIC/PRIVATE/INTERFACE 無し) で揃える必要がある。
   # PRIVATE 化は CMake が「all-keyword or all-plain」混在を error にするため不可。
-  target_link_libraries(test_mapoi_server_unit ${_mapoi_yaml_cpp_target})
+  target_link_libraries(test_initial_pose_resolver ${_mapoi_yaml_cpp_target})
+
+  # System tag 定義は mapoi_server/maps/tag_definitions.yaml を source of truth とする。
+  # WebUI 側にも同 YAML との contract test を置き、言語横断の tag drift を検出する (#193)。
+  ament_auto_add_gtest(test_system_tags_contract
+    test/test_system_tags_contract.cpp
+  )
+  target_compile_definitions(test_system_tags_contract PRIVATE
+    MAPOI_SERVER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(test_system_tags_contract ${_mapoi_yaml_cpp_target})
 
   # Level 2: launch_testing integration tests
   add_launch_test(
