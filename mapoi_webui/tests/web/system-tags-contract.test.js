@@ -23,6 +23,9 @@ const systemTagsHeaderPath = path.join(
 
 function loadServerSystemTagNames() {
   const header = readFileSync(systemTagsHeaderPath, 'utf8');
+  // Assumption: kSystemTags is the only header initializer that uses
+  // {"name", "description"} entries. If this test fails after adding another
+  // similar array, narrow this parser to the kSystemTags block.
   return [...header.matchAll(/\{\s*"([^"]+)"\s*,\s*"[^"]*"\s*\}/g)].map((match) => match[1]);
 }
 
