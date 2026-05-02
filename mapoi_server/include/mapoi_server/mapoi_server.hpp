@@ -9,7 +9,6 @@
 #include <yaml-cpp/yaml.h>
 
 #include <rclcpp/rclcpp.hpp>
-#include <ament_index_cpp/get_package_share_directory.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
@@ -31,7 +30,6 @@ public:
 
 private:
   // parameters & internal state
-  std::string mapoi_server_pkg_;
   std::string maps_path_;
   std::string map_name_;
   std::string config_file_;

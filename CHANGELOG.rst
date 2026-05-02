@@ -16,6 +16,18 @@ For releases prior to v0.2.0, see the
 Unreleased
 ==========
 
+Breaking changes
+----------------
+
+* System tag definitions (``waypoint`` / ``landmark`` / ``pause``) are now
+  hardcoded in ``mapoi_server/src/mapoi_server.cpp`` (``kSystemTags``); the
+  ``mapoi_server/maps/tag_definitions.yaml`` file and the
+  ``mapoi_server/maps/`` directory have been removed (#191). The
+  ``get_tag_definitions`` service contract is unchanged. Users who edited
+  ``tag_definitions.yaml`` to override system tag names or descriptions must
+  edit ``kSystemTags`` and rebuild instead. Standard usage (no edits to
+  system tags) is unaffected.
+
 
 0.3.0 (2026-05-02)
 ==================
