@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <set>
 
+#include "mapoi_rviz_plugins/config_path_update_policy.hpp"
 #include "ui_mapoi_panel.h"
 
 using namespace std::chrono_literals;
@@ -241,15 +242,15 @@ void MapoiPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
 {
   std::filesystem::path config_path(msg->data);
   std::string map_name = config_path.parent_path().filename().string();
-  bool map_changed = (current_map_ != map_name);
+  const auto action = detail::decide_mapoi_panel_config_path_action(current_map_, map_name);
   current_map_ = map_name;
 
   // 同じ map で path も同じ場合 (= save 後の reload_map_info で再 publish される flow) でも
   // POI / route list が変わっている可能性があるため Nav2GoalComboBox / MapoiRouteComboBox を
   // 再 fetch する (#135)。map 切替時は highlight クリア + MapComboBox 同期も必要なので
   // SetMapComboBox を呼ぶ。
-  QMetaObject::invokeMethod(this, [this, map_name, map_changed]() {
-    if (map_changed) {
+  QMetaObject::invokeMethod(this, [this, map_name, action]() {
+    if (action == detail::ConfigPathUpdateAction::ReinitializeMap) {
       SetMapComboBox(map_name);
     } else {
       SetNav2GoalComboBox();

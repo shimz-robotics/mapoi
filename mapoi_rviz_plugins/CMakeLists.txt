@@ -34,6 +34,11 @@ if(BUILD_TESTING)
   ament_auto_add_gtest(test_poi_editor_helpers
     test/test_poi_editor_helpers.cpp
   )
+
+  # ConfigPathCallback の分岐 policy は Qt / ROS 非依存の純関数として固定検証する (#169)。
+  ament_auto_add_gtest(test_config_path_update_policy
+    test/test_config_path_update_policy.cpp
+  )
 endif()
 
 # 将来のROS 2（Kilted Kaiju以降）と互換性を持たせるため
