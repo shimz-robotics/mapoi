@@ -4,10 +4,9 @@
 #include <cstdio>
 
 #include "mapoi_server/initial_pose_resolver.hpp"
+#include "mapoi_server/system_tags.hpp"
 
 MapoiServer::MapoiServer() : Node("mapoi_server") {
-  // parameters
-  mapoi_server_pkg_ = ament_index_cpp::get_package_share_directory("mapoi_server");
   // maps_path は REQUIRED (#163 で sample maps を mapoi_server から削除したため default 廃止)。
   this->declare_parameter<std::string>("maps_path", "");
   this->declare_parameter<std::string>("map_name", "turtlebot3_world");
@@ -481,26 +480,18 @@ void MapoiServer::publish_initialpose_clear()
 
 void MapoiServer::load_tag_definitions()
 {
-  std::string tag_defs_path = mapoi_server_pkg_ + "/maps/tag_definitions.yaml";
+  // system tag はコンパイル時定数 mapoi::kSystemTags から構築 (#191)。
+  // user tag は load_mapoi_config_file() 内で custom_tags から merge される。
   system_tags_.clear();
-
-  try {
-    YAML::Node tag_config = YAML::LoadFile(tag_defs_path);
-    if (tag_config["tags"]) {
-      for (const auto& tag : tag_config["tags"]) {
-        mapoi_interfaces::msg::TagDefinition td;
-        td.name = tag["name"].as<std::string>();
-        td.description = tag["description"].as<std::string>("");
-        td.is_system = true;
-        system_tags_.push_back(td);
-      }
-    }
-    RCLCPP_INFO(this->get_logger(), "Loaded %zu system tag definitions from %s",
-                system_tags_.size(), tag_defs_path.c_str());
-  } catch (const YAML::BadFile& e) {
-    RCLCPP_WARN(this->get_logger(), "System tag definitions file not found: %s. Continuing with empty list.",
-                tag_defs_path.c_str());
+  for (const auto & def : mapoi::kSystemTags) {
+    mapoi_interfaces::msg::TagDefinition td;
+    td.name = def.name;
+    td.description = def.description;
+    td.is_system = true;
+    system_tags_.push_back(td);
   }
+  RCLCPP_INFO(this->get_logger(), "Loaded %zu system tag definitions (compiled-in)",
+              system_tags_.size());
 }
 
 void MapoiServer::get_tag_definitions_service(
