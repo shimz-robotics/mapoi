@@ -23,23 +23,24 @@ Unreleased
 Breaking changes
 ----------------
 
-* Runtime topic naming を ``/mapoi/...`` namespace に再編 (#185、#70、#102)。
-  旧 flat ``/mapoi_*`` runtime topic は互換 alias なしで削除したため、launch /
-  script / RViz 設定 / 外部 node は下表の新 topic に移行する必要がある。
+* Runtime topic naming reorganized into the ``/mapoi/...`` namespace
+  (#185, #70, #102). Legacy flat ``/mapoi_*`` runtime topics were removed
+  without compatibility aliases; launch files, scripts, RViz configs, and
+  external nodes must migrate to the new topic names listed below.
 
-  - marker topic は PR #186 で ``/mapoi/markers/pois`` と
-    ``/mapoi/markers/routes`` に整理
-  - marker 以外の mapoi topic は PR #187 で ``/mapoi/highlight/*`` /
+  - Marker topics consolidated to ``/mapoi/markers/pois`` and
+    ``/mapoi/markers/routes`` in PR #186.
+  - Non-marker mapoi topics moved to ``/mapoi/highlight/*`` /
     ``/mapoi/nav/*`` / ``/mapoi/events`` / ``/mapoi/config_path`` /
-    ``/mapoi/initialpose_poi`` に移行
-  - RViz PoseTool 由来の ``mapoi_rviz_pose`` は mapoi runtime topic namespace
-    再編の対象外のため変更なし
+    ``/mapoi/initialpose_poi`` in PR #187.
+  - The ``mapoi_rviz_pose`` topic from the RViz PoseTool is out of scope
+    for this namespace reorganization and is unchanged.
 
   .. list-table::
      :header-rows: 1
 
-     * - 旧 topic
-       - 新 topic
+     * - Old topic
+       - New topic
      * - ``/mapoi_goal_marks``
        - ``/mapoi/markers/pois``
      * - ``/mapoi_event_marks``
@@ -71,128 +72,158 @@ Breaking changes
      * - ``/mapoi_initialpose_poi``
        - ``/mapoi/initialpose_poi``
 
-* ``mapoi_server`` から sample maps を廃止し、``maps_path`` parameter を必須化 (#163 段階 1)。
+* Sample maps removed from ``mapoi_server``; ``maps_path`` parameter
+  is now required (#163 stage 1).
 
-  - 旧: ``mapoi_server`` package に ``maps/turtlebot3_world/`` /
-    ``maps/turtlebot3_dqn_stage1/`` を同梱、``maps_path`` の default は
-    ``{pkg_share}/maps``
-  - 新: sample maps は ``mapoi_turtlebot3_example`` に集約 (single source of truth)。
-    ``mapoi_server`` の ``maps_path`` は default なしで起動時必須、未指定で fatal
-  - 残置: ``mapoi_server/maps/tag_definitions.yaml`` のみ system tag 定義として
-    package-internal で残す
-  - 移行: launch / param で ``maps_path`` を明示指定する。``mapoi_turtlebot3_example``
-    の sample を流用するなら ``$(find-pkg-share mapoi_turtlebot3_example)/maps``
+  - Before: ``mapoi_server`` shipped ``maps/turtlebot3_world/`` /
+    ``maps/turtlebot3_dqn_stage1/``, with ``maps_path`` defaulting to
+    ``{pkg_share}/maps``.
+  - After: Sample maps live only in ``mapoi_turtlebot3_example``
+    (single source of truth). ``mapoi_server`` no longer provides a
+    default for ``maps_path``; omitting it is fatal at startup.
+  - Retained: ``mapoi_server/maps/tag_definitions.yaml`` is kept as the
+    package-internal system tag definition.
+  - Migration: Set ``maps_path`` explicitly via launch or parameter. To
+    reuse the sample, use
+    ``$(find-pkg-share mapoi_turtlebot3_example)/maps``.
 
-* ``mapoi_turtlebot3_example`` の sample map_file 名をワールド別差別化 (#163 段階 2)。
+* ``mapoi_turtlebot3_example`` sample ``map_file`` names differentiated
+  per world (#163 stage 2).
 
-  - 旧: ``turtlebot3_world/turtlebot3.{pgm,yaml}`` /
-    ``turtlebot3_dqn_stage1/turtlebot3.{pgm,yaml}`` (両 world で同名)
-  - 新: ``turtlebot3_world/turtlebot3_world.{pgm,yaml}`` /
-    ``turtlebot3_dqn_stage1/turtlebot3_dqn_stage1.{pgm,yaml}`` (ディレクトリ名と一致)
-  - 各 ``mapoi_config.yaml`` の ``map_file`` 値、``image:`` 行も連動更新
-  - 移行: 自前 launch で ``map_file`` を hardcode していなければ影響なし
-    (``mapoi_config.yaml`` 経由で参照される)
-  - 関連: ``scripts/check_sample_yaml_consistency.py`` の server / example pair
-    sync 検査を廃止し、example 側 individual validation のみに簡素化
+  - Before: ``turtlebot3_world/turtlebot3.{pgm,yaml}`` /
+    ``turtlebot3_dqn_stage1/turtlebot3.{pgm,yaml}`` (same name in both
+    worlds).
+  - After: ``turtlebot3_world/turtlebot3_world.{pgm,yaml}`` /
+    ``turtlebot3_dqn_stage1/turtlebot3_dqn_stage1.{pgm,yaml}`` (matches
+    the directory name).
+  - The ``map_file`` value and ``image:`` line in each
+    ``mapoi_config.yaml`` were updated accordingly.
+  - Migration: No effect unless launch files hard-code ``map_file``
+    (it is normally referenced via ``mapoi_config.yaml``).
+  - Related: ``scripts/check_sample_yaml_consistency.py`` no longer
+    performs server/example pair-sync checks; it now only validates the
+    example side individually.
 
-* ``mapoi_server`` の ``pub_interval_ms`` parameter を廃止 (#135)。
+* ``pub_interval_ms`` parameter removed from ``mapoi_server`` (#135).
 
-  - 旧: ``/mapoi_config_path`` topic を ``pub_interval_ms`` (default 5000ms、
-    sample launch では 500ms) 間隔で定期 publish
-  - 新: 起動時 / ``SwitchMap`` / ``reload_map_info`` で明示 publish。
-    publisher は ``transient_local`` QoS のまま、subscriber 側も
-    ``transient_local`` に統一 (``poi_editor`` / ``mapoi_panel`` /
-    ``mapoi_webui_node`` を default QoS から変更)
-  - 移行: launch ファイル / param yaml で ``pub_interval_ms`` を指定して
-    いる場合は削除する (引き続き渡しても unused parameter として ROS が
-    warn するだけで動作には影響しない)
-  - 動機: 編集中の ``poi_editor`` table / ``mapoi_panel`` ComboBox が定期
-    publish trigger で再構築されて選択 / テキスト入力が中断される問題
-    (PR #168 動作確認で発覚)。``transient_local`` QoS で起動順序問題は解消
-    済みなので heartbeat 不要
+  - Before: ``/mapoi_config_path`` was periodically published at
+    ``pub_interval_ms`` (default ``5000`` ms, ``500`` ms in sample
+    launches).
+  - After: Published explicitly at startup, on ``SwitchMap``, and on
+    ``reload_map_info``. The publisher keeps ``transient_local`` QoS
+    and subscribers (``poi_editor`` / ``mapoi_panel`` /
+    ``mapoi_webui_node``) were aligned to ``transient_local`` from the
+    default QoS.
+  - Migration: Remove ``pub_interval_ms`` from launch files and
+    parameter YAMLs. (Passing it is harmless—ROS will only warn about
+    an unused parameter—but it has no effect.)
+  - Motivation: The periodic publish trigger rebuilt the
+    ``poi_editor`` table / ``mapoi_panel`` ComboBox while the user was
+    editing, interrupting selection and text input (surfaced during
+    PR #168 verification). The ``transient_local`` QoS already solves
+    the startup-order problem, so the heartbeat is no longer needed.
 
-* ``initial_pose`` system tag を廃止 (#89 段階 3, #144)。
+* ``initial_pose`` system tag removed (#89 stage 3, #144).
 
-  - 旧: ``initial_pose`` タグ付き POI の pose を地図ロード/切替時に自動配信
-  - 新: 新 map の **POI list 先頭** (landmark タグ POI は除外) を default として
-    採用。``SwitchMap.srv`` に追加した ``initial_poi_name`` で明示指定も可
-  - 配信経路: ``mapoi_server`` が新 map ロード時に POI 名を
-    ``/mapoi/initialpose_poi`` (transient_local) に publish、
-    ``mapoi_nav_server`` がそれを受けて ``/initialpose`` に流す
-  - YAML migration: ``tags: [..., initial_pose]`` 行から ``initial_pose`` を
-    削除し、開始 POI を ``poi:`` 配下の先頭に並べる
-  - ``mapoi_gazebo_bridge`` / ``mapoi_gz_bridge`` の robot spawn 位置も同
-    semantics (POI list 先頭) に移行
-  - ``reload_map_info`` service の挙動変更: POI 編集後の reload で
-    ``/mapoi/initialpose_poi`` を再 publish しなくなった (運用中の自己位置を
-    巻き戻すリスクを排除)。再設定は ``SwitchMap`` (= 地図切替) または
-    手動経路 (RViz / WebUI / ``/mapoi/initialpose_poi`` 直接 publish) で
-  - ``mapoi_nav_server`` parameter 変更:
-    ``initial_pose_subscriber_wait_timeout_sec`` を削除し、async retry
-    timer ベースの新 parameter に置換 (``initialpose_retry_interval_sec``,
+  - Before: POIs tagged ``initial_pose`` were auto-published on map
+    load / switch.
+  - After: The **first POI** in the new map's POI list (excluding
+    ``landmark``-tagged POIs) is used as the default. The new
+    ``initial_poi_name`` field on ``SwitchMap.srv`` allows explicit
+    specification.
+  - Publish path: When ``mapoi_server`` loads a new map, it publishes
+    the POI name to ``/mapoi/initialpose_poi`` (transient_local);
+    ``mapoi_nav_server`` receives it and forwards to ``/initialpose``.
+  - YAML migration: Remove ``initial_pose`` from
+    ``tags: [..., initial_pose]`` and place the starting POI first
+    under ``poi:``.
+  - ``mapoi_gazebo_bridge`` / ``mapoi_gz_bridge`` robot spawn positions
+    follow the same semantics (POI list head).
+  - ``reload_map_info`` service behavior change: After POI edits, it
+    no longer republishes ``/mapoi/initialpose_poi`` (avoids the risk
+    of rewinding the live robot pose). Re-initialization should go
+    through ``SwitchMap`` (i.e., a map switch) or a manual path
+    (RViz / WebUI / direct publish to ``/mapoi/initialpose_poi``).
+  - ``mapoi_nav_server`` parameter changes: Removed
+    ``initial_pose_subscriber_wait_timeout_sec`` and replaced it with
+    an async retry-timer based design
+    (``initialpose_retry_interval_sec``,
     ``initialpose_retry_max_attempts``,
-    ``initialpose_post_subscribe_republish_count``)。blocking wait による
-    他 callback 停止の回帰を防止
-  - 旧 ``/mapoi_initialpose_poi`` は新 ``/mapoi/initialpose_poi`` に移行し、
-    topic 型も ``std_msgs/String`` →
-    ``mapoi_interfaces/InitialPoseRequest`` (``{map_name, poi_name}``)。
-    SwitchMap 中の topic 同期 race (bridge / nav_server が古い世代の POI 名を
-    採用してしまう) を防ぐため、subscriber 側は ``map_name`` で世代を検証する。
-    publisher: ``mapoi_server``, ``mapoi_webui`` (両方更新済)。
-    subscriber: ``mapoi_nav_server``, ``mapoi_gazebo_bridge``,
-    ``mapoi_gz_bridge`` (全て更新済)
+    ``initialpose_post_subscribe_republish_count``). Prevents the
+    regression where blocking waits stopped other callbacks.
+  - The legacy ``/mapoi_initialpose_poi`` was migrated to
+    ``/mapoi/initialpose_poi``, and the type changed from
+    ``std_msgs/String`` to
+    ``mapoi_interfaces/InitialPoseRequest`` (``{map_name, poi_name}``).
+    To prevent SwitchMap-time topic synchronization races (bridges /
+    ``mapoi_nav_server`` picking up a stale-generation POI name),
+    subscribers now validate the generation via ``map_name``.
+    Publishers: ``mapoi_server``, ``mapoi_webui`` (both updated).
+    Subscribers: ``mapoi_nav_server``, ``mapoi_gazebo_bridge``,
+    ``mapoi_gz_bridge`` (all updated).
 
-* ``pause`` system tag の発火条件を厳格化 (#89 段階 2, #143):
+* ``pause`` system tag firing conditions tightened (#89 stage 2, #143):
 
-  - 旧: ``nav_mode_ != IDLE`` (= GOAL or ROUTE 走行中) なら全 POI で発火
-  - 新: ``nav_mode_ == ROUTE`` かつ active route の ``waypoints`` / ``landmarks``
-    に含まれる POI でのみ発火。GOAL 走行や IDLE では発火しない
+  - Before: Fired at any POI when ``nav_mode_ != IDLE`` (i.e., during
+    GOAL or ROUTE navigation).
+  - After: Fires only when ``nav_mode_ == ROUTE`` *and* the POI is in
+    the active route's ``waypoints`` / ``landmarks``. Does not fire
+    during GOAL navigation or IDLE.
 
-  既存挙動からの変更点として、単発 ``/mapoi/nav/goal_pose_poi`` で偶然 ``pause`` POI に
-  進入しても自動 pause しなくなる。route ベースのシナリオでのみ pause が走る形に
-  整理した。
+  Behavioral change: A single ``/mapoi/nav/goal_pose_poi`` no longer
+  triggers an auto-pause if the robot incidentally enters a ``pause``
+  POI. Pause now runs only in route-based scenarios.
 
-* ``GetRoutePois.srv`` の response に ``landmark_pois`` フィールドを追加 (#143)。
-  yaml の ``route.landmarks`` で参照された POI が response に入る。Nav2 へは
-  送られず、radius 監視と route スコープの pause 発火に使う。
+* ``GetRoutePois.srv`` response gained a ``landmark_pois`` field (#143).
+  POIs referenced by ``route.landmarks`` in YAML appear here. They are
+  not sent to Nav2 and are used only for radius monitoring and
+  route-scoped pause firing.
 
-* ``landmark × pause`` 排他追加。landmark POI は到達不可な reference のため
-  pause 動作が成立しない。WebUI / rviz Panel / API の validation で reject。
+* ``landmark × pause`` mutual exclusion added. ``landmark`` POIs are
+  unreachable references, so pause cannot trigger on them. Rejected by
+  WebUI / RViz Panel / API validation.
 
 * System tag ``goal`` renamed to ``waypoint``. Both single navigation
-  targets and route waypoints share this tag (Nav2 navigation 到達対象).
-  YAML ``tags: [goal, ...]`` must be migrated to ``tags: [waypoint, ...]``.
-  Topic / service / action names referring to "goal" (e.g.
-  ``/mapoi/nav/goal_pose_poi``, ``goal_pose``) remain unchanged because they
-  follow Nav2 native terminology. (#89 段階 1, #142)
+  targets and route waypoints share this tag (the Nav2 navigation
+  destination tag). YAML ``tags: [goal, ...]`` must be migrated to
+  ``tags: [waypoint, ...]``. Topic / service / action names referring
+  to "goal" (e.g. ``/mapoi/nav/goal_pose_poi``, ``goal_pose``) remain
+  unchanged because they follow Nav2 native terminology.
+  (#89 stage 1, #142)
 * System tag ``origin`` removed. Map origin reference points should be
-  expressed with ``landmark`` system tag plus a custom tag (e.g.
-  ``map_origin``) for color/semantic differentiation. Visualization
-  defaults to gray; per-tag color is tracked in #70. (#89 段階 0)
-* ``PointOfInterest.msg``: ``float64 radius`` field removed in favor of the
-  new ``mapoi_interfaces/Tolerance tolerance`` struct (``xy`` + ``yaw``,
-  Nav2 ``SimpleGoalChecker`` align). YAML ``poi.radius`` keys must be
-  migrated to ``poi.tolerance: {xy, yaw}``. (#87)
-* ``Tolerance.msg`` semantics: ``xy`` / ``yaw`` ともに ``>= 0.001`` を要求
-  (`xy`: 1 mm / ``yaw``: 約 0.057°)。0 / 負値は禁止 (実用上「無反応 POI」を
-  作れてしまうため)。"未指定で Nav2 default fallback" の semantics は
-  削除。yaml load で違反値を検出した場合は ``0.001`` に補正 + WARN ログ。
+  expressed with the ``landmark`` system tag plus a custom tag (e.g.
+  ``map_origin``) for color / semantic differentiation. Visualization
+  defaults to gray; per-tag color is tracked in #70. (#89 stage 0)
+* ``PointOfInterest.msg``: the ``float64 radius`` field was removed in
+  favor of the new ``mapoi_interfaces/Tolerance tolerance`` struct
+  (``xy`` + ``yaw``, aligned with Nav2 ``SimpleGoalChecker``). YAML
+  ``poi.radius`` keys must be migrated to
+  ``poi.tolerance: {xy, yaw}``. (#87)
+* ``Tolerance.msg`` semantics: both ``xy`` and ``yaw`` are required to
+  be ``>= 0.001`` (``xy``: 1 mm / ``yaw``: about 0.057°). Zero and
+  negative values are disallowed (they would otherwise allow
+  constructing a practically unresponsive POI). The "unspecified ->
+  Nav2 default fallback" semantics is removed. Out-of-range values
+  found at YAML load time are clamped to ``0.001`` with a WARN log.
   (#138)
 
-* ``mapoi_nav_server`` の ROS parameter ``radius_check_hz`` を
-  ``tolerance_check_hz`` にリネーム (#140)。``PointOfInterest.radius``
-  field 廃止 (#87) → ``tolerance.xy`` 化に伴う命名整合。default 値 / 単位
-  / 動作は変更なし。launch / yaml で ``radius_check_hz`` を指定している場合
-  は ``tolerance_check_hz`` への置換が必要。
+* ``mapoi_nav_server`` ROS parameter ``radius_check_hz`` renamed to
+  ``tolerance_check_hz`` (#140). Naming alignment for the
+  ``PointOfInterest.radius`` -> ``tolerance.xy`` migration (#87).
+  Default value, unit, and behavior are unchanged. Launch files and
+  YAMLs that set ``radius_check_hz`` must rename it to
+  ``tolerance_check_hz``.
 
-* ``mapoi_rviz2_publisher`` の ``arrow_size_ratio`` parameter を廃止 (#136)。
+* ``arrow_size_ratio`` parameter removed from ``mapoi_rviz2_publisher``
+  (#136).
 
-  - 旧: ``arrow_size_ratio`` (double, default 1.0) で POI 矢印サイズを
-    ``radius × ratio`` に動的調整
-  - 新: 矢印は固定 scale (length=0.15, shaft/head=0.04) で扇形 visualization の
-    方向補助に位置付け (radius 連動の倍率は不要)
-  - 移行: 既存 launch / yaml で ``arrow_size_ratio`` を declare / set している場合は
-    削除する (parameter 自体が無くなる)
+  - Before: ``arrow_size_ratio`` (double, default ``1.0``) dynamically
+    sized POI arrows to ``radius × ratio``.
+  - After: Arrows use a fixed scale (length ``0.15``, shaft / head
+    ``0.04``) and serve as a directional cue for the sector
+    visualization (a radius-coupled multiplier is no longer needed).
+  - Migration: Remove any ``arrow_size_ratio`` declaration / set in
+    existing launch files or YAMLs (the parameter itself is gone).
 
 Interfaces
 ----------
@@ -206,182 +237,244 @@ WebUI / rviz_plugins
 --------------------
 
 * POI Editor (WebUI form / rviz_plugins POI Editor table) replaces the
-  ``Radius`` input / column with ``tolerance.xy`` + ``tolerance.yaw``. UI
-  入力単位は ``yaw`` のみ度 (deg) で表示・入力、内部 / yaml は rad で
-  保存 (#138)。HTML ``min`` 制約と Panel ``ValidatePois`` で
-  ``xy >= 0.001`` (m) / ``yaw >= 0.06`` (deg ≒ 0.001 rad) を強制。
-* ``mapoi_webui_node`` の ``POST /api/pois`` で ``tolerance.{xy, yaw}``
-  の min 制約を backend 側でも検証 (frontend bypass 防御)。(#138)
-* RViz POI Editor の column 構造を 6 → 5 に再編 (#158):
+  ``Radius`` input / column with ``tolerance.xy`` + ``tolerance.yaw``.
+  Only the ``yaw`` UI input was displayed and entered in degrees;
+  internal storage and YAML remained in radians (#138). The HTML
+  ``min`` constraint and Panel ``ValidatePois`` enforce
+  ``xy >= 0.001`` (m) / ``yaw >= 0.06`` (deg ≈ 0.001 rad).
+* ``mapoi_webui_node``'s ``POST /api/pois`` validates the
+  ``tolerance.{xy, yaw}`` min constraints on the backend as well, so
+  frontend bypasses are caught (#138).
+* RViz POI Editor column layout reorganized from 6 columns to 5 (#158):
 
-  - 旧: ``name / description / pose / tolerance.xy / tolerance.yaw (deg) / tags``
-  - 新: ``name / pose (x, y, yaw rad) / tolerance (xy m, yaw rad) / tags / description``
-  - tolerance は 1 column 統合 (例: ``0.5, 0.7854``)、yaw は **rad 表示** に統一
-    (pose.yaw が rad なので一貫性確保、#138 の暫定 deg 表示を撤回)。
-  - description column を末尾に移動 (長文で横幅を圧迫しないように)。
-  - validation の min 制約は ``xy >= 0.001 m`` / ``yaw >= 0.001 rad`` に簡素化
-    (旧 deg 換算メッセージを撤廃)。
-  - validation に **新 max 制約 ``yaw <= 2π rad``** を追加。本 PR で UI 入力単位を
-    deg → rad に変更したため、旧 deg 入力 (例: ``45``) を rad として誤って入れた
-    ケース (= 7 周分の異常値) を弾くガード。**既存 YAML で ``2π`` 超を使っていた
-    場合は保存不可になる**ため、誤値修正が必要 (yaw は ``[0, 2π]`` または
-    ``[-π, π]`` で表現するのが慣習で、それを超えるユースケースは事実上ない想定)。
-    soft warning にせず hard reject を選んだ理由は typo 防止を優先するため。
+  - Before: ``name / description / pose / tolerance.xy / tolerance.yaw (deg) / tags``.
+  - After: ``name / pose (x, y, yaw rad) / tolerance (xy m, yaw rad) / tags / description``.
+  - Tolerance is collapsed into one column (e.g., ``0.5, 0.7854``);
+    ``yaw`` is now displayed in **radians** to stay consistent with
+    ``pose.yaw`` (this reverts the temporary degree display introduced
+    in #138).
+  - The ``description`` column moved to the end (so long text doesn't
+    crowd the table width).
+  - Validation min constraints simplified to ``xy >= 0.001 m`` /
+    ``yaw >= 0.001 rad`` (the old degree-conversion message is gone).
+  - Validation gained a **new max constraint ``yaw <= 2π rad``**.
+    Because this PR switched the UI input unit from degrees to
+    radians, this guards against entering an old-style degree value
+    (e.g., ``45``) that would otherwise be interpreted as ~7 turns of
+    rotation. **Existing YAML files with ``yaw > 2π`` will fail to
+    save**, so any out-of-range values must be corrected (yaw is
+    conventionally expressed in ``[0, 2π]`` or ``[-π, π]``; values
+    beyond that are practically never legitimate). A hard reject was
+    chosen over a soft warning to prioritize typo prevention.
 
-* WebUI で rviz / 外部 save 由来の config 変更を SSE で受信し即時反映 (#135 (B))。
+* WebUI now picks up config changes saved from RViz or external tools
+  via SSE and reloads immediately (#135 (B)).
 
-  - 旧: rviz の PoiEditor で save しても WebUI 側はブラウザ更新するまで反映されない
-  - 新: ``mapoi_webui_node`` に ``/api/events`` SSE endpoint を追加。
-    ``/mapoi/config_path`` topic 受信時に ``{type: "config_changed"}`` を全 client に
-    broadcast。frontend (``app.js``) は ``EventSource`` で受信して
-    ``loadTagDefinitions / loadPois / loadRoutes`` を再 fetch
-  - 関連: ``Flask app.run(threaded=True)`` を明示 (SSE long-lived connection と他
-    request の並行処理のため)
-  - PR #168 で対応した #135 (A) (PoiEditor / MapoiPanel の callback 修正) と
-    合わせて #135 全体を close
+  - Before: Saving in the rviz PoiEditor did not propagate to the
+    WebUI until the browser was reloaded.
+  - After: ``mapoi_webui_node`` exposes a new ``/api/events`` SSE
+    endpoint. When ``/mapoi/config_path`` is received, it broadcasts
+    ``{type: "config_changed"}`` to all connected clients. The
+    frontend (``app.js``) consumes the event via ``EventSource`` and
+    re-fetches via ``loadTagDefinitions / loadPois / loadRoutes``.
+  - Related: ``Flask app.run(threaded=True)`` is now set explicitly
+    (so long-lived SSE connections and other requests run
+    concurrently).
+  - Closes #135 in combination with #135 (A) addressed in PR #168
+    (PoiEditor / MapoiPanel callback fixes).
 
-* ``mapoi_rviz2_publisher`` / ``mapoi_webui`` で POI tolerance を扇形 (sector) で描画 (#136)。
+* POI tolerance is rendered as a sector marker in
+  ``mapoi_rviz2_publisher`` and ``mapoi_webui`` (#136).
 
-  - 半径 = ``tolerance.xy``、扇角 = ``2 * tolerance.yaw``、中心線 = ``pose.yaw``
-  - ``waypoint`` = 塗り扇形、``landmark`` = 中抜き扇形、``pause`` = 点線 outline
-    の重ね描き (主 glyph は細い実線で対比)
-  - ``0 < tolerance.yaw < π`` の時のみ扇形描画、それ以外 (yaw 不問) は完全円扱い
-    (``pass_through`` 表現可能)
-  - ``mapoi_rviz2_publisher`` に ``show_tolerance_sector`` parameter (bool, default true)
-    を追加 — tolerance visualization を runtime トグル
-  - 続く #179 で 円 (xy 判定領域) + 扇形 (yaw 制約) の重ね描きに分解 (下記参照)
+  - Radius = ``tolerance.xy``; sector angle = ``2 * tolerance.yaw``;
+    centerline = ``pose.yaw``.
+  - ``waypoint`` = filled sector, ``landmark`` = hollow sector,
+    ``pause`` = dashed outline overlay (a thin solid line is used for
+    the primary glyph for contrast).
+  - The sector is drawn only when ``0 < tolerance.yaw < π``; otherwise
+    (yaw-agnostic) the POI is treated as a full circle (allowing
+    ``pass_through`` to be expressed).
+  - New ``show_tolerance_sector`` parameter on
+    ``mapoi_rviz2_publisher`` (bool, default ``true``) toggles the
+    tolerance visualization at runtime.
+  - Subsequently #179 split this into a circle (xy detection region)
+    + sector (yaw constraint) overlay (see below).
 
-* ``mapoi_rviz2_publisher`` / ``mapoi_webui`` で POI tolerance を 円 + 扇形 の重ね描きに
-  分解 + pause overlay を dot 形式に変更 (#179、#178 user feedback 対応)。
+* POI tolerance split into circle + sector overlays, and the pause
+  overlay reworked into a dot pattern in
+  ``mapoi_rviz2_publisher`` / ``mapoi_webui`` (#179, addressing user
+  feedback from #178).
 
-  - 円 outline (細実線・薄め): ロボットの ``tolerance.xy`` 進入判定領域を常時表示。
-    判定 logic (Euclidean < ``tolerance.xy``) の視覚的根拠として yaw 不問で描画
-  - 扇形 (塗り or 中抜き): yaw 制約を強調。``0 < tolerance.yaw < π`` の時のみ
-    重ね描き (完全円との情報冗長を回避)
-  - **見た目の変化点**: 旧 (#178) では yaw 不問 POI (``tolerance.yaw == 0`` または ``>= π``)
-    も扇形 = 完全円として描画されていた (waypoint = 緑塗り完全円、landmark = 灰
-    中抜き完全円)。本 PR では yaw 不問なら **円アウトライン (細実線・薄め) のみ**表示で、
-    塗り / 中抜き stroke は描画しない。判定 semantics (xy のみ) と一致するが、
-    旧表示に慣れた利用者には印象変化あり (デモ・スクリーンショット用途は要確認)
-  - pause overlay: 旧 dash (``dashArray: '6, 4'`` / RViz segment 0.05m, 1:1 比率) は
-    「点と感じない、潰れて見える」user feedback (#178 PR コメント) を受け、
-    sparse dot 形式に変更。WebUI ``dashArray: '2, 6'`` + ``lineCap: round`` (cycle 比
-    25% on)、RViz dot 長 0.02m + 間隔 0.10m + line 0.04m (cycle 比 20% on)。
-    pause 発火条件 (xy 円内) と境界が一致する xy 円沿いに重畳
-  - ``show_tolerance_sector`` parameter は名称据え置きで制御対象を 円 + 扇形 + pause overlay
-    全体に拡張 (backward compat 維持)
-  - **保守注**: 描画仕様は ``mapoi_rviz2_publisher.cpp`` (RViz) / ``map-viewer.js`` (WebUI)
-    で二重実装。仕様変更時はペアで更新する (#136 から継続、共通化は #70 と合わせて検討)
-  - **POI Editor Panel の Display Settings UI 改修**: PR #178 で ``arrow_size_ratio``
-    parameter を publisher から削除した際、Panel の DoubleSpinBox UI が取り残されており
-    ``get_parameters / set_parameters`` 呼び出しが失敗する regression があった。
-    本 PR で同 UI を ``show_tolerance_sector`` の CheckBox に置換 (display layer の
-    runtime トグルが Panel から可能に)
+  - Circle outline (thin solid line, faint): always shown to indicate
+    the robot's ``tolerance.xy`` entry-detection region. Drawn
+    yaw-agnostically as a visual cue for the detection logic
+    (Euclidean ``< tolerance.xy``).
+  - Sector (filled or hollow): emphasizes the yaw constraint. Drawn
+    only when ``0 < tolerance.yaw < π`` to avoid information
+    redundancy with the full circle.
+  - **Visual change**: Previously (#178), yaw-agnostic POIs
+    (``tolerance.yaw == 0`` or ``>= π``) were also drawn as a sector
+    that happened to cover the full circle (filled green for
+    ``waypoint``, hollow gray for ``landmark``). With this change,
+    yaw-agnostic POIs show **only the thin faint circle outline**
+    without the filled or hollow stroke. This matches the detection
+    semantics (xy only), but viewers used to the old display will
+    notice a shift (worth checking before reusing demos / screenshots).
+  - Pause overlay: The old dashed style (``dashArray: '6, 4'`` /
+    RViz segment 0.05 m, 1:1 ratio) was reported as "doesn't read as
+    dots, just looks crushed" (#178 PR comments), so it was changed
+    to a sparse dot pattern. WebUI uses ``dashArray: '2, 6'`` with
+    ``lineCap: round`` (25 % cycle on); RViz uses dots 0.02 m long
+    with 0.10 m gaps and a 0.04 m line (20 % cycle on). The dots are
+    overlaid along the xy circle so the boundary aligns with the
+    pause-firing condition (inside the xy circle).
+  - The ``show_tolerance_sector`` parameter keeps its old name but now
+    controls the entire circle + sector + pause overlay (preserves
+    backward compatibility).
+  - **Maintenance note**: The drawing spec is duplicated in
+    ``mapoi_rviz2_publisher.cpp`` (RViz) and ``map-viewer.js``
+    (WebUI). Spec changes must be applied to both (continuing from
+    #136; unifying the two is being considered together with #70).
+  - **POI Editor Panel Display Settings UI fix**: When PR #178
+    removed ``arrow_size_ratio`` from the publisher, the Panel's
+    DoubleSpinBox UI was left in place, causing
+    ``get_parameters`` / ``set_parameters`` calls to fail (a
+    regression). This PR replaces that UI with a checkbox for
+    ``show_tolerance_sector`` so the runtime display-layer toggle is
+    available from the Panel.
 
-* ``mapoi_rviz2_publisher`` から legacy ``event`` tag elif 分岐を削除 (#180)。
+* Legacy ``event`` tag ``elif`` branch removed from
+  ``mapoi_rviz2_publisher`` (#180).
 
-  - ``event`` tag は元々 system tag だったが #89 段階 1 で system tag から外れて custom tag 扱いに
-    なっていた。RViz publisher 側に hardcode で青色 arrow + label を描画する分岐が残っており、
-    PR #178 の cursor review で「legacy 残置」として high 指摘された follow-up
-  - 本 PR で elif 分岐を削除。``event`` tag を持つ POI は他の system tag (``waypoint`` /
-    ``landmark``) があれば従来通り扇形 + arrow が描画され、それらが無ければ visualization に
-    出ない (custom tag 共通の挙動と一致)
-  - ``hazard_south`` のような複合 tag POI は ``[landmark, hazard]`` に整理 (sample 側変更、
-    Samples セクション参照)
-  - 色 / glyph の整理は #70 で扱う
+  - ``event`` was originally a system tag but had been demoted to a
+    custom tag in #89 stage 1. The RViz publisher still had a
+    hard-coded branch drawing a blue arrow + label for it, which
+    PR #178's cursor review flagged as high-priority "legacy
+    leftover" follow-up.
+  - This PR removes the ``elif`` branch. POIs with the ``event`` tag
+    are now drawn (sector + arrow) only if they also carry another
+    system tag (``waypoint`` / ``landmark``); otherwise they are
+    omitted from the visualization, matching the behavior of other
+    custom tags.
+  - Composite-tag POIs such as ``hazard_south`` are reorganized to
+    ``[landmark, hazard]`` (sample-side change, see Samples).
+  - Color / glyph reorganization is tracked in #70.
 
 Samples
 -------
 
-* Sample yaml (``turtlebot3_world`` / ``turtlebot3_dqn_stage1``) を全パターン
-  網羅シナリオに刷新 (#146)。新機能 (``route.landmarks`` #143、扇形描画 #136、
-  ``tolerance.yaw`` #138) のリグレッション検証カバレッジを底上げする。
+* Sample YAMLs (``turtlebot3_world`` / ``turtlebot3_dqn_stage1``)
+  reworked to cover the full feature matrix (#146). Strengthens
+  regression coverage for new features (``route.landmarks`` #143,
+  sector rendering #136, ``tolerance.yaw`` #138).
 
-  - ``turtlebot3_world`` (オフィス見学ツアー): POI 5 → 9 に拡張。連続 ``pause``
-    (``corridor_a`` + ``corridor_b``)、撮影地点 (``conference_room`` の
-    ``tolerance.yaw=0.10``)、yaw 不問の通り過ぎ (``corridor_*`` の
-    ``tolerance.yaw=π``)、純粋 ``landmark`` / ``landmark + audio_info`` /
-    ``landmark + capture_target`` の 3 パターン、route ``tour_full``
-    (waypoints + landmarks 両方持ち) と ``tour_short`` (landmarks 省略) の対比。
-    custom tag ``capture_trigger`` / ``capture_target`` を追加。
-  - ``turtlebot3_dqn_stage1`` (障害物 sandbox での回避): POI 5 → 7 に拡張。
-    複合 tag (``landmark + hazard``、当初 ``[event, landmark, hazard]`` だったが #180 で
-    ``event`` tag 削除に伴い ``[landmark, hazard]`` に整理) のハザード、``tolerance.yaw=π`` で
-    yaw 不問の通過点 (= pass_through 代替) として ``checkpoint_west/east``、
-    pause 中継 (``pause_intersection``)、route ``avoidance_a``
-    (waypoints + landmarks) と ``avoidance_b`` (waypoints のみ)。custom tag
-    ``observation`` を追加。
-  - ``mapoi_turtlebot3_example/README.md`` にサンプル一覧表 (各シナリオで
-    検証できる機能 / POI tag 構成) を追記。
+  - ``turtlebot3_world`` (office tour scenario): POI count 5 -> 9.
+    Adds consecutive ``pause`` (``corridor_a`` + ``corridor_b``), a
+    photography stop (``conference_room`` with
+    ``tolerance.yaw=0.10``), yaw-agnostic passes (``corridor_*`` with
+    ``tolerance.yaw=π``), three landmark variations (pure
+    ``landmark`` / ``landmark + audio_info`` /
+    ``landmark + capture_target``), and a contrast between
+    ``tour_full`` (with both waypoints and landmarks) and
+    ``tour_short`` (no landmarks). New custom tags
+    ``capture_trigger`` / ``capture_target``.
+  - ``turtlebot3_dqn_stage1`` (obstacle-avoidance sandbox): POI count
+    5 -> 7. Adds composite-tag hazards (``landmark + hazard`` -
+    originally ``[event, landmark, hazard]`` but reorganized to
+    ``[landmark, hazard]`` after the ``event`` tag removal in #180),
+    yaw-agnostic pass-through points (``checkpoint_west`` /
+    ``checkpoint_east`` with ``tolerance.yaw=π``, used in lieu of a
+    ``pass_through`` tag), a pause checkpoint
+    (``pause_intersection``), and a contrast between ``avoidance_a``
+    (waypoints + landmarks) and ``avoidance_b`` (waypoints only). New
+    custom tag ``observation``.
+  - ``mapoi_turtlebot3_example/README.md`` gained a sample summary
+    table listing the features / POI-tag composition each scenario
+    exercises.
 
-  **Route 名のリネーム** (旧 → 新):
+  **Route renames** (old -> new):
 
-  - ``turtlebot3_world``: ``route_1`` → ``tour_full``、``route_2`` → ``tour_short``
-  - ``turtlebot3_dqn_stage1``: 変更なし (``avoidance_a`` / ``avoidance_b``)
+  - ``turtlebot3_world``: ``route_1`` -> ``tour_full``, ``route_2`` ->
+    ``tour_short``.
+  - ``turtlebot3_dqn_stage1``: unchanged (``avoidance_a`` /
+    ``avoidance_b``).
 
-  ``tour_short`` は旧 ``route_2`` 互換 (``[elevator_hall, corridor_a,
-  conference_room]``) で経路は同じ。launch / クライアント / 社内スクリプトで
-  ``route_1`` / ``route_2`` を直接参照している場合は新名への移行が必要。
-  サンプル YAML の固定スナップショットを前提にした外部チュートリアル等も同様
-  (POI 数 / 名前 / tag 組合せが大幅に拡張されているため)。
+  ``tour_short`` is functionally compatible with the old ``route_2``
+  (``[elevator_hall, corridor_a, conference_room]``); the path is the
+  same. Launch files, clients, and internal scripts that reference
+  ``route_1`` / ``route_2`` directly must migrate to the new names.
+  External tutorials that pin the sample YAML snapshot also need
+  updates because the POI count, names, and tag combinations have
+  expanded significantly.
 
-* ``scripts/check_sample_yaml_consistency.py`` 新設 + CI 組み込み (#146)。
-  サンプル yaml の POI 名 / route waypoint / landmark 参照の整合性、tag 排他
-  (``waypoint × landmark``、``landmark × pause``)、``tolerance.{xy,yaw}``
-  の min 制約 (>= 0.001) を pull request / push で自動検証。
+* New ``scripts/check_sample_yaml_consistency.py`` plus CI hookup
+  (#146). On pull-request and push, it automatically verifies POI
+  name / route waypoint / landmark reference consistency, tag
+  exclusion rules (``waypoint × landmark``, ``landmark × pause``),
+  and the ``tolerance.{xy, yaw} >= 0.001`` minimum constraint in
+  sample YAMLs.
 
 Fixes
 -----
 
-* ``mapoi_server`` の ``reload_map_info`` service で ``/mapoi/initialpose_poi``
-  topic に skip message (``poi_name`` 空) を明示 publish するように修正
-  (#154)。``transient_local`` (depth=1) の latched 値が reload 直前の古い
-  POI 名のまま残り、reload 後に起動する nav_server / 再 connection した
-  RViz が編集前の POI 名を受信してしまう stale message 問題を排除する。
-  subscriber 側 (``mapoi_nav_server`` / ``mapoi_gazebo_bridge`` /
-  ``mapoi_gz_bridge``) は元々 ``poi_name`` 空を無視する規約のため、運用中の
-  自己位置巻き戻しは発生しない (#149 round 4 で確立した invariant を維持)。
+* ``mapoi_server`` ``reload_map_info`` service now explicitly publishes
+  a skip message (empty ``poi_name``) to ``/mapoi/initialpose_poi``
+  (#154). This eliminates the stale-message problem where the
+  ``transient_local`` (depth=1) latched value retained the pre-reload
+  POI name, causing late-starting ``mapoi_nav_server`` instances or
+  reconnecting RViz panels to receive a pre-edit POI name. Subscribers
+  (``mapoi_nav_server`` / ``mapoi_gazebo_bridge`` / ``mapoi_gz_bridge``)
+  ignore empty ``poi_name`` by convention, so the live pose is not
+  rewound (the invariant established in #149 round 4 is preserved).
 
 Navigation server
 -----------------
 
-* ``mapoi_nav_server`` で ``EVENT_STOPPED`` / ``EVENT_RESUMED`` の publish 判定
-  logic を実装 (#140)。``PoiEvent.msg`` に #87 で追加済の定数を実際に発火
-  させる。判定 source は OR で 2 系統:
+* ``mapoi_nav_server`` now publishes ``EVENT_STOPPED`` /
+  ``EVENT_RESUMED`` (#140). Activates the constants added to
+  ``PoiEvent.msg`` in #87. Two OR-combined trigger sources:
 
-  - **Nav2 action SUCCEEDED**: ``FollowWaypoints`` / ``NavigateToPose`` の
-    result_callback で SUCCEEDED を検知したら、現在 inside 状態の全 POI に
-    ``EVENT_STOPPED`` を即時 publish (cmd_vel dwell 待ちを経由しない)
-  - **cmd_vel ベース**: 線速・角速の両方が ``stopped_speed_threshold``
-    (default ``0.01``) 未満の状態が ``stopped_dwell_time_sec`` (default
-    ``1.0`` 秒) 続いたら ``EVENT_STOPPED`` を publish。tolerance_check_callback
-    の各 tick で判定
-  - **EVENT_RESUMED**: STOPPED 状態の POI で速度が閾値超に戻ったら即時
-    publish (dwell 不要)。新規 ``/mapoi/nav/goal_pose_poi`` / ``/mapoi/nav/route``
-    受信時にも全 STOPPED POI に対して RESUMED を publish (subscriber 側で
-    「停止解除」を即時検知できるようにする)
-  - **EXIT 時**: poi_inside_state_ → false と同時に poi_stopped_state_ も
-    reset。EXIT イベントが「停止解除」を兼ねる扱い (RESUMED は明示 publish
-    しない、ライフサイクルを ENTER → STOPPED → EXIT に整理)
+  - **Nav2 action SUCCEEDED**: When the ``FollowWaypoints`` /
+    ``NavigateToPose`` result callback detects ``SUCCEEDED``,
+    ``EVENT_STOPPED`` is published immediately for every POI in the
+    inside state (without waiting for the ``cmd_vel`` dwell).
+  - **cmd_vel based**: When both linear and angular velocity stay
+    below ``stopped_speed_threshold`` (default ``0.01``) for at
+    least ``stopped_dwell_time_sec`` (default ``1.0`` s),
+    ``EVENT_STOPPED`` is published. Evaluated on every
+    ``tolerance_check_callback`` tick.
+  - **EVENT_RESUMED**: When a STOPPED POI's velocity goes back above
+    the threshold, ``EVENT_RESUMED`` is published immediately (no
+    dwell required). It is also published for all STOPPED POIs upon
+    receiving a new ``/mapoi/nav/goal_pose_poi`` / ``/mapoi/nav/route``
+    so subscribers can detect "pause released" without delay.
+  - **On EXIT**: ``poi_inside_state_`` -> false also resets
+    ``poi_stopped_state_``. The EXIT event implicitly covers "pause
+    released", so RESUMED is not published here. The lifecycle is
+    organized as ENTER -> STOPPED -> EXIT.
 
-  新規 ROS parameter:
+  New ROS parameters:
 
-  - ``stopped_speed_threshold`` (default ``0.01`` m/s 相当)
-  - ``stopped_dwell_time_sec`` (default ``1.0``)
-  - ``cmd_vel_topic`` (default ``cmd_vel``)
+  - ``stopped_speed_threshold`` (default ``0.01`` m/s equivalent).
+  - ``stopped_dwell_time_sec`` (default ``1.0``).
+  - ``cmd_vel_topic`` (default ``cmd_vel``).
 
-  state machine 純関数 ``compute_stopped_transition`` を切り出し、
-  ``test_nav_server_unit`` で unit test カバレッジ確保 (5 件追加)。
+  The state-machine pure function ``compute_stopped_transition`` was
+  extracted, with five new unit tests added in
+  ``test_nav_server_unit``.
 
 Internal
 --------
 
-* initial pose 選定ロジックを共通ヘッダ
-  ``mapoi_server/include/mapoi_server/initial_pose_resolver.hpp`` に切り出し、
-  ``mapoi_server`` / ``mapoi_gazebo_bridge`` / ``mapoi_gz_bridge`` の 3 箇所の
-  重複実装を統合 (#150)。今後 ``initial_poi_name`` 仕様 (除外条件 / fallback)
-  が拡張された場合の simulator spawn と ``/initialpose`` の挙動乖離を防ぐ。
-  挙動は同一 (純関数の rename + 物理配置移動のみ、unit test 互換)。
+* Initial-pose selection logic extracted into a shared header
+  ``mapoi_server/include/mapoi_server/initial_pose_resolver.hpp``,
+  unifying the three duplicate implementations across
+  ``mapoi_server`` / ``mapoi_gazebo_bridge`` / ``mapoi_gz_bridge``
+  (#150). Prevents future divergence between simulator spawn behavior
+  and ``/initialpose`` if the ``initial_poi_name`` specification
+  (exclusion rules / fallback) evolves. Behavior is preserved (pure
+  function rename and file relocation only; existing unit tests still
+  pass).
 
 
 0.2.0 (2026-04-29)
