@@ -68,11 +68,11 @@ private:
   // parameters
   std::string robot_name_;
   std::string robot_sdf_path_;
-  // /initialpose late publish parameters (#91)
+  // /initialpose late publish parameters (#91)。default は declare_parameter (cpp) 側を SSOT。
+  // delay のみ parameter 化 (環境依存: PC スペック / Gazebo spawn 速度で調整余地)。
+  // publish 回数 / 間隔は AMCL の covariance 拡散ぶれ抑制に必要な最小構成として cpp 側 constexpr で固定。
   std::string initial_pose_topic_;
-  int respawn_initialpose_delay_ms_{0};
-  int respawn_initialpose_publish_count_{0};
-  int respawn_initialpose_publish_interval_ms_{0};
+  int respawn_initialpose_delay_ms_;
 
   // state (worker thread のみが touch)
   std::string current_map_name_;

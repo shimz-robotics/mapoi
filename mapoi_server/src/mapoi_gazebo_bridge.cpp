@@ -16,6 +16,7 @@
 
 #include "mapoi_server/mapoi_gazebo_bridge.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <thread>
@@ -30,6 +31,17 @@
 using namespace std::chrono_literals;
 using std::placeholders::_1;
 
+namespace
+{
+// late /initialpose の publish 回数と間隔 (#91)。AMCL は /initialpose 受信時に particle を
+// covariance ± で gaussian 再分布するため、1 回 publish 直後の数 frame は particle が σ 範囲
+// (covariance 0.25 → σ=0.5m) に散ったままで /amcl_pose が一時的に ~0.5m ずれる (検証で 47-49cm 観測)。
+// 2 回 publish (間隔 500ms) で初回ぶれを上書きすると過渡 drift が消える (検証済)。
+// 環境非依存 (AMCL covariance 仕様で決まる) のため parameter 化せず constexpr 固定。
+constexpr int kRespawnInitialposePublishCount = 2;
+constexpr int kRespawnInitialposePublishIntervalMs = 500;
+}  // namespace
+
 
 MapoiGazeboBridge::MapoiGazeboBridge()
 : Node("mapoi_gazebo_bridge")
@@ -37,26 +49,20 @@ MapoiGazeboBridge::MapoiGazeboBridge()
   this->declare_parameter<std::string>("robot_entity_name", "burger");
   this->declare_parameter<std::string>("robot_sdf_path", "");
   // /initialpose late publish parameters (#91 仮説 A 対策、Classic 専用)。
-  // - delay: spawn 完了から最初の /initialpose publish までの待ち時間。Nav2 LoadMap 完了 + AMCL の
-  //   新 map 反映を待つ目的。短い delay だと AMCL の laser scan が新 map と整合する前に publish
-  //   して再 drift する事象が #91 検証で観測された (delay=300ms で過渡 drift 1-2m)。
-  // - count: publish 回数。複数回にすると AMCL が誤った peak に再収束した場合の引き戻し保険になる。
-  // - interval: count > 1 のときの publish 間隔。
-  // default 値 (1000 / 3 / 700) は #91 検証で過渡 drift 解消を確認した組み合わせ。
+  // delay は spawn 完了から最初の /initialpose publish までの待ち時間。Nav2 LoadMap 完了 + AMCL の
+  // 新 map 反映を待つ目的。短い delay だと AMCL の laser scan が新 map と整合する前に publish
+  // して再 drift する事象が #91 検証で観測された (delay=300ms で過渡 drift 1-2m)。default 500ms。
+  // 環境依存 (PC スペック / Gazebo spawn 速度) のため parameter 化。
   this->declare_parameter<std::string>("initial_pose_topic", "/initialpose");
-  this->declare_parameter<int>("respawn_initialpose_delay_ms", 1000);
-  this->declare_parameter<int>("respawn_initialpose_publish_count", 3);
-  this->declare_parameter<int>("respawn_initialpose_publish_interval_ms", 700);
+  this->declare_parameter<int>("respawn_initialpose_delay_ms", 500);
 
   robot_name_ = this->get_parameter("robot_entity_name").as_string();
   robot_sdf_path_ = this->get_parameter("robot_sdf_path").as_string();
   initial_pose_topic_ = this->get_parameter("initial_pose_topic").as_string();
+  // 負値は std::chrono::milliseconds の符号付き duration を不用意に渡すと長時間 sleep / UB の温床
+  // になるため 0 下限クランプ。
   respawn_initialpose_delay_ms_ =
-    this->get_parameter("respawn_initialpose_delay_ms").as_int();
-  respawn_initialpose_publish_count_ =
-    this->get_parameter("respawn_initialpose_publish_count").as_int();
-  respawn_initialpose_publish_interval_ms_ =
-    this->get_parameter("respawn_initialpose_publish_interval_ms").as_int();
+    std::max(0, static_cast<int>(this->get_parameter("respawn_initialpose_delay_ms").as_int()));
 
   // Reentrant callback group + MultiThreadedExecutor で worker thread から
   // async_send_request().future.wait_for() が executor の別 thread で resolve される。
@@ -455,10 +461,6 @@ bool MapoiGazeboBridge::respawn_robot(double x, double y, double yaw)
 
 void MapoiGazeboBridge::publish_initialpose_after_respawn(double x, double y, double yaw)
 {
-  if (respawn_initialpose_publish_count_ <= 0) {
-    return;
-  }
-
   // delay は worker thread の sleep。ROS executor (別 thread) は spin 継続するため OK。
   // 目的: Nav2 LoadMap 完了 + AMCL の新 map 反映を待ってから /initialpose を流すことで、
   // 古い map に対する AMCL の誤収束を「新 map + 正しい spawn 位置」で上書きする確率を上げる。
@@ -480,16 +482,15 @@ void MapoiGazeboBridge::publish_initialpose_after_respawn(double x, double y, do
   msg.pose.covariance[7] = 0.25;
   msg.pose.covariance[35] = 0.06853891945200942;
 
-  for (int i = 0; i < respawn_initialpose_publish_count_; ++i) {
+  for (int i = 0; i < kRespawnInitialposePublishCount; ++i) {
     msg.header.stamp = this->now();
     initialpose_pub_->publish(msg);
     RCLCPP_INFO(this->get_logger(),
       "Published late /initialpose after respawn (%d/%d): (%.2f, %.2f, yaw=%.2f) on '%s'",
-      i + 1, respawn_initialpose_publish_count_, x, y, yaw, initial_pose_topic_.c_str());
-    if (i + 1 < respawn_initialpose_publish_count_ &&
-        respawn_initialpose_publish_interval_ms_ > 0) {
+      i + 1, kRespawnInitialposePublishCount, x, y, yaw, initial_pose_topic_.c_str());
+    if (i + 1 < kRespawnInitialposePublishCount) {
       std::this_thread::sleep_for(
-        std::chrono::milliseconds(respawn_initialpose_publish_interval_ms_));
+        std::chrono::milliseconds(kRespawnInitialposePublishIntervalMs));
     }
   }
 }
