@@ -10,6 +10,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/string.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <gazebo_msgs/srv/spawn_entity.hpp>
 #include <gazebo_msgs/srv/delete_entity.hpp>
 
@@ -57,10 +58,21 @@ private:
   bool delete_entity(const std::string & name);
   bool spawn_entity_from_uri(const std::string & name, const std::string & uri);
   bool respawn_robot(double x, double y, double yaw);
+  // Classic 固有 (#91 仮説 A): respawn_robot の delete + spawn 中に robot がシーンから一時消失 →
+  // AMCL の laser scan が新 map と不整合な過渡状態で誤った peak に収束する問題への対策。
+  // spawn 完了後に短い delay を挟んで bridge から /initialpose を late publish し、AMCL に
+  // 「正しい spawn 位置」を最後の権威として教える。gz-sim 経路 (mapoi_gz_bridge) は SetEntityPose で
+  // atomic teleport なので不要、本対策は Classic 専用。
+  void publish_initialpose_after_respawn(double x, double y, double yaw);
 
   // parameters
   std::string robot_name_;
   std::string robot_sdf_path_;
+  // /initialpose late publish parameters (#91)。default は declare_parameter (cpp) 側を SSOT。
+  // delay のみ parameter 化 (環境依存: PC スペック / Gazebo spawn 速度で調整余地)。
+  // publish 回数 / 間隔は AMCL の covariance 拡散ぶれ抑制に必要な最小構成として cpp 側 constexpr で固定。
+  std::string initial_pose_topic_;
+  int respawn_initialpose_delay_ms_;
 
   // state (worker thread のみが touch)
   std::string current_map_name_;
@@ -71,6 +83,9 @@ private:
   rclcpp::CallbackGroup::SharedPtr cb_group_;
   rclcpp::Client<gazebo_msgs::srv::SpawnEntity>::SharedPtr spawn_client_;
   rclcpp::Client<gazebo_msgs::srv::DeleteEntity>::SharedPtr delete_client_;
+
+  // /initialpose late publisher (#91)
+  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initialpose_pub_;
 
   // subscription
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr config_path_sub_;
