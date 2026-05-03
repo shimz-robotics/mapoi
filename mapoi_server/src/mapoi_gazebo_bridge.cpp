@@ -18,6 +18,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <thread>
 
 #include "mapoi_server/initial_pose_resolver.hpp"
 #include <filesystem>
@@ -35,9 +36,27 @@ MapoiGazeboBridge::MapoiGazeboBridge()
 {
   this->declare_parameter<std::string>("robot_entity_name", "burger");
   this->declare_parameter<std::string>("robot_sdf_path", "");
+  // /initialpose late publish parameters (#91 仮説 A 対策、Classic 専用)。
+  // - delay: spawn 完了から最初の /initialpose publish までの待ち時間。Nav2 LoadMap 完了 + AMCL の
+  //   新 map 反映を待つ目的。短い delay だと AMCL の laser scan が新 map と整合する前に publish
+  //   して再 drift する事象が #91 検証で観測された (delay=300ms で過渡 drift 1-2m)。
+  // - count: publish 回数。複数回にすると AMCL が誤った peak に再収束した場合の引き戻し保険になる。
+  // - interval: count > 1 のときの publish 間隔。
+  // default 値 (1000 / 3 / 700) は #91 検証で過渡 drift 解消を確認した組み合わせ。
+  this->declare_parameter<std::string>("initial_pose_topic", "/initialpose");
+  this->declare_parameter<int>("respawn_initialpose_delay_ms", 1000);
+  this->declare_parameter<int>("respawn_initialpose_publish_count", 3);
+  this->declare_parameter<int>("respawn_initialpose_publish_interval_ms", 700);
 
   robot_name_ = this->get_parameter("robot_entity_name").as_string();
   robot_sdf_path_ = this->get_parameter("robot_sdf_path").as_string();
+  initial_pose_topic_ = this->get_parameter("initial_pose_topic").as_string();
+  respawn_initialpose_delay_ms_ =
+    this->get_parameter("respawn_initialpose_delay_ms").as_int();
+  respawn_initialpose_publish_count_ =
+    this->get_parameter("respawn_initialpose_publish_count").as_int();
+  respawn_initialpose_publish_interval_ms_ =
+    this->get_parameter("respawn_initialpose_publish_interval_ms").as_int();
 
   // Reentrant callback group + MultiThreadedExecutor で worker thread から
   // async_send_request().future.wait_for() が executor の別 thread で resolve される。
@@ -46,6 +65,13 @@ MapoiGazeboBridge::MapoiGazeboBridge()
     "spawn_entity", rmw_qos_profile_services_default, cb_group_);
   delete_client_ = this->create_client<gazebo_msgs::srv::DeleteEntity>(
     "delete_entity", rmw_qos_profile_services_default, cb_group_);
+
+  // /initialpose late publisher (#91): mapoi_nav_server::nav2_initialpose_pub_ と同 topic に
+  // bridge からも publish する。AMCL は最後に到着した /initialpose で particle を再 init するため、
+  // bridge の spawn 完了後に late publish することで「spawn 中の laser scan 不整合」による誤収束を
+  // 上書きできる。QoS は nav_server 側 publisher と同じ default (depth=1)。
+  initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
+    initial_pose_topic_, 1);
 
   auto sub_opts = rclcpp::SubscriptionOptions();
   sub_opts.callback_group = cb_group_;
@@ -288,6 +314,12 @@ bool MapoiGazeboBridge::switch_world(
   if (info.has_initial_pose) {
     if (!respawn_robot(info.initial_x, info.initial_y, info.initial_yaw)) {
       all_ok = false;
+    } else {
+      // Classic 固有 (#91 仮説 A): respawn 成功直後に /initialpose を late publish して AMCL を
+      // spawn 位置に強制的に再 init する。delete + spawn 中に AMCL が誤収束しても、最後の
+      // /initialpose で particle を spawn 位置に戻せる。gz-sim 経路は SetEntityPose で atomic
+      // teleport なので不要 (mapoi_gz_bridge には実装しない)。
+      publish_initialpose_after_respawn(info.initial_x, info.initial_y, info.initial_yaw);
     }
   } else {
     RCLCPP_WARN(this->get_logger(),
@@ -418,6 +450,48 @@ bool MapoiGazeboBridge::respawn_robot(double x, double y, double yaw)
     "respawn_robot(%s, %.2f, %.2f, yaw=%.2f): success",
     robot_name_.c_str(), x, y, yaw);
   return true;
+}
+
+
+void MapoiGazeboBridge::publish_initialpose_after_respawn(double x, double y, double yaw)
+{
+  if (respawn_initialpose_publish_count_ <= 0) {
+    return;
+  }
+
+  // delay は worker thread の sleep。ROS executor (別 thread) は spin 継続するため OK。
+  // 目的: Nav2 LoadMap 完了 + AMCL の新 map 反映を待ってから /initialpose を流すことで、
+  // 古い map に対する AMCL の誤収束を「新 map + 正しい spawn 位置」で上書きする確率を上げる。
+  if (respawn_initialpose_delay_ms_ > 0) {
+    std::this_thread::sleep_for(
+      std::chrono::milliseconds(respawn_initialpose_delay_ms_));
+  }
+
+  geometry_msgs::msg::PoseWithCovarianceStamped msg;
+  msg.header.frame_id = "map";
+  msg.pose.pose.position.x = x;
+  msg.pose.pose.position.y = y;
+  msg.pose.pose.position.z = 0.0;
+  msg.pose.pose.orientation.z = std::sin(yaw / 2.0);
+  msg.pose.pose.orientation.w = std::cos(yaw / 2.0);
+  // covariance は mapoi_nav_server::publish_initial_pose と同じ default。
+  // 0.25 (m^2, x/y) と ~0.069 (rad^2, yaw、約 ±15deg) は AMCL の典型値。
+  msg.pose.covariance[0] = 0.25;
+  msg.pose.covariance[7] = 0.25;
+  msg.pose.covariance[35] = 0.06853891945200942;
+
+  for (int i = 0; i < respawn_initialpose_publish_count_; ++i) {
+    msg.header.stamp = this->now();
+    initialpose_pub_->publish(msg);
+    RCLCPP_INFO(this->get_logger(),
+      "Published late /initialpose after respawn (%d/%d): (%.2f, %.2f, yaw=%.2f) on '%s'",
+      i + 1, respawn_initialpose_publish_count_, x, y, yaw, initial_pose_topic_.c_str());
+    if (i + 1 < respawn_initialpose_publish_count_ &&
+        respawn_initialpose_publish_interval_ms_ > 0) {
+      std::this_thread::sleep_for(
+        std::chrono::milliseconds(respawn_initialpose_publish_interval_ms_));
+    }
+  }
 }
 
 
