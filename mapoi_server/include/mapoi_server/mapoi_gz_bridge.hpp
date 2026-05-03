@@ -10,6 +10,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/string.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <ros_gz_interfaces/srv/spawn_entity.hpp>
 #include <ros_gz_interfaces/srv/delete_entity.hpp>
 #include <ros_gz_interfaces/srv/set_entity_pose.hpp>
@@ -58,10 +59,20 @@ private:
   bool delete_model_entity(const std::string & name);
   bool spawn_model_from_uri(const std::string & name, const std::string & uri);
   bool teleport_robot(double x, double y, double yaw);
+  // teleport 後に bridge から /initialpose を late publish する (#202、Classic 側 #91 / #200 と API 一貫)。
+  // gz-sim は SetEntityPose で atomic teleport なので Classic のような laser scan 不整合 race は無いが、
+  // AMCL の /initialpose 受信時の covariance 拡散ぶれ (σ=0.5m) は両 simulator 共通の AMCL 仕様。
+  // teleport 後の AMCL 状態を「正解 pose」で確実に上書きする preventive measure として導入。
+  // gz-sim では teleport が atomic なので delay 不要 (即時 publish)、count/interval は Classic と同じ
+  // constexpr 固定。
+  void publish_initialpose_after_teleport(double x, double y, double yaw);
 
   // parameters
   std::string robot_name_;
   std::string init_world_name_;
+  // /initialpose late publish parameters (#202)。default は declare_parameter (cpp) 側を SSOT。
+  // gz-sim では delay parameter は持たない (atomic teleport で laser scan race 無し、即時 publish で十分)。
+  std::string initial_pose_topic_;
 
   // state (worker thread のみ touch)
   std::string current_map_name_;
@@ -73,6 +84,9 @@ private:
   rclcpp::Client<ros_gz_interfaces::srv::SpawnEntity>::SharedPtr spawn_client_;
   rclcpp::Client<ros_gz_interfaces::srv::DeleteEntity>::SharedPtr delete_client_;
   rclcpp::Client<ros_gz_interfaces::srv::SetEntityPose>::SharedPtr set_pose_client_;
+
+  // /initialpose late publisher (#202、Classic 側 #200 と API 一貫)
+  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initialpose_pub_;
 
   // subscription
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr config_path_sub_;

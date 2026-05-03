@@ -25,6 +25,7 @@
 #include <cmath>
 #include <filesystem>
 #include <sstream>
+#include <thread>
 
 #include <yaml-cpp/yaml.h>
 #include <ros_gz_interfaces/msg/entity.hpp>
@@ -34,15 +35,30 @@
 using namespace std::chrono_literals;
 using std::placeholders::_1;
 
+namespace
+{
+// late /initialpose の publish 回数と間隔 (#202、Classic 側 #200 と同値)。AMCL は /initialpose 受信時に
+// particle を covariance ± で gaussian 再分布するため (covariance 0.25 → σ=0.5m)、1 回 publish 後の
+// 数 frame は particle が σ 範囲に散ったままで /amcl_pose が一時的にずれる。2 回 publish (間隔 500ms) で
+// 初回ぶれを上書きすると過渡 drift が消える。環境非依存 (AMCL covariance 仕様で決まる) のため constexpr 固定。
+// gz-sim では teleport が atomic なので Classic のような delay は不要 (即時 publish)。
+constexpr int kTeleportInitialposePublishCount = 2;
+constexpr int kTeleportInitialposePublishIntervalMs = 500;
+}  // namespace
+
 
 MapoiGzBridge::MapoiGzBridge()
 : Node("mapoi_gz_bridge")
 {
   this->declare_parameter<std::string>("robot_entity_name", "burger");
   this->declare_parameter<std::string>("init_world_name", "default");
+  // /initialpose late publish 用 topic (#202、Classic 側 #200 と API 一貫)。
+  // gz-sim では delay parameter は持たない (atomic teleport で laser scan race 無し)。
+  this->declare_parameter<std::string>("initial_pose_topic", "/initialpose");
 
   robot_name_ = this->get_parameter("robot_entity_name").as_string();
   init_world_name_ = this->get_parameter("init_world_name").as_string();
+  initial_pose_topic_ = this->get_parameter("initial_pose_topic").as_string();
 
   // gz-sim native service 名 (parameter_bridge で同名 ROS 2 service として bridge される想定)
   const std::string spawn_srv = "/world/" + init_world_name_ + "/create";
@@ -60,6 +76,11 @@ MapoiGzBridge::MapoiGzBridge()
     remove_srv, rclcpp::ServicesQoS(), cb_group_);
   set_pose_client_ = this->create_client<ros_gz_interfaces::srv::SetEntityPose>(
     set_pose_srv, rclcpp::ServicesQoS(), cb_group_);
+
+  // /initialpose late publisher (#202): teleport 後に AMCL を spawn pose で再 init する。
+  // QoS は mapoi_nav_server::nav2_initialpose_pub_ と同じ default (depth=1)。
+  initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
+    initial_pose_topic_, 1);
 
   auto sub_opts = rclcpp::SubscriptionOptions();
   sub_opts.callback_group = cb_group_;
@@ -301,6 +322,11 @@ bool MapoiGzBridge::switch_world(
   if (info.has_initial_pose) {
     if (!teleport_robot(info.initial_x, info.initial_y, info.initial_yaw)) {
       all_ok = false;
+    } else {
+      // teleport 成功直後に /initialpose を late publish (#202、Classic 側 #200 と API 一貫)。
+      // gz-sim は atomic teleport なので delay 不要、即時 publish。AMCL covariance 拡散ぶれ抑制
+      // のため複数回 publish は Classic と同じ。
+      publish_initialpose_after_teleport(info.initial_x, info.initial_y, info.initial_yaw);
     }
   } else {
     RCLCPP_WARN(this->get_logger(),
@@ -406,6 +432,35 @@ bool MapoiGzBridge::teleport_robot(double x, double y, double yaw)
     "teleport_robot(%s, %.2f, %.2f, yaw=%.2f): success",
     robot_name_.c_str(), x, y, yaw);
   return true;
+}
+
+
+void MapoiGzBridge::publish_initialpose_after_teleport(double x, double y, double yaw)
+{
+  geometry_msgs::msg::PoseWithCovarianceStamped msg;
+  msg.header.frame_id = "map";
+  msg.pose.pose.position.x = x;
+  msg.pose.pose.position.y = y;
+  msg.pose.pose.position.z = 0.0;
+  msg.pose.pose.orientation.z = std::sin(yaw / 2.0);
+  msg.pose.pose.orientation.w = std::cos(yaw / 2.0);
+  // covariance は mapoi_nav_server::publish_initial_pose と同じ default。
+  // 0.25 (m^2, x/y) と ~0.069 (rad^2, yaw、約 ±15deg) は AMCL の典型値。
+  msg.pose.covariance[0] = 0.25;
+  msg.pose.covariance[7] = 0.25;
+  msg.pose.covariance[35] = 0.06853891945200942;
+
+  for (int i = 0; i < kTeleportInitialposePublishCount; ++i) {
+    msg.header.stamp = this->now();
+    initialpose_pub_->publish(msg);
+    RCLCPP_INFO(this->get_logger(),
+      "Published late /initialpose after teleport (%d/%d): (%.2f, %.2f, yaw=%.2f) on '%s'",
+      i + 1, kTeleportInitialposePublishCount, x, y, yaw, initial_pose_topic_.c_str());
+    if (i + 1 < kTeleportInitialposePublishCount) {
+      std::this_thread::sleep_for(
+        std::chrono::milliseconds(kTeleportInitialposePublishIntervalMs));
+    }
+  }
 }
 
 
