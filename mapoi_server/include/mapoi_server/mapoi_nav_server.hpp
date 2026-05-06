@@ -35,6 +35,7 @@
 #include "mapoi_interfaces/msg/point_of_interest.hpp"
 #include "mapoi_interfaces/msg/poi_event.hpp"
 #include "mapoi_interfaces/msg/initial_pose_request.hpp"
+#include "mapoi_interfaces/msg/navigation_backend_status.hpp"
 
 class MapoiNavServer : public rclcpp::Node
 {
@@ -140,6 +141,15 @@ private:
 
   std::mutex data_mutex_;
   std::vector<mapoi_interfaces::msg::PointOfInterest> pois_list_;
+
+  // Navigation backend readiness publisher (#198).
+  // 1Hz timer で action / service の存在を polling し、`mapoi/nav/backend_status` に publish する。
+  // transient_local QoS で後起動 subscriber も最後の状態を受信できる。WebUI / panel はこの値で
+  // 「Navigation connected」UI を gate する (= command topic subscriber 数だけでは Nav2 不在を
+  // 検知できなかった #198 の課題に対応)。
+  rclcpp::Publisher<mapoi_interfaces::msg::NavigationBackendStatus>::SharedPtr backend_status_pub_;
+  rclcpp::TimerBase::SharedPtr backend_status_timer_;
+  void publish_backend_status();
 
   // Nav status publisher
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr nav_status_pub_;

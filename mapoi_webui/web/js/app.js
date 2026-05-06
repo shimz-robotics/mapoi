@@ -483,9 +483,16 @@
   function updateNavControlsAvailability(navigation) {
     currentNavigationCapabilities = navigation || currentNavigationCapabilities;
     const capabilities = currentNavigationCapabilities || {};
+    const backendStatus = capabilities.backend_status || null;
     const commandAvailable = !!capabilities.command_available;
     const switchMapAvailable = !!capabilities.switch_map_available;
     const navigationAvailable = !!capabilities.navigation_available;
+    // backend_status が届いている場合 (#198) は backend_ready をそのまま操作 enable に使う。
+    // 不在 (古い nav_server や bridge 未実装) のときは従来の command topic subscriber 数判定で
+    // フォールバックする。
+    const operationsEnabled = backendStatus
+      ? !!backendStatus.backend_ready
+      : commandAvailable;
     const navBody = document.getElementById('nav-body');
     if (navBody) {
       navBody.classList.toggle('navigation-unavailable-state', !navigationAvailable);
@@ -497,10 +504,24 @@
       navigationAvailabilityText.textContent = navigationAvailable
         ? 'Navigation connected'
         : 'Navigation unavailable';
-      const topics = capabilities.topics || {};
-      navigationAvailability.title = Object.values(topics)
-        .map((topic) => `${topic.topic}: ${topic.subscribers}`)
-        .join('\n');
+      const tooltipLines = [];
+      if (backendStatus) {
+        tooltipLines.push(`backend_type: ${backendStatus.backend_type || 'unknown'}`);
+        tooltipLines.push(`backend_ready: ${backendStatus.backend_ready}`);
+        tooltipLines.push(`goal_ready: ${backendStatus.goal_ready}`);
+        tooltipLines.push(`route_ready: ${backendStatus.route_ready}`);
+        tooltipLines.push(`switch_map_ready: ${backendStatus.switch_map_ready}`);
+        tooltipLines.push(`initialpose_ready: ${backendStatus.initialpose_ready}`);
+        if (backendStatus.reason) {
+          tooltipLines.push(`reason: ${backendStatus.reason}`);
+        }
+      } else {
+        const topics = capabilities.topics || {};
+        Object.values(topics).forEach((topic) => {
+          tooltipLines.push(`${topic.topic}: ${topic.subscribers}`);
+        });
+      }
+      navigationAvailability.title = tooltipLines.join('\n');
     }
 
     [
@@ -511,7 +532,7 @@
       document.getElementById('btn-nav-stop'),
       document.getElementById('btn-nav-setpose'),
     ].forEach((btn) => {
-      if (btn) btn.disabled = !commandAvailable;
+      if (btn) btn.disabled = !operationsEnabled;
     });
 
     if (navigationMapSelect) navigationMapSelect.disabled = !switchMapAvailable;
@@ -559,6 +580,7 @@
     map_switching: 'Switching map',
     map_switch_succeeded: 'Map switched',
     map_switch_failed: 'Map switch failed',
+    backend_unavailable: 'Navigation backend unavailable',
   };
 
   function updateNavStatus(status, target) {

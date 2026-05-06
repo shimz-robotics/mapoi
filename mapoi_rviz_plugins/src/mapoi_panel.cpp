@@ -416,6 +416,11 @@ void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
       ui_->NavStatusLabel->setText(
           target.empty() ? QString::fromStdString("地図切替失敗")
                          : QString::fromStdString("地図切替失敗: " + target));
+    } else if (status == "backend_unavailable") {
+      current_nav_mode_ = "idle";
+      ui_->NavStatusLabel->setText(
+          target.empty() ? QString::fromStdString("ナビゲーション利用不可")
+                         : QString::fromStdString("ナビゲーション利用不可: " + target));
     }
   }, Qt::QueuedConnection);
 }

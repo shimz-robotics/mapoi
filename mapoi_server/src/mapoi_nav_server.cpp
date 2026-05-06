@@ -68,6 +68,14 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   nav_status_pub_ = this->create_publisher<std_msgs::msg::String>(
     "mapoi/nav/status", rclcpp::QoS(1).transient_local());
 
+  // Navigation backend readiness publisher + 1Hz polling timer (#198)。
+  // Nav2 action / service の存在は実行時に変化し得る (Nav2 を後起動 / 落とすケース) ため、
+  // event-driven ではなく polling で publish する割り切り。1Hz は WebUI 表示の応答性として十分。
+  backend_status_pub_ = this->create_publisher<mapoi_interfaces::msg::NavigationBackendStatus>(
+    "mapoi/nav/backend_status", rclcpp::QoS(1).transient_local());
+  backend_status_timer_ = this->create_wall_timer(
+    1s, std::bind(&MapoiNavServer::publish_backend_status, this));
+
   this->pois_info_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
   this->route_client_ = this->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
   this->select_map_client_ = this->create_client<mapoi_interfaces::srv::SelectMap>("select_map");
@@ -247,8 +255,18 @@ void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedP
           }
           const size_t my_generation = ++nav_attempt_generation_;
 
-          // Use NavigateToPose action client for result feedback
+          // Use NavigateToPose action client for result feedback.
+          // Nav2 action 不在時は `goal_pose` topic への fallback を試みる (古い simple navigation 構成との互換性)。
+          // ただし topic にも subscriber が居なければ backend_unavailable として WebUI / panel に通知する (#198)。
           if (!this->nav_to_pose_client_->wait_for_action_server(std::chrono::seconds(2))) {
+            if (nav2_goal_pose_pub_->get_subscription_count() == 0) {
+              RCLCPP_ERROR(this->get_logger(),
+                "Neither NavigateToPose action nor /goal_pose subscriber available; aborting GOAL '%s'.",
+                poi_name.c_str());
+              publish_nav_status("backend_unavailable", poi_name);
+              reset_nav_state();
+              return;
+            }
             RCLCPP_WARN(this->get_logger(), "NavigateToPose action not available, falling back to topic");
             nav2_goal_pose_pub_->publish(goal_pose);
             return;
@@ -657,13 +675,15 @@ void MapoiNavServer::on_route_received(
   // (Codex review #147 round 1 + 2 high)。
   const size_t my_generation = ++nav_attempt_generation_;
 
-  // Send waypoints to Nav2 with action client
-  while(!this->action_client_->wait_for_action_server(1s)) {
-        if (!rclcpp::ok()) {
-      RCLCPP_ERROR(this->get_logger(), "Interrupted while waiting for action server. Exiting.");
-      return;
-    }
-    RCLCPP_INFO(this->get_logger(), "Action server not available, waiting again...");
+  // Send waypoints to Nav2 with action client.
+  // Nav2 が起動していない場合は無限待ちせず、backend_unavailable を publish して route を放棄する (#198)。
+  // 旧実装の while ループは Nav2 不在時に callback を blocking し、WebUI / panel の他の操作も止める原因だった。
+  if (!this->action_client_->wait_for_action_server(2s)) {
+    RCLCPP_ERROR(this->get_logger(),
+      "FollowWaypoints action server not available; aborting route '%s'.", route_name.c_str());
+    publish_nav_status("backend_unavailable", route_name);
+    reset_nav_state();
+    return;
   }
   RCLCPP_INFO(this->get_logger(), "Sending goal with %zu waypoints.", waypoints.size());
 
@@ -850,6 +870,33 @@ void MapoiNavServer::publish_nav_status(const std::string & status, const std::s
   nav_status_pub_->publish(msg);
 }
 
+void MapoiNavServer::publish_backend_status()
+{
+  // Nav2 bridge としての readiness を polling で集約して publish する (#198)。
+  // backend_ready は goal + route の主機能 action server が両方 ready のとき true。
+  // initialpose_ready は localization (AMCL 等) が subscribe しているかの参考値で、
+  // backend_ready の条件には含めない (Nav2 起動でも localization 失敗ケースは別軸)。
+  mapoi_interfaces::msg::NavigationBackendStatus msg;
+  msg.backend_type = "nav2";
+  msg.backend_present = true;
+  msg.goal_ready = nav_to_pose_client_ && nav_to_pose_client_->action_server_is_ready();
+  msg.route_ready = action_client_ && action_client_->action_server_is_ready();
+  msg.switch_map_ready = select_map_client_ && select_map_client_->service_is_ready();
+  msg.initialpose_ready = nav2_initialpose_pub_ &&
+    nav2_initialpose_pub_->get_subscription_count() > 0;
+  msg.backend_ready = msg.goal_ready && msg.route_ready;
+  if (!msg.backend_ready) {
+    if (!msg.goal_ready && !msg.route_ready) {
+      msg.reason = "navigate_to_pose / follow_waypoints action servers not available";
+    } else if (!msg.goal_ready) {
+      msg.reason = "navigate_to_pose action server not available";
+    } else {
+      msg.reason = "follow_waypoints action server not available";
+    }
+  }
+  backend_status_pub_->publish(msg);
+}
+
 void MapoiNavServer::mapoi_cancel_cb(const std_msgs::msg::String::SharedPtr msg)
 {
   (void)msg;
@@ -934,6 +981,7 @@ void MapoiNavServer::mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg)
     if (!nav_to_pose_client_->wait_for_action_server(2s)) {
       RCLCPP_ERROR(this->get_logger(), "NavigateToPose action server not available for resume.");
       is_paused_ = true;
+      publish_nav_status("backend_unavailable", current_target_name_);
       return;
     }
     RCLCPP_INFO(this->get_logger(), "Resuming NavigateToPose goal.");
@@ -965,6 +1013,7 @@ void MapoiNavServer::mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg)
     if (!action_client_->wait_for_action_server(2s)) {
       RCLCPP_ERROR(this->get_logger(), "FollowWaypoints action server not available for resume.");
       is_paused_ = true;
+      publish_nav_status("backend_unavailable", current_target_name_);
       return;
     }
     current_route_waypoints_ = paused_waypoints_;
