@@ -7,6 +7,27 @@
 # `backend_ready` alone. Per-capability detail belongs to `reason` or to
 # bridge-specific topics, not this message.
 #
+# How to populate `backend_ready` (custom bridge implementers — issue #207):
+#   AND only the capabilities your bridge actually exposes. Do NOT copy
+#   `mapoi_nav_server`'s `goal_ready && route_ready && switch_map_ready`
+#   verbatim — that AND is correct only for a bridge that exposes all three
+#   (NavigateToPose + FollowWaypoints + map switch). For a single-capability
+#   bridge, ANDing in capabilities you don't expose pins `backend_ready` to
+#   `false` forever and the UI permanently shows "Navigation unavailable".
+#   Examples:
+#     - Goal-only bridge:  backend_ready = goal_ready
+#     - Route-only bridge: backend_ready = route_ready
+#     - Goal + map switch: backend_ready = goal_ready && switch_map_ready
+#   Convention for `reason` (recommended for operator UX consistency):
+#   when `backend_ready` is false, list missing capabilities joined by ", "
+#   prefixed with "not ready: " (see mapoi_nav_server::publish_backend_status
+#   for the canonical format).
+#   Privacy: `reason` is surfaced in the operator UI and may be logged by
+#   bag recorders or remote dashboards. Bridges MUST NOT include sensitive
+#   runtime info — credentials/tokens, absolute filesystem paths, internal
+#   hostnames/IPs, user identifiers, or stack traces. Stick to capability
+#   names and short status verbs (e.g. "not ready: navigate_to_pose action").
+#
 # Localization readiness (initial pose / AMCL etc.) is intentionally NOT
 # part of this contract; it will be exposed by a separate
 # `LocalizationBackendStatus` topic — see issue #209.
