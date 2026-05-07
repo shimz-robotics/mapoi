@@ -110,6 +110,9 @@ if(BUILD_TESTING)
   add_launch_test(
     test/test_select_map_no_nav2.py
   )
+  add_launch_test(
+    test/test_backend_status_no_nav2.py
+  )
 
   # Install test config
   install(

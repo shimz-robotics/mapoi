@@ -84,6 +84,12 @@ void MapoiPanel::onInitialize()
       "mapoi/nav/status", rclcpp::QoS(1).transient_local(),
       std::bind(&MapoiPanel::NavStatusCallback, this, std::placeholders::_1));
 
+  // Navigation backend readiness (#198 review medium): bridge が publish する readiness で
+  // ボタンを gate する。受信前 (古い nav_server / panel 単独起動) は全 enable のまま。
+  backend_status_sub_ = node_->create_subscription<mapoi_interfaces::msg::NavigationBackendStatus>(
+      "mapoi/nav/backend_status", rclcpp::QoS(1).transient_local(),
+      std::bind(&MapoiPanel::BackendStatusCallback, this, std::placeholders::_1));
+
   current_nav_mode_ = "idle";
 
   // Mapoi Route ComboBox
@@ -423,6 +429,32 @@ void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
                          : QString::fromStdString("ナビゲーション利用不可: " + target));
     }
   }, Qt::QueuedConnection);
+}
+
+void MapoiPanel::BackendStatusCallback(
+  mapoi_interfaces::msg::NavigationBackendStatus::SharedPtr msg)
+{
+  // RViz panel 側でも backend_ready を見て操作ボタンを gate する (#198 review medium)。
+  // backend_status 不在 (古い nav_server / panel 単独起動) は backend_status_received_ が false の
+  // ままで、UpdateNavButtonsEnabled は呼ばれず、全ボタンは初期状態 (= enable) のまま。
+  backend_status_received_ = true;
+  const bool backend_ready = msg->backend_ready;
+  const bool switch_map_ready = msg->switch_map_ready;
+  QMetaObject::invokeMethod(this, [this, backend_ready, switch_map_ready]() {
+    UpdateNavButtonsEnabled(backend_ready, switch_map_ready);
+  }, Qt::QueuedConnection);
+}
+
+void MapoiPanel::UpdateNavButtonsEnabled(bool backend_ready, bool switch_map_ready)
+{
+  // Qt main thread で呼ぶこと (BackendStatusCallback から QueuedConnection 経由で invoke される)。
+  ui_->LocalizationButton->setEnabled(backend_ready);
+  ui_->RunGoalButton->setEnabled(backend_ready);
+  ui_->RunRouteButton->setEnabled(backend_ready);
+  ui_->PauseButton->setEnabled(backend_ready);
+  ui_->ResumeButton->setEnabled(backend_ready);
+  ui_->StopButton->setEnabled(backend_ready);
+  ui_->MapComboBox->setEnabled(switch_map_ready);
 }
 
 void MapoiPanel::PublishHighlightPois()
