@@ -22,6 +22,56 @@ mapoi のメインパッケージです。
 
 `maps_path` と `map_name` は **必須** です。`maps_path` 未指定 / 存在しないパス / ディレクトリでない場合は `RCLCPP_FATAL` ログ + 終了コード 1 で起動失敗します (#163)。`mapoi_turtlebot3_example` の sample を流用するなら `$(find-pkg-share mapoi_turtlebot3_example)/maps` を指定してください。
 
+### CLI から直接起動する例
+
+include せず `ros2 launch` を直接叩く場合の最小例:
+
+```bash
+# mapoi_turtlebot3_example の sample maps を流用 (apt / 配布 install 後にも動く)
+ros2 launch mapoi_server mapoi_bringup.launch.yaml \
+  maps_path:=$(ros2 pkg prefix --share mapoi_turtlebot3_example)/maps \
+  map_name:=turtlebot3_world
+
+# ソースツリーから直接 (ros2_ws 内で source 後)
+# 注: 本 repo を `<ws>/src/mapoi/` 配下に展開している前提 (`git clone .../mapoi.git`)。
+# パッケージを `<ws>/src/mapoi_turtlebot3_example/` のようにフラット展開している場合は
+# パスを調整するか、上の `pkg prefix --share` 形式を使う方が確実。
+ros2 launch mapoi_server mapoi_bringup.launch.yaml \
+  maps_path:=$(pwd)/src/mapoi/mapoi_turtlebot3_example/maps \
+  map_name:=turtlebot3_dqn_stage1
+```
+
+#### 引数の取り違え注意
+
+各 launch arg のセマンティクスは以下のとおり (`{maps_path}/{map_name}/{config_file}` でアクセスする 3 レベルの分割):
+
+| arg | 渡すもの | 例 |
+|---|---|---|
+| `maps_path` | **地図群を束ねる親ディレクトリ** (各地図は配下のサブディレクトリ) | `/path/to/maps` |
+| `map_name` | `maps_path` 直下の地図サブディレクトリ名 | `turtlebot3_world` |
+| `config_file` | 地図サブディレクトリ内の設定ファイル名 (default: `mapoi_config.yaml`) | `mapoi_config.yaml` |
+
+実際にロードされるパスは `{maps_path}/{map_name}/{config_file}` で、上記例なら `/path/to/maps/turtlebot3_world/mapoi_config.yaml` となります。
+
+`maps_path` / `map_name` 必須 (上節参照) の検証は **2 段階**: `map_name` 自体未指定なら `ros2 launch` が `Required launch argument 'map_name' was not provided` で fail (node 起動前 / launch system 側)、`maps_path` がディレクトリでない等のセマンティクス違反は `mapoi_server` ノード起動時に `RCLCPP_FATAL` で fail します。
+
+**❌ よくある間違い**: `maps_path` に **config.yaml ファイルパスを直接指定** してしまう:
+
+```bash
+# WRONG: maps_path はファイルではなくディレクトリ
+ros2 launch mapoi_server mapoi_bringup.launch.yaml \
+  maps_path:=./maps/turtlebot3_dqn_stage1/mapoi_config.yaml \
+  map_name:=turtlebot3_dqn_stage1
+```
+
+→ 起動時に `mapoi_server` ノードが以下を 1 行で出力して FATAL 終了します (`mapoi_server.cpp` 内の `RCLCPP_FATAL` ログ全文):
+
+```
+[FATAL] maps_path '...mapoi_config.yaml' does not exist or is not a directory. 正しい maps ディレクトリ path を指定してください (例: $(find-pkg-share mapoi_turtlebot3_example)/maps)。
+```
+
+`maps_path` は **地図群を束ねる親ディレクトリ** で、特定の地図ディレクトリやファイルではありません。ディレクトリ構成は本 README 末尾の [ディレクトリ構成](#ディレクトリ構成) 節を参照してください。
+
 `simulator` arg はシミュレータ連動 bridge の起動を制御します:
 - `gazebo` (Gazebo Classic / Humble): `mapoi_gazebo_bridge` を起動。operator map switch 時に Gazebo 内の `world_model` entity を入れ替え + ロボットを delete + spawn で **POI list 先頭** の座標に再生成 (#144 で旧 `initial_pose` system tag を廃止し、yaml 順序で表現する semantics に変更)
 - `gz` (gz-sim / Jazzy): `mapoi_gz_bridge` + `parameter_bridge` (`ros_gz_bridge`) を起動。operator map switch 時に gz-sim 内の `world_model` entity を入れ替え + ロボットを `SetEntityPose` で **POI list 先頭** の座標に teleport (gz-sim では Classic と異なり set_pose service が使えるため delete + spawn は不要)
