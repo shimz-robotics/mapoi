@@ -282,20 +282,22 @@ def _strip_cpp_comments(text: str) -> str:
     return ''.join(out)
 
 
-def extract_function_body(text: str, func_name: str) -> tuple[int, str] | None:
-    """C++ ソースから ``func_name`` の関数本体を抽出する。
+def extract_function_bodies(text: str, func_name: str) -> list[tuple[int, str]]:
+    """C++ ソースから ``func_name`` の **全ての** 関数本体を抽出する。
 
-    ``Foo::func_name`` / ``ReturnType func_name`` のいずれの定義形式にも対応する
-    ため、関数名 + 引数 list を経た後、宣言終端 ``;`` か関数本体開始 ``{`` の
-    どちらが先に出現するかを判定する。``)`` と ``{`` の間に ``const`` /
-    ``noexcept`` / ``-> ReturnType`` / 属性 / 改行 / コメントが挟まる定義に追従する。
+    overload や同 file 内の多重定義に追従するため list を返す。``Foo::func_name`` /
+    ``ReturnType func_name`` のいずれの定義形式にも対応するため、関数名 +
+    引数 list を経た後、宣言終端 ``;`` か関数本体開始 ``{`` のどちらが先に出現
+    するかを判定する。``)`` と ``{`` の間に ``const`` / ``noexcept`` /
+    ``-> ReturnType`` / 属性 / 改行 / コメントが挟まる定義に追従する。
 
     実装: ``)`` から先頭非空白を見て ``;`` なら宣言なのでスキップ、それ以外なら
     次の ``{`` を関数本体開始として扱う (= modifier 群を読み飛ばす)。コメントは
     ``_strip_cpp_comments`` で先に除去してあるので modifier の同定が単純化される。
 
-    返り値: ``(行番号 (開始 brace), 本体文字列)`` または None。
+    返り値: 各定義について ``(行番号 (開始 brace), 本体文字列)`` の list。
     """
+    bodies: list[tuple[int, str]] = []
     cleaned = _strip_cpp_comments(text)
     n = len(cleaned)
     for name_match in re.finditer(rf'\b{re.escape(func_name)}\s*\(', cleaned):
@@ -310,8 +312,6 @@ def extract_function_body(text: str, func_name: str) -> tuple[int, str] | None:
             i += 1
         if depth != 0:
             continue
-        # i は `)` の次。次に出現するのが `{` (= 関数定義) か `;` (= 宣言) かを
-        # ``const`` / ``noexcept`` / ``-> ReturnType`` / 属性等を読み飛ばしながら判定する。
         body_start = -1
         is_declaration = False
         j = i
@@ -337,11 +337,8 @@ def extract_function_body(text: str, func_name: str) -> tuple[int, str] | None:
         if depth != 0:
             continue
         body_lineno = cleaned.count('\n', 0, body_start) + 1
-        # 本体抽出は cleaned から切り出す (コメント除去済み = 後続の reason 抽出も
-        # コメント混入の影響を受けない)。行番号は元 text と cleaned で一致する
-        # (改行は保存しているため)。
-        return (body_lineno, cleaned[body_start + 1:k - 1])
-    return None
+        bodies.append((body_lineno, cleaned[body_start + 1:k - 1]))
+    return bodies
 
 
 def extract_reason_string_literals(body: str) -> list[tuple[int, str]]:
@@ -350,11 +347,18 @@ def extract_reason_string_literals(body: str) -> list[tuple[int, str]]:
 
     パラメータ連結 (``+ this->get_parameter(...).as_string()``) の動的部分は
     対象外で、明示的な文字列リテラルのみを返す。
+
+    左辺は ``reason`` という識別子そのもの (word boundary 厳守、`my_reason` 等の
+    類似識別子に巻き込まれない)、または ``foo.reason`` / ``ptr->reason`` /
+    ``a.b.c.reason`` のような member 連鎖を許容する。pointer dereference (`->`)
+    を見落とすと redaction (security) が抜け落ちるため明示対応する。
     """
     literals: list[tuple[int, str]] = []
-    # `(.+?\.)?reason\s*(=|\+=)` で始まる statement を捕まえ、その statement 全体
-    # (次の `;` まで) を取得して string literal を切り出す。
-    for stmt_match in re.finditer(r'(?:(?:[A-Za-z_][A-Za-z0-9_]*\.)?reason)\s*(?:=|\+=)', body):
+    # `(?:[A-Za-z_][A-Za-z0-9_]*(?:\.|->))*reason\b\s*(=|+=)` で始まる statement を
+    # 捕まえ、その statement 全体 (次の `;` まで) を取得して string literal を
+    # 切り出す。
+    for stmt_match in re.finditer(
+        r'\b(?:[A-Za-z_][A-Za-z0-9_]*(?:\.|->))*reason\b\s*(?:=|\+=)', body):
         start = stmt_match.start()
         # statement 終端 (`;`) を探す。string literal 内の `;` を避けるため簡易 scanner。
         i = stmt_match.end()
@@ -389,27 +393,39 @@ def extract_reason_string_literals(body: str) -> list[tuple[int, str]]:
 
 def check_reason_redaction(targets: list[Path]) -> list[str]:
     """C++ ソースの BACKEND_STATUS_FUNCTIONS 関数本体から `reason` 文字列リテラル
-    を抽出し、FORBIDDEN_PATTERNS のいずれかにマッチしたら fail。"""
+    を抽出し、FORBIDDEN_PATTERNS のいずれかにマッチしたら fail。
+
+    関数 overload / 多重定義は全件走査する。raw string literal (`R"(...)"` /
+    `R"delim(...)delim"`) を含む関数は現実装の simple scanner で誤抽出するため、
+    検出時はその関数本体を skip し、代わりに警告として issue を返す
+    (誤抽出より「lint が効いていないことを露わにする」方が安全側)。
+    """
     issues: list[str] = []
     cpp_targets = [p for p in targets if p.suffix in ('.cpp', '.hpp')]
+    raw_string_pattern = re.compile(r'\bR"[^(]*\(')
     for path in cpp_targets:
         text = path.read_text(errors='replace')
         for func_name in BACKEND_STATUS_FUNCTIONS:
-            extracted = extract_function_body(text, func_name)
-            if extracted is None:
-                continue
-            body_lineno, body = extracted
-            literals = extract_reason_string_literals(body)
-            for lineno_in_body, literal in literals:
-                abs_lineno = body_lineno + lineno_in_body - 1
-                for label, pattern in FORBIDDEN_PATTERNS:
-                    m = pattern.search(literal)
-                    if m:
-                        issues.append(
-                            f'{path.relative_to(REPO_ROOT)}:{abs_lineno}: '
-                            f'`{func_name}` の reason に {label} 検出 '
-                            f'(matched: {m.group(0)!r}, literal: {literal!r})'
-                        )
+            for body_lineno, body in extract_function_bodies(text, func_name):
+                if raw_string_pattern.search(body):
+                    issues.append(
+                        f'{path.relative_to(REPO_ROOT)}:{body_lineno}: '
+                        f'`{func_name}` body に raw string literal を検出 — '
+                        f'redaction lint は raw string 非対応のため scope 外。'
+                        f'通常の `"..."` literal で書き直すか、follow-up issue 化を検討'
+                    )
+                    continue
+                literals = extract_reason_string_literals(body)
+                for lineno_in_body, literal in literals:
+                    abs_lineno = body_lineno + lineno_in_body - 1
+                    for label, pattern in FORBIDDEN_PATTERNS:
+                        m = pattern.search(literal)
+                        if m:
+                            issues.append(
+                                f'{path.relative_to(REPO_ROOT)}:{abs_lineno}: '
+                                f'`{func_name}` の reason に {label} 検出 '
+                                f'(matched: {m.group(0)!r}, literal: {literal!r})'
+                            )
     return issues
 
 

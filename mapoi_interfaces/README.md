@@ -91,6 +91,8 @@ publisher / subscriber 双方で以下を必ず指定:
 
 `reason` は operator UI に表示され bag や remote dashboard に記録され得るため、credentials / token / 絶対パス / 内部 hostname / IP / user identifier / stack trace 等の機微情報を含めないこと。capability 名と短い状態動詞 (例: `not ready: navigate_to_pose action`) に留める。
 
+> **CI lint の責務範囲** (`scripts/check_docs_consistency.py`、PR #217 / Close #216): static check は `publish_backend_status` 系関数中の **明示的な string literal** のみを走査する。パラメータ連結 (`reason = "ip=" + this->get_parameter(...).as_string()`) など動的に組み立てられる文字列、および raw string literal (`R"(...)"`) は責務外。lint 通過 ≠ 完全な redaction 保証。bridge 実装者は dynamic 部分にも本節の禁止事項を適用すること。
+
 ### LocalizationBackendStatus.msg
 
 Localization bridge (`mapoi_amcl_localization_bridge` / 自前 bridge) が 1 Hz で `mapoi/localization/backend_status` に publish する readiness メッセージ (#209)。UI 側は `backend_ready` を見て Initial Pose 操作を gate します。Navigation backend (上記 `NavigationBackendStatus`) とは独立した軸で、それぞれ別 indicator として扱います。
