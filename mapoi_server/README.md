@@ -59,12 +59,15 @@ ros2 launch mapoi_server mapoi_bringup.launch.yaml \
 ros2 launch mapoi_server mapoi_bringup.launch.yaml \
   maps_path:=./maps/turtlebot3_dqn_stage1/mapoi_config.yaml \
   map_name:=turtlebot3_dqn_stage1
-# → 起動時に node が以下で FATAL:
-#    [FATAL] maps_path '...mapoi_config.yaml' does not exist or is not a directory.
-#            正しい maps ディレクトリ path を指定してください
 ```
 
-`maps_path` は **地図群を束ねる親ディレクトリ** で、特定の地図ディレクトリやファイルではありません。ディレクトリ構成は本 README 末尾の「ディレクトリ構成」節を参照してください。
+→ 起動時に `mapoi_server` ノードが以下を 1 行で出力して FATAL 終了します (`mapoi_server.cpp` 内の `RCLCPP_FATAL` ログ全文):
+
+```
+[FATAL] maps_path '...mapoi_config.yaml' does not exist or is not a directory. 正しい maps ディレクトリ path を指定してください (例: $(find-pkg-share mapoi_turtlebot3_example)/maps)。
+```
+
+`maps_path` は **地図群を束ねる親ディレクトリ** で、特定の地図ディレクトリやファイルではありません。ディレクトリ構成は本 README 末尾の [ディレクトリ構成](#ディレクトリ構成) 節を参照してください。
 
 `simulator` arg はシミュレータ連動 bridge の起動を制御します:
 - `gazebo` (Gazebo Classic / Humble): `mapoi_gazebo_bridge` を起動。operator map switch 時に Gazebo 内の `world_model` entity を入れ替え + ロボットを delete + spawn で **POI list 先頭** の座標に再生成 (#144 で旧 `initial_pose` system tag を廃止し、yaml 順序で表現する semantics に変更)
