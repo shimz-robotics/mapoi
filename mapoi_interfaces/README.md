@@ -40,6 +40,27 @@ POI tolerance.xy 半径への侵入・退出 / 停止 / 再開イベントを表
 | `poi` | `mapoi_interfaces/PointOfInterest` | 対象 POI の情報 |
 | `stamp` | `builtin_interfaces/Time` | イベント発生時刻 |
 
+### TagDefinition.msg
+
+POI 分類タグ (system tag / user tag) の単一定義を表すメッセージです。`GetTagDefinitions.srv` のレスポンス成分としても使えるよう PR #193 で導入されました。
+
+| フィールド | 型 | 説明 |
+| --- | --- | --- |
+| `name` | `string` | タグ名 (例: `goal`, `event`) |
+| `description` | `string` | タグ用途の human-readable 説明 |
+| `is_system` | `bool` | `true` = システムタグ、`false` = ユーザー定義タグ |
+
+### InitialPoseRequest.msg
+
+operator の map switch / reload に伴う「初期姿勢候補 POI」通知メッセージ (#149 round 8 で文字列ペアから型化)。`mapoi_nav_server` が Nav2 `LoadMap` 成功後に publish し、localization bridge 群が subscribe します。詳細・stale 排除戦略は `msg/InitialPoseRequest.msg` の冒頭コメント参照。
+
+| フィールド | 型 | 説明 |
+| --- | --- | --- |
+| `map_name` | `string` | 通知対象の map 名 (世代識別用、空文字は publisher 側で禁止) |
+| `poi_name` | `string` | 採用する POI 名 (空文字 = 「候補なし」、subscriber は無視) |
+
+QoS は `transient_local` (depth=1) で後起動 subscriber も latched 値を受信できます。
+
 ### NavigationBackendStatus.msg
 
 Navigation bridge (Nav2 bridge / 自前 bridge) が 1 Hz で `mapoi/nav/backend_status` に publish する readiness メッセージです。UI 側 (`mapoi_webui`, `mapoi_rviz_plugins`) は `backend_ready` を見て navigation 操作を gate します。
@@ -69,6 +90,20 @@ publisher / subscriber 双方で以下を必ず指定:
 具体例とフィールド populate 方針 (`reason` の慣習表記含む) は `msg/NavigationBackendStatus.msg` の冒頭コメントに記載。
 
 `reason` は operator UI に表示され bag や remote dashboard に記録され得るため、credentials / token / 絶対パス / 内部 hostname / IP / user identifier / stack trace 等の機微情報を含めないこと。capability 名と短い状態動詞 (例: `not ready: navigate_to_pose action`) に留める。
+
+> **CI lint の責務範囲** (`scripts/check_docs_consistency.py`、PR #217 / Close #216): static check は `publish_backend_status` 系関数中の **明示的な string literal** のみを走査する。パラメータ連結 (`reason = "ip=" + this->get_parameter(...).as_string()`) など動的に組み立てられる文字列、および raw string literal (`R"(...)"`) は責務外。lint 通過 ≠ 完全な redaction 保証。bridge 実装者は dynamic 部分にも本節の禁止事項を適用すること。
+
+### LocalizationBackendStatus.msg
+
+Localization bridge (`mapoi_amcl_localization_bridge` / 自前 bridge) が 1 Hz で `mapoi/localization/backend_status` に publish する readiness メッセージ (#209)。UI 側は `backend_ready` を見て Initial Pose 操作を gate します。Navigation backend (上記 `NavigationBackendStatus`) とは独立した軸で、それぞれ別 indicator として扱います。
+
+| フィールド | 型 | 説明 |
+| --- | --- | --- |
+| `backend_type` | `string` | bridge 識別子 (例: `amcl`, `slam_toolbox`, `custom_lidar_amcl`)。tooltip 表示用 |
+| `backend_ready` | `bool` | bridge が新しい initial pose を受け付け転送できる状態か |
+| `reason` | `string` | `backend_ready=false` 時の human-readable 理由 (任意、機微情報禁止 — `NavigationBackendStatus` の節と同方針) |
+
+QoS contract (TRANSIENT_LOCAL / RELIABLE / MANUAL_BY_TOPIC publisher / AUTOMATIC subscriber / 5s lease) は `NavigationBackendStatus` と同一です。詳細は `msg/LocalizationBackendStatus.msg` の冒頭コメント参照。
 
 ## サービス (srv)
 
