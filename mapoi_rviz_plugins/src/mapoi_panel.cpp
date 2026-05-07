@@ -487,7 +487,7 @@ void MapoiPanel::BackendStatusCallback(
   mapoi_interfaces::msg::NavigationBackendStatus::SharedPtr msg)
 {
   // RViz panel 側でも backend_ready を見て操作ボタンを gate する (#198, #205 minimal)。
-  // backend_status 不在 (古い mapoi_nav2_bridge / panel 単独起動) では callback が呼ばれず、
+  // backend_status 不在 (古い nav bridge build (backend_status contract 未実装) / panel 単独起動) では callback が呼ばれず、
   // navigation 軸は初期値 (true = enable) を使い続ける。
   nav_backend_status_received_ = true;
   last_navigation_backend_ready_ = msg->backend_ready;
@@ -518,7 +518,7 @@ void MapoiPanel::UpdateNavButtonsEnabled()
   // initial pose を送れないので最低限 navigation_ready を要求する。両方を AND する厳格化は
   // future work で UX 検討する。
   // Staleness gating (#208): 受信前 (`*_received_` false) は alive 判定をバイパスして
-  // `last_*_backend_ready_` の初期値 (true) を使う = 旧 mapoi_nav2_bridge / panel 単独起動の後方互換。
+  // `last_*_backend_ready_` の初期値 (true) を使う = 旧 nav bridge build / panel 単独起動の後方互換。
   // 受信後は MANUAL_BY_TOPIC liveliness で得た `*_alive_` flag と AND し、bridge 死亡時に
   // 自動 disable する。
   const bool nav_ready = nav_backend_status_received_

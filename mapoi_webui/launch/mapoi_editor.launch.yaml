@@ -49,7 +49,7 @@ launch:
       - {name: map_name, value: "$(var map_name)"}
       - {name: config_file, value: "$(var config_file)"}
       - {name: simulator, value: "none"}
-      - {name: with_nav_server, value: "false"}
+      - {name: with_nav2_bridge, value: "false"}
       - {name: with_rviz_publisher, value: "false"}
 
 # WebUI (POI/Route 編集 UI)

@@ -64,7 +64,7 @@ launch:
       simulator=gz のときのみ使用。
 
 - arg:
-    name: with_nav_server
+    name: with_nav2_bridge
     default: "true"
     description: >
       mapoi_nav2_bridge を起動するか。Nav2 連携が不要な構成 (POI/Route 編集のみの editor 用途等) で false。
@@ -95,7 +95,7 @@ launch:
 - node:
     pkg: mapoi_server
     exec: mapoi_nav2_bridge
-    if: $(var with_nav_server)
+    if: $(var with_nav2_bridge)
 
 - node:
     pkg: mapoi_server

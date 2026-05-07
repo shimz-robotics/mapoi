@@ -95,7 +95,7 @@ ros2 launch mapoi_webui mapoi_webui.launch.yaml maps_path:=/path/to/maps map_nam
 
 ### B. webui + mapoi_server を一緒に起動 (エディター用)
 
-PC でデスクトップ上の POI/Route/CustomTags 編集だけ行いたい用途 (ロボット動作 / Nav2 / RViz は不要)。`mapoi_bringup` を minimal config (`with_nav_server=false`, `with_rviz_publisher=false`, `simulator=none`) で include する。
+PC でデスクトップ上の POI/Route/CustomTags 編集だけ行いたい用途 (ロボット動作 / Nav2 / RViz は不要)。`mapoi_bringup` を minimal config (`with_nav2_bridge=false`, `with_rviz_publisher=false`, `simulator=none`) で include する。
 
 ```bash
 ros2 launch mapoi_webui mapoi_editor.launch.yaml maps_path:=/path/to/maps map_name:=your_map

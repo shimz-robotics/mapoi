@@ -50,7 +50,7 @@ private:
   void publish_initial_pose(
     const geometry_msgs::msg::Pose & pose, const std::string & source);
 
-  // /initialpose subscriber (主に AMCL) が後起動した場合の retry 機構 (旧 mapoi_nav2_bridge から移植、#152)。
+  // /initialpose subscriber (主に AMCL) が後起動した場合の retry 機構 (旧 nav bridge (rename 前) から移植、#152)。
   // single-thread executor で blocking wait は避ける必要があるため、wall timer ベースで polling。
   void schedule_initialpose_retry(
     const geometry_msgs::msg::Pose & pose, const std::string & source);
