@@ -131,7 +131,11 @@ private:
   // nav_attempt_generation: navigation 開始 (route or GOAL) ごとに 1 ずつ増分。各 action
   // callback で stale 判定に使う (Codex review #147 round 1+2 high 対応)。route ↔ route /
   // route ↔ GOAL / GOAL ↔ GOAL いずれの切替でも、旧 navigation の遅延 callback が新 nav state
-  // を消さないようにする。single-thread executor 前提なので mutex なしで読み書き OK。
+  // を消さないようにする。
+  // 安全根拠 (#213 で MultiThreadedExecutor 化後): nav state を読み書きする callback は全て
+  // default MutuallyExclusive callback group 内で直列化される。Reentrant callback group で
+  // 動く backend_status timer は nav state member に触らない (read-only な *_is_ready() のみ)
+  // ため、mutex なしで読み書き OK。
   size_t nav_attempt_generation_ = 0;
 
   void reset_nav_state();
@@ -146,6 +150,10 @@ private:
   // 検知できなかった #198 の課題に対応)。
   rclcpp::Publisher<mapoi_interfaces::msg::NavigationBackendStatus>::SharedPtr backend_status_pub_;
   rclcpp::TimerBase::SharedPtr backend_status_timer_;
+  // 独立 MutuallyExclusive callback_group + MultiThreadedExecutor で backend_status timer を
+  // 他 callback と独立 thread で動かすための group (#213)。Reentrant ではなく独立
+  // MutuallyExclusive を選ぶ理由は cpp 側コメント参照 (#214 cursor review medium)。
+  rclcpp::CallbackGroup::SharedPtr backend_status_callback_group_;
   void publish_backend_status();
 
   // Nav status publisher

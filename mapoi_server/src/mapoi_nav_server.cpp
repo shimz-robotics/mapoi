@@ -57,17 +57,28 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   // QoS は NavigationBackendStatus.msg の contract に従う (#208):
   // transient_local + MANUAL_BY_TOPIC liveliness + 5s lease。各 publish() が assert を兼ねる
   // ので 1Hz timer が止まれば 5s 後に subscriber 側 Liveliness Changed event が発火する。
-  // 5s は select_map 操作以外の通常運用での jitter を吸収する設定。map switch 中の最大 11s
-  // blocking 中は false-positive lost が発火し得るが、operator は応答待ちで navigation 操作
-  // しないため UX 影響は限定的。executor / callback_group 分離による根本解決は #213 で対応予定。
   backend_status_pub_ = this->create_publisher<mapoi_interfaces::msg::NavigationBackendStatus>(
     "mapoi/nav/backend_status",
     rclcpp::QoS(1)
       .transient_local()
       .liveliness(rclcpp::LivelinessPolicy::ManualByTopic)
       .liveliness_lease_duration(5s));
+  // 独立 MutuallyExclusive callback_group + MultiThreadedExecutor (main) で backend_status
+  // timer を他 callback と独立 thread で動かす (#213)。`select_map_callback` 内の
+  // `wait_for_service(10s)` / `spin_until_future_complete` で default group の thread が最大
+  // ~11s blocking する間も 1Hz publish が継続するため、5s lease を超える false-positive
+  // lost が発火しなくなる。Reentrant ではなく独立 MutuallyExclusive にする理由 (#214 cursor
+  // review medium): backend_status timer は callback が単一 (`publish_backend_status` のみ)
+  // で、必要なのは「default group の thread と並列に動く」こと。Reentrant は同一 callback の
+  // self-overlap を許す性質で、将来 callback が長時間化した時の race risk を生む。MutuallyExclusive
+  // 独立 group なら他 callback と並列実行されつつ self-overlap は起きない。`publish_backend_status`
+  // は read-only な `*_is_ready()` checks + thread-safe な `Publisher::publish()` のみで member
+  // 書き込みなしのため、他 callback (default group で serialize) との data race も無い。
+  backend_status_callback_group_ = this->create_callback_group(
+    rclcpp::CallbackGroupType::MutuallyExclusive);
   backend_status_timer_ = this->create_wall_timer(
-    1s, std::bind(&MapoiNavServer::publish_backend_status, this));
+    1s, std::bind(&MapoiNavServer::publish_backend_status, this),
+    backend_status_callback_group_);
 
   this->pois_info_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
   this->route_client_ = this->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
@@ -1231,7 +1242,15 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<MapoiNavServer>();
-  rclcpp::spin(node);
+  // MultiThreadedExecutor で spin (#213): backend_status timer の Reentrant callback_group が
+  // 別 thread で動くようにする。thread 数は明示的に 2 を指定する: default の
+  // `std::thread::hardware_concurrency()` は Docker CPU 制限環境などで 1/0 を返し得るため、
+  // 1 thread に縮退すると本 PR の修正 (blocking 中も timer を回す) が成立しない (#214 codex
+  // review medium)。backend_status timer (Reentrant) + 他 callback (default MutuallyExclusive)
+  // で独立 thread が 2 本あれば足りるので、上限を絞ることでリソースも節約できる。
+  rclcpp::executors::MultiThreadedExecutor exec(rclcpp::ExecutorOptions(), 2);
+  exec.add_node(node);
+  exec.spin();
   rclcpp::shutdown();
   return 0;
 }
