@@ -879,6 +879,12 @@ void MapoiNavServer::publish_backend_status()
 {
   // Nav2 bridge としての readiness を polling で集約して publish する (#198)。
   // backend_ready は goal + route の主機能 action server が両方 ready のとき true。
+  // 片機能のみ使うカスタム bridge (例: route 機能なし) では本実装の AND は厳しすぎるため、
+  // bridge 別カスタマイズは #207 で別途検討する。
+  // 二重管理に見える点 (1Hz timer の集約 + 各 cb 内 `action_server_is_ready()` 即時判定) は
+  // 意図的: cb 内で 1Hz timer の cache を読むと最大 1 秒の lag が発生し、operator が ready
+  // 表示直後に Run を押した場合に偽の backend_unavailable を出しかねない。即時判定で current
+  // を見る (#205 review low #2)。
   // initialpose_ready は localization (AMCL 等) が subscribe しているかの参考値で、
   // backend_ready の条件には含めない (Nav2 起動でも localization 失敗ケースは別軸)。
   mapoi_interfaces::msg::NavigationBackendStatus msg;

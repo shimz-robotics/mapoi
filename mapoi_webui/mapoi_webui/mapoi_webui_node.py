@@ -358,6 +358,12 @@ class MapoiWebNode(Node):
         2. backend_status 未受信 (古い nav_server や bridge 未実装) → command topic
            subscriber 数による旧判定にフォールバック (= bridge 起動だけは検知できる)。
         旧フィールド名 (navigation_available 等) は frontend 既存利用のため維持する。
+
+        フォールバック path では `navigation_available` が `switch_map || command` で
+        `command_available` のみで操作ボタン可否を決める旧挙動が残る。バナー表示と
+        ボタン enable 条件が一致しない見た目になりうるが、これは backend_status を
+        publish しない古い nav_server に対する後方互換 (#205 review medium #3)。
+        新 nav_server に切り替われば backend_status path に乗って整合する。
         """
         publishers = {
             'switch_map': (self.switch_map_pub_, 'mapoi/nav/switch_map'),

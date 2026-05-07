@@ -69,7 +69,12 @@ class TestBackendStatusNoNav2(unittest.TestCase):
         self.assertEqual(msg.backend_type, 'nav2')
         self.assertTrue(msg.backend_present)
         self.assertFalse(msg.backend_ready)
+        # action / service / subscriber が一切いない環境では各 capability も全て false。
+        # 個別 readiness を assert しておくことで「backend_ready 算出ロジックの引数が
+        # ずれた」回帰 (例: goal/route 以外を AND に追加した) を検出できる (#205 review low)。
         self.assertFalse(msg.goal_ready)
         self.assertFalse(msg.route_ready)
+        self.assertFalse(msg.switch_map_ready)
+        self.assertFalse(msg.initialpose_ready)
         self.assertNotEqual(msg.reason, '',
                             'reason should be populated when backend_ready is false')
