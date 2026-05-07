@@ -60,11 +60,15 @@ class TestBackendStatusNoNav2(unittest.TestCase):
         cls.received.append(msg)
 
     def test_publishes_backend_unready_when_nav2_absent(self):
-        # 1Hz publish なので最大 ~3 秒で複数件届く想定。最初の 1 件で十分。
+        # 1Hz publish なので 3 秒待てば複数件届く想定。複数件受信確認で
+        # 「1Hz publish が継続している」回帰 (timer 停止・1 回しか出ない 等) を検知する。
         deadline = time.monotonic() + self.SPIN_TIMEOUT
-        while not self.received and time.monotonic() < deadline:
+        while len(self.received) < 2 and time.monotonic() < deadline:
             rclpy.spin_once(self.node, timeout_sec=0.2)
-        self.assertTrue(self.received, 'no NavigationBackendStatus message received')
+        self.assertGreaterEqual(
+            len(self.received), 2,
+            'expected at least 2 NavigationBackendStatus messages within timeout '
+            '(1 Hz publish should yield multiple samples)')
         msg = self.received[-1]
         # Minimal contract (#205): backend_type / backend_ready / reason のみが contract。
         self.assertEqual(msg.backend_type, 'nav2')

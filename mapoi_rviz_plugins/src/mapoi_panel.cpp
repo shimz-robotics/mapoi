@@ -449,6 +449,9 @@ void MapoiPanel::UpdateNavButtonsEnabled(bool backend_ready)
   // Qt main thread で呼ぶこと (BackendStatusCallback から QueuedConnection 経由で invoke される)。
   // Minimal contract: navigation 操作 UI 全体を backend_ready 一本で gate する。MapComboBox も
   // 操作 → Nav2 LoadMap 連動なので bridge 不在では disable が妥当。
+  // LocalizationButton は本来 localization 軸 (#209) に属するが、現状 mapoi_nav_server が
+  // AMCL adapter を内包しているため Nav2 readiness と結合させている。#209 で localization
+  // bridge に分離後は、その backend_ready で gate に切替える予定。
   ui_->LocalizationButton->setEnabled(backend_ready);
   ui_->RunGoalButton->setEnabled(backend_ready);
   ui_->RunRouteButton->setEnabled(backend_ready);

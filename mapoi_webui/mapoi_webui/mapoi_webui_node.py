@@ -389,10 +389,17 @@ class MapoiWebNode(Node):
         backend = self.backend_status_
         if backend is not None:
             navigation_available = bool(backend['backend_ready'])
+            # backend_status path では map switch も backend_ready の AND に含まれているため
+            # alias として同じ値を返す (#205 round 3 review high #2 後方互換)。
+            switch_map_available_final = navigation_available
         else:
             navigation_available = legacy_available
+            switch_map_available_final = switch_map_available
         return {
             'navigation_available': navigation_available,
+            # `switch_map_available` は backend_status 不在時のフォールバック表示用に維持。
+            # 旧 API 互換のため key を消さない (#205 round 3 review high #2)。
+            'switch_map_available': switch_map_available_final,
             'command_available': command_available,
             'topics': topics,
             'backend_status': backend,

@@ -885,22 +885,38 @@ void MapoiNavServer::publish_backend_status()
   // 意図的: cb 内で 1Hz timer の cache を読むと最大 1 秒の lag が発生し、operator が ready
   // 表示直後に Run を押した場合に偽の backend_unavailable を出しかねない。即時判定で current
   // を見る (#205 review low #2)。
+  // backend_ready の AND に `select_map` service を含めるのは README contract が「map switch
+  // を含む」と書いていることと整合させるため (#205 round 3 review high)。bridge 単独起動で
+  // mapoi_server が居ない構成では `backend_ready=false` になるが、これは妥当な挙動。
   const bool goal_ready =
     nav_to_pose_client_ && nav_to_pose_client_->action_server_is_ready();
   const bool route_ready =
     action_client_ && action_client_->action_server_is_ready();
+  const bool switch_map_ready =
+    select_map_client_ && select_map_client_->service_is_ready();
 
   mapoi_interfaces::msg::NavigationBackendStatus msg;
   msg.backend_type = "nav2";
-  msg.backend_ready = goal_ready && route_ready;
+  msg.backend_ready = goal_ready && route_ready && switch_map_ready;
   if (!msg.backend_ready) {
-    if (!goal_ready && !route_ready) {
-      msg.reason = "navigate_to_pose / follow_waypoints action servers not available";
-    } else if (!goal_ready) {
-      msg.reason = "navigate_to_pose action server not available";
-    } else {
-      msg.reason = "follow_waypoints action server not available";
+    std::vector<std::string> missing;
+    if (!goal_ready) {
+      missing.emplace_back("navigate_to_pose action");
     }
+    if (!route_ready) {
+      missing.emplace_back("follow_waypoints action");
+    }
+    if (!switch_map_ready) {
+      missing.emplace_back("select_map service");
+    }
+    std::string joined;
+    for (size_t i = 0; i < missing.size(); ++i) {
+      if (i > 0) {
+        joined += ", ";
+      }
+      joined += missing[i];
+    }
+    msg.reason = "not ready: " + joined;
   }
   backend_status_pub_->publish(msg);
 }
