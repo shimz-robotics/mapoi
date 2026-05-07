@@ -28,6 +28,9 @@ jobs:
       - name: Check sample mapoi_config.yaml consistency
         run: python3 scripts/check_sample_yaml_consistency.py
 
+      - name: Check mapoi_interfaces docs/implementation consistency
+        run: python3 scripts/check_docs_consistency.py
+
   webui_js_tests:
     runs-on: ubuntu-latest
     steps:
