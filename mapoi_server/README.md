@@ -33,6 +33,9 @@ ros2 launch mapoi_server mapoi_bringup.launch.yaml \
   map_name:=turtlebot3_world
 
 # ソースツリーから直接 (ros2_ws 内で source 後)
+# 注: 本 repo を `<ws>/src/mapoi/` 配下に展開している前提 (`git clone .../mapoi.git`)。
+# パッケージを `<ws>/src/mapoi_turtlebot3_example/` のようにフラット展開している場合は
+# パスを調整するか、上の `pkg prefix --share` 形式を使う方が確実。
 ros2 launch mapoi_server mapoi_bringup.launch.yaml \
   maps_path:=$(pwd)/src/mapoi/mapoi_turtlebot3_example/maps \
   map_name:=turtlebot3_dqn_stage1
@@ -46,11 +49,11 @@ ros2 launch mapoi_server mapoi_bringup.launch.yaml \
 |---|---|---|
 | `maps_path` | **地図群を束ねる親ディレクトリ** (各地図は配下のサブディレクトリ) | `/path/to/maps` |
 | `map_name` | `maps_path` 直下の地図サブディレクトリ名 | `turtlebot3_world` |
-| `config_file` | 地図サブディレクトリ内の設定ファイル名 (基本デフォルトのまま) | `mapoi_config.yaml` |
+| `config_file` | 地図サブディレクトリ内の設定ファイル名 (default: `mapoi_config.yaml`) | `mapoi_config.yaml` |
 
 実際にロードされるパスは `{maps_path}/{map_name}/{config_file}` で、上記例なら `/path/to/maps/turtlebot3_world/mapoi_config.yaml` となります。
 
-`maps_path` と `map_name` はどちらも `mapoi_bringup.launch.yaml` の **必須 launch arg** で、未指定なら `ros2 launch` 自体が `Required launch argument '<name>' was not provided` で fail します (node 起動前)。
+`maps_path` / `map_name` 必須 (上節参照) の検証は **2 段階**: `map_name` 自体未指定なら `ros2 launch` が `Required launch argument 'map_name' was not provided` で fail (node 起動前 / launch system 側)、`maps_path` がディレクトリでない等のセマンティクス違反は `mapoi_server` ノード起動時に `RCLCPP_FATAL` で fail します。
 
 **❌ よくある間違い**: `maps_path` に **config.yaml ファイルパスを直接指定** してしまう:
 
