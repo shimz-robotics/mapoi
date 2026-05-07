@@ -16,11 +16,12 @@
 #   durability               : TRANSIENT_LOCAL
 #   reliability              : RELIABLE
 #   liveliness (publisher)   : MANUAL_BY_TOPIC
-#   liveliness (subscriber)  : AUTOMATIC        (legacy publisher compat)
-#   liveliness_lease_duration: 5 s
+#   liveliness (subscriber)  : AUTOMATIC
+#   liveliness_lease_duration: 5 s              (BOTH sides; contract violators are
+#                                                intentionally rejected via QoS incompatibility)
 # Subscribers detect bridge death by handling the Liveliness Changed event
 # (alive_count transitions to 0). See NavigationBackendStatus.msg for the full
-# rationale and the link to follow-up issue #213.
+# rationale, contract-violation behaviour, and the link to follow-up issue #213.
 
 # Bridge identifier shown in tooltips (e.g. "amcl", "slam_toolbox", "custom_lidar_amcl").
 # Free-form, only used to help operators distinguish multiple bridges.

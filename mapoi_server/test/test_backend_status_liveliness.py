@@ -1,17 +1,21 @@
 """Liveliness QoS staleness 検出 contract test (#208).
 
-`mapoi/nav/backend_status` / `mapoi/localization/backend_status` の msg
-contract で MANUAL_BY_TOPIC liveliness + 3s lease を要求している
+`mapoi/nav/backend_status` / `mapoi/localization/backend_status` の msg contract
 (NavigationBackendStatus.msg / LocalizationBackendStatus.msg の QoS contract
-セクション)。本テストでは:
+セクション参照) を pin する。本テストの 2 つの軸:
 
-1. publisher が 1 件 publish した時点で subscriber 側 liveliness event が
-   `alive_count >= 1` で発火する
-2. その後 publish を停止すると lease (3s) 経過後に `alive_count == 0` が
-   発火する
+1. **Lease lost contract** (`test_*_liveliness_lease`):
+   pub=MANUAL_BY_TOPIC + sub=AUTOMATIC + lease 5s で、
+   - publisher が 1 件 publish した時点で subscriber 側 liveliness event が
+     `alive_count >= 1` で発火する
+   - その後 publish を停止すると lease (5s) 経過後に `alive_count == 0` が発火する
+   PR #210 で入れた `count_publishers() == 0` polling 暫定実装からの proper fix を保証。
 
-を pin し、PR #210 で入れた `count_publishers() == 0` polling 暫定実装
-(WebUI Python / RViz panel C++) からの proper fix が機能していることを保証する。
+2. **Contract violation rejection** (`test_*_legacy_publisher_incompatible`):
+   liveliness QoS 未設定 (= infinite lease) の publisher は subscriber と QoS
+   incompatible で接続不可。これは「contract に従わない publisher を意図的に拒否」
+   する設計の pin (#212 codex review)。
+
 test 用 topic を使うのでサーバープロセスを subprocess 起動する必要はなく
 in-process で完結する (launch_testing 不要 → ament_cmake_pytest で登録)。
 """
@@ -121,3 +125,62 @@ class TestBackendStatusLiveliness(unittest.TestCase):
 
     def test_localization_backend_liveliness_lease(self):
         self._run_liveliness_lease_test(LocalizationBackendStatus, 'test/issue208/loc_backend_status')
+
+    def _run_legacy_publisher_incompatible_test(self, msg_type, topic_name):
+        """msg contract に従わない publisher (liveliness QoS 未設定 = lease infinite) は
+        contract subscriber (lease 5s) と QoS incompatible で接続不可となることを pin する。
+
+        QoS rule: `pub.lease <= sub.lease` でないと incompatible。pub=infinite > sub=5s で違反。
+        これは「contract 違反 publisher を意図的に拒否」する設計の確認 (#212 codex review)。
+        """
+        # Legacy publisher: durability/reliability は新 contract に揃えるが、liveliness QoS を
+        # 設定しない (= default infinite lease)。これが `pub.lease > sub.lease` を引き起こす。
+        legacy_pub_qos = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        sub_qos = _make_sub_qos()  # 新 contract: AUTOMATIC + lease 5s
+
+        incompatible_events = []
+        messages = []
+
+        sub_node = rclpy.create_node(
+            f'incompat_sub_{topic_name.replace("/", "_")}')
+        sub_node.create_subscription(
+            msg_type, topic_name, lambda msg: messages.append(msg.data), sub_qos,
+            event_callbacks=SubscriptionEventCallbacks(
+                incompatible_qos=lambda event: incompatible_events.append(
+                    (event.total_count, event.last_policy_kind))))
+
+        pub_node = rclpy.create_node(
+            f'incompat_pub_{topic_name.replace("/", "_")}')
+        pub = pub_node.create_publisher(msg_type, topic_name, legacy_pub_qos)
+        msg = msg_type()
+        msg.backend_type = 'legacy-test'
+        msg.backend_ready = True
+        pub.publish(msg)
+
+        # incompatible_qos event 発火を待つ (もしくは 2 秒経っても message が来ないことを確認)。
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and not incompatible_events:
+            rclpy.spin_once(sub_node, timeout_sec=0.1)
+
+        pub_node.destroy_node()
+        sub_node.destroy_node()
+
+        self.assertTrue(
+            incompatible_events,
+            f'{topic_name}: expected incompatible_qos event (LIVELINESS) when legacy '
+            f'publisher (infinite lease) connects to contract subscriber (lease 5s); '
+            f'incompatible_events: {incompatible_events}')
+        self.assertEqual(
+            messages, [],
+            f'{topic_name}: contract violator must NOT deliver messages; got: {messages}')
+
+    def test_navigation_backend_legacy_publisher_incompatible(self):
+        self._run_legacy_publisher_incompatible_test(
+            NavigationBackendStatus, 'test/issue208/nav_legacy_incompat')
+
+    def test_localization_backend_legacy_publisher_incompatible(self):
+        self._run_legacy_publisher_incompatible_test(
+            LocalizationBackendStatus, 'test/issue208/loc_legacy_incompat')

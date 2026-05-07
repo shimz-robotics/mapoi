@@ -11,17 +11,28 @@
 # part of this contract; it will be exposed by a separate
 # `LocalizationBackendStatus` topic — see issue #209.
 #
-# QoS contract (issue #208):
+# QoS contract (issue #208) — BOTH publishers and subscribers MUST set these:
 #   durability               : TRANSIENT_LOCAL  (late-joiner UI receives the latest status)
 #   reliability              : RELIABLE
-#   liveliness (publisher)   : MANUAL_BY_TOPIC  (each publish() asserts liveliness on this topic)
-#   liveliness (subscriber)  : AUTOMATIC        (compatibility with legacy publishers; see
-#                                                ROS 2 QoS compatibility table)
-#   liveliness_lease_duration: 5 s              (publishers MUST publish at least every 5 s;
-#                                                subscribers MUST set lease_duration >= 5 s)
-# Subscribers detect bridge death by handling the Liveliness Changed event
-# (alive_count transitions to 0). UI gating MUST treat a lost-liveliness
-# state as `backend_ready=false` regardless of the latched payload.
+#   liveliness (publisher)   : MANUAL_BY_TOPIC  (each publish() asserts liveliness on this
+#                                                topic; subscribers handle Liveliness Changed
+#                                                events to detect publisher death)
+#   liveliness (subscriber)  : AUTOMATIC        (pub=MANUAL_BY_TOPIC × sub=AUTOMATIC is the
+#                                                only compatible policy combination given that
+#                                                pub=AUTOMATIC × sub=MANUAL_BY_TOPIC is incompatible)
+#   liveliness_lease_duration: 5 s              (the QoS rule `pub.lease <= sub.lease` MUST hold;
+#                                                we enforce 5 s on both sides for simplicity)
+#
+# Contract violations are intentionally rejected by QoS incompatibility:
+#   - publisher with no liveliness QoS (= infinite lease) → connection refused by subscribers
+#     (sub.lease=5s < pub.lease=inf)
+#   - publisher with liveliness=AUTOMATIC → connection refused (pub policy < sub policy)
+# This means custom bridges MUST follow this contract to interoperate with mapoi UI consumers
+# (mapoi_webui, mapoi_rviz_plugins). See test_backend_status_liveliness.py for the
+# incompatibility tests that pin this behaviour.
+#
+# UI gating: subscribers MUST treat a lost-liveliness state as `backend_ready=false`
+# regardless of the latched payload (see `_resolve_backend_status_for_ui` in mapoi_webui).
 #
 # NOTE (issue #213): the lease must exceed any blocking call inside the publisher
 # node's executor. mapoi_nav_server's `select_map` flow can block the

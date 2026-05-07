@@ -94,13 +94,15 @@ void MapoiPanel::onInitialize()
       std::bind(&MapoiPanel::NavStatusCallback, this, std::placeholders::_1));
 
   // Navigation / Localization backend readiness (#198, #209) の QoS は msg contract (#208)
-  // に従う: publisher 側は transient_local + MANUAL_BY_TOPIC liveliness (publish が assert を
-  // 兼ねる) + 3s lease。subscriber 側は AUTOMATIC で受ける (#212 codex review medium):
-  // pub=AUTOMATIC × sub=MANUAL_BY_TOPIC は QoS compatibility 表で incompatible (旧 publisher
-  // との接続性が壊れる回帰)。pub=MANUAL_BY_TOPIC × sub=AUTOMATIC は compatible で、subscription
-  // event_callbacks.liveliness_callback で publisher 生存を track できる。受信前 (古い
-  // nav_server / panel 単独起動) は alive 判定をバイパスして全 enable のまま
-  // (`*_status_received_` flag を AND することで実現)。
+  // に従う: transient_local + liveliness (publisher=MANUAL_BY_TOPIC, subscriber=AUTOMATIC)
+  // + lease 5s (両側必須)。subscriber 側 policy を AUTOMATIC にするのは pub=MANUAL_BY_TOPIC
+  // × sub=AUTOMATIC が compatibility 表上 OK だから。lease は `pub.lease <= sub.lease` 制約が
+  // あり、両側 5s で揃えるのが運用上シンプル。
+  // **msg contract に従わない publisher (例: liveliness QoS 未設定 = lease infinite) は
+  // 意図的に QoS incompatible で接続を拒否する**。custom bridge 実装者は msg README の
+  // contract 表に従う必要がある (test_backend_status_liveliness.py で incompatibility を pin)。
+  // 受信前 (`*_status_received_` flag = false、つまり contract 未実装の旧 publisher も含む) は
+  // alive 判定をバイパスして全 enable のまま (UpdateNavButtonsEnabled 内で実現)。
   const auto backend_status_qos = rclcpp::QoS(1)
     .transient_local()
     .liveliness(rclcpp::LivelinessPolicy::Automatic)

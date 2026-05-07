@@ -183,12 +183,14 @@ class MapoiWebNode(Node):
             String, 'mapoi/nav/status', self.nav_status_callback, nav_status_qos)
 
         # Navigation / Localization backend readiness (#198 / #209) の QoS は msg contract
-        # (#208) に従う: transient_local + MANUAL_BY_TOPIC liveliness (publisher 側) + 3s lease。
-        # subscriber 側は AUTOMATIC で受ける (#212 codex review medium): pub=AUTOMATIC × sub=
-        # MANUAL_BY_TOPIC は QoS compatibility 表で incompatible (publisher が旧 contract の
-        # AUTOMATIC のまま動いている場合に接続できなくなる回帰)。pub=MANUAL_BY_TOPIC × sub=
-        # AUTOMATIC は compatible で、subscriber 側で Liveliness Changed event を同様に
-        # 受け取れる (alive_count の遷移は publisher 側 policy で決まる)。
+        # (#208) に従う: transient_local + liveliness (publisher=MANUAL_BY_TOPIC,
+        # subscriber=AUTOMATIC) + lease 5s (両側必須)。subscriber 側 policy を AUTOMATIC に
+        # するのは pub=MANUAL_BY_TOPIC × sub=AUTOMATIC が compatible 表上 OK だから。lease は
+        # `pub.lease <= sub.lease` 制約があり、両側 5s で揃えるのが運用上シンプル。
+        # 結果として **msg contract に従わない publisher (例: liveliness QoS 未設定 = lease
+        # infinite) は意図的に QoS incompatible で接続を拒否する**。custom bridge 実装者は
+        # msg README の contract 表に従う必要がある (test_backend_status_liveliness.py で
+        # incompatibility を pin)。
         backend_status_qos = QoSProfile(
             depth=1,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -203,7 +205,7 @@ class MapoiWebNode(Node):
         self.backend_status_ = None
         # `nav_backend_alive_` は liveliness event_callback が更新する publisher 生存 flag。
         # 初期 False (subscription 作成直後 = publisher 未発見) で、discovery で True、
-        # 1Hz publish が 3s 以上途切れると False に戻る。`backend_status_` が None でない
+        # 1Hz publish が 5s lease 以上途切れると False に戻る。`backend_status_` が None でない
         # (= 一度受信した) 状態で False に戻った場合のみ staleness として UI を disable。
         self.nav_backend_alive_ = False
         self.backend_status_sub_ = self.create_subscription(
