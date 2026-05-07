@@ -2,7 +2,7 @@
 """mapoi_interfaces の docs ↔ implementation 整合性 lint (#216)。
 
 PR #215 (Close #207) で `mapoi_interfaces/msg/NavigationBackendStatus.msg` /
-`mapoi_interfaces/README.md` / `mapoi_server/src/mapoi_nav_server.cpp` の 3
+`mapoi_interfaces/README.md` / `mapoi_server/src/mapoi_nav2_bridge.cpp` の 3
 ファイル間に pointer ベースの cross-reference を貼った (custom bridge 向け
 `backend_ready` 算出ガイダンス + `reason` 機微情報 redaction 指針)。一次情報を
 msg コメントに集約して README / cpp は msg を pointer する設計だが、片方だけ

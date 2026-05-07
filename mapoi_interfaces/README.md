@@ -52,7 +52,7 @@ POI 分類タグ (system tag / user tag) の単一定義を表すメッセージ
 
 ### InitialPoseRequest.msg
 
-operator の map switch / reload に伴う「初期姿勢候補 POI」通知メッセージ (#149 round 8 で文字列ペアから型化)。`mapoi_nav_server` が Nav2 `LoadMap` 成功後に publish し、localization bridge 群が subscribe します。詳細・stale 排除戦略は `msg/InitialPoseRequest.msg` の冒頭コメント参照。
+operator の map switch / reload に伴う「初期姿勢候補 POI」通知メッセージ (#149 round 8 で文字列ペアから型化)。`mapoi_nav2_bridge` が Nav2 `LoadMap` 成功後に publish し、localization bridge 群が subscribe します。詳細・stale 排除戦略は `msg/InitialPoseRequest.msg` の冒頭コメント参照。
 
 | フィールド | 型 | 説明 |
 | --- | --- | --- |
@@ -85,7 +85,7 @@ publisher / subscriber 双方で以下を必ず指定:
 
 #### Custom bridge 実装者向けガイダンス (issue #207)
 
-`backend_ready` の算出は bridge ごとに「実際に expose する capability の AND」とすること。`mapoi_nav_server` (Nav2 bridge) の `goal_ready && route_ready && switch_map_ready` は **3 capability 全部を expose する bridge にのみ正しい**。片機能 bridge (例: NavigateToPose のみ) でこれを真似ると、expose していない capability が常に false → `backend_ready` も常に false → UI が常に "Navigation unavailable" になる。
+`backend_ready` の算出は bridge ごとに「実際に expose する capability の AND」とすること。`mapoi_nav2_bridge` (Nav2 bridge) の `goal_ready && route_ready && switch_map_ready` は **3 capability 全部を expose する bridge にのみ正しい**。片機能 bridge (例: NavigateToPose のみ) でこれを真似ると、expose していない capability が常に false → `backend_ready` も常に false → UI が常に "Navigation unavailable" になる。
 
 具体例とフィールド populate 方針 (`reason` の慣習表記含む) は `msg/NavigationBackendStatus.msg` の冒頭コメントに記載。
 
@@ -109,7 +109,7 @@ QoS contract (TRANSIENT_LOCAL / RELIABLE / MANUAL_BY_TOPIC publisher / AUTOMATIC
 
 ### SelectMap.srv
 
-現在の地図 context を切り替える Nav2-free サービスです。Operator mode の地図切替は `/mapoi/nav/switch_map` topic で指示し、`mapoi_nav_server` がこの service を呼んだ後に Nav2 `LoadMap` を実行します。
+現在の地図 context を切り替える Nav2-free サービスです。Operator mode の地図切替は `/mapoi/nav/switch_map` topic で指示し、`mapoi_nav2_bridge` がこの service を呼んだ後に Nav2 `LoadMap` を実行します。
 
 | 方向 | フィールド | 型 | 説明 |
 | --- | --- | --- | --- |

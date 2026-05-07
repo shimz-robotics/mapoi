@@ -38,7 +38,7 @@ private:
   // publishers
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr config_path_publisher_;
   // initial pose POI 名 publisher (#144): mapoi_server が新 map の初期 POI 名を決定して
-  // mapoi/initialpose_poi topic に publish。mapoi_nav_server がそれを受けて /initialpose を流す。
+  // mapoi/initialpose_poi topic に publish。mapoi_nav2_bridge がそれを受けて /initialpose を流す。
   // QoS: transient_local (depth=1) で後起動 subscriber でも受信できる。
   rclcpp::Publisher<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr initialpose_poi_publisher_;
 

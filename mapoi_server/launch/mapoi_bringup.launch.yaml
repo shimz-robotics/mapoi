@@ -1,5 +1,5 @@
 # mapoi bringup: core 4 nodes + (任意で) シミュレータ連動 bridge を 1 本で起動。
-# core 4 = mapoi_server / mapoi_nav_server (Nav2 bridge) / mapoi_amcl_localization_bridge
+# core 4 = mapoi_server / mapoi_nav2_bridge (Nav2 bridge) / mapoi_amcl_localization_bridge
 # (AMCL adapter, #209) / mapoi_rviz2_publisher。後者 3 つは個別 arg で切替可能。
 #
 # 自分のロボットに mapoi を組み込む場合はこの launch を include する想定:
@@ -67,7 +67,7 @@ launch:
     name: with_nav_server
     default: "true"
     description: >
-      mapoi_nav_server を起動するか。Nav2 連携が不要な構成 (POI/Route 編集のみの editor 用途等) で false。
+      mapoi_nav2_bridge を起動するか。Nav2 連携が不要な構成 (POI/Route 編集のみの editor 用途等) で false。
 
 - arg:
     name: with_amcl_localization_bridge
@@ -94,7 +94,7 @@ launch:
 
 - node:
     pkg: mapoi_server
-    exec: mapoi_nav_server
+    exec: mapoi_nav2_bridge
     if: $(var with_nav_server)
 
 - node:

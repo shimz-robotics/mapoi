@@ -163,7 +163,7 @@ class MapoiWebNode(Node):
         self.resume_pub_ = self.create_publisher(String, 'mapoi/nav/resume', 10)
         self.switch_map_pub_ = self.create_publisher(String, 'mapoi/nav/switch_map', 1)
         # mapoi/initialpose_poi は #149 round 8 で {map_name, poi_name} 型に変更。
-        # transient_local QoS で後起動 subscriber (bridge / nav_server) も latched 値を拾える。
+        # transient_local QoS で後起動 subscriber (bridge / mapoi_nav2_bridge) も latched 値を拾える。
         initialpose_poi_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.initialpose_poi_pub_ = self.create_publisher(
             InitialPoseRequest, 'mapoi/initialpose_poi', initialpose_poi_qos)
@@ -175,7 +175,7 @@ class MapoiWebNode(Node):
         self.create_timer(0.2, self.update_robot_pose)
 
         # Navigation status
-        # QoS は mapoi_nav_server と同じ transient_local。後起動 webui でも latched 値を受信できる。
+        # QoS は mapoi_nav2_bridge と同じ transient_local。後起動 webui でも latched 値を受信できる。
         self.nav_status_ = 'idle'
         self.nav_status_target_ = ''
         nav_status_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -198,9 +198,9 @@ class MapoiWebNode(Node):
             liveliness_lease_duration=Duration(seconds=5),
         )
 
-        # Navigation backend readiness (#198): mapoi_nav_server が 1Hz で publish する
+        # Navigation backend readiness (#198): mapoi_nav2_bridge が 1Hz で publish する
         # readiness summary。WebUI / panel はこの値で navigation 操作 UI を gate する。
-        # backend_status topic 不在の場合 (古い nav_server 等) は None のまま、command topic
+        # backend_status topic 不在の場合 (古い mapoi_nav2_bridge 等) は None のまま、command topic
         # subscriber 数による旧判定にフォールバックする (`get_navigation_capabilities`)。
         self.backend_status_ = None
         # `nav_backend_alive_` は liveliness event_callback が更新する publisher 生存 flag。
@@ -431,7 +431,7 @@ class MapoiWebNode(Node):
         pub.publish(msg)
         if sub_count == 0:
             warning = (f"{topic_name} に subscriber が見つかりません "
-                       "(mapoi_nav_server などの listener が起動していない可能性)")
+                       "(mapoi_nav2_bridge などの listener が起動していない可能性)")
             self.get_logger().warn(warning)
             return True, warning
         return True, None
@@ -442,13 +442,13 @@ class MapoiWebNode(Node):
         Priority (#198):
         1. mapoi/nav/backend_status topic 受信済 → backend_ready をそのまま使う。
            Nav2 action / service の存在を含めた厳密 readiness。
-        2. backend_status 未受信 (古い nav_server や bridge 未実装) → command topic
+        2. backend_status 未受信 (古い mapoi_nav2_bridge や bridge 未実装) → command topic
            subscriber 数による旧判定にフォールバック (= bridge 起動だけは検知できる)。
 
         旧フィールド名 (navigation_available 等) は frontend 既存利用のため維持する。
         Minimal contract に合わせて返す情報も backend_ready / topics 程度に絞る (#205 review)。
         フォールバック path で `navigation_available` と操作ボタン enable の条件が完全一致しないのは
-        意図的な後方互換 — 新 nav_server に切り替われば backend_status path で整合する。
+        意図的な後方互換 — 新 mapoi_nav2_bridge に切り替われば backend_status path で整合する。
         """
         publishers = {
             'switch_map': (self.switch_map_pub_, 'mapoi/nav/switch_map'),
@@ -468,7 +468,7 @@ class MapoiWebNode(Node):
                 'available': count > 0,
             }
         # `mapoi/initialpose_poi` may still have simulator / localization bridge
-        # subscribers after mapoi_nav_server stops. Treat only navigation command
+        # subscribers after mapoi_nav2_bridge stops. Treat only navigation command
         # topics as evidence that a navigation backend is available.
         command_keys = ('goal', 'route', 'cancel', 'pause', 'resume')
         command_available = any(topics[key]['available'] for key in command_keys)
@@ -479,7 +479,7 @@ class MapoiWebNode(Node):
         # self.localization_status_) は subscriber callback が呼ばれない限り古い値を持ち続ける。
         # liveliness QoS (#208) で取得した `*_backend_alive_` flag を `_resolve_backend_status_for_ui`
         # で反映する。
-        # - 未受信: backend = None → legacy fallback (旧 nav_server / bridge 不在の後方互換)
+        # - 未受信: backend = None → legacy fallback (旧 mapoi_nav2_bridge / bridge 不在の後方互換)
         # - 受信済み + alive: cache をそのまま使う
         # - 受信済み + lost: backend_ready=false に上書きした dict を返す → UI 確実 disable
         #   (#212 codex review high: legacy fallback path に落とすと command subscriber が残った

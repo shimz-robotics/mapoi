@@ -1,9 +1,9 @@
 // UNIT_TEST マクロは CMakeLists.txt の target_compile_definitions で定義する
 #include <gtest/gtest.h>
 #include <rclcpp/rclcpp.hpp>
-#include "mapoi_server/mapoi_nav_server.hpp"
+#include "mapoi_server/mapoi_nav2_bridge.hpp"
 
-class NavServerTestFixture : public ::testing::Test
+class Nav2BridgeTestFixture : public ::testing::Test
 {
 protected:
   void SetUp() override
@@ -11,7 +11,7 @@ protected:
     if (!rclcpp::ok()) {
       rclcpp::init(0, nullptr);
     }
-    node_ = std::make_shared<MapoiNavServer>();
+    node_ = std::make_shared<MapoiNav2Bridge>();
   }
   void TearDown() override
   {
@@ -32,10 +32,10 @@ protected:
     return poi;
   }
 
-  std::shared_ptr<MapoiNavServer> node_;
+  std::shared_ptr<MapoiNav2Bridge> node_;
 };
 
-TEST_F(NavServerTestFixture, DistanceCalculation)
+TEST_F(Nav2BridgeTestFixture, DistanceCalculation)
 {
   geometry_msgs::msg::Pose pose;
   pose.position.x = 3.0;
@@ -44,7 +44,7 @@ TEST_F(NavServerTestFixture, DistanceCalculation)
   EXPECT_DOUBLE_EQ(dist, 5.0);
 }
 
-TEST_F(NavServerTestFixture, DistanceCalculationZero)
+TEST_F(Nav2BridgeTestFixture, DistanceCalculationZero)
 {
   geometry_msgs::msg::Pose pose;
   pose.position.x = 1.0;
@@ -53,7 +53,7 @@ TEST_F(NavServerTestFixture, DistanceCalculationZero)
   EXPECT_DOUBLE_EQ(dist, 0.0);
 }
 
-TEST_F(NavServerTestFixture, RebuildEventPoisIncludesAllPois)
+TEST_F(Nav2BridgeTestFixture, RebuildEventPoisIncludesAllPois)
 {
   {
     std::lock_guard<std::mutex> lock(node_->data_mutex_);
@@ -66,13 +66,13 @@ TEST_F(NavServerTestFixture, RebuildEventPoisIncludesAllPois)
   EXPECT_EQ(node_->event_pois_.size(), 4u);
 }
 
-TEST_F(NavServerTestFixture, RebuildEventPoisEmpty)
+TEST_F(Nav2BridgeTestFixture, RebuildEventPoisEmpty)
 {
   node_->rebuild_event_pois();
   EXPECT_EQ(node_->event_pois_.size(), 0u);
 }
 
-TEST_F(NavServerTestFixture, PauseTagDetection)
+TEST_F(Nav2BridgeTestFixture, PauseTagDetection)
 {
   auto poi_pause = make_poi("pause_poi", 0.0, 0.0, 0.5, {"waypoint", "pause"});
   auto poi_no_pause = make_poi("normal_poi", 0.0, 0.0, 0.5, {"waypoint", "audio_info"});
@@ -92,115 +92,115 @@ TEST_F(NavServerTestFixture, PauseTagDetection)
 // `initial_pose` system tag を廃止し、initial pose の選定ロジックは mapoi_server::compute_initial_poi_name
 // に移動した。新ロジックの test は mapoi_server 側に置く想定 (本 PR では未追加、follow-up #148 で扱う)。
 
-TEST_F(NavServerTestFixture, HasLandmarkTagDetection)
+TEST_F(Nav2BridgeTestFixture, HasLandmarkTagDetection)
 {
-  EXPECT_FALSE(MapoiNavServer::has_landmark_tag(
+  EXPECT_FALSE(MapoiNav2Bridge::has_landmark_tag(
     make_poi("goal_only", 0.0, 0.0, 0.5, {"waypoint"})));
-  EXPECT_FALSE(MapoiNavServer::has_landmark_tag(
+  EXPECT_FALSE(MapoiNav2Bridge::has_landmark_tag(
     make_poi("no_tags", 0.0, 0.0, 0.5, {})));
-  EXPECT_TRUE(MapoiNavServer::has_landmark_tag(
+  EXPECT_TRUE(MapoiNav2Bridge::has_landmark_tag(
     make_poi("landmark_only", 0.0, 0.0, 0.5, {"landmark"})));
-  EXPECT_TRUE(MapoiNavServer::has_landmark_tag(
+  EXPECT_TRUE(MapoiNav2Bridge::has_landmark_tag(
     make_poi("landmark_combo", 0.0, 0.0, 0.5, {"landmark", "hazard"})));
 }
 
 // --- build_route_poi_names (#143 / #148) ---
 
-TEST_F(NavServerTestFixture, BuildRoutePoiNamesWaypointsOnly)
+TEST_F(Nav2BridgeTestFixture, BuildRoutePoiNamesWaypointsOnly)
 {
   auto wp1 = make_poi("wp1", 0.0, 0.0, 0.5, {"waypoint"});
   auto wp2 = make_poi("wp2", 1.0, 0.0, 0.5, {"waypoint", "pause"});
-  auto result = MapoiNavServer::build_route_poi_names({wp1, wp2}, {});
+  auto result = MapoiNav2Bridge::build_route_poi_names({wp1, wp2}, {});
   EXPECT_EQ(result.size(), 2u);
   EXPECT_EQ(result.count("wp1"), 1u);
   EXPECT_EQ(result.count("wp2"), 1u);
 }
 
-TEST_F(NavServerTestFixture, BuildRoutePoiNamesWaypointsAndLandmarks)
+TEST_F(Nav2BridgeTestFixture, BuildRoutePoiNamesWaypointsAndLandmarks)
 {
   // route 受信時、waypoints と landmarks の両方が active set に入る (#143)。
   auto wp = make_poi("wp1", 0.0, 0.0, 0.5, {"waypoint"});
   auto lm = make_poi("lm1", 1.0, 0.0, 0.5, {"landmark"});
-  auto result = MapoiNavServer::build_route_poi_names({wp}, {lm});
+  auto result = MapoiNav2Bridge::build_route_poi_names({wp}, {lm});
   EXPECT_EQ(result.size(), 2u);
   EXPECT_EQ(result.count("wp1"), 1u);
   EXPECT_EQ(result.count("lm1"), 1u);
 }
 
-TEST_F(NavServerTestFixture, BuildRoutePoiNamesLandmarksEmptyBackwardCompat)
+TEST_F(Nav2BridgeTestFixture, BuildRoutePoiNamesLandmarksEmptyBackwardCompat)
 {
   // 旧 yaml (route.landmarks 未指定) は landmarks empty で読まれる。waypoints のみで
   // active set が成立し、空にならない (#143 後方互換契約)。
   auto wp = make_poi("wp1", 0.0, 0.0, 0.5, {"waypoint"});
-  auto result = MapoiNavServer::build_route_poi_names({wp}, {});
+  auto result = MapoiNav2Bridge::build_route_poi_names({wp}, {});
   EXPECT_EQ(result.size(), 1u);
   EXPECT_EQ(result.count("wp1"), 1u);
 }
 
-TEST_F(NavServerTestFixture, BuildRoutePoiNamesEmpty)
+TEST_F(Nav2BridgeTestFixture, BuildRoutePoiNamesEmpty)
 {
-  auto result = MapoiNavServer::build_route_poi_names({}, {});
+  auto result = MapoiNav2Bridge::build_route_poi_names({}, {});
   EXPECT_TRUE(result.empty());
 }
 
-TEST_F(NavServerTestFixture, BuildRoutePoiNamesDuplicateNames)
+TEST_F(Nav2BridgeTestFixture, BuildRoutePoiNamesDuplicateNames)
 {
   // 同名が waypoint と landmark の両方に出てきても set 性質で 1 つに集約。
   auto wp = make_poi("dup", 0.0, 0.0, 0.5, {"waypoint"});
   auto lm = make_poi("dup", 1.0, 0.0, 0.5, {"landmark"});
-  auto result = MapoiNavServer::build_route_poi_names({wp}, {lm});
+  auto result = MapoiNav2Bridge::build_route_poi_names({wp}, {lm});
   EXPECT_EQ(result.size(), 1u);
   EXPECT_EQ(result.count("dup"), 1u);
 }
 
 // --- is_pause_eligible (#143 / #148) ---
 
-TEST_F(NavServerTestFixture, IsPauseEligibleRouteModeActiveWithPauseTag)
+TEST_F(Nav2BridgeTestFixture, IsPauseEligibleRouteModeActiveWithPauseTag)
 {
   auto poi = make_poi("p1", 0.0, 0.0, 0.5, {"waypoint", "pause"});
   std::unordered_set<std::string> active = {"p1"};
-  EXPECT_TRUE(MapoiNavServer::is_pause_eligible(
-    poi, MapoiNavServer::NavMode::ROUTE, active));
+  EXPECT_TRUE(MapoiNav2Bridge::is_pause_eligible(
+    poi, MapoiNav2Bridge::NavMode::ROUTE, active));
 }
 
-TEST_F(NavServerTestFixture, IsPauseEligibleRouteModeActiveWithoutPauseTag)
+TEST_F(Nav2BridgeTestFixture, IsPauseEligibleRouteModeActiveWithoutPauseTag)
 {
   auto poi = make_poi("p1", 0.0, 0.0, 0.5, {"waypoint"});
   std::unordered_set<std::string> active = {"p1"};
-  EXPECT_FALSE(MapoiNavServer::is_pause_eligible(
-    poi, MapoiNavServer::NavMode::ROUTE, active));
+  EXPECT_FALSE(MapoiNav2Bridge::is_pause_eligible(
+    poi, MapoiNav2Bridge::NavMode::ROUTE, active));
 }
 
-TEST_F(NavServerTestFixture, IsPauseEligibleRouteModeNonActivePoi)
+TEST_F(Nav2BridgeTestFixture, IsPauseEligibleRouteModeNonActivePoi)
 {
   // pause タグはあるが active route POI ではない (= 別 route の POI に偶然 ENTER)。
   // 厳格化前は発火していたが #143 で発火しないようになった。
   auto poi = make_poi("p1", 0.0, 0.0, 0.5, {"waypoint", "pause"});
   std::unordered_set<std::string> active = {"p2"};
-  EXPECT_FALSE(MapoiNavServer::is_pause_eligible(
-    poi, MapoiNavServer::NavMode::ROUTE, active));
+  EXPECT_FALSE(MapoiNav2Bridge::is_pause_eligible(
+    poi, MapoiNav2Bridge::NavMode::ROUTE, active));
 }
 
-TEST_F(NavServerTestFixture, IsPauseEligibleGoalMode)
+TEST_F(Nav2BridgeTestFixture, IsPauseEligibleGoalMode)
 {
   // GOAL 走行中は pause タグ + active set 一致でも発火しない (#143)。
   auto poi = make_poi("p1", 0.0, 0.0, 0.5, {"waypoint", "pause"});
   std::unordered_set<std::string> active = {"p1"};
-  EXPECT_FALSE(MapoiNavServer::is_pause_eligible(
-    poi, MapoiNavServer::NavMode::GOAL, active));
+  EXPECT_FALSE(MapoiNav2Bridge::is_pause_eligible(
+    poi, MapoiNav2Bridge::NavMode::GOAL, active));
 }
 
-TEST_F(NavServerTestFixture, IsPauseEligibleIdleMode)
+TEST_F(Nav2BridgeTestFixture, IsPauseEligibleIdleMode)
 {
   auto poi = make_poi("p1", 0.0, 0.0, 0.5, {"waypoint", "pause"});
   std::unordered_set<std::string> active = {"p1"};
-  EXPECT_FALSE(MapoiNavServer::is_pause_eligible(
-    poi, MapoiNavServer::NavMode::IDLE, active));
+  EXPECT_FALSE(MapoiNav2Bridge::is_pause_eligible(
+    poi, MapoiNav2Bridge::NavMode::IDLE, active));
 }
 
 // --- reset_nav_state (#143 / #148) ---
 
-TEST_F(NavServerTestFixture, ResetNavStateClearsRouteContext)
+TEST_F(Nav2BridgeTestFixture, ResetNavStateClearsRouteContext)
 {
   // route 走行中 + pause 中に相当する状態を fixture から直接 set し、
   // reset_nav_state() が route lifecycle 終了時 (cancel / SUCCEEDED / ABORTED /
@@ -212,7 +212,7 @@ TEST_F(NavServerTestFixture, ResetNavStateClearsRouteContext)
     node_->current_route_poi_names_.insert("wp1");
     node_->current_route_poi_names_.insert("lm1");
   }
-  node_->nav_mode_ = MapoiNavServer::NavMode::ROUTE;
+  node_->nav_mode_ = MapoiNav2Bridge::NavMode::ROUTE;
   node_->is_paused_ = true;
   node_->current_waypoint_index_ = 3;
 
@@ -228,7 +228,7 @@ TEST_F(NavServerTestFixture, ResetNavStateClearsRouteContext)
   node_->reset_nav_state();
 
   EXPECT_TRUE(node_->current_route_poi_names_.empty());
-  EXPECT_EQ(node_->nav_mode_, MapoiNavServer::NavMode::IDLE);
+  EXPECT_EQ(node_->nav_mode_, MapoiNav2Bridge::NavMode::IDLE);
   EXPECT_FALSE(node_->is_paused_);
   EXPECT_EQ(node_->current_waypoint_index_, 0u);
   EXPECT_TRUE(node_->current_route_waypoints_.empty());
@@ -241,47 +241,47 @@ TEST_F(NavServerTestFixture, ResetNavStateClearsRouteContext)
 // STOPPED/RESUMED 判定の純関数 state machine の test。副作用なしで inside / was_stopped /
 // zero_velocity_dwelled の組み合わせから次の遷移を返すだけなので Node 不要 (TEST で十分)。
 
-TEST_F(NavServerTestFixture, ComputeStoppedTransitionNoOutside)
+TEST_F(Nav2BridgeTestFixture, ComputeStoppedTransitionNoOutside)
 {
-  using S = MapoiNavServer::StoppedDetectionInputs;
-  using T = MapoiNavServer::StoppedTransition;
+  using S = MapoiNav2Bridge::StoppedDetectionInputs;
+  using T = MapoiNav2Bridge::StoppedTransition;
   // !inside の場合は state に関わらず NONE (EXIT で別途 stopped state を reset する規約)。
-  EXPECT_EQ(MapoiNavServer::compute_stopped_transition(S{false, false, false}), T::NONE);
-  EXPECT_EQ(MapoiNavServer::compute_stopped_transition(S{false, false, true}),  T::NONE);
-  EXPECT_EQ(MapoiNavServer::compute_stopped_transition(S{false, true, false}),  T::NONE);
-  EXPECT_EQ(MapoiNavServer::compute_stopped_transition(S{false, true, true}),   T::NONE);
+  EXPECT_EQ(MapoiNav2Bridge::compute_stopped_transition(S{false, false, false}), T::NONE);
+  EXPECT_EQ(MapoiNav2Bridge::compute_stopped_transition(S{false, false, true}),  T::NONE);
+  EXPECT_EQ(MapoiNav2Bridge::compute_stopped_transition(S{false, true, false}),  T::NONE);
+  EXPECT_EQ(MapoiNav2Bridge::compute_stopped_transition(S{false, true, true}),   T::NONE);
 }
 
-TEST_F(NavServerTestFixture, ComputeStoppedTransitionEnterStopped)
+TEST_F(Nav2BridgeTestFixture, ComputeStoppedTransitionEnterStopped)
 {
-  using S = MapoiNavServer::StoppedDetectionInputs;
-  using T = MapoiNavServer::StoppedTransition;
+  using S = MapoiNav2Bridge::StoppedDetectionInputs;
+  using T = MapoiNav2Bridge::StoppedTransition;
   // inside + !was_stopped + dwelled → TO_STOPPED
-  EXPECT_EQ(MapoiNavServer::compute_stopped_transition(S{true, false, true}), T::TO_STOPPED);
+  EXPECT_EQ(MapoiNav2Bridge::compute_stopped_transition(S{true, false, true}), T::TO_STOPPED);
 }
 
-TEST_F(NavServerTestFixture, ComputeStoppedTransitionEnterMoving)
+TEST_F(Nav2BridgeTestFixture, ComputeStoppedTransitionEnterMoving)
 {
-  using S = MapoiNavServer::StoppedDetectionInputs;
-  using T = MapoiNavServer::StoppedTransition;
+  using S = MapoiNav2Bridge::StoppedDetectionInputs;
+  using T = MapoiNav2Bridge::StoppedTransition;
   // inside + !was_stopped + !dwelled → NONE (停止が dwell 経過するまで何もしない)
-  EXPECT_EQ(MapoiNavServer::compute_stopped_transition(S{true, false, false}), T::NONE);
+  EXPECT_EQ(MapoiNav2Bridge::compute_stopped_transition(S{true, false, false}), T::NONE);
 }
 
-TEST_F(NavServerTestFixture, ComputeStoppedTransitionResumeOnVelocity)
+TEST_F(Nav2BridgeTestFixture, ComputeStoppedTransitionResumeOnVelocity)
 {
-  using S = MapoiNavServer::StoppedDetectionInputs;
-  using T = MapoiNavServer::StoppedTransition;
+  using S = MapoiNav2Bridge::StoppedDetectionInputs;
+  using T = MapoiNav2Bridge::StoppedTransition;
   // inside + was_stopped + !dwelled (動き始めた) → TO_RESUMED (即時、dwell 不要)
-  EXPECT_EQ(MapoiNavServer::compute_stopped_transition(S{true, true, false}), T::TO_RESUMED);
+  EXPECT_EQ(MapoiNav2Bridge::compute_stopped_transition(S{true, true, false}), T::TO_RESUMED);
 }
 
-TEST_F(NavServerTestFixture, ComputeStoppedTransitionStaysStopped)
+TEST_F(Nav2BridgeTestFixture, ComputeStoppedTransitionStaysStopped)
 {
-  using S = MapoiNavServer::StoppedDetectionInputs;
-  using T = MapoiNavServer::StoppedTransition;
+  using S = MapoiNav2Bridge::StoppedDetectionInputs;
+  using T = MapoiNav2Bridge::StoppedTransition;
   // inside + was_stopped + dwelled (停止継続) → NONE (重複 STOPPED 発火しない)
-  EXPECT_EQ(MapoiNavServer::compute_stopped_transition(S{true, true, true}), T::NONE);
+  EXPECT_EQ(MapoiNav2Bridge::compute_stopped_transition(S{true, true, true}), T::NONE);
 }
 
 int main(int argc, char ** argv)

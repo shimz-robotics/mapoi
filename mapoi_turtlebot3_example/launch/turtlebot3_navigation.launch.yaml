@@ -66,7 +66,7 @@ launch:
     if: $(var rviz)
 
 
-# Mapoi bringup (mapoi_server / mapoi_nav_server / mapoi_rviz2_publisher +
+# Mapoi bringup (mapoi_server / mapoi_nav2_bridge / mapoi_rviz2_publisher +
 # simulator に応じて mapoi_gazebo_bridge (Humble) または mapoi_gz_bridge + parameter_bridge (Jazzy))
 - include:
     file: "$(find-pkg-share mapoi_server)/launch/mapoi_bringup.launch.yaml"
