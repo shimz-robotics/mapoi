@@ -15,7 +15,8 @@ from rclpy.qos import QoSProfile, DurabilityPolicy
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from mapoi_interfaces.srv import GetMapsInfo, GetTagDefinitions, SelectMap
-from mapoi_interfaces.msg import InitialPoseRequest, NavigationBackendStatus
+from mapoi_interfaces.msg import (
+    InitialPoseRequest, LocalizationBackendStatus, NavigationBackendStatus)
 import tf2_ros
 
 from flask import Flask, jsonify, request, send_from_directory, Response
@@ -186,6 +187,16 @@ class MapoiWebNode(Node):
             NavigationBackendStatus, 'mapoi/nav/backend_status',
             self.backend_status_callback, backend_status_qos)
 
+        # Localization backend readiness (#209): mapoi_amcl_localization_bridge (or any custom
+        # localization bridge) が 1Hz で publish する readiness summary。WebUI は Set Initial
+        # Pose 操作 UI と initial pose POI 選択をこの値で gate する。topic 不在 (bridge 未起動 /
+        # editor 専用構成) は None のまま、frontend 側で「不明」状態として扱う。
+        self.localization_status_ = None
+        localization_status_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.localization_status_sub_ = self.create_subscription(
+            LocalizationBackendStatus, 'mapoi/localization/backend_status',
+            self.localization_status_callback, localization_status_qos)
+
         # Subscribe to mapoi/config_path for external map switches.
         # transient_local QoS で publisher (mapoi_server) の latched 値を受信する (#135)。
         config_path_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -228,6 +239,17 @@ class MapoiWebNode(Node):
         # bridge 実装者の負担を減らすため per-capability フィールドは持たない。
         # localization readiness は別 topic (#209) で扱う。
         self.backend_status_ = {
+            'backend_type': msg.backend_type,
+            'backend_ready': bool(msg.backend_ready),
+            'reason': msg.reason,
+        }
+
+    def localization_status_callback(self, msg):
+        """Cache the latest localization backend readiness payload (#209)."""
+        # Minimal contract: backend_type / backend_ready / reason のみ。Navigation 側 (#205) と同じ
+        # 形式で別 topic に分かれているのは、navigation と localization が独立した契約 / 軸として
+        # 扱われるため (将来 AMCL 以外の localization に切替えやすくする目的、issue #209)。
+        self.localization_status_ = {
             'backend_type': msg.backend_type,
             'backend_ready': bool(msg.backend_ready),
             'reason': msg.reason,
@@ -386,7 +408,16 @@ class MapoiWebNode(Node):
         switch_map_available = topics['switch_map']['available']
         legacy_available = switch_map_available or command_available
 
-        backend = self.backend_status_
+        # bridge プロセスが死亡しても transient_local の cache (self.backend_status_ /
+        # self.localization_status_) は subscriber callback が呼ばれない限り古い値を持ち続ける
+        # (#209 review)。DDS は publisher 不在を 1 秒程度で検知するので、`count_publishers() == 0`
+        # を staleness signal として使い、cache を「未受信扱い」に落とす。これは #208 の
+        # heartbeat / liveliness 検出の軽量代替で、subscriber 側だけで完結する。
+        nav_publishers_alive = self.count_publishers('mapoi/nav/backend_status') > 0
+        loc_publishers_alive = self.count_publishers('mapoi/localization/backend_status') > 0
+        backend = self.backend_status_ if nav_publishers_alive else None
+        localization = self.localization_status_ if loc_publishers_alive else None
+
         if backend is not None:
             navigation_available = bool(backend['backend_ready'])
             # backend_status path では map switch も backend_ready の AND に含まれているため
@@ -403,6 +434,10 @@ class MapoiWebNode(Node):
             'command_available': command_available,
             'topics': topics,
             'backend_status': backend,
+            # Localization backend readiness (#209) は navigation とは独立した仕様として frontend に
+            # 渡す。topic 不在 (bridge 未起動) / publisher 死亡時は None で、frontend は
+            # 「Localization status unknown」を表示し、Set Initial Pose UI は安全側に disable する。
+            'localization_status': localization,
         }
 
     def _call_service_sync(self, client, request, service_name, timeout_sec=3.0,

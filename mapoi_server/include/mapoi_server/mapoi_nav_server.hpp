@@ -23,7 +23,6 @@
 #include <nav2_msgs/action/navigate_to_pose.hpp>
 #include <nav2_msgs/srv/load_map.hpp>
 #include <std_msgs/msg/string.hpp>
-#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -51,9 +50,8 @@ public:
 
 private:
   // --- publisher & subscriber ---
-  rclcpp::Subscription<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr mapoi_initialpose_poi_sub_;
-  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr nav2_initialpose_pub_;
-
+  // mapoi/initialpose_poi の publisher は LoadMap 完了 trigger 用に残す (#209)。
+  // sub と /initialpose 配信は mapoi_amcl_localization_bridge に移設済。
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_goal_pose_poi_sub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr nav2_goal_pose_pub_;
 
@@ -63,7 +61,6 @@ private:
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_pause_sub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapoi_resume_sub_;
 
-  void mapoi_initialpose_poi_cb(const mapoi_interfaces::msg::InitialPoseRequest::SharedPtr msg);
   void mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedPtr msg);
   void mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg);
   void mapoi_switch_map_cb(const std_msgs::msg::String::SharedPtr msg);
@@ -158,7 +155,6 @@ private:
   void publish_nav_status(const std::string & status, const std::string & target = "");
   bool send_load_map_request(const std::string & server_name, const std::string & map_file);
   void publish_initial_poi_request(const std::string & map_name, const std::string & poi_name);
-  rclcpp::Publisher<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr mapoi_initialpose_poi_pub_;
 
   // 現在 nav の target POI 名 / route 名。Acceptance 時 (goal_response_callback /
   // ntp_goal_response_callback) に更新され、pause / resume が active nav の target
@@ -197,6 +193,12 @@ private:
   // sub-state なので、EXIT 時は inside_state→false と同時に stopped_state→false に reset する。
   std::unordered_map<std::string, bool> poi_stopped_state_;  // key: poi.name
   std::vector<mapoi_interfaces::msg::PointOfInterest> event_pois_;
+
+  // initial pose POI 名の publisher (Nav2 LoadMap 完了後 trigger 用、#209)。
+  // 配信先は mapoi_amcl_localization_bridge / mapoi_gz_bridge / WebUI 等が subscribe する
+  // `mapoi/initialpose_poi` (transient_local)。実際の `/initialpose` 配信は localization
+  // bridge が担当する (#209 で nav_server から分離)。
+  rclcpp::Publisher<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr mapoi_initialpose_poi_pub_;
 
   // --- STOPPED/RESUMED 判定 (#140) ---
   // cmd_vel subscriber: 速度判定の source の一つ。Nav2 action SUCCEEDED もう一つの source は
@@ -260,26 +262,6 @@ private:
     const mapoi_interfaces::msg::PointOfInterest & poi,
     NavMode nav_mode,
     const std::unordered_set<std::string> & active_route_poi_names);
-
-  // /initialpose 配信の単一エントリポイント（手動経路 / 自動経路で共通化）。
-  // publish 直後に subscriber が居なければ非同期で retry timer を起動する。
-  void publish_initial_pose(
-    const geometry_msgs::msg::Pose & pose, const std::string & source);
-
-  // /initialpose subscriber (主に AMCL) が後起動した場合の async retry 機構 (#152)。
-  // single-thread executor で blocking wait すると tolerance_check 等が止まる回帰があるため、
-  // wall timer ベースで polling する。subscriber 検知で 1 回再 publish + timer cancel。
-  void schedule_initialpose_retry(
-    const geometry_msgs::msg::Pose & pose, const std::string & source);
-  void initialpose_retry_callback();
-  rclcpp::TimerBase::SharedPtr initialpose_retry_timer_;
-  geometry_msgs::msg::Pose initialpose_retry_pose_;
-  std::string initialpose_retry_source_;
-  int initialpose_retry_attempt_ {0};
-  // subscriber 検知後の追加 republish カウント (#149 round 5 medium):
-  // AMCL が「subscriber visible だが処理 ready 直前」のケースで取りこぼしを防ぐため、
-  // subscriber 検知後も短いインターバルで N 回連続 publish する。
-  int initialpose_post_subscribe_republish_done_ {0};
 
 #ifdef UNIT_TEST
   friend class NavServerTestFixture;

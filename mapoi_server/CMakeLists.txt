@@ -23,6 +23,10 @@ ament_auto_add_executable(mapoi_nav_server
   src/mapoi_nav_server.cpp
 )
 
+ament_auto_add_executable(mapoi_amcl_localization_bridge
+  src/mapoi_amcl_localization_bridge.cpp
+)
+
 ament_auto_add_executable(mapoi_rviz2_publisher
   src/mapoi_rviz2_publisher.cpp
 )
@@ -112,6 +116,9 @@ if(BUILD_TESTING)
   )
   add_launch_test(
     test/test_backend_status_no_nav2.py
+  )
+  add_launch_test(
+    test/test_localization_backend_status_no_amcl.py
   )
 
   # Install test config

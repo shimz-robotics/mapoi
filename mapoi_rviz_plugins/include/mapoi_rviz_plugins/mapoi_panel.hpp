@@ -14,6 +14,7 @@
 #include <std_msgs/msg/string.hpp>
 #include "mapoi_interfaces/msg/point_of_interest.hpp"
 #include "mapoi_interfaces/msg/navigation_backend_status.hpp"
+#include "mapoi_interfaces/msg/localization_backend_status.hpp"
 #include "mapoi_interfaces/srv/get_pois_info.hpp"
 #include "mapoi_interfaces/srv/get_maps_info.hpp"
 #include "mapoi_interfaces/srv/get_route_pois.hpp"
@@ -89,8 +90,30 @@ protected:
   // ままで後方互換を保つ。Minimal contract なので per-capability gate は持たない。
   rclcpp::Subscription<mapoi_interfaces::msg::NavigationBackendStatus>::SharedPtr backend_status_sub_;
   void BackendStatusCallback(mapoi_interfaces::msg::NavigationBackendStatus::SharedPtr msg);
-  void UpdateNavButtonsEnabled(bool backend_ready);
-  bool backend_status_received_ {false};
+  // backend_status 不在 (panel 単独起動) では callback が呼ばれず、初期値 (true = enable) のまま。
+  // Minimal contract なので per-capability gate は持たない。
+  bool last_navigation_backend_ready_ {true};
+
+  // Localization backend readiness subscribe (#209): mapoi_amcl_localization_bridge (or any
+  // custom localization bridge) が publish する readiness で LocalizationButton を gate する。
+  // navigation backend (#205) と独立した仕様。topic 不在 (bridge 単独不起動 / editor 構成) は
+  // 後方互換のため「全 enable のまま」とする (BackendStatusCallback と同じ初期値方針)。
+  rclcpp::Subscription<mapoi_interfaces::msg::LocalizationBackendStatus>::SharedPtr
+    localization_backend_status_sub_;
+  void LocalizationBackendStatusCallback(
+    mapoi_interfaces::msg::LocalizationBackendStatus::SharedPtr msg);
+  bool last_localization_backend_ready_ {true};
+
+  // bridge プロセスが死亡しても transient_local の cache は古い値を保持し続けるため、
+  // 1Hz polling で publisher 数を確認して staleness を検出する (#209 review、#208 軽量代替)。
+  // Navigation / Localization 両方の publisher 数を見て、0 なら ready=false 相当に倒す。
+  rclcpp::TimerBase::SharedPtr backend_staleness_timer_;
+  void BackendStalenessTick();
+
+  // navigation_ready / localization_ready の最新値を保持し、両 callback と staleness timer で
+  // 共通の UpdateNavButtonsEnabled を呼び出す。LocalizationButton は localization、それ以外の
+  // navigation 操作 UI は navigation で gate する (#209 で 2 軸に分離)。
+  void UpdateNavButtonsEnabled();
 
   void RequestSetCmdVelMode(std::string cm);
   void SetMapComboBox(std::string map_name);

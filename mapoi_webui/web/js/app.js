@@ -16,6 +16,8 @@
   const navStatusText = document.getElementById('nav-status-text');
   const navigationAvailability = document.getElementById('navigation-availability');
   const navigationAvailabilityText = document.getElementById('navigation-availability-text');
+  const localizationAvailability = document.getElementById('localization-availability');
+  const localizationAvailabilityText = document.getElementById('localization-availability-text');
   const navigationWarning = document.getElementById('navigation-warning');
   const compactMediaQuery = window.matchMedia('(max-width: 768px)');
   let currentMap = '';
@@ -484,14 +486,19 @@
     currentNavigationCapabilities = navigation || currentNavigationCapabilities;
     const capabilities = currentNavigationCapabilities || {};
     const backendStatus = capabilities.backend_status || null;
+    const localizationStatus = capabilities.localization_status || null;
     const commandAvailable = !!capabilities.command_available;
     const navigationAvailable = !!capabilities.navigation_available;
     // backend_status が届いている場合 (#198) は backend_ready をそのまま操作 enable に使う。
     // Minimal contract (#205 review) なので per-capability gate は持たず、navigation 操作 UI 全体を
     // 一括 gate する。後方互換: backend_status 不在は subscriber 数 (command_available) で代用。
-    const operationsEnabled = backendStatus
+    const navOperationsEnabled = backendStatus
       ? !!backendStatus.backend_ready
       : commandAvailable;
+    // localization_status は #209 で追加された別契約。Set Initial Pose UI は localization
+    // bridge の backend_ready で gate する。topic 不在 (= bridge 未起動 / editor 構成) は
+    // 安全側に disable し、operator が「ready 表示なし」と判断できるようにする。
+    const localizationAvailable = !!(localizationStatus && localizationStatus.backend_ready);
     const navBody = document.getElementById('nav-body');
     if (navBody) {
       navBody.classList.toggle('navigation-unavailable-state', !navigationAvailable);
@@ -519,20 +526,53 @@
       navigationAvailability.title = tooltipLines.join('\n');
     }
 
+    if (localizationAvailability && localizationAvailabilityText) {
+      // navigation 用の class 名 (.navigation-available/.navigation-unavailable) をそのまま流用して
+      // dot color の CSS を共有する。状態としては「localization bridge ready / unavailable / unknown」。
+      let cls = 'navigation-availability ';
+      let label;
+      if (!localizationStatus) {
+        cls += 'navigation-unknown';
+        label = 'Localization unknown';
+      } else if (localizationStatus.backend_ready) {
+        cls += 'navigation-available';
+        label = 'Localization connected';
+      } else {
+        cls += 'navigation-unavailable';
+        label = 'Localization unavailable';
+      }
+      localizationAvailability.className = cls;
+      localizationAvailabilityText.textContent = label;
+      const tooltipLines = [];
+      if (localizationStatus) {
+        tooltipLines.push(`backend_type: ${localizationStatus.backend_type || 'unknown'}`);
+        tooltipLines.push(`backend_ready: ${localizationStatus.backend_ready}`);
+        if (localizationStatus.reason) {
+          tooltipLines.push(`reason: ${localizationStatus.reason}`);
+        }
+      } else {
+        tooltipLines.push('mapoi/localization/backend_status not received yet');
+      }
+      localizationAvailability.title = tooltipLines.join('\n');
+    }
+
     [
       document.getElementById('btn-nav-go'),
       document.getElementById('btn-nav-run'),
       document.getElementById('btn-nav-pause'),
       document.getElementById('btn-nav-resume'),
       document.getElementById('btn-nav-stop'),
-      document.getElementById('btn-nav-setpose'),
     ].forEach((btn) => {
-      if (btn) btn.disabled = !operationsEnabled;
+      if (btn) btn.disabled = !navOperationsEnabled;
     });
+    // Set Initial Pose は localization 側 (#209)。Initial Pose POI 選択も同 gate。
+    const initialPoseBtn = document.getElementById('btn-nav-setpose');
+    if (initialPoseBtn) initialPoseBtn.disabled = !localizationAvailable;
+    if (navInitialPoseSelect) navInitialPoseSelect.disabled = !localizationAvailable;
 
     // Operator map switch も bridge を経由するため backend_ready で gate する。
     // Editor 側の map dropdown (header の Map:) は `/api/maps/select` で bridge 不問。
-    if (navigationMapSelect) navigationMapSelect.disabled = !operationsEnabled;
+    if (navigationMapSelect) navigationMapSelect.disabled = !navOperationsEnabled;
     refreshResponsiveLayout();
   }
 
