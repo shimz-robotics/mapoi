@@ -64,7 +64,11 @@ void MapoiPanel::onInitialize()
   }
 
   // Buttons
-  nav2_initialpose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("initialpose", 1);
+  // LocalizationButton は `/initialpose` を直接叩かず、`mapoi/initialpose_poi` 経由で bridge に
+  // POI 名を渡す (#209)。bridge 側で POI 名 → pose resolve / retry / `initial_pose_topic` parameter
+  // による別 topic 対応を一元化するため、panel と WebUI で同じ flow に揃える。
+  mapoi_initialpose_poi_pub_ = node_->create_publisher<mapoi_interfaces::msg::InitialPoseRequest>(
+    "mapoi/initialpose_poi", rclcpp::QoS(1).transient_local());
   nav2_goal_pose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseStamped>("goal_pose", 1);
 
   mapoi_cancel_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi/nav/cancel", 1);
@@ -180,16 +184,22 @@ void MapoiPanel::MapoiRouteComboBox()
 
 void MapoiPanel::LocalizationButton()
 {
-  geometry_msgs::msg::PoseWithCovarianceStamped msg_init;
-  msg_init.header.stamp = rclcpp::Clock().now();
-  msg_init.header.frame_id = "map";
-  msg_init.pose.pose = pois_[goal_combobox_ind_].pose;
-  msg_init.pose.covariance[0] = 0.25;
-  msg_init.pose.covariance[7] = 0.25;
-  msg_init.pose.covariance[35] = 0.06853891945200942;
-
-  nav2_initialpose_pub_->publish(msg_init);
-  RCLCPP_INFO(LOGGER, "A initialpose was set.");
+  // POI 選択ガード: GoalComboBox で選択されていない / 範囲外なら何もしない。
+  // (LocalizationButton は GoalComboBox の POI を流用する仕様、cf. PublishHighlightPois)
+  if (goal_combobox_ind_ < 0 || goal_combobox_ind_ >= static_cast<int>(pois_.size())) {
+    RCLCPP_WARN(LOGGER, "No POI selected for initial pose; pick one in the goal ComboBox first.");
+    return;
+  }
+  // /initialpose は叩かず、`mapoi/initialpose_poi` 経由で bridge に POI 名を渡す (#209 review fix)。
+  // bridge が POI を resolve して `/initialpose` (または `initial_pose_topic` で指定された topic) に
+  // 配信する。これにより landmark 排他 / subscriber 後起動 retry / custom localization bridge への
+  // 切替が WebUI と同一 flow で行われる。
+  mapoi_interfaces::msg::InitialPoseRequest msg;
+  msg.map_name = current_map_;
+  msg.poi_name = pois_[goal_combobox_ind_].name;
+  mapoi_initialpose_poi_pub_->publish(msg);
+  RCLCPP_INFO(LOGGER, "Published initial pose request: %s (map: %s).",
+              msg.poi_name.c_str(), msg.map_name.c_str());
 }
 
 void MapoiPanel::RunGoalButton()
@@ -452,6 +462,7 @@ void MapoiPanel::BackendStatusCallback(
   // RViz panel 側でも backend_ready を見て操作ボタンを gate する (#198, #205 minimal)。
   // backend_status 不在 (古い nav_server / panel 単独起動) では callback が呼ばれず、
   // navigation 軸は初期値 (true = enable) を使い続ける。
+  nav_backend_status_received_ = true;
   last_navigation_backend_ready_ = msg->backend_ready;
   QMetaObject::invokeMethod(this, [this]() {
     UpdateNavButtonsEnabled();
@@ -463,6 +474,7 @@ void MapoiPanel::LocalizationBackendStatusCallback(
 {
   // localization bridge の readiness で LocalizationButton を gate する (#209)。
   // 受信前は last_localization_backend_ready_ が初期値 true のままで、互換的に enable のまま。
+  localization_backend_status_received_ = true;
   last_localization_backend_ready_ = msg->backend_ready;
   QMetaObject::invokeMethod(this, [this]() {
     UpdateNavButtonsEnabled();
@@ -475,14 +487,17 @@ void MapoiPanel::BackendStalenessTick()
   // publisher 数 = 0 を検知したら、cache された ready=true を強制的に false に倒す
   // (callback は呼ばれないので last_*_backend_ready_ を上書きする必要がある)。
   // publisher が再び現れて新しい ready 値を送ってくれば、その callback で last_* が上書きされる。
+  // 重要 (review fix): `*_received_` flag が false の間は何もしない。これは「contract 未実装の
+  // 旧 nav_server / editor 構成」では publisher 数が常に 0 でも UI を disable しない、という
+  // 後方互換の保証。一度でも status を受け取った publisher の死亡だけを staleness として扱う。
   bool changed = false;
-  if (backend_status_sub_ &&
+  if (nav_backend_status_received_ &&
       node_->count_publishers("mapoi/nav/backend_status") == 0 &&
       last_navigation_backend_ready_) {
     last_navigation_backend_ready_ = false;
     changed = true;
   }
-  if (localization_backend_status_sub_ &&
+  if (localization_backend_status_received_ &&
       node_->count_publishers("mapoi/localization/backend_status") == 0 &&
       last_localization_backend_ready_) {
     last_localization_backend_ready_ = false;

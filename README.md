@@ -387,7 +387,7 @@ maps/
 
 ### 3. AMCL パラメータの設定
 
-初期位置は `mapoi_config.yaml` の `initial_pose` タグ付き POI を **single source of truth** として `mapoi_amcl_localization_bridge` が `/initialpose` topic に自動配信します（#209 で `mapoi_nav_server` から分離）。AMCL の `set_initial_pose` (Nav2 native の self-init) と二重管理にならないよう、AMCL 側はそれを無効化し、地図切り替えは `first_map_only_` を `False` にしてください。
+初期位置は `mapoi_config.yaml` の **POI list 先頭の非 landmark POI** を default として `mapoi_amcl_localization_bridge` が `/initialpose` topic に自動配信します（#144 で旧 `initial_pose` system tag を廃止し、yaml 順序で表現する semantics に統一。#209 で `mapoi_nav_server` から AMCL adapter を分離）。明示的に POI を指定したい場合は `select_map` service の `initial_poi_name` 引数を使ってください。AMCL の `set_initial_pose` (Nav2 native の self-init) と二重管理にならないよう、AMCL 側はそれを無効化し、地図切り替えは `first_map_only_` を `False` にしてください。
 
 ```yaml
 amcl:
@@ -399,13 +399,16 @@ amcl:
     first_map_only_: False
 ```
 
-initial_pose は `mapoi_config.yaml` 側で:
+`mapoi_config.yaml` 側は普通の POI 定義のままで OK (default initial pose に使う POI を yaml の **先頭** に置くだけ):
 
 ```yaml
 poi:
-  - name: elevator_hall
+  - name: elevator_hall   # この POI が default 初期位置になる (POI list 先頭)
     pose: {x: -2.0, y: -0.5, yaw: 0.0}
-    tags: [goal, initial_pose]
+    tags: [waypoint]
+  - name: meeting_room_a
+    pose: {x: 1.0, y: 0.5, yaw: 1.57}
+    tags: [waypoint]
 ```
 
 別 topic 名・別 message 型を使う localization パッケージへの対応については [`mapoi_server/README.md`](./mapoi_server/README.md) の「対応 localization パッケージの要件」節を参照してください。
