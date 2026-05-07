@@ -54,8 +54,15 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   // Navigation backend readiness publisher + 1Hz polling timer (#198)。
   // Nav2 action / service の存在は実行時に変化し得る (Nav2 を後起動 / 落とすケース) ため、
   // event-driven ではなく polling で publish する割り切り。1Hz は WebUI 表示の応答性として十分。
+  // QoS は NavigationBackendStatus.msg の contract に従う (#208):
+  // transient_local + MANUAL_BY_TOPIC liveliness + 3s lease。各 publish() が assert を兼ねる
+  // ので 1Hz timer が止まれば 3s 後に subscriber 側 Liveliness Changed event が発火する。
   backend_status_pub_ = this->create_publisher<mapoi_interfaces::msg::NavigationBackendStatus>(
-    "mapoi/nav/backend_status", rclcpp::QoS(1).transient_local());
+    "mapoi/nav/backend_status",
+    rclcpp::QoS(1)
+      .transient_local()
+      .liveliness(rclcpp::LivelinessPolicy::ManualByTopic)
+      .liveliness_lease_duration(3s));
   backend_status_timer_ = this->create_wall_timer(
     1s, std::bind(&MapoiNavServer::publish_backend_status, this));
 
