@@ -115,7 +115,8 @@ ros2 launch mapoi_webui mapoi_editor.launch.yaml maps_path:=/path/to/maps map_na
 | `GET /api/pois` `/api/routes` | 不要 | YAML 直読み |
 | `POST /api/pois` `/api/routes` `/api/custom_tags` | **必要** | YAML 書き込み後に `reload_map_info` service を呼ぶ |
 | `GET /api/tag_definitions` | **必要** | `get_tag_definitions` service 経由 |
-| `POST /api/nav/{goal,route,cancel,pause,resume,initialpose}` | **必要 (mapoi_nav_server)** | publisher → nav_server が listener、subscriber 0 件なら warning を返す |
+| `POST /api/nav/{goal,route,cancel,pause,resume}` | **必要 (mapoi_nav_server)** | publisher → nav_server が listener、subscriber 0 件なら warning を返す |
+| `POST /api/nav/initialpose` | **必要 (mapoi_amcl_localization_bridge or 自作 localization bridge)** | `mapoi/initialpose_poi` publisher → localization bridge が listener (#209)、subscriber 0 件なら warning を返す |
 | `POST /api/nav/switch-map` | **必要 (mapoi_nav_server 等)** | `mapoi/nav/switch_map` publisher → navigation backend が listener、subscriber 0 件なら warning を返す |
 | `GET /api/nav/status` | 不要 (subscriber 経由で受信値返却) | nav_server がいなければ default 値 |
 | `GET /api/mode` | 不要 | command topic の subscriber 数から best-effort で検出 |
@@ -123,7 +124,7 @@ ros2 launch mapoi_webui mapoi_editor.launch.yaml maps_path:=/path/to/maps map_na
 server / nav_server 不在時の挙動 (endpoint カテゴリ別):
 - `GET /api/tag_definitions`: `503 Service Unavailable` (service 必須、unavailable / timeout 時)
 - `POST /api/pois` / `/api/routes` / `/api/custom_tags`: `200 OK` + `warning` フィールド (YAML 書き込み自体は成功するため、`reload_map_info` の unavailable / timeout / failure は warning として通知)
-- `POST /api/nav/{goal,route,cancel,pause,resume,initialpose}` / `/api/nav/switch-map`: `200 OK` + `warning` フィールド (publish 自体は成功扱い、subscriber 不在を best-effort で検出して通知)
+- `POST /api/nav/{goal,route,cancel,pause,resume}` / `/api/nav/initialpose` / `/api/nav/switch-map`: `200 OK` + `warning` フィールド (publish 自体は成功扱い、subscriber 不在を best-effort で検出して通知)
 
 ## 開発者規約
 

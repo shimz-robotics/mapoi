@@ -64,8 +64,17 @@ void MapoiPanel::onInitialize()
   }
 
   // Buttons
-  nav2_initialpose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("initialpose", 1);
-  nav2_goal_pose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseStamped>("goal_pose", 1);
+  // LocalizationButton は `/initialpose` を直接叩かず、`mapoi/initialpose_poi` 経由で bridge に
+  // POI 名を渡す (#209)。bridge 側で POI 名 → pose resolve / retry / `initial_pose_topic` parameter
+  // による別 topic 対応を一元化するため、panel と WebUI で同じ flow に揃える。
+  mapoi_initialpose_poi_pub_ = node_->create_publisher<mapoi_interfaces::msg::InitialPoseRequest>(
+    "mapoi/initialpose_poi", rclcpp::QoS(1).transient_local());
+  // RunGoalButton は Nav2 native `goal_pose` を直接叩かず、`mapoi/nav/goal_pose_poi` 経由で
+  // navigation bridge に POI 名を渡す (#209 review #3)。bridge 側で POI resolve / Nav2 action
+  // / `mapoi/nav/status` 配信を一元化することで、custom navigation bridge / pause / cancel /
+  // resume の状態管理が WebUI と一貫する。
+  mapoi_goal_pose_poi_pub_ = node_->create_publisher<std_msgs::msg::String>(
+    "mapoi/nav/goal_pose_poi", 1);
 
   mapoi_cancel_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi/nav/cancel", 1);
   mapoi_switch_map_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi/nav/switch_map", 1);
@@ -89,6 +98,21 @@ void MapoiPanel::onInitialize()
   backend_status_sub_ = node_->create_subscription<mapoi_interfaces::msg::NavigationBackendStatus>(
       "mapoi/nav/backend_status", rclcpp::QoS(1).transient_local(),
       std::bind(&MapoiPanel::BackendStatusCallback, this, std::placeholders::_1));
+
+  // Localization backend readiness (#209): localization bridge が publish する readiness で
+  // LocalizationButton を gate する。Navigation 軸とは独立。受信前 (bridge 不在 / editor 構成)
+  // は全 enable のまま (BackendStatusCallback と同じフォールバック方針)。
+  localization_backend_status_sub_ = node_->create_subscription<
+    mapoi_interfaces::msg::LocalizationBackendStatus>(
+      "mapoi/localization/backend_status", rclcpp::QoS(1).transient_local(),
+      std::bind(&MapoiPanel::LocalizationBackendStatusCallback, this, std::placeholders::_1));
+
+  // Bridge プロセス死亡時の staleness 検出 (#209 review、#208 軽量代替)。
+  // transient_local の cache は callback が呼ばれない限り古い値を保持し続けるため、
+  // 1Hz で publisher 数を polling し、0 のときは ready=false 相当に倒す。
+  backend_staleness_timer_ = node_->create_wall_timer(
+    std::chrono::seconds(1),
+    std::bind(&MapoiPanel::BackendStalenessTick, this));
 
   current_nav_mode_ = "idle";
 
@@ -165,16 +189,22 @@ void MapoiPanel::MapoiRouteComboBox()
 
 void MapoiPanel::LocalizationButton()
 {
-  geometry_msgs::msg::PoseWithCovarianceStamped msg_init;
-  msg_init.header.stamp = rclcpp::Clock().now();
-  msg_init.header.frame_id = "map";
-  msg_init.pose.pose = pois_[goal_combobox_ind_].pose;
-  msg_init.pose.covariance[0] = 0.25;
-  msg_init.pose.covariance[7] = 0.25;
-  msg_init.pose.covariance[35] = 0.06853891945200942;
-
-  nav2_initialpose_pub_->publish(msg_init);
-  RCLCPP_INFO(LOGGER, "A initialpose was set.");
+  // POI 選択ガード: GoalComboBox で選択されていない / 範囲外なら何もしない。
+  // (LocalizationButton は GoalComboBox の POI を流用する仕様、cf. PublishHighlightPois)
+  if (goal_combobox_ind_ < 0 || goal_combobox_ind_ >= static_cast<int>(pois_.size())) {
+    RCLCPP_WARN(LOGGER, "No POI selected for initial pose; pick one in the goal ComboBox first.");
+    return;
+  }
+  // /initialpose は叩かず、`mapoi/initialpose_poi` 経由で bridge に POI 名を渡す (#209 review fix)。
+  // bridge が POI を resolve して `/initialpose` (または `initial_pose_topic` で指定された topic) に
+  // 配信する。これにより landmark 排他 / subscriber 後起動 retry / custom localization bridge への
+  // 切替が WebUI と同一 flow で行われる。
+  mapoi_interfaces::msg::InitialPoseRequest msg;
+  msg.map_name = current_map_;
+  msg.poi_name = pois_[goal_combobox_ind_].name;
+  mapoi_initialpose_poi_pub_->publish(msg);
+  RCLCPP_INFO(LOGGER, "Published initial pose request: %s (map: %s).",
+              msg.poi_name.c_str(), msg.map_name.c_str());
 }
 
 void MapoiPanel::RunGoalButton()
@@ -182,17 +212,18 @@ void MapoiPanel::RunGoalButton()
   if (goal_combobox_ind_ < 0 || goal_combobox_ind_ >= static_cast<int>(pois_.size())) {
     return;
   }
-  geometry_msgs::msg::PoseStamped msg_goal;
-  msg_goal.header.stamp = rclcpp::Clock().now();
-  msg_goal.header.frame_id = "map";
-  msg_goal.pose = pois_[goal_combobox_ind_].pose;
-  nav2_goal_pose_pub_->publish(msg_goal);
+  // Nav2 native `goal_pose` を直接叩かず、`mapoi/nav/goal_pose_poi` 経由で bridge に POI 名を
+  // 渡す (#209 review #3)。bridge が POI resolve → Nav2 action 起動 → `mapoi/nav/status` 配信を
+  // 担当するので、status / cancel / pause / resume の状態管理が WebUI と一貫する。
+  std_msgs::msg::String msg;
+  msg.data = pois_[goal_combobox_ind_].name;
+  mapoi_goal_pose_poi_pub_->publish(msg);
 
   current_nav_mode_ = "goal";
-  current_nav_target_ = pois_[goal_combobox_ind_].name;
+  current_nav_target_ = msg.data;
   ui_->NavStatusLabel->setText(
       QString::fromStdString("目的地走行中: " + current_nav_target_));
-  RCLCPP_INFO(LOGGER, "A goal pose was set: %s", current_nav_target_.c_str());
+  RCLCPP_INFO(LOGGER, "Published goal POI request: %s", current_nav_target_.c_str());
 }
 
 void MapoiPanel::RunRouteButton()
@@ -435,30 +466,72 @@ void MapoiPanel::BackendStatusCallback(
   mapoi_interfaces::msg::NavigationBackendStatus::SharedPtr msg)
 {
   // RViz panel 側でも backend_ready を見て操作ボタンを gate する (#198, #205 minimal)。
-  // backend_status 不在 (古い nav_server / panel 単独起動) は backend_status_received_ が false の
-  // ままで、UpdateNavButtonsEnabled は呼ばれず、全ボタンは初期状態 (= enable) のまま。
-  backend_status_received_ = true;
-  const bool backend_ready = msg->backend_ready;
-  QMetaObject::invokeMethod(this, [this, backend_ready]() {
-    UpdateNavButtonsEnabled(backend_ready);
+  // backend_status 不在 (古い nav_server / panel 単独起動) では callback が呼ばれず、
+  // navigation 軸は初期値 (true = enable) を使い続ける。
+  nav_backend_status_received_ = true;
+  last_navigation_backend_ready_ = msg->backend_ready;
+  QMetaObject::invokeMethod(this, [this]() {
+    UpdateNavButtonsEnabled();
   }, Qt::QueuedConnection);
 }
 
-void MapoiPanel::UpdateNavButtonsEnabled(bool backend_ready)
+void MapoiPanel::LocalizationBackendStatusCallback(
+  mapoi_interfaces::msg::LocalizationBackendStatus::SharedPtr msg)
 {
-  // Qt main thread で呼ぶこと (BackendStatusCallback から QueuedConnection 経由で invoke される)。
-  // Minimal contract: navigation 操作 UI 全体を backend_ready 一本で gate する。MapComboBox も
-  // 操作 → Nav2 LoadMap 連動なので bridge 不在では disable が妥当。
-  // LocalizationButton は本来 localization 軸 (#209) に属するが、現状 mapoi_nav_server が
-  // AMCL adapter を内包しているため Nav2 readiness と結合させている。#209 で localization
-  // bridge に分離後は、その backend_ready で gate に切替える予定。
-  ui_->LocalizationButton->setEnabled(backend_ready);
-  ui_->RunGoalButton->setEnabled(backend_ready);
-  ui_->RunRouteButton->setEnabled(backend_ready);
-  ui_->PauseButton->setEnabled(backend_ready);
-  ui_->ResumeButton->setEnabled(backend_ready);
-  ui_->StopButton->setEnabled(backend_ready);
-  ui_->MapComboBox->setEnabled(backend_ready);
+  // localization bridge の readiness で LocalizationButton を gate する (#209)。
+  // 受信前は last_localization_backend_ready_ が初期値 true のままで、互換的に enable のまま。
+  localization_backend_status_received_ = true;
+  last_localization_backend_ready_ = msg->backend_ready;
+  QMetaObject::invokeMethod(this, [this]() {
+    UpdateNavButtonsEnabled();
+  }, Qt::QueuedConnection);
+}
+
+void MapoiPanel::BackendStalenessTick()
+{
+  // bridge プロセス死亡時の staleness 検出 (#209 review、#208 軽量代替)。
+  // publisher 数 = 0 を検知したら、cache された ready=true を強制的に false に倒す
+  // (callback は呼ばれないので last_*_backend_ready_ を上書きする必要がある)。
+  // publisher が再び現れて新しい ready 値を送ってくれば、その callback で last_* が上書きされる。
+  // 重要 (review fix): `*_received_` flag が false の間は何もしない。これは「contract 未実装の
+  // 旧 nav_server / editor 構成」では publisher 数が常に 0 でも UI を disable しない、という
+  // 後方互換の保証。一度でも status を受け取った publisher の死亡だけを staleness として扱う。
+  bool changed = false;
+  if (nav_backend_status_received_ &&
+      node_->count_publishers("mapoi/nav/backend_status") == 0 &&
+      last_navigation_backend_ready_) {
+    last_navigation_backend_ready_ = false;
+    changed = true;
+  }
+  if (localization_backend_status_received_ &&
+      node_->count_publishers("mapoi/localization/backend_status") == 0 &&
+      last_localization_backend_ready_) {
+    last_localization_backend_ready_ = false;
+    changed = true;
+  }
+  if (changed) {
+    QMetaObject::invokeMethod(this, [this]() {
+      UpdateNavButtonsEnabled();
+    }, Qt::QueuedConnection);
+  }
+}
+
+void MapoiPanel::UpdateNavButtonsEnabled()
+{
+  // Qt main thread で呼ぶこと (BackendStatusCallback / LocalizationBackendStatusCallback /
+  // BackendStalenessTick から QueuedConnection 経由で invoke される)。
+  // 2 軸の minimal 仕様 (#209): navigation 操作 UI と MapComboBox は navigation backend、
+  // LocalizationButton は localization backend で gate する。MapComboBox は Nav2 LoadMap +
+  // AMCL initial pose の両方を必要とするが、Nav2 LoadMap が走らないと localization 側に意味のある
+  // initial pose を送れないので最低限 navigation_ready を要求する。両方を AND する厳格化は
+  // future work で UX 検討する。
+  ui_->LocalizationButton->setEnabled(last_localization_backend_ready_);
+  ui_->RunGoalButton->setEnabled(last_navigation_backend_ready_);
+  ui_->RunRouteButton->setEnabled(last_navigation_backend_ready_);
+  ui_->PauseButton->setEnabled(last_navigation_backend_ready_);
+  ui_->ResumeButton->setEnabled(last_navigation_backend_ready_);
+  ui_->StopButton->setEnabled(last_navigation_backend_ready_);
+  ui_->MapComboBox->setEnabled(last_navigation_backend_ready_);
 }
 
 void MapoiPanel::PublishHighlightPois()

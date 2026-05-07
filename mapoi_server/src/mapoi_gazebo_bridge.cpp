@@ -72,10 +72,11 @@ MapoiGazeboBridge::MapoiGazeboBridge()
   delete_client_ = this->create_client<gazebo_msgs::srv::DeleteEntity>(
     "delete_entity", rmw_qos_profile_services_default, cb_group_);
 
-  // /initialpose late publisher (#91): mapoi_nav_server::nav2_initialpose_pub_ と同 topic に
-  // bridge からも publish する。AMCL は最後に到着した /initialpose で particle を再 init するため、
-  // bridge の spawn 完了後に late publish することで「spawn 中の laser scan 不整合」による誤収束を
-  // 上書きできる。QoS は nav_server 側 publisher と同じ default (depth=1)。
+  // /initialpose late publisher (#91): mapoi_amcl_localization_bridge と同 topic に bridge からも
+  // publish する (#209 で nav_server から AMCL adapter 分離後も同じ補助役)。AMCL は最後に到着した
+  // /initialpose で particle を再 init するため、bridge の spawn 完了後に late publish することで
+  // 「spawn 中の laser scan 不整合」による誤収束を上書きできる。QoS は localization bridge 側
+  // publisher と同じ default (depth=1)。
   initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
     initial_pose_topic_, 1);
 

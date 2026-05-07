@@ -19,6 +19,24 @@ Unreleased
 Breaking changes
 ----------------
 
+* AMCL adapter has been split out of ``mapoi_nav_server`` into a new
+  ``mapoi_amcl_localization_bridge`` executable in ``mapoi_server`` (#209).
+  ``mapoi_nav_server`` is now a Nav2-only navigation bridge and no longer
+  publishes ``/initialpose``. Users who launch nodes individually must add
+  ``mapoi_amcl_localization_bridge`` next to ``mapoi_nav_server`` (the
+  ``mapoi_bringup.launch.yaml`` already does this; new launch arg
+  ``with_amcl_localization_bridge``, default ``true``). The following
+  parameters moved from ``mapoi_nav_server`` to the new bridge:
+  ``initial_pose_topic``, ``initialpose_retry_interval_sec``,
+  ``initialpose_retry_max_attempts``,
+  ``initialpose_post_subscribe_republish_count``. A new minimal contract
+  message ``mapoi_interfaces/LocalizationBackendStatus`` and topic
+  ``mapoi/localization/backend_status`` (``transient_local``) are
+  published by the bridge; WebUI / RViz panel now show a separate
+  ``Localization`` indicator and gate the Set Initial Pose UI on it,
+  independent from the Navigation indicator. See the new
+  "Localization backend 仕様" section in ``README.md``.
+
 * System tag definitions (``waypoint`` / ``landmark`` / ``pause``) are now
   hardcoded in ``mapoi_server/include/mapoi_server/system_tags.hpp``
   (``mapoi::kSystemTags``); the
