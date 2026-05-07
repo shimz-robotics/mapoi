@@ -1,4 +1,4 @@
-#include "mapoi_server/mapoi_nav_server.hpp"
+#include "mapoi_server/mapoi_nav2_bridge.hpp"
 
 #include <chrono>
 #include <functional>
@@ -9,8 +9,8 @@ using namespace std::chrono_literals;
 using std::placeholders::_1;
 using std::placeholders::_2;
 
-MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
-: Node("mapoi_nav_server", options)
+MapoiNav2Bridge::MapoiNav2Bridge(const rclcpp::NodeOptions & options)
+: Node("mapoi_nav2_bridge", options)
 {
   this->get_logger().set_level(rclcpp::Logger::Level::Info);
 
@@ -22,26 +22,26 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
 
   // goal_pose subscriber and publisher
   mapoi_goal_pose_poi_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi/nav/goal_pose_poi", 1, std::bind(&MapoiNavServer::mapoi_goal_pose_poi_cb, this, std::placeholders::_1));
+    "mapoi/nav/goal_pose_poi", 1, std::bind(&MapoiNav2Bridge::mapoi_goal_pose_poi_cb, this, std::placeholders::_1));
   nav2_goal_pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("goal_pose", 1);
 
   // route subscriber
   mapoi_route_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi/nav/route", 1, std::bind(&MapoiNavServer::mapoi_route_cb, this, std::placeholders::_1));
+    "mapoi/nav/route", 1, std::bind(&MapoiNav2Bridge::mapoi_route_cb, this, std::placeholders::_1));
 
   // map switch subscriber
   mapoi_switch_map_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi/nav/switch_map", 1, std::bind(&MapoiNavServer::mapoi_switch_map_cb, this, std::placeholders::_1));
+    "mapoi/nav/switch_map", 1, std::bind(&MapoiNav2Bridge::mapoi_switch_map_cb, this, std::placeholders::_1));
 
   // cancel subscriber
   mapoi_cancel_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi/nav/cancel", 1, std::bind(&MapoiNavServer::mapoi_cancel_cb, this, std::placeholders::_1));
+    "mapoi/nav/cancel", 1, std::bind(&MapoiNav2Bridge::mapoi_cancel_cb, this, std::placeholders::_1));
 
   // pause / resume subscribers
   mapoi_pause_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi/nav/pause", 1, std::bind(&MapoiNavServer::mapoi_pause_cb, this, _1));
+    "mapoi/nav/pause", 1, std::bind(&MapoiNav2Bridge::mapoi_pause_cb, this, _1));
   mapoi_resume_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "mapoi/nav/resume", 1, std::bind(&MapoiNavServer::mapoi_resume_cb, this, _1));
+    "mapoi/nav/resume", 1, std::bind(&MapoiNav2Bridge::mapoi_resume_cb, this, _1));
 
   this->action_client_ = rclcpp_action::create_client<FollowWaypoints>(this, "follow_waypoints");
   this->nav_to_pose_client_ = rclcpp_action::create_client<NavigateToPose>(this, "navigate_to_pose");
@@ -77,7 +77,7 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   backend_status_callback_group_ = this->create_callback_group(
     rclcpp::CallbackGroupType::MutuallyExclusive);
   backend_status_timer_ = this->create_wall_timer(
-    1s, std::bind(&MapoiNavServer::publish_backend_status, this),
+    1s, std::bind(&MapoiNav2Bridge::publish_backend_status, this),
     backend_status_callback_group_);
 
   this->pois_info_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
@@ -107,14 +107,14 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
 
   config_path_sub_ = this->create_subscription<std_msgs::msg::String>(
     "mapoi/config_path", rclcpp::QoS(1).transient_local(),
-    std::bind(&MapoiNavServer::on_config_path_changed, this, _1));
+    std::bind(&MapoiNav2Bridge::on_config_path_changed, this, _1));
 
   // cmd_vel subscribe (#140): STOPPED 判定の source の一つ (もう一つは Nav2 SUCCEEDED)。
   // QoS は Nav2 の cmd_vel publisher と同じ default (reliable, depth=10)。
   const std::string cmd_vel_topic = this->get_parameter("cmd_vel_topic").as_string();
   cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
     cmd_vel_topic, 10,
-    std::bind(&MapoiNavServer::cmd_vel_callback, this, _1));
+    std::bind(&MapoiNav2Bridge::cmd_vel_callback, this, _1));
 
   tag_defs_client_ = this->create_client<mapoi_interfaces::srv::GetTagDefinitions>("get_tag_definitions");
   fetch_system_tags();
@@ -123,12 +123,12 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
   auto period = std::chrono::duration<double>(1.0 / hz);
   tolerance_check_timer_ = this->create_wall_timer(
     std::chrono::duration_cast<std::chrono::nanoseconds>(period),
-    std::bind(&MapoiNavServer::tolerance_check_callback, this));
+    std::bind(&MapoiNav2Bridge::tolerance_check_callback, this));
 
-  RCLCPP_INFO(this->get_logger(), "MapoiNavServer initialized.");
+  RCLCPP_INFO(this->get_logger(), "MapoiNav2Bridge initialized.");
 }
 
-void MapoiNavServer::get_pois_list(){
+void MapoiNav2Bridge::get_pois_list(){
   while(!this->pois_info_client_->wait_for_service(1s)) {
     if (!rclcpp::ok()) {
       RCLCPP_ERROR(this->get_logger(), "Interrupted while waiting for pois_info service. Exiting.");
@@ -138,10 +138,10 @@ void MapoiNavServer::get_pois_list(){
   }
   auto pois_info_request = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
   pois_info_client_->async_send_request(
-    pois_info_request, std::bind(&MapoiNavServer::on_pois_info_received, this, _1));
+    pois_info_request, std::bind(&MapoiNav2Bridge::on_pois_info_received, this, _1));
 }
 
-void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedPtr msg)
+void MapoiNav2Bridge::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedPtr msg)
 {
   std::string poi_name = msg->data;
   RCLCPP_INFO(this->get_logger(), "Received POI name for goal pose: %s", poi_name.c_str());
@@ -247,7 +247,7 @@ void MapoiNavServer::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::SharedP
     });
 }
 
-void MapoiNavServer::mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg)
+void MapoiNav2Bridge::mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg)
 {
   RCLCPP_INFO(this->get_logger(), "Received route name: %s", msg->data.c_str());
   // 新規 route 受信時に現在 STOPPED 状態の POI を全て RESUMED publish (#140)。
@@ -271,7 +271,7 @@ void MapoiNavServer::mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg)
     });
 }
 
-void MapoiNavServer::mapoi_switch_map_cb(const std_msgs::msg::String::SharedPtr msg)
+void MapoiNav2Bridge::mapoi_switch_map_cb(const std_msgs::msg::String::SharedPtr msg)
 {
   const std::string map_name = msg->data;
   if (map_name.empty()) {
@@ -308,7 +308,7 @@ void MapoiNavServer::mapoi_switch_map_cb(const std_msgs::msg::String::SharedPtr 
     });
 }
 
-void MapoiNavServer::on_select_map_received(
+void MapoiNav2Bridge::on_select_map_received(
   std::string map_name,
   rclcpp::Client<mapoi_interfaces::srv::SelectMap>::SharedFuture future)
 {
@@ -357,7 +357,7 @@ void MapoiNavServer::on_select_map_received(
   RCLCPP_INFO(this->get_logger(), "Map switch completed: %s", map_name.c_str());
 }
 
-bool MapoiNavServer::send_load_map_request(const std::string & server_name, const std::string & map_file)
+bool MapoiNav2Bridge::send_load_map_request(const std::string & server_name, const std::string & map_file)
 {
   auto node = rclcpp::Node::make_shared("mapoi_load_map_client");
   auto load_map_client = node->create_client<nav2_msgs::srv::LoadMap>(server_name + "/load_map");
@@ -383,7 +383,7 @@ bool MapoiNavServer::send_load_map_request(const std::string & server_name, cons
   return true;
 }
 
-void MapoiNavServer::publish_initial_poi_request(const std::string & map_name, const std::string & poi_name)
+void MapoiNav2Bridge::publish_initial_poi_request(const std::string & map_name, const std::string & poi_name)
 {
   if (poi_name.empty()) {
     RCLCPP_WARN(this->get_logger(),
@@ -400,7 +400,7 @@ void MapoiNavServer::publish_initial_poi_request(const std::string & map_name, c
     poi_name.c_str(), map_name.c_str());
 }
 
-void MapoiNavServer::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future)
+void MapoiNav2Bridge::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future)
 {
   auto result = future.get();
   if (!result) {
@@ -420,7 +420,7 @@ void MapoiNavServer::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv:
   // fetch 失敗 (result == nullptr) で早期 return した場合も pending を残し、次回 publish で retry する。
   // (#144 で auto_publish_initial_pose は廃止、initial pose は mapoi_server が
   // mapoi/initialpose_poi topic に publish し、mapoi_amcl_localization_bridge 経由で
-  // /initialpose に配信される (#209 で nav_server から AMCL adapter を分離)。)
+  // /initialpose に配信される (#209 で mapoi_nav2_bridge から AMCL adapter を分離)。)
   if (pending_guard_active_) {
     last_config_path_ = pending_config_path_;
     last_config_mtime_ = pending_config_mtime_;
@@ -428,7 +428,7 @@ void MapoiNavServer::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv:
   }
 }
 
-bool MapoiNavServer::has_landmark_tag(const mapoi_interfaces::msg::PointOfInterest & poi)
+bool MapoiNav2Bridge::has_landmark_tag(const mapoi_interfaces::msg::PointOfInterest & poi)
 {
   for (const auto & tag : poi.tags) {
     if (tag == "landmark") {
@@ -438,7 +438,7 @@ bool MapoiNavServer::has_landmark_tag(const mapoi_interfaces::msg::PointOfIntere
   return false;
 }
 
-std::unordered_set<std::string> MapoiNavServer::build_route_poi_names(
+std::unordered_set<std::string> MapoiNav2Bridge::build_route_poi_names(
   const std::vector<mapoi_interfaces::msg::PointOfInterest> & waypoints,
   const std::vector<mapoi_interfaces::msg::PointOfInterest> & landmarks)
 {
@@ -452,7 +452,7 @@ std::unordered_set<std::string> MapoiNavServer::build_route_poi_names(
   return result;
 }
 
-bool MapoiNavServer::is_pause_eligible(
+bool MapoiNav2Bridge::is_pause_eligible(
   const mapoi_interfaces::msg::PointOfInterest & poi,
   NavMode nav_mode,
   const std::unordered_set<std::string> & active_route_poi_names)
@@ -471,7 +471,7 @@ bool MapoiNavServer::is_pause_eligible(
   return false;
 }
 
-void MapoiNavServer::on_route_received(
+void MapoiNav2Bridge::on_route_received(
   std::string route_name,
   rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future)
 {
@@ -558,7 +558,7 @@ void MapoiNavServer::on_route_received(
   this->action_client_->async_send_goal(goal_msg, send_goal_options);
 }
 
-void MapoiNavServer::goal_response_callback(std::string target, size_t nav_generation,
+void MapoiNav2Bridge::goal_response_callback(std::string target, size_t nav_generation,
                                               const GoalHandleFollowWaypoints::SharedPtr & goal_handle)
 {
   // stale check (Codex review #147 round 2 high): 旧 route の goal_response が新 navigation
@@ -583,7 +583,7 @@ void MapoiNavServer::goal_response_callback(std::string target, size_t nav_gener
   }
 }
 
-void MapoiNavServer::feedback_callback(
+void MapoiNav2Bridge::feedback_callback(
   size_t nav_generation,
   GoalHandleFollowWaypoints::SharedPtr,
   const std::shared_ptr<const FollowWaypoints::Feedback> feedback)
@@ -597,7 +597,7 @@ void MapoiNavServer::feedback_callback(
   current_waypoint_index_ = feedback->current_waypoint;
 }
 
-void MapoiNavServer::result_callback(std::string target, size_t nav_generation,
+void MapoiNav2Bridge::result_callback(std::string target, size_t nav_generation,
                                        const GoalHandleFollowWaypoints::WrappedResult & result)
 {
   // stale check (Codex review #147 round 1 + 2 high): route A 実行中に別 navigation を
@@ -642,7 +642,7 @@ void MapoiNavServer::result_callback(std::string target, size_t nav_generation,
   }
 }
 
-void MapoiNavServer::ntp_goal_response_callback(std::string target, size_t nav_generation,
+void MapoiNav2Bridge::ntp_goal_response_callback(std::string target, size_t nav_generation,
                                                   const GoalHandleNavigateToPose::SharedPtr & goal_handle)
 {
   // stale check (Codex review #147 round 2 high): GOAL A の goal_response が新 navigation
@@ -664,7 +664,7 @@ void MapoiNavServer::ntp_goal_response_callback(std::string target, size_t nav_g
   }
 }
 
-void MapoiNavServer::ntp_result_callback(std::string target, size_t nav_generation,
+void MapoiNav2Bridge::ntp_result_callback(std::string target, size_t nav_generation,
                                             const GoalHandleNavigateToPose::WrappedResult & result)
 {
   // stale check (Codex review #147 round 2 high): GOAL A の result が新 navigation 受理後に
@@ -704,7 +704,7 @@ void MapoiNavServer::ntp_result_callback(std::string target, size_t nav_generati
   }
 }
 
-void MapoiNavServer::publish_nav_status(const std::string & status, const std::string & target)
+void MapoiNav2Bridge::publish_nav_status(const std::string & status, const std::string & target)
 {
   std_msgs::msg::String msg;
   // target 空なら "status" のみ、有りなら "status:target" 形式で送る (#104)。
@@ -715,7 +715,7 @@ void MapoiNavServer::publish_nav_status(const std::string & status, const std::s
   nav_status_pub_->publish(msg);
 }
 
-void MapoiNavServer::publish_backend_status()
+void MapoiNav2Bridge::publish_backend_status()
 {
   // Nav2 bridge としての readiness を 1Hz polling で集約して publish する (#198)。
   // contract は minimal 3 フィールドだけ (#205 review): bridge 実装者は backend_ready を
@@ -765,7 +765,7 @@ void MapoiNavServer::publish_backend_status()
   backend_status_pub_->publish(msg);
 }
 
-void MapoiNavServer::mapoi_cancel_cb(const std_msgs::msg::String::SharedPtr msg)
+void MapoiNav2Bridge::mapoi_cancel_cb(const std_msgs::msg::String::SharedPtr msg)
 {
   (void)msg;
   bool canceled = false;
@@ -785,7 +785,7 @@ void MapoiNavServer::mapoi_cancel_cb(const std_msgs::msg::String::SharedPtr msg)
   reset_nav_state();
 }
 
-void MapoiNavServer::reset_nav_state()
+void MapoiNav2Bridge::reset_nav_state()
 {
   nav_mode_ = NavMode::IDLE;
   is_paused_ = false;
@@ -801,7 +801,7 @@ void MapoiNavServer::reset_nav_state()
   }
 }
 
-void MapoiNavServer::mapoi_pause_cb(const std_msgs::msg::String::SharedPtr msg)
+void MapoiNav2Bridge::mapoi_pause_cb(const std_msgs::msg::String::SharedPtr msg)
 {
   (void)msg;
 
@@ -835,7 +835,7 @@ void MapoiNavServer::mapoi_pause_cb(const std_msgs::msg::String::SharedPtr msg)
   }
 }
 
-void MapoiNavServer::mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg)
+void MapoiNav2Bridge::mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg)
 {
   (void)msg;
 
@@ -925,7 +925,7 @@ void MapoiNavServer::mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg)
 
 // --- POI radius event detection methods ---
 
-void MapoiNavServer::fetch_system_tags()
+void MapoiNav2Bridge::fetch_system_tags()
 {
   if (!tag_defs_client_->service_is_ready()) {
     RCLCPP_INFO(this->get_logger(), "get_tag_definitions service not available yet, waiting...");
@@ -933,10 +933,10 @@ void MapoiNavServer::fetch_system_tags()
   }
   auto request = std::make_shared<mapoi_interfaces::srv::GetTagDefinitions::Request>();
   tag_defs_client_->async_send_request(
-    request, std::bind(&MapoiNavServer::on_system_tags_received, this, _1));
+    request, std::bind(&MapoiNav2Bridge::on_system_tags_received, this, _1));
 }
 
-void MapoiNavServer::on_system_tags_received(
+void MapoiNav2Bridge::on_system_tags_received(
   rclcpp::Client<mapoi_interfaces::srv::GetTagDefinitions>::SharedFuture future)
 {
   auto result = future.get();
@@ -957,7 +957,7 @@ void MapoiNavServer::on_system_tags_received(
   get_pois_list();
 }
 
-void MapoiNavServer::on_config_path_changed(const std_msgs::msg::String::SharedPtr msg)
+void MapoiNav2Bridge::on_config_path_changed(const std_msgs::msg::String::SharedPtr msg)
 {
   // mapoi_server は config path 文字列を周期 publish (default 5s) する。path だけで dedup すると
   // map switch (path 変更) は拾えるが、WebUI/Panel Save (path 不変、内容のみ変更) を取りこぼし、
@@ -989,14 +989,14 @@ void MapoiNavServer::on_config_path_changed(const std_msgs::msg::String::SharedP
   get_pois_list();
 }
 
-void MapoiNavServer::rebuild_event_pois()
+void MapoiNav2Bridge::rebuild_event_pois()
 {
   std::lock_guard<std::mutex> lock(data_mutex_);
   event_pois_ = pois_list_;
   RCLCPP_INFO(this->get_logger(), "Monitoring %zu POIs for radius events.", event_pois_.size());
 }
 
-void MapoiNavServer::tolerance_check_callback()
+void MapoiNav2Bridge::tolerance_check_callback()
 {
   if (!system_tags_loaded_) {
     fetch_system_tags();
@@ -1109,13 +1109,13 @@ void MapoiNavServer::tolerance_check_callback()
   }
 }
 
-void MapoiNavServer::clear_current_route_poi_names_()
+void MapoiNav2Bridge::clear_current_route_poi_names_()
 {
   std::lock_guard<std::mutex> lock(data_mutex_);
   current_route_poi_names_.clear();
 }
 
-double MapoiNavServer::distance_2d(const geometry_msgs::msg::Pose & poi_pose, double rx, double ry)
+double MapoiNav2Bridge::distance_2d(const geometry_msgs::msg::Pose & poi_pose, double rx, double ry)
 {
   double dx = poi_pose.position.x - rx;
   double dy = poi_pose.position.y - ry;
@@ -1124,7 +1124,7 @@ double MapoiNavServer::distance_2d(const geometry_msgs::msg::Pose & poi_pose, do
 
 // --- STOPPED / RESUMED 判定 (#140) ---
 
-void MapoiNavServer::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
+void MapoiNav2Bridge::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
   // 線速ノルム (3D) と角速度絶対値 (yaw 軸) の両方が閾値以下のとき「停止」とみなす。
   // 撮影シナリオでは「その場旋回も停止扱いしない」前提のため、angular.z も判定に含める。
@@ -1154,7 +1154,7 @@ void MapoiNavServer::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr
 //   - !was_stopped + zero_velocity_dwelled (停止が dwell_time 続いた): TO_STOPPED
 //   - was_stopped + !zero_velocity (動き始めた): TO_RESUMED (dwell 不要、即時)
 //   - それ以外: NONE
-MapoiNavServer::StoppedTransition MapoiNavServer::compute_stopped_transition(
+MapoiNav2Bridge::StoppedTransition MapoiNav2Bridge::compute_stopped_transition(
   const StoppedDetectionInputs & in)
 {
   if (!in.inside) return StoppedTransition::NONE;
@@ -1165,7 +1165,7 @@ MapoiNavServer::StoppedTransition MapoiNavServer::compute_stopped_transition(
   return in.zero_velocity_dwelled ? StoppedTransition::NONE : StoppedTransition::TO_RESUMED;
 }
 
-void MapoiNavServer::stop_all_inside_pois(
+void MapoiNav2Bridge::stop_all_inside_pois(
   const std::string & reason, const std::string & target_poi_name)
 {
   // Nav2 SUCCEEDED 受信時に呼ぶ: 現在 inside の全 POI に対して STOPPED publish
@@ -1217,7 +1217,7 @@ void MapoiNavServer::stop_all_inside_pois(
   }
 }
 
-void MapoiNavServer::resume_all_stopped_pois()
+void MapoiNav2Bridge::resume_all_stopped_pois()
 {
   // 新規 goal 受信時に呼ぶ: 現在 STOPPED 状態の全 POI に RESUMED publish。
   // event_pois_ と poi_stopped_state_ を lock で守って snapshot を取り、publish は lock 外。
@@ -1245,7 +1245,7 @@ void MapoiNavServer::resume_all_stopped_pois()
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
-  auto node = std::make_shared<MapoiNavServer>();
+  auto node = std::make_shared<MapoiNav2Bridge>();
   // MultiThreadedExecutor で spin (#213): backend_status timer の Reentrant callback_group が
   // 別 thread で動くようにする。thread 数は明示的に 2 を指定する: default の
   // `std::thread::hardware_concurrency()` は Docker CPU 制限環境などで 1/0 を返し得るため、

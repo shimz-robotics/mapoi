@@ -36,10 +36,10 @@ def generate_test_description():
         }],
     )
 
-    mapoi_nav_server_node = launch_ros.actions.Node(
+    mapoi_nav2_bridge_node = launch_ros.actions.Node(
         package='mapoi_server',
-        executable='mapoi_nav_server',
-        name='mapoi_nav_server',
+        executable='mapoi_nav2_bridge',
+        name='mapoi_nav2_bridge',
         parameters=[{
             'tolerance_check_hz': 10.0,
             'map_frame': 'map',
@@ -50,9 +50,9 @@ def generate_test_description():
 
     return launch.LaunchDescription([
         mapoi_server_node,
-        mapoi_nav_server_node,
+        mapoi_nav2_bridge_node,
         launch_testing.actions.ReadyToTest(),
-    ]), {'mapoi_server': mapoi_server_node, 'mapoi_nav_server': mapoi_nav_server_node}
+    ]), {'mapoi_server': mapoi_server_node, 'mapoi_nav2_bridge': mapoi_nav2_bridge_node}
 
 
 class TestPoiEventIntegration(unittest.TestCase):
@@ -64,7 +64,7 @@ class TestPoiEventIntegration(unittest.TestCase):
     """
 
     # event 待ちの timeout。CI の CPU 負荷時にも `tolerance_check_hz=10` × 数周期分の
-    # マージンが取れる長さ。低めにすると nav_server の初期 fetch race で flaky 化する。
+    # マージンが取れる長さ。低めにすると mapoi_nav2_bridge の初期 fetch race で flaky 化する。
     EVENT_WAIT_TIMEOUT = 5.0
     # dynamic TF publish 周期。tolerance_check_hz=10 (=100ms) より十分速くして取りこぼしを防ぐ。
     TF_PUBLISH_INTERVAL = 0.05
@@ -139,14 +139,14 @@ class TestPoiEventIntegration(unittest.TestCase):
         self._set_cmd_vel(0.2, 0.0)
 
     def tearDown(self):
-        """各 test 後に nav_server の poi_inside_state_ をリセットする (#165)。
+        """各 test 後に mapoi_nav2_bridge の poi_inside_state_ をリセットする (#165)。
 
         unittest の実行順 (alphabet) と「各 test が別 POI を使う」前提への暗黙
         依存を切るため、明示的に隔離する。実体は :meth:`_reset_inside_state` 側。
         """
         self._reset_inside_state()
         # 次 test が inside した瞬間に前 test の zero velocity dwell を拾わないよう、
-        # moving cmd_vel を nav_server に届けて stopped detector を reset する。
+        # moving cmd_vel を mapoi_nav2_bridge に届けて stopped detector を reset する。
         self._set_cmd_vel(0.2, 0.0)
         self._spin_for(0.2)
 
@@ -184,14 +184,14 @@ class TestPoiEventIntegration(unittest.TestCase):
         """subscriber が観測した ENTER / EXIT から、現時点で inside と推定される
         POI 名集合を返す。
 
-        nav_server 側の `poi_inside_state_` を直接覗けないため、subscriber 視点の
+        mapoi_nav2_bridge 側の `poi_inside_state_` を直接覗けないため、subscriber 視点の
         近似として使う。STOPPED/RESUMED test は途中で `received_events.clear()` する
         ため、event assertion 用履歴とは独立した state tracker を使う。
         """
         return {name for name, inside in type(self).inside_state.items() if inside}
 
     def _reset_inside_state(self, exit_timeout_sec=3.0):
-        """nav_server 側の `poi_inside_state_` を全 false に戻す helper。
+        """mapoi_nav2_bridge 側の `poi_inside_state_` を全 false に戻す helper。
 
         現在 inside と推定される POI を列挙し、pose を全 POI から十分遠い
         `(100, 100)` に動かしてから、各 POI の EVENT_EXIT を bounded timeout で
@@ -219,7 +219,7 @@ class TestPoiEventIntegration(unittest.TestCase):
 
         flaky 対策の背景 (#153):
         - 旧実装は `_spin_and_wait(2.0)` の固定時間 spin で、TF buffer の反映や
-          nav_server の初期 POI fetch のタイミング次第で取りこぼしていた。
+          mapoi_nav2_bridge の初期 POI fetch のタイミング次第で取りこぼしていた。
         - StaticTransformBroadcaster で同 child_frame_id を別座標で再 publish しても
           subscriber 側の TF buffer cache 更新が伝播せず、前 test の pose が残って
           ENTER 判定が成立しないケースがあった。これは setUpClass で dynamic TF を
@@ -368,7 +368,7 @@ class TestPoiEventIntegration(unittest.TestCase):
 
         self.assertTrue(
             self._wait_for_subscriber('mapoi/nav/goal_pose_poi'),
-            "mapoi_nav_server が mapoi/nav/goal_pose_poi を subscribe しているべき")
+            "mapoi_nav2_bridge が mapoi/nav/goal_pose_poi を subscribe しているべき")
         msg = String()
         msg.data = 'poi_with_custom'
         self.goal_pose_poi_pub.publish(msg)

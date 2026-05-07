@@ -88,7 +88,7 @@ void MapoiPanel::onInitialize()
       "mapoi/config_path", rclcpp::QoS(1).transient_local(),
       std::bind(&MapoiPanel::ConfigPathCallback, this, std::placeholders::_1));
 
-  // QoS は mapoi_nav_server と同じ transient_local。後起動 panel でも latched 値を受信できる。
+  // QoS は mapoi_nav2_bridge と同じ transient_local。後起動 panel でも latched 値を受信できる。
   nav_status_sub_ = node_->create_subscription<std_msgs::msg::String>(
       "mapoi/nav/status", rclcpp::QoS(1).transient_local(),
       std::bind(&MapoiPanel::NavStatusCallback, this, std::placeholders::_1));
@@ -162,7 +162,7 @@ void MapoiPanel::MapComboBox()
   std_msgs::msg::String msg;
   msg.data = map_name_list_[index];
   if (mapoi_switch_map_pub_->get_subscription_count() == 0) {
-    RCLCPP_WARN(LOGGER, "mapoi/nav/switch_map has no subscribers; mapoi_nav_server may not be running.");
+    RCLCPP_WARN(LOGGER, "mapoi/nav/switch_map has no subscribers; mapoi_nav2_bridge may not be running.");
   }
   mapoi_switch_map_pub_->publish(msg);
   RCLCPP_INFO(LOGGER, "Published map switch request: %s", msg.data.c_str());
@@ -487,7 +487,7 @@ void MapoiPanel::BackendStatusCallback(
   mapoi_interfaces::msg::NavigationBackendStatus::SharedPtr msg)
 {
   // RViz panel 側でも backend_ready を見て操作ボタンを gate する (#198, #205 minimal)。
-  // backend_status 不在 (古い nav_server / panel 単独起動) では callback が呼ばれず、
+  // backend_status 不在 (旧 mapoi_nav_server build (#208 以前 backend_status contract 未実装、#204 で nav2_bridge へ rename) / panel 単独起動) では callback が呼ばれず、
   // navigation 軸は初期値 (true = enable) を使い続ける。
   nav_backend_status_received_ = true;
   last_navigation_backend_ready_ = msg->backend_ready;
@@ -518,7 +518,7 @@ void MapoiPanel::UpdateNavButtonsEnabled()
   // initial pose を送れないので最低限 navigation_ready を要求する。両方を AND する厳格化は
   // future work で UX 検討する。
   // Staleness gating (#208): 受信前 (`*_received_` false) は alive 判定をバイパスして
-  // `last_*_backend_ready_` の初期値 (true) を使う = 旧 nav_server / panel 単独起動の後方互換。
+  // `last_*_backend_ready_` の初期値 (true) を使う = 旧 mapoi_nav_server build (#204 で nav2_bridge へ rename) / panel 単独起動の後方互換。
   // 受信後は MANUAL_BY_TOPIC liveliness で得た `*_alive_` flag と AND し、bridge 死亡時に
   // 自動 disable する。
   const bool nav_ready = nav_backend_status_received_

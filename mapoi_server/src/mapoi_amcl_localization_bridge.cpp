@@ -17,7 +17,7 @@ MapoiAmclLocalizationBridge::MapoiAmclLocalizationBridge(
 {
   this->get_logger().set_level(rclcpp::Logger::Level::Info);
 
-  // localization-agnostic 化のための parameter (#209 で nav_server から移設):
+  // localization-agnostic 化のための parameter (#209 で mapoi_nav2_bridge から移設):
   // - initial_pose_topic: 配信先 topic 名 (default `/initialpose`、AMCL/slam_toolbox 等の de-facto standard)
   // - initialpose_retry_interval_sec / initialpose_retry_max_attempts: subscriber 後起動時の
   //   async retry 設定 (#152)。default 0.1s × 50 = 最大 5 秒待つ。
@@ -29,7 +29,7 @@ MapoiAmclLocalizationBridge::MapoiAmclLocalizationBridge(
   this->declare_parameter<int>("initialpose_post_subscribe_republish_count", 3);
   this->declare_parameter<std::string>("map_frame", "map");
 
-  // mapoi/initialpose_poi (transient_local): mapoi_server / mapoi_nav_server / WebUI 等が publish する
+  // mapoi/initialpose_poi (transient_local): mapoi_server / mapoi_nav2_bridge / WebUI 等が publish する
   // {map_name, poi_name} を受けて、POI list を fetch して /initialpose に流す。
   initialpose_poi_sub_ = this->create_subscription<mapoi_interfaces::msg::InitialPoseRequest>(
     "mapoi/initialpose_poi", rclcpp::QoS(1).transient_local(),
@@ -70,7 +70,7 @@ void MapoiAmclLocalizationBridge::initialpose_poi_callback(
       "Received empty initialpose POI name for map '%s'; skipping.", msg->map_name.c_str());
     return;
   }
-  // 注: map_name 世代検証は旧 nav_server 実装と同じく行わない。理由は #149 round 10 のコメント
+  // 注: map_name 世代検証は旧 mapoi_nav_server 実装 (#204 で nav2_bridge へ rename)と同じく行わない。理由は #149 round 10 のコメント
   //   (current map と不一致なら無視) が、map switch 中に InitialPoseRequest が config_path より
   //   先に到着する正当ケースを「stale」と誤判定する regression を生むため。現状は publisher 上書き
   //   (transient_local depth=1) で stale を排除する想定。

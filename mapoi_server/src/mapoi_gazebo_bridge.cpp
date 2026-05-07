@@ -73,7 +73,7 @@ MapoiGazeboBridge::MapoiGazeboBridge()
     "delete_entity", rmw_qos_profile_services_default, cb_group_);
 
   // /initialpose late publisher (#91): mapoi_amcl_localization_bridge と同 topic に bridge からも
-  // publish する (#209 で nav_server から AMCL adapter 分離後も同じ補助役)。AMCL は最後に到着した
+  // publish する (#209 で mapoi_nav2_bridge から AMCL adapter 分離後も同じ補助役)。AMCL は最後に到着した
   // /initialpose で particle を再 init するため、bridge の spawn 完了後に late publish することで
   // 「spawn 中の laser scan 不整合」による誤収束を上書きできる。QoS は localization bridge 側
   // publisher と同じ default (depth=1)。
@@ -477,7 +477,8 @@ void MapoiGazeboBridge::publish_initialpose_after_respawn(double x, double y, do
   msg.pose.pose.position.z = 0.0;
   msg.pose.pose.orientation.z = std::sin(yaw / 2.0);
   msg.pose.pose.orientation.w = std::cos(yaw / 2.0);
-  // covariance は mapoi_nav_server::publish_initial_pose と同じ default。
+  // covariance は mapoi_amcl_localization_bridge::publish_initial_pose と同じ default
+  // (#209 で AMCL adapter を旧 mapoi_nav_server から分離した時点で実装はそちら側に移動)。
   // 0.25 (m^2, x/y) と ~0.069 (rad^2, yaw、約 ±15deg) は AMCL の典型値。
   msg.pose.covariance[0] = 0.25;
   msg.pose.covariance[7] = 0.25;

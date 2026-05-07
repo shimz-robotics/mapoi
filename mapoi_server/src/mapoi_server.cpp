@@ -59,9 +59,9 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
     "mapoi/config_path", rclcpp::QoS(1).transient_local());
   publish_config_path();  // 起動時に latched 値として publish
 
-  // Publish initial pose POI name (#144): mapoi_nav_server がこれを受けて /initialpose を流す。
+  // Publish initial pose POI name (#144): mapoi_nav2_bridge がこれを受けて /initialpose を流す。
   // 起動時は初期 map の候補を publish し、select_map / reload では stale 防止の clear message を流す。
-  // operator map switch 完了後の publish は mapoi_nav_server が担当する。
+  // operator map switch 完了後の publish は mapoi_nav2_bridge が担当する。
   // 後起動 subscriber でも受信できるよう transient_local。
   initialpose_poi_publisher_ = this->create_publisher<mapoi_interfaces::msg::InitialPoseRequest>(
     "mapoi/initialpose_poi", rclcpp::QoS(1).transient_local());
@@ -69,9 +69,9 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   // 起動時の最初の map に対する initial pose POI を publish (#144)。
   // 順序保証: load_mapoi_config_file() (line 21) → publish_initial_poi_name() の順に実行。
   // pois_list_ は load 後に最新化されているので、compute_initial_poi_name の lookup は安全。
-  // mapoi/initialpose_poi は transient_local QoS なので mapoi_nav_server 後起動でも latched 値を
-  // 受信できる。mapoi_nav_server cb 側は新たに get_pois_info を fetch して名前 lookup するので、
-  // mapoi_server 内の pois_list_ 更新と nav_server 側の cb 処理は順序非依存 (#149 review 補足)。
+  // mapoi/initialpose_poi は transient_local QoS なので mapoi_nav2_bridge 後起動でも latched 値を
+  // 受信できる。mapoi_nav2_bridge cb 側は新たに get_pois_info を fetch して名前 lookup するので、
+  // mapoi_server 内の pois_list_ 更新と mapoi_nav2_bridge 側の cb 処理は順序非依存 (#149 review 補足)。
   // 起動時は requested_name = empty で default (POI list 先頭) を採用。
   publish_initial_poi_name("");
 
@@ -388,7 +388,7 @@ void MapoiServer::select_map_service(const std::shared_ptr<mapoi_interfaces::srv
   publish_config_path();
 
   // select_map は Nav2-free の context 更新入口。ここでは AMCL に initial pose を流さず、
-  // stale な latched initial pose だけを clear する。operator mode では mapoi_nav_server が
+  // stale な latched initial pose だけを clear する。operator mode では mapoi_nav2_bridge が
   // Nav2 LoadMap 成功後に response->initial_poi_name を mapoi/initialpose_poi へ publish する。
   publish_initialpose_clear();
 
@@ -407,9 +407,9 @@ void MapoiServer::reload_map_info_service(
   // table / ComboBox を再 fetch することで save 後の内容更新が反映される (#135)。
   publish_config_path();
   // reload は POI 編集後の再読込 trigger。ここで `mapoi/initialpose_poi` を「採用候補あり」で
-  // 再 publish すると、mapoi_nav_server 側で /initialpose が再配信され **運用中の自己位置が
+  // 再 publish すると、mapoi_nav2_bridge 側で /initialpose が再配信され **運用中の自己位置が
   // 巻き戻される** 回帰がある (Cursor review #149 round 4 medium 対応)。
-  // 一方で latched message は古い POI 名のまま残り、reload 後に nav_server が再起動 / 再 connection
+  // 一方で latched message は古い POI 名のまま残り、reload 後に mapoi_nav2_bridge が再起動 / 再 connection
   // すると stale な POI 名が配信される問題が残っていた (#154)。
   // 対策: skip message (poi_name 空、subscriber 側で無視される規約) を明示 publish して
   // transient_local の latched 値を上書きする。運用中 subscriber には影響なく (空は無視)、

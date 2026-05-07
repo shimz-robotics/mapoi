@@ -36,7 +36,7 @@
 #include "mapoi_interfaces/msg/initial_pose_request.hpp"
 #include "mapoi_interfaces/msg/navigation_backend_status.hpp"
 
-class MapoiNavServer : public rclcpp::Node
+class MapoiNav2Bridge : public rclcpp::Node
 {
 public:
   using FollowWaypoints = nav2_msgs::action::FollowWaypoints;
@@ -46,7 +46,7 @@ public:
 
   enum class NavMode { IDLE, GOAL, ROUTE };
 
-  explicit MapoiNavServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit MapoiNav2Bridge(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
 private:
   // --- publisher & subscriber ---
@@ -205,7 +205,7 @@ private:
   // initial pose POI 名の publisher (Nav2 LoadMap 完了後 trigger 用、#209)。
   // 配信先は mapoi_amcl_localization_bridge / mapoi_gz_bridge / WebUI 等が subscribe する
   // `mapoi/initialpose_poi` (transient_local)。実際の `/initialpose` 配信は localization
-  // bridge が担当する (#209 で nav_server から分離)。
+  // bridge が担当する (#209 で mapoi_nav2_bridge から分離)。
   rclcpp::Publisher<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr mapoi_initialpose_poi_pub_;
 
   // --- STOPPED/RESUMED 判定 (#140) ---
@@ -272,29 +272,29 @@ private:
     const std::unordered_set<std::string> & active_route_poi_names);
 
 #ifdef UNIT_TEST
-  friend class NavServerTestFixture;
-  FRIEND_TEST(NavServerTestFixture, DistanceCalculation);
-  FRIEND_TEST(NavServerTestFixture, DistanceCalculationZero);
-  FRIEND_TEST(NavServerTestFixture, RebuildEventPoisIncludesAllPois);
-  FRIEND_TEST(NavServerTestFixture, RebuildEventPoisEmpty);
-  FRIEND_TEST(NavServerTestFixture, PauseTagDetection);
-  FRIEND_TEST(NavServerTestFixture, HasLandmarkTagDetection);
-  FRIEND_TEST(NavServerTestFixture, BuildRoutePoiNamesWaypointsOnly);
-  FRIEND_TEST(NavServerTestFixture, BuildRoutePoiNamesWaypointsAndLandmarks);
-  FRIEND_TEST(NavServerTestFixture, BuildRoutePoiNamesLandmarksEmptyBackwardCompat);
-  FRIEND_TEST(NavServerTestFixture, BuildRoutePoiNamesEmpty);
-  FRIEND_TEST(NavServerTestFixture, BuildRoutePoiNamesDuplicateNames);
-  FRIEND_TEST(NavServerTestFixture, IsPauseEligibleRouteModeActiveWithPauseTag);
-  FRIEND_TEST(NavServerTestFixture, IsPauseEligibleRouteModeActiveWithoutPauseTag);
-  FRIEND_TEST(NavServerTestFixture, IsPauseEligibleRouteModeNonActivePoi);
-  FRIEND_TEST(NavServerTestFixture, IsPauseEligibleGoalMode);
-  FRIEND_TEST(NavServerTestFixture, IsPauseEligibleIdleMode);
-  FRIEND_TEST(NavServerTestFixture, ResetNavStateClearsRouteContext);
-  FRIEND_TEST(NavServerTestFixture, ComputeStoppedTransitionNoOutside);
-  FRIEND_TEST(NavServerTestFixture, ComputeStoppedTransitionEnterStopped);
-  FRIEND_TEST(NavServerTestFixture, ComputeStoppedTransitionEnterMoving);
-  FRIEND_TEST(NavServerTestFixture, ComputeStoppedTransitionResumeOnVelocity);
-  FRIEND_TEST(NavServerTestFixture, ComputeStoppedTransitionStaysStopped);
+  friend class Nav2BridgeTestFixture;
+  FRIEND_TEST(Nav2BridgeTestFixture, DistanceCalculation);
+  FRIEND_TEST(Nav2BridgeTestFixture, DistanceCalculationZero);
+  FRIEND_TEST(Nav2BridgeTestFixture, RebuildEventPoisIncludesAllPois);
+  FRIEND_TEST(Nav2BridgeTestFixture, RebuildEventPoisEmpty);
+  FRIEND_TEST(Nav2BridgeTestFixture, PauseTagDetection);
+  FRIEND_TEST(Nav2BridgeTestFixture, HasLandmarkTagDetection);
+  FRIEND_TEST(Nav2BridgeTestFixture, BuildRoutePoiNamesWaypointsOnly);
+  FRIEND_TEST(Nav2BridgeTestFixture, BuildRoutePoiNamesWaypointsAndLandmarks);
+  FRIEND_TEST(Nav2BridgeTestFixture, BuildRoutePoiNamesLandmarksEmptyBackwardCompat);
+  FRIEND_TEST(Nav2BridgeTestFixture, BuildRoutePoiNamesEmpty);
+  FRIEND_TEST(Nav2BridgeTestFixture, BuildRoutePoiNamesDuplicateNames);
+  FRIEND_TEST(Nav2BridgeTestFixture, IsPauseEligibleRouteModeActiveWithPauseTag);
+  FRIEND_TEST(Nav2BridgeTestFixture, IsPauseEligibleRouteModeActiveWithoutPauseTag);
+  FRIEND_TEST(Nav2BridgeTestFixture, IsPauseEligibleRouteModeNonActivePoi);
+  FRIEND_TEST(Nav2BridgeTestFixture, IsPauseEligibleGoalMode);
+  FRIEND_TEST(Nav2BridgeTestFixture, IsPauseEligibleIdleMode);
+  FRIEND_TEST(Nav2BridgeTestFixture, ResetNavStateClearsRouteContext);
+  FRIEND_TEST(Nav2BridgeTestFixture, ComputeStoppedTransitionNoOutside);
+  FRIEND_TEST(Nav2BridgeTestFixture, ComputeStoppedTransitionEnterStopped);
+  FRIEND_TEST(Nav2BridgeTestFixture, ComputeStoppedTransitionEnterMoving);
+  FRIEND_TEST(Nav2BridgeTestFixture, ComputeStoppedTransitionResumeOnVelocity);
+  FRIEND_TEST(Nav2BridgeTestFixture, ComputeStoppedTransitionStaysStopped);
 #endif
 };
 

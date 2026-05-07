@@ -19,8 +19,8 @@ ament_auto_add_executable(mapoi_server
 )
 target_link_libraries(mapoi_server ${_mapoi_yaml_cpp_target})
 
-ament_auto_add_executable(mapoi_nav_server
-  src/mapoi_nav_server.cpp
+ament_auto_add_executable(mapoi_nav2_bridge
+  src/mapoi_nav2_bridge.cpp
 )
 
 ament_auto_add_executable(mapoi_amcl_localization_bridge
@@ -79,11 +79,11 @@ if(BUILD_TESTING)
   find_package(launch_testing_ament_cmake REQUIRED)
 
   # Level 1: gtest unit tests
-  ament_auto_add_gtest(test_nav_server_unit
-    test/test_nav_server_unit.cpp
-    src/mapoi_nav_server.cpp
+  ament_auto_add_gtest(test_nav2_bridge_unit
+    test/test_nav2_bridge_unit.cpp
+    src/mapoi_nav2_bridge.cpp
   )
-  target_compile_definitions(test_nav_server_unit PRIVATE UNIT_TEST)
+  target_compile_definitions(test_nav2_bridge_unit PRIVATE UNIT_TEST)
 
   # initial_pose_resolver は純関数なので test には resolver の cpp だけを link する
   # (#150 で mapoi_server.cpp 全体 link から軽量化、Node 依存を test から排除)。

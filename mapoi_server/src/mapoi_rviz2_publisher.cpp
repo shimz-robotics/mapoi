@@ -41,7 +41,7 @@ MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
     std::bind(&MapoiRviz2Publisher::on_highlight_route_received, this, _1));
 
   // mapoi/config_path 変化検出で POI list を再取得 (WebUI / Panel 並び替え保存 / map switch 対応)。
-  // QoS は mapoi_nav_server と同じ transient_local。後起動でも latched 値を受信できる。
+  // QoS は mapoi_nav2_bridge と同じ transient_local。後起動でも latched 値を受信できる。
   config_path_sub_ = this->create_subscription<std_msgs::msg::String>(
     "mapoi/config_path", rclcpp::QoS(1).transient_local(),
     std::bind(&MapoiRviz2Publisher::on_config_path_changed, this, _1));

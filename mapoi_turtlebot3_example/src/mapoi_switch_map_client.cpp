@@ -27,7 +27,7 @@ int main(int argc, char ** argv)
 
   if (pub->get_subscription_count() == 0) {
     RCLCPP_WARN(node->get_logger(),
-      "mapoi/nav/switch_map has no subscribers; mapoi_nav_server may not be running.");
+      "mapoi/nav/switch_map has no subscribers; mapoi_nav2_bridge may not be running.");
   }
 
   std_msgs::msg::String msg;

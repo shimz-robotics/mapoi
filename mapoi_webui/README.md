@@ -44,7 +44,7 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 | `mapoi/nav/pause` | `std_msgs/String` | ナビゲーションの一時停止 |
 | `mapoi/nav/resume` | `std_msgs/String` | ナビゲーションの再開 |
 | `mapoi/nav/cancel` | `std_msgs/String` | ナビゲーションのキャンセル |
-| `mapoi/nav/switch_map` | `std_msgs/String` | Navigation map switch 指示。`mapoi_nav_server` 等の navigation backend が受信して地図切り替えを実行 |
+| `mapoi/nav/switch_map` | `std_msgs/String` | Navigation map switch 指示。`mapoi_nav2_bridge` 等の navigation backend が受信して地図切り替えを実行 |
 | `mapoi/initialpose_poi` | `mapoi_interfaces/InitialPoseRequest` | 初期位置に採用する POI 名 (`{map_name, poi_name}`)、transient_local QoS |
 
 #### サブスクライバー
@@ -87,7 +87,7 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 
 ### A. webui のみ起動 (オペレーター用、`mapoi_server` を別プロセスで起動済み)
 
-ロボットが既に動いている (`mapoi_server` / `mapoi_nav_server` 等が別プロセスで稼働) 状態で、RViz の代替 UI として webui を後付けする用途。
+ロボットが既に動いている (`mapoi_server` / `mapoi_nav2_bridge` 等が別プロセスで稼働) 状態で、RViz の代替 UI として webui を後付けする用途。
 
 ```bash
 ros2 launch mapoi_webui mapoi_webui.launch.yaml maps_path:=/path/to/maps map_name:=your_map
@@ -95,7 +95,7 @@ ros2 launch mapoi_webui mapoi_webui.launch.yaml maps_path:=/path/to/maps map_nam
 
 ### B. webui + mapoi_server を一緒に起動 (エディター用)
 
-PC でデスクトップ上の POI/Route/CustomTags 編集だけ行いたい用途 (ロボット動作 / Nav2 / RViz は不要)。`mapoi_bringup` を minimal config (`with_nav_server=false`, `with_rviz_publisher=false`, `simulator=none`) で include する。
+PC でデスクトップ上の POI/Route/CustomTags 編集だけ行いたい用途 (ロボット動作 / Nav2 / RViz は不要)。`mapoi_bringup` を minimal config (`with_nav2_bridge=false`, `with_rviz_publisher=false`, `simulator=none`) で include する。
 
 ```bash
 ros2 launch mapoi_webui mapoi_editor.launch.yaml maps_path:=/path/to/maps map_name:=your_map
@@ -107,7 +107,7 @@ ros2 launch mapoi_webui mapoi_editor.launch.yaml maps_path:=/path/to/maps map_na
 
 ## REST API と server 依存
 
-各 endpoint が `mapoi_server` (or `mapoi_nav_server`) の起動を必要とするかの早見表:
+各 endpoint が `mapoi_server` (or `mapoi_nav2_bridge`) の起動を必要とするかの早見表:
 
 | endpoint | server 必要 | 理由 |
 |---|---|---|
@@ -115,13 +115,13 @@ ros2 launch mapoi_webui mapoi_editor.launch.yaml maps_path:=/path/to/maps map_na
 | `GET /api/pois` `/api/routes` | 不要 | YAML 直読み |
 | `POST /api/pois` `/api/routes` `/api/custom_tags` | **必要** | YAML 書き込み後に `reload_map_info` service を呼ぶ |
 | `GET /api/tag_definitions` | **必要** | `get_tag_definitions` service 経由 |
-| `POST /api/nav/{goal,route,cancel,pause,resume}` | **必要 (mapoi_nav_server)** | publisher → nav_server が listener、subscriber 0 件なら warning を返す |
+| `POST /api/nav/{goal,route,cancel,pause,resume}` | **必要 (mapoi_nav2_bridge)** | publisher → mapoi_nav2_bridge が listener、subscriber 0 件なら warning を返す |
 | `POST /api/nav/initialpose` | **必要 (mapoi_amcl_localization_bridge or 自作 localization bridge)** | `mapoi/initialpose_poi` publisher → localization bridge が listener (#209)、subscriber 0 件なら warning を返す |
-| `POST /api/nav/switch-map` | **必要 (mapoi_nav_server 等)** | `mapoi/nav/switch_map` publisher → navigation backend が listener、subscriber 0 件なら warning を返す |
-| `GET /api/nav/status` | 不要 (subscriber 経由で受信値返却) | nav_server がいなければ default 値 |
+| `POST /api/nav/switch-map` | **必要 (mapoi_nav2_bridge 等)** | `mapoi/nav/switch_map` publisher → navigation backend が listener、subscriber 0 件なら warning を返す |
+| `GET /api/nav/status` | 不要 (subscriber 経由で受信値返却) | mapoi_nav2_bridge がいなければ default 値 |
 | `GET /api/mode` | 不要 | command topic の subscriber 数から best-effort で検出 |
 
-server / nav_server 不在時の挙動 (endpoint カテゴリ別):
+server / mapoi_nav2_bridge 不在時の挙動 (endpoint カテゴリ別):
 - `GET /api/tag_definitions`: `503 Service Unavailable` (service 必須、unavailable / timeout 時)
 - `POST /api/pois` / `/api/routes` / `/api/custom_tags`: `200 OK` + `warning` フィールド (YAML 書き込み自体は成功するため、`reload_map_info` の unavailable / timeout / failure は warning として通知)
 - `POST /api/nav/{goal,route,cancel,pause,resume}` / `/api/nav/initialpose` / `/api/nav/switch-map`: `200 OK` + `warning` フィールド (publish 自体は成功扱い、subscriber 不在を best-effort で検出して通知)
@@ -141,7 +141,7 @@ if response is None:
 
 ### Flask thread から ROS 2 publish する場合
 
-**必ず `MapoiWebNode.publish_with_subscriber_check()` 経由で publish する**。subscriber 0 件 (例: `mapoi_nav_server` 未起動) の silent failure を避けるため。
+**必ず `MapoiWebNode.publish_with_subscriber_check()` 経由で publish する**。subscriber 0 件 (例: `mapoi_nav2_bridge` 未起動) の silent failure を避けるため。
 
 ```python
 _, warning = node.publish_with_subscriber_check(

@@ -23,7 +23,7 @@ namespace mapoi
 // 1Hz で `mapoi/localization/backend_status` を publish し、WebUI / RViz panel が
 // Initial Pose 操作 UI を gate するための minimal contract を提供する。
 //
-// nav_server から AMCL adapter を分離した目的は #209 を参照: navigation backend と
+// mapoi_nav2_bridge から AMCL adapter を分離した目的は #209 を参照: navigation backend と
 // localization backend を独立した契約として扱い、将来 AMCL 以外 (slam_toolbox /
 // 自前 localization 等) に切替えやすくする。
 class MapoiAmclLocalizationBridge : public rclcpp::Node
@@ -50,7 +50,7 @@ private:
   void publish_initial_pose(
     const geometry_msgs::msg::Pose & pose, const std::string & source);
 
-  // /initialpose subscriber (主に AMCL) が後起動した場合の retry 機構 (旧 nav_server から移植、#152)。
+  // /initialpose subscriber (主に AMCL) が後起動した場合の retry 機構 (旧 mapoi_nav_server (#204 で rename) から移植、#152)。
   // single-thread executor で blocking wait は避ける必要があるため、wall timer ベースで polling。
   void schedule_initialpose_retry(
     const geometry_msgs::msg::Pose & pose, const std::string & source);

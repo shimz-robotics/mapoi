@@ -1,6 +1,6 @@
-"""mapoi_nav_server の navigation backend readiness publish テスト (#198)。
+"""mapoi_nav2_bridge の navigation backend readiness publish テスト (#198)。
 
-Nav2 が不在の状態で `mapoi_nav_server` を起動し、`mapoi/nav/backend_status` topic に
+Nav2 が不在の状態で `mapoi_nav2_bridge` を起動し、`mapoi/nav/backend_status` topic に
 `backend_ready: false` が 1Hz で publish されることを確認する。Route Run の無限待ち回帰
 や、WebUI の `Navigation connected` 誤判定が再発しないように pin する。
 """
@@ -20,16 +20,16 @@ from mapoi_interfaces.msg import NavigationBackendStatus
 
 @launch_testing.markers.keep_alive
 def generate_test_description():
-    nav_server = launch_ros.actions.Node(
+    mapoi_nav2_bridge = launch_ros.actions.Node(
         package='mapoi_server',
-        executable='mapoi_nav_server',
-        name='mapoi_nav_server',
+        executable='mapoi_nav2_bridge',
+        name='mapoi_nav2_bridge',
     )
 
     return launch.LaunchDescription([
-        nav_server,
+        mapoi_nav2_bridge,
         launch_testing.actions.ReadyToTest(),
-    ]), {'mapoi_nav_server': nav_server}
+    ]), {'mapoi_nav2_bridge': mapoi_nav2_bridge}
 
 
 class TestBackendStatusNoNav2(unittest.TestCase):
