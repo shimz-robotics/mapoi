@@ -146,6 +146,9 @@ private:
   // 検知できなかった #198 の課題に対応)。
   rclcpp::Publisher<mapoi_interfaces::msg::NavigationBackendStatus>::SharedPtr backend_status_pub_;
   rclcpp::TimerBase::SharedPtr backend_status_timer_;
+  // Reentrant callback_group + MultiThreadedExecutor で backend_status timer を blocking
+  // 呼び出しと独立 thread で動かすための group (#213)。
+  rclcpp::CallbackGroup::SharedPtr backend_status_callback_group_;
   void publish_backend_status();
 
   // Nav status publisher
