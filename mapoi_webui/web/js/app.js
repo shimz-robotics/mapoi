@@ -485,11 +485,10 @@
     const capabilities = currentNavigationCapabilities || {};
     const backendStatus = capabilities.backend_status || null;
     const commandAvailable = !!capabilities.command_available;
-    const switchMapAvailable = !!capabilities.switch_map_available;
     const navigationAvailable = !!capabilities.navigation_available;
     // backend_status が届いている場合 (#198) は backend_ready をそのまま操作 enable に使う。
-    // 不在 (古い nav_server や bridge 未実装) のときは従来の command topic subscriber 数判定で
-    // フォールバックする。
+    // Minimal contract (#205 review) なので per-capability gate は持たず、navigation 操作 UI 全体を
+    // 一括 gate する。後方互換: backend_status 不在は subscriber 数 (command_available) で代用。
     const operationsEnabled = backendStatus
       ? !!backendStatus.backend_ready
       : commandAvailable;
@@ -508,10 +507,6 @@
       if (backendStatus) {
         tooltipLines.push(`backend_type: ${backendStatus.backend_type || 'unknown'}`);
         tooltipLines.push(`backend_ready: ${backendStatus.backend_ready}`);
-        tooltipLines.push(`goal_ready: ${backendStatus.goal_ready}`);
-        tooltipLines.push(`route_ready: ${backendStatus.route_ready}`);
-        tooltipLines.push(`switch_map_ready: ${backendStatus.switch_map_ready}`);
-        tooltipLines.push(`initialpose_ready: ${backendStatus.initialpose_ready}`);
         if (backendStatus.reason) {
           tooltipLines.push(`reason: ${backendStatus.reason}`);
         }
@@ -535,7 +530,9 @@
       if (btn) btn.disabled = !operationsEnabled;
     });
 
-    if (navigationMapSelect) navigationMapSelect.disabled = !switchMapAvailable;
+    // Operator map switch も bridge を経由するため backend_ready で gate する。
+    // Editor 側の map dropdown (header の Map:) は `/api/maps/select` で bridge 不問。
+    if (navigationMapSelect) navigationMapSelect.disabled = !operationsEnabled;
     refreshResponsiveLayout();
   }
 

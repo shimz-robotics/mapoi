@@ -223,15 +223,13 @@ class MapoiWebNode(Node):
             self.nav_status_target_ = parts[1]
 
     def backend_status_callback(self, msg):
-        """Cache the latest navigation backend readiness payload (#198)."""
+        """Cache the latest navigation backend readiness payload (#198, #205)."""
+        # Minimal contract (#205 review): backend_type / backend_ready / reason のみ。
+        # bridge 実装者の負担を減らすため per-capability フィールドは持たない。
+        # localization readiness は別 topic (#209) で扱う。
         self.backend_status_ = {
             'backend_type': msg.backend_type,
-            'backend_present': bool(msg.backend_present),
             'backend_ready': bool(msg.backend_ready),
-            'goal_ready': bool(msg.goal_ready),
-            'route_ready': bool(msg.route_ready),
-            'switch_map_ready': bool(msg.switch_map_ready),
-            'initialpose_ready': bool(msg.initialpose_ready),
             'reason': msg.reason,
         }
 
@@ -354,16 +352,14 @@ class MapoiWebNode(Node):
 
         Priority (#198):
         1. mapoi/nav/backend_status topic 受信済 → backend_ready をそのまま使う。
-           これは Nav2 action / service の存在まで含めた厳密 readiness。
+           Nav2 action / service の存在を含めた厳密 readiness。
         2. backend_status 未受信 (古い nav_server や bridge 未実装) → command topic
            subscriber 数による旧判定にフォールバック (= bridge 起動だけは検知できる)。
-        旧フィールド名 (navigation_available 等) は frontend 既存利用のため維持する。
 
-        フォールバック path では `navigation_available` が `switch_map || command` で
-        `command_available` のみで操作ボタン可否を決める旧挙動が残る。バナー表示と
-        ボタン enable 条件が一致しない見た目になりうるが、これは backend_status を
-        publish しない古い nav_server に対する後方互換 (#205 review medium #3)。
-        新 nav_server に切り替われば backend_status path に乗って整合する。
+        旧フィールド名 (navigation_available 等) は frontend 既存利用のため維持する。
+        Minimal contract に合わせて返す情報も backend_ready / topics 程度に絞る (#205 review)。
+        フォールバック path で `navigation_available` と操作ボタン enable の条件が完全一致しないのは
+        意図的な後方互換 — 新 nav_server に切り替われば backend_status path で整合する。
         """
         publishers = {
             'switch_map': (self.switch_map_pub_, 'mapoi/nav/switch_map'),
@@ -393,13 +389,10 @@ class MapoiWebNode(Node):
         backend = self.backend_status_
         if backend is not None:
             navigation_available = bool(backend['backend_ready'])
-            switch_map_available_final = bool(backend['switch_map_ready'])
         else:
             navigation_available = legacy_available
-            switch_map_available_final = switch_map_available
         return {
             'navigation_available': navigation_available,
-            'switch_map_available': switch_map_available_final,
             'command_available': command_available,
             'topics': topics,
             'backend_status': backend,

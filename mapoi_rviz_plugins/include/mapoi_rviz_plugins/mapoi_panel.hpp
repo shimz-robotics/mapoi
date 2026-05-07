@@ -83,12 +83,13 @@ protected:
   std::string current_nav_mode_;
   std::string current_nav_target_;
 
-  // Navigation backend readiness subscribe (#198 review medium):
-  // bridge が `mapoi/nav/backend_status` を publish する場合は backend_ready で操作ボタンを
-  // gate する。topic 不在 (古い nav_server) では「全 enable」のままで後方互換を保つ。
+  // Navigation backend readiness subscribe (#198, #205 minimal contract):
+  // bridge が `mapoi/nav/backend_status` を publish する場合は backend_ready で navigation
+  // 操作ボタンと MapComboBox を一括 gate する。topic 不在 (古い nav_server) では「全 enable」の
+  // ままで後方互換を保つ。Minimal contract なので per-capability gate は持たない。
   rclcpp::Subscription<mapoi_interfaces::msg::NavigationBackendStatus>::SharedPtr backend_status_sub_;
   void BackendStatusCallback(mapoi_interfaces::msg::NavigationBackendStatus::SharedPtr msg);
-  void UpdateNavButtonsEnabled(bool backend_ready, bool switch_map_ready);
+  void UpdateNavButtonsEnabled(bool backend_ready);
   bool backend_status_received_ {false};
 
   void RequestSetCmdVelMode(std::string cm);

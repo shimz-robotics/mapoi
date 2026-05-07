@@ -877,29 +877,26 @@ void MapoiNavServer::publish_nav_status(const std::string & status, const std::s
 
 void MapoiNavServer::publish_backend_status()
 {
-  // Nav2 bridge としての readiness を polling で集約して publish する (#198)。
-  // backend_ready は goal + route の主機能 action server が両方 ready のとき true。
-  // 片機能のみ使うカスタム bridge (例: route 機能なし) では本実装の AND は厳しすぎるため、
-  // bridge 別カスタマイズは #207 で別途検討する。
+  // Nav2 bridge としての readiness を 1Hz polling で集約して publish する (#198)。
+  // contract は minimal 3 フィールドだけ (#205 review): bridge 実装者は backend_ready を
+  // 真にするだけで mapoi UI と統合できる。Per-capability の内訳が必要なら reason 文字列に
+  // 詰める。Localization readiness は別軸 (#209) で、本 msg では扱わない。
   // 二重管理に見える点 (1Hz timer の集約 + 各 cb 内 `action_server_is_ready()` 即時判定) は
   // 意図的: cb 内で 1Hz timer の cache を読むと最大 1 秒の lag が発生し、operator が ready
   // 表示直後に Run を押した場合に偽の backend_unavailable を出しかねない。即時判定で current
   // を見る (#205 review low #2)。
-  // initialpose_ready は localization (AMCL 等) が subscribe しているかの参考値で、
-  // backend_ready の条件には含めない (Nav2 起動でも localization 失敗ケースは別軸)。
+  const bool goal_ready =
+    nav_to_pose_client_ && nav_to_pose_client_->action_server_is_ready();
+  const bool route_ready =
+    action_client_ && action_client_->action_server_is_ready();
+
   mapoi_interfaces::msg::NavigationBackendStatus msg;
   msg.backend_type = "nav2";
-  msg.backend_present = true;
-  msg.goal_ready = nav_to_pose_client_ && nav_to_pose_client_->action_server_is_ready();
-  msg.route_ready = action_client_ && action_client_->action_server_is_ready();
-  msg.switch_map_ready = select_map_client_ && select_map_client_->service_is_ready();
-  msg.initialpose_ready = nav2_initialpose_pub_ &&
-    nav2_initialpose_pub_->get_subscription_count() > 0;
-  msg.backend_ready = msg.goal_ready && msg.route_ready;
+  msg.backend_ready = goal_ready && route_ready;
   if (!msg.backend_ready) {
-    if (!msg.goal_ready && !msg.route_ready) {
+    if (!goal_ready && !route_ready) {
       msg.reason = "navigate_to_pose / follow_waypoints action servers not available";
-    } else if (!msg.goal_ready) {
+    } else if (!goal_ready) {
       msg.reason = "navigate_to_pose action server not available";
     } else {
       msg.reason = "follow_waypoints action server not available";
