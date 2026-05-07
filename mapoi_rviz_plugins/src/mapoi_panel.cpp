@@ -93,26 +93,47 @@ void MapoiPanel::onInitialize()
       "mapoi/nav/status", rclcpp::QoS(1).transient_local(),
       std::bind(&MapoiPanel::NavStatusCallback, this, std::placeholders::_1));
 
-  // Navigation backend readiness (#198 review medium): bridge が publish する readiness で
-  // ボタンを gate する。受信前 (古い nav_server / panel 単独起動) は全 enable のまま。
-  backend_status_sub_ = node_->create_subscription<mapoi_interfaces::msg::NavigationBackendStatus>(
-      "mapoi/nav/backend_status", rclcpp::QoS(1).transient_local(),
-      std::bind(&MapoiPanel::BackendStatusCallback, this, std::placeholders::_1));
+  // Navigation / Localization backend readiness (#198, #209) の QoS は msg contract (#208)
+  // に従う: transient_local + liveliness (publisher=MANUAL_BY_TOPIC, subscriber=AUTOMATIC)
+  // + lease 5s (両側必須)。subscriber 側 policy を AUTOMATIC にするのは pub=MANUAL_BY_TOPIC
+  // × sub=AUTOMATIC が compatibility 表上 OK だから。lease は `pub.lease <= sub.lease` 制約が
+  // あり、両側 5s で揃えるのが運用上シンプル。
+  // **msg contract に従わない publisher (例: liveliness QoS 未設定 = lease infinite) は
+  // 意図的に QoS incompatible で接続を拒否する**。custom bridge 実装者は msg README の
+  // contract 表に従う必要がある (test_backend_status_liveliness.py で incompatibility を pin)。
+  // 受信前 (`*_status_received_` flag = false、つまり contract 未実装の旧 publisher も含む) は
+  // alive 判定をバイパスして全 enable のまま (UpdateNavButtonsEnabled 内で実現)。
+  const auto backend_status_qos = rclcpp::QoS(1)
+    .transient_local()
+    .liveliness(rclcpp::LivelinessPolicy::Automatic)
+    .liveliness_lease_duration(std::chrono::seconds(5));
 
-  // Localization backend readiness (#209): localization bridge が publish する readiness で
-  // LocalizationButton を gate する。Navigation 軸とは独立。受信前 (bridge 不在 / editor 構成)
-  // は全 enable のまま (BackendStatusCallback と同じフォールバック方針)。
+  rclcpp::SubscriptionOptions nav_sub_opts;
+  nav_sub_opts.event_callbacks.liveliness_callback =
+    [this](rclcpp::QOSLivelinessChangedInfo & event) {
+      nav_backend_alive_ = event.alive_count > 0;
+      QMetaObject::invokeMethod(this, [this]() {
+        UpdateNavButtonsEnabled();
+      }, Qt::QueuedConnection);
+    };
+  backend_status_sub_ = node_->create_subscription<mapoi_interfaces::msg::NavigationBackendStatus>(
+      "mapoi/nav/backend_status", backend_status_qos,
+      std::bind(&MapoiPanel::BackendStatusCallback, this, std::placeholders::_1),
+      nav_sub_opts);
+
+  rclcpp::SubscriptionOptions loc_sub_opts;
+  loc_sub_opts.event_callbacks.liveliness_callback =
+    [this](rclcpp::QOSLivelinessChangedInfo & event) {
+      localization_backend_alive_ = event.alive_count > 0;
+      QMetaObject::invokeMethod(this, [this]() {
+        UpdateNavButtonsEnabled();
+      }, Qt::QueuedConnection);
+    };
   localization_backend_status_sub_ = node_->create_subscription<
     mapoi_interfaces::msg::LocalizationBackendStatus>(
-      "mapoi/localization/backend_status", rclcpp::QoS(1).transient_local(),
-      std::bind(&MapoiPanel::LocalizationBackendStatusCallback, this, std::placeholders::_1));
-
-  // Bridge プロセス死亡時の staleness 検出 (#209 review、#208 軽量代替)。
-  // transient_local の cache は callback が呼ばれない限り古い値を保持し続けるため、
-  // 1Hz で publisher 数を polling し、0 のときは ready=false 相当に倒す。
-  backend_staleness_timer_ = node_->create_wall_timer(
-    std::chrono::seconds(1),
-    std::bind(&MapoiPanel::BackendStalenessTick, this));
+      "mapoi/localization/backend_status", backend_status_qos,
+      std::bind(&MapoiPanel::LocalizationBackendStatusCallback, this, std::placeholders::_1),
+      loc_sub_opts);
 
   current_nav_mode_ = "idle";
 
@@ -487,51 +508,32 @@ void MapoiPanel::LocalizationBackendStatusCallback(
   }, Qt::QueuedConnection);
 }
 
-void MapoiPanel::BackendStalenessTick()
-{
-  // bridge プロセス死亡時の staleness 検出 (#209 review、#208 軽量代替)。
-  // publisher 数 = 0 を検知したら、cache された ready=true を強制的に false に倒す
-  // (callback は呼ばれないので last_*_backend_ready_ を上書きする必要がある)。
-  // publisher が再び現れて新しい ready 値を送ってくれば、その callback で last_* が上書きされる。
-  // 重要 (review fix): `*_received_` flag が false の間は何もしない。これは「contract 未実装の
-  // 旧 nav_server / editor 構成」では publisher 数が常に 0 でも UI を disable しない、という
-  // 後方互換の保証。一度でも status を受け取った publisher の死亡だけを staleness として扱う。
-  bool changed = false;
-  if (nav_backend_status_received_ &&
-      node_->count_publishers("mapoi/nav/backend_status") == 0 &&
-      last_navigation_backend_ready_) {
-    last_navigation_backend_ready_ = false;
-    changed = true;
-  }
-  if (localization_backend_status_received_ &&
-      node_->count_publishers("mapoi/localization/backend_status") == 0 &&
-      last_localization_backend_ready_) {
-    last_localization_backend_ready_ = false;
-    changed = true;
-  }
-  if (changed) {
-    QMetaObject::invokeMethod(this, [this]() {
-      UpdateNavButtonsEnabled();
-    }, Qt::QueuedConnection);
-  }
-}
-
 void MapoiPanel::UpdateNavButtonsEnabled()
 {
   // Qt main thread で呼ぶこと (BackendStatusCallback / LocalizationBackendStatusCallback /
-  // BackendStalenessTick から QueuedConnection 経由で invoke される)。
+  // liveliness event_callback から QueuedConnection 経由で invoke される)。
   // 2 軸の minimal 仕様 (#209): navigation 操作 UI と MapComboBox は navigation backend、
   // LocalizationButton は localization backend で gate する。MapComboBox は Nav2 LoadMap +
   // AMCL initial pose の両方を必要とするが、Nav2 LoadMap が走らないと localization 側に意味のある
   // initial pose を送れないので最低限 navigation_ready を要求する。両方を AND する厳格化は
   // future work で UX 検討する。
-  ui_->LocalizationButton->setEnabled(last_localization_backend_ready_);
-  ui_->RunGoalButton->setEnabled(last_navigation_backend_ready_);
-  ui_->RunRouteButton->setEnabled(last_navigation_backend_ready_);
-  ui_->PauseButton->setEnabled(last_navigation_backend_ready_);
-  ui_->ResumeButton->setEnabled(last_navigation_backend_ready_);
-  ui_->StopButton->setEnabled(last_navigation_backend_ready_);
-  ui_->MapComboBox->setEnabled(last_navigation_backend_ready_);
+  // Staleness gating (#208): 受信前 (`*_received_` false) は alive 判定をバイパスして
+  // `last_*_backend_ready_` の初期値 (true) を使う = 旧 nav_server / panel 単独起動の後方互換。
+  // 受信後は MANUAL_BY_TOPIC liveliness で得た `*_alive_` flag と AND し、bridge 死亡時に
+  // 自動 disable する。
+  const bool nav_ready = nav_backend_status_received_
+    ? (last_navigation_backend_ready_ && nav_backend_alive_)
+    : last_navigation_backend_ready_;
+  const bool loc_ready = localization_backend_status_received_
+    ? (last_localization_backend_ready_ && localization_backend_alive_)
+    : last_localization_backend_ready_;
+  ui_->LocalizationButton->setEnabled(loc_ready);
+  ui_->RunGoalButton->setEnabled(nav_ready);
+  ui_->RunRouteButton->setEnabled(nav_ready);
+  ui_->PauseButton->setEnabled(nav_ready);
+  ui_->ResumeButton->setEnabled(nav_ready);
+  ui_->StopButton->setEnabled(nav_ready);
+  ui_->MapComboBox->setEnabled(nav_ready);
 }
 
 void MapoiPanel::PublishHighlightPois()

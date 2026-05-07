@@ -98,10 +98,13 @@ protected:
   // backend_status 不在 (旧 nav_server / editor 構成) では callback が呼ばれず、初期値
   // (true = enable) のままで後方互換を保つ。Minimal contract なので per-capability gate は持たない。
   bool last_navigation_backend_ready_ {true};
-  // 一度でも navigation backend_status を受信したか。staleness 検出 (#209 review) は受信実績
-  // ありの publisher の死亡だけを「unavailable」に倒すために使う。受信実績なし = contract 未実装
-  // 構成 (旧 nav_server / editor) なので enable のままにする。
+  // 一度でも navigation backend_status を受信したか。受信実績なし = contract 未実装の旧 nav_server
+  // / editor 構成として enable のまま (後方互換)。受信実績ありの publisher が liveliness lost
+  // (= bridge 死亡) した場合のみ disable に倒す。
   bool nav_backend_status_received_ {false};
+  // MANUAL_BY_TOPIC liveliness (#208) で publisher 生存を track。subscription event_callback
+  // が `alive_count > 0` で更新する。`*_received_` と AND して、未受信は alive 判定をバイパス。
+  bool nav_backend_alive_ {false};
 
   // Localization backend readiness subscribe (#209): mapoi_amcl_localization_bridge (or any
   // custom localization bridge) が publish する readiness で LocalizationButton を gate する。
@@ -113,15 +116,9 @@ protected:
     mapoi_interfaces::msg::LocalizationBackendStatus::SharedPtr msg);
   bool last_localization_backend_ready_ {true};
   bool localization_backend_status_received_ {false};
+  bool localization_backend_alive_ {false};
 
-  // bridge プロセスが死亡しても transient_local の cache は古い値を保持し続けるため、
-  // 1Hz polling で publisher 数を確認して staleness を検出する (#209 review、#208 軽量代替)。
-  // 「一度でも受信した topic の publisher が消えた」場合だけ ready=false に倒し、未受信 (= 契約未実装)
-  // は触らない (enable のまま) 方針。
-  rclcpp::TimerBase::SharedPtr backend_staleness_timer_;
-  void BackendStalenessTick();
-
-  // navigation_ready / localization_ready の最新値を保持し、両 callback と staleness timer で
+  // navigation_ready / localization_ready の最新値を保持し、両 callback / liveliness event から
   // 共通の UpdateNavButtonsEnabled を呼び出す。LocalizationButton は localization、それ以外の
   // navigation 操作 UI は navigation で gate する (#209 で 2 軸に分離)。
   void UpdateNavButtonsEnabled();

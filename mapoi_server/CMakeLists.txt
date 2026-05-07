@@ -75,6 +75,7 @@ install(
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  find_package(ament_cmake_pytest REQUIRED)
   find_package(launch_testing_ament_cmake REQUIRED)
 
   # Level 1: gtest unit tests
@@ -119,6 +120,12 @@ if(BUILD_TESTING)
   )
   add_launch_test(
     test/test_localization_backend_status_no_amcl.py
+  )
+
+  # Level 3: pytest contract test (#208). In-process pub/sub なので launch_testing 不要。
+  ament_add_pytest_test(test_backend_status_liveliness
+    test/test_backend_status_liveliness.py
+    TIMEOUT 30
   )
 
   # Install test config
