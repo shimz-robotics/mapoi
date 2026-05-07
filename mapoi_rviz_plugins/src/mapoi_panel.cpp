@@ -69,7 +69,12 @@ void MapoiPanel::onInitialize()
   // による別 topic 対応を一元化するため、panel と WebUI で同じ flow に揃える。
   mapoi_initialpose_poi_pub_ = node_->create_publisher<mapoi_interfaces::msg::InitialPoseRequest>(
     "mapoi/initialpose_poi", rclcpp::QoS(1).transient_local());
-  nav2_goal_pose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseStamped>("goal_pose", 1);
+  // RunGoalButton は Nav2 native `goal_pose` を直接叩かず、`mapoi/nav/goal_pose_poi` 経由で
+  // navigation bridge に POI 名を渡す (#209 review #3)。bridge 側で POI resolve / Nav2 action
+  // / `mapoi/nav/status` 配信を一元化することで、custom navigation bridge / pause / cancel /
+  // resume の状態管理が WebUI と一貫する。
+  mapoi_goal_pose_poi_pub_ = node_->create_publisher<std_msgs::msg::String>(
+    "mapoi/nav/goal_pose_poi", 1);
 
   mapoi_cancel_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi/nav/cancel", 1);
   mapoi_switch_map_pub_ = node_->create_publisher<std_msgs::msg::String>("mapoi/nav/switch_map", 1);
@@ -207,17 +212,18 @@ void MapoiPanel::RunGoalButton()
   if (goal_combobox_ind_ < 0 || goal_combobox_ind_ >= static_cast<int>(pois_.size())) {
     return;
   }
-  geometry_msgs::msg::PoseStamped msg_goal;
-  msg_goal.header.stamp = rclcpp::Clock().now();
-  msg_goal.header.frame_id = "map";
-  msg_goal.pose = pois_[goal_combobox_ind_].pose;
-  nav2_goal_pose_pub_->publish(msg_goal);
+  // Nav2 native `goal_pose` を直接叩かず、`mapoi/nav/goal_pose_poi` 経由で bridge に POI 名を
+  // 渡す (#209 review #3)。bridge が POI resolve → Nav2 action 起動 → `mapoi/nav/status` 配信を
+  // 担当するので、status / cancel / pause / resume の状態管理が WebUI と一貫する。
+  std_msgs::msg::String msg;
+  msg.data = pois_[goal_combobox_ind_].name;
+  mapoi_goal_pose_poi_pub_->publish(msg);
 
   current_nav_mode_ = "goal";
-  current_nav_target_ = pois_[goal_combobox_ind_].name;
+  current_nav_target_ = msg.data;
   ui_->NavStatusLabel->setText(
       QString::fromStdString("目的地走行中: " + current_nav_target_));
-  RCLCPP_INFO(LOGGER, "A goal pose was set: %s", current_nav_target_.c_str());
+  RCLCPP_INFO(LOGGER, "Published goal POI request: %s", current_nav_target_.c_str());
 }
 
 void MapoiPanel::RunRouteButton()

@@ -6,7 +6,6 @@
 
 #include <rviz_common/panel.hpp>
 #include <rviz_common/display_context.hpp>
-#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/pose.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/int8.hpp>
@@ -70,7 +69,10 @@ protected:
   // {map_name, poi_name} を publish し、`mapoi_amcl_localization_bridge` (or 自作 bridge) が
   // POI resolve / `/initialpose` 配信 / retry を担当する (#209)。直接 `/initialpose` には publish しない。
   rclcpp::Publisher<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr mapoi_initialpose_poi_pub_;
-  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr nav2_goal_pose_pub_;
+  // mapoi/nav/goal_pose_poi (std_msgs/String) publisher: RunGoalButton クリック時に POI 名を
+  // publish し、navigation bridge (mapoi_nav_server / 自作 bridge) が POI resolve / Nav2 action
+  // 起動 / status 配信を担当する (#209 review #3)。直接 `goal_pose` には publish しない。
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr mapoi_goal_pose_poi_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr mapoi_cancel_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr mapoi_switch_map_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr mapoi_pause_pub_;
