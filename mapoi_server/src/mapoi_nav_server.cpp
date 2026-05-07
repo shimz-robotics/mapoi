@@ -1239,10 +1239,12 @@ int main(int argc, char ** argv)
   rclcpp::init(argc, argv);
   auto node = std::make_shared<MapoiNavServer>();
   // MultiThreadedExecutor で spin (#213): backend_status timer の Reentrant callback_group が
-  // 別 thread で動くようにする。default thread 数は std::thread::hardware_concurrency() で、
-  // backend_status timer (Reentrant) と他 callback (default MutuallyExclusive) が独立 thread で
-  // 動けば十分なので明示的に絞る必要はない。
-  rclcpp::executors::MultiThreadedExecutor exec;
+  // 別 thread で動くようにする。thread 数は明示的に 2 を指定する: default の
+  // `std::thread::hardware_concurrency()` は Docker CPU 制限環境などで 1/0 を返し得るため、
+  // 1 thread に縮退すると本 PR の修正 (blocking 中も timer を回す) が成立しない (#214 codex
+  // review medium)。backend_status timer (Reentrant) + 他 callback (default MutuallyExclusive)
+  // で独立 thread が 2 本あれば足りるので、上限を絞ることでリソースも節約できる。
+  rclcpp::executors::MultiThreadedExecutor exec(rclcpp::ExecutorOptions(), 2);
   exec.add_node(node);
   exec.spin();
   rclcpp::shutdown();
