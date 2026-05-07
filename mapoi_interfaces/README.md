@@ -40,6 +40,34 @@ POI tolerance.xy 半径への侵入・退出 / 停止 / 再開イベントを表
 | `poi` | `mapoi_interfaces/PointOfInterest` | 対象 POI の情報 |
 | `stamp` | `builtin_interfaces/Time` | イベント発生時刻 |
 
+### NavigationBackendStatus.msg
+
+Navigation bridge (Nav2 bridge / 自前 bridge) が 1 Hz で `mapoi/nav/backend_status` に publish する readiness メッセージです。UI 側 (`mapoi_webui`, `mapoi_rviz_plugins`) は `backend_ready` を見て navigation 操作を gate します。
+
+| フィールド | 型 | 説明 |
+| --- | --- | --- |
+| `backend_type` | `string` | bridge 識別子 (例: `nav2`, `custom_lidar_planner`)。tooltip 表示用 |
+| `backend_ready` | `bool` | bridge が navigation コマンドを受け付け実行できる状態か |
+| `reason` | `string` | `backend_ready=false` 時の human-readable 理由 (任意) |
+
+#### QoS contract (issue #208)
+
+publisher / subscriber 双方で以下を必ず指定:
+
+- `durability`: `TRANSIENT_LOCAL` (late-joiner UI が最新 status を受信できる)
+- `reliability`: `RELIABLE`
+- `liveliness` (publisher): `MANUAL_BY_TOPIC` (publish() ごとに liveliness assert)
+- `liveliness` (subscriber): `AUTOMATIC` (pub `MANUAL_BY_TOPIC` × sub `AUTOMATIC` のみ互換)
+- `liveliness_lease_duration`: 5 s (両側、`pub.lease <= sub.lease` を満たす)
+
+詳細・違反パターンは `msg/NavigationBackendStatus.msg` の冒頭コメント参照。
+
+#### Custom bridge 実装者向けガイダンス (issue #207)
+
+`backend_ready` の算出は bridge ごとに「実際に expose する capability の AND」とすること。`mapoi_nav_server` (Nav2 bridge) の `goal_ready && route_ready && switch_map_ready` は **3 capability 全部を expose する bridge にのみ正しい**。片機能 bridge (例: NavigateToPose のみ) でこれを真似ると、expose していない capability が常に false → `backend_ready` も常に false → UI が常に "Navigation unavailable" になる。
+
+具体例とフィールド populate 方針 (`reason` の慣習表記含む) は `msg/NavigationBackendStatus.msg` の冒頭コメントに記載。
+
 ## サービス (srv)
 
 ### SelectMap.srv

@@ -728,6 +728,10 @@ void MapoiNavServer::publish_backend_status()
   // backend_ready の AND に `select_map` service を含めるのは README contract が「map switch
   // を含む」と書いていることと整合させるため (#205 round 3 review high)。bridge 単独起動で
   // mapoi_server が居ない構成では `backend_ready=false` になるが、これは妥当な挙動。
+  // この AND は Nav2 bridge が `goal` / `route` / `switch_map` の 3 capability 全部を expose
+  // する前提に閉じた算出 (#207)。custom bridge は自前で expose する capability だけを AND
+  // すること (例: goal-only bridge なら `backend_ready = goal_ready`)。詳細は
+  // `mapoi_interfaces/msg/NavigationBackendStatus.msg` 冒頭コメント参照。
   const bool goal_ready =
     nav_to_pose_client_ && nav_to_pose_client_->action_server_is_ready();
   const bool route_ready =
