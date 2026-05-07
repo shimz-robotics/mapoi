@@ -150,8 +150,9 @@ private:
   // 検知できなかった #198 の課題に対応)。
   rclcpp::Publisher<mapoi_interfaces::msg::NavigationBackendStatus>::SharedPtr backend_status_pub_;
   rclcpp::TimerBase::SharedPtr backend_status_timer_;
-  // Reentrant callback_group + MultiThreadedExecutor で backend_status timer を blocking
-  // 呼び出しと独立 thread で動かすための group (#213)。
+  // 独立 MutuallyExclusive callback_group + MultiThreadedExecutor で backend_status timer を
+  // 他 callback と独立 thread で動かすための group (#213)。Reentrant ではなく独立
+  // MutuallyExclusive を選ぶ理由は cpp 側コメント参照 (#214 cursor review medium)。
   rclcpp::CallbackGroup::SharedPtr backend_status_callback_group_;
   void publish_backend_status();
 

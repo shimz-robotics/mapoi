@@ -63,15 +63,19 @@ MapoiNavServer::MapoiNavServer(const rclcpp::NodeOptions & options)
       .transient_local()
       .liveliness(rclcpp::LivelinessPolicy::ManualByTopic)
       .liveliness_lease_duration(5s));
-  // Reentrant callback_group + MultiThreadedExecutor (main) で backend_status timer を他
-  // callback と独立 thread で動かす (#213)。`select_map_callback` 内の `wait_for_service(10s)` /
-  // `spin_until_future_complete` で main thread が最大 ~11s blocking する間も 1Hz publish が
-  // 継続するため、5s lease を超える false-positive lost が発火しなくなる。Reentrant は同 group
-  // 内 callback の concurrent 実行を許すが、`publish_backend_status` は read-only な
-  // `*_is_ready()` checks + thread-safe な `Publisher::publish()` のみで member 書き込みなしの
-  // ため safe (他 callback は default MutuallyExclusive group のまま、これまで通り serialize)。
+  // 独立 MutuallyExclusive callback_group + MultiThreadedExecutor (main) で backend_status
+  // timer を他 callback と独立 thread で動かす (#213)。`select_map_callback` 内の
+  // `wait_for_service(10s)` / `spin_until_future_complete` で default group の thread が最大
+  // ~11s blocking する間も 1Hz publish が継続するため、5s lease を超える false-positive
+  // lost が発火しなくなる。Reentrant ではなく独立 MutuallyExclusive にする理由 (#214 cursor
+  // review medium): backend_status timer は callback が単一 (`publish_backend_status` のみ)
+  // で、必要なのは「default group の thread と並列に動く」こと。Reentrant は同一 callback の
+  // self-overlap を許す性質で、将来 callback が長時間化した時の race risk を生む。MutuallyExclusive
+  // 独立 group なら他 callback と並列実行されつつ self-overlap は起きない。`publish_backend_status`
+  // は read-only な `*_is_ready()` checks + thread-safe な `Publisher::publish()` のみで member
+  // 書き込みなしのため、他 callback (default group で serialize) との data race も無い。
   backend_status_callback_group_ = this->create_callback_group(
-    rclcpp::CallbackGroupType::Reentrant);
+    rclcpp::CallbackGroupType::MutuallyExclusive);
   backend_status_timer_ = this->create_wall_timer(
     1s, std::bind(&MapoiNavServer::publish_backend_status, this),
     backend_status_callback_group_);
