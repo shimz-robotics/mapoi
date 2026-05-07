@@ -64,7 +64,8 @@ BACKEND_STATUS_FUNCTIONS = (
 # (関数本体の生 source ではなく、抽出した string literal token のみ走査)。
 _OCTET = r'(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)'
 FORBIDDEN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ('absolute path', re.compile(r'(?:^|[\s\'"`(])(/(?:home|etc|usr|var|opt|root)/)')),
+    ('absolute path', re.compile(
+        r'(?:^|[\s\'"`(])(/(?:home|etc|usr|var|opt|root|tmp|srv|mnt|media)/)')),
     ('IP literal', re.compile(rf'\b{_OCTET}(?:\.{_OCTET}){{3}}\b')),
     ('credential keyword', re.compile(r'\b(?:password|secret|credential|api[_-]?key|token)\b', re.IGNORECASE)),
     ('internal hostname', re.compile(r'\b[a-z][a-z0-9-]*\.(?:local|lan|internal|corp)\b', re.IGNORECASE)),
@@ -100,9 +101,12 @@ def parse_cmake_inventory() -> dict[str, list[str]]:
             f'{INTERFACES_CMAKELISTS.relative_to(REPO_ROOT)}'
         )
     block = text[head.start():i]
+    # CMake のコメント (`#` 行末まで) を除去。コメントアウトされた `# "msg/Old.msg"`
+    # を inventory に拾い、偽の README 節欠落を出すのを防ぐ。
+    block_no_comments = re.sub(r'#[^\n]*', '', block)
     inventory: dict[str, list[str]] = {'msg': [], 'srv': []}
     # "msg/Foo.msg" / "srv/Bar.srv" のみ抽出 (DEPENDENCIES 等は無視)。
-    for kind, name in re.findall(r'"(msg|srv)/([A-Za-z0-9_]+)\.(?:msg|srv)"', block):
+    for kind, name in re.findall(r'"(msg|srv)/([A-Za-z0-9_]+)\.(?:msg|srv)"', block_no_comments):
         inventory[kind].append(name)
     return inventory
 
@@ -396,25 +400,25 @@ def check_reason_redaction(targets: list[Path]) -> list[str]:
     を抽出し、FORBIDDEN_PATTERNS のいずれかにマッチしたら fail。
 
     関数 overload / 多重定義は全件走査する。raw string literal (`R"(...)"` /
-    `R"delim(...)delim"`) を含む関数は現実装の simple scanner で誤抽出するため、
-    検出時はその関数本体を skip し、代わりに警告として issue を返す
-    (誤抽出より「lint が効いていないことを露わにする」方が安全側)。
+    `R"delim(...)delim"`) を含むファイルは ``_strip_cpp_comments`` /
+    ``extract_function_bodies`` の brace counting が破綻しうるため、ファイル
+    全体を skip して警告 issue を出す (= 誤抽出して「lint OK」を出すより、
+    lint が効いていない事実を露わにする方が安全側)。
     """
     issues: list[str] = []
     cpp_targets = [p for p in targets if p.suffix in ('.cpp', '.hpp')]
     raw_string_pattern = re.compile(r'\bR"[^(]*\(')
     for path in cpp_targets:
         text = path.read_text(errors='replace')
+        if raw_string_pattern.search(text):
+            issues.append(
+                f'{path.relative_to(REPO_ROOT)}: ファイルに raw string literal '
+                f'(`R"(...)"`) を検出 — redaction lint は raw string 非対応のため '
+                f'scope 外。通常の `"..."` literal で書き直すか、follow-up issue 化を検討'
+            )
+            continue
         for func_name in BACKEND_STATUS_FUNCTIONS:
             for body_lineno, body in extract_function_bodies(text, func_name):
-                if raw_string_pattern.search(body):
-                    issues.append(
-                        f'{path.relative_to(REPO_ROOT)}:{body_lineno}: '
-                        f'`{func_name}` body に raw string literal を検出 — '
-                        f'redaction lint は raw string 非対応のため scope 外。'
-                        f'通常の `"..."` literal で書き直すか、follow-up issue 化を検討'
-                    )
-                    continue
                 literals = extract_reason_string_literals(body)
                 for lineno_in_body, literal in literals:
                     abs_lineno = body_lineno + lineno_in_body - 1
