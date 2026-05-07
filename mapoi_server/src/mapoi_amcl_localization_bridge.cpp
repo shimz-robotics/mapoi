@@ -45,14 +45,14 @@ MapoiAmclLocalizationBridge::MapoiAmclLocalizationBridge(
   // event-driven ではなく polling で publish する。1Hz は WebUI 表示の応答性として十分
   // (Navigation 側 #198 と同じ割り切り)。
   // QoS は LocalizationBackendStatus.msg の contract に従う (#208):
-  // transient_local + MANUAL_BY_TOPIC liveliness + 3s lease。各 publish() が assert を兼ねる
-  // ので 1Hz timer が止まれば 3s 後に subscriber 側 Liveliness Changed event が発火する。
+  // transient_local + MANUAL_BY_TOPIC liveliness + 5s lease。各 publish() が assert を兼ねる
+  // ので 1Hz timer が止まれば 5s 後に subscriber 側 Liveliness Changed event が発火する。
   backend_status_pub_ = this->create_publisher<mapoi_interfaces::msg::LocalizationBackendStatus>(
     "mapoi/localization/backend_status",
     rclcpp::QoS(1)
       .transient_local()
       .liveliness(rclcpp::LivelinessPolicy::ManualByTopic)
-      .liveliness_lease_duration(3s));
+      .liveliness_lease_duration(5s));
   backend_status_timer_ = this->create_wall_timer(
     1s, std::bind(&MapoiAmclLocalizationBridge::publish_backend_status, this));
 

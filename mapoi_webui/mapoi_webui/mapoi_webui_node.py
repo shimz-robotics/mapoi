@@ -183,14 +183,17 @@ class MapoiWebNode(Node):
             String, 'mapoi/nav/status', self.nav_status_callback, nav_status_qos)
 
         # Navigation / Localization backend readiness (#198 / #209) の QoS は msg contract
-        # (#208) に従う: transient_local + MANUAL_BY_TOPIC liveliness + 3s lease。
-        # subscriber は Liveliness Changed event で publisher 死亡を検知し、stale な
-        # transient_local cache (`backend_ready=true` のまま固まる) を防ぐ。
+        # (#208) に従う: transient_local + MANUAL_BY_TOPIC liveliness (publisher 側) + 3s lease。
+        # subscriber 側は AUTOMATIC で受ける (#212 codex review medium): pub=AUTOMATIC × sub=
+        # MANUAL_BY_TOPIC は QoS compatibility 表で incompatible (publisher が旧 contract の
+        # AUTOMATIC のまま動いている場合に接続できなくなる回帰)。pub=MANUAL_BY_TOPIC × sub=
+        # AUTOMATIC は compatible で、subscriber 側で Liveliness Changed event を同様に
+        # 受け取れる (alive_count の遷移は publisher 側 policy で決まる)。
         backend_status_qos = QoSProfile(
             depth=1,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            liveliness=LivelinessPolicy.MANUAL_BY_TOPIC,
-            liveliness_lease_duration=Duration(seconds=3),
+            liveliness=LivelinessPolicy.AUTOMATIC,
+            liveliness_lease_duration=Duration(seconds=5),
         )
 
         # Navigation backend readiness (#198): mapoi_nav_server が 1Hz で publish する
@@ -282,15 +285,40 @@ class MapoiWebNode(Node):
     def _nav_backend_liveliness_callback(self, event):
         """Track navigation backend publisher liveness (#208).
 
-        MANUAL_BY_TOPIC + 3s lease で、bridge が 1Hz publish を止めると lease 経過後に
-        `alive_count` が 0 へ遷移する。`get_navigation_capabilities` がこの flag を見て
-        latched cache を None 扱いに落とす。
+        MANUAL_BY_TOPIC publisher + lease 経過で `alive_count` が 0 へ遷移する。
+        `_resolve_backend_status_for_ui` がこの flag を見て、受信済み cache を
+        explicit unready (`backend_ready=false`) にデコレートする。
         """
         self.nav_backend_alive_ = event.alive_count > 0
 
     def _localization_backend_liveliness_callback(self, event):
         """Track localization backend publisher liveness (#208). Same semantics as nav."""
         self.localization_backend_alive_ = event.alive_count > 0
+
+    @staticmethod
+    def _resolve_backend_status_for_ui(cached, alive):
+        """Combine cached backend_status payload with liveliness flag for UI gating (#208).
+
+        三状態を区別する:
+
+        - cached is None (未受信)              → return None
+            * `get_navigation_capabilities` 側で legacy fallback path に流れる
+              (旧 publisher / bridge 不在の後方互換)
+        - cached is not None and alive=True   → return cached (latched payload そのまま)
+        - cached is not None and alive=False  → return {**cached, backend_ready: False}
+            * publisher が一度 alive 後に lost した状態 (lease 経過 / process kill)。
+              legacy fallback ではなく explicit unready として返し、UI を確実に disable
+              させる (#212 codex review high)。
+        """
+        if cached is None:
+            return None
+        if alive:
+            return cached
+        return {
+            **cached,
+            'backend_ready': False,
+            'reason': 'liveliness lost (publisher not active)',
+        }
 
     def update_robot_pose(self):
         """Lookup TF map->base_link and cache robot pose."""
@@ -447,12 +475,17 @@ class MapoiWebNode(Node):
 
         # bridge プロセスが死亡しても transient_local の cache (self.backend_status_ /
         # self.localization_status_) は subscriber callback が呼ばれない限り古い値を持ち続ける。
-        # MANUAL_BY_TOPIC liveliness + 3s lease (#208) を使い、`*_backend_alive_` flag を
-        # subscription event で更新して staleness を検出する。受信前 (`*_status_ is None`) は
-        # legacy fallback path に流す (旧 nav_server / bridge 不在の後方互換)。
-        backend = self.backend_status_ if self.nav_backend_alive_ else None
-        localization = (
-            self.localization_status_ if self.localization_backend_alive_ else None)
+        # liveliness QoS (#208) で取得した `*_backend_alive_` flag を `_resolve_backend_status_for_ui`
+        # で反映する。
+        # - 未受信: backend = None → legacy fallback (旧 nav_server / bridge 不在の後方互換)
+        # - 受信済み + alive: cache をそのまま使う
+        # - 受信済み + lost: backend_ready=false に上書きした dict を返す → UI 確実 disable
+        #   (#212 codex review high: legacy fallback path に落とすと command subscriber が残った
+        #    状態で false-enable になる回帰)
+        backend = self._resolve_backend_status_for_ui(
+            self.backend_status_, self.nav_backend_alive_)
+        localization = self._resolve_backend_status_for_ui(
+            self.localization_status_, self.localization_backend_alive_)
 
         if backend is not None:
             navigation_available = bool(backend['backend_ready'])

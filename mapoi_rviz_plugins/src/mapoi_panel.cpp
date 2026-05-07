@@ -94,14 +94,17 @@ void MapoiPanel::onInitialize()
       std::bind(&MapoiPanel::NavStatusCallback, this, std::placeholders::_1));
 
   // Navigation / Localization backend readiness (#198, #209) の QoS は msg contract (#208)
-  // に従う: transient_local + MANUAL_BY_TOPIC liveliness + 3s lease。subscription
-  // event_callbacks.liveliness_callback で publisher 生存を track し、bridge 死亡時に
-  // staleness を反映する。受信前 (古い nav_server / panel 単独起動) は alive 判定をバイパス
-  // して全 enable のまま (`*_status_received_` flag を AND することで実現)。
+  // に従う: publisher 側は transient_local + MANUAL_BY_TOPIC liveliness (publish が assert を
+  // 兼ねる) + 3s lease。subscriber 側は AUTOMATIC で受ける (#212 codex review medium):
+  // pub=AUTOMATIC × sub=MANUAL_BY_TOPIC は QoS compatibility 表で incompatible (旧 publisher
+  // との接続性が壊れる回帰)。pub=MANUAL_BY_TOPIC × sub=AUTOMATIC は compatible で、subscription
+  // event_callbacks.liveliness_callback で publisher 生存を track できる。受信前 (古い
+  // nav_server / panel 単独起動) は alive 判定をバイパスして全 enable のまま
+  // (`*_status_received_` flag を AND することで実現)。
   const auto backend_status_qos = rclcpp::QoS(1)
     .transient_local()
-    .liveliness(rclcpp::LivelinessPolicy::ManualByTopic)
-    .liveliness_lease_duration(std::chrono::seconds(3));
+    .liveliness(rclcpp::LivelinessPolicy::Automatic)
+    .liveliness_lease_duration(std::chrono::seconds(5));
 
   rclcpp::SubscriptionOptions nav_sub_opts;
   nav_sub_opts.event_callbacks.liveliness_callback =

@@ -30,19 +30,30 @@ except ImportError:  # Humble fallback
 from mapoi_interfaces.msg import LocalizationBackendStatus, NavigationBackendStatus
 
 
-def _make_qos():
+def _make_pub_qos():
+    """Publisher 側 QoS: MANUAL_BY_TOPIC + 5s lease (msg contract、#208)."""
     return QoSProfile(
         depth=1,
         durability=DurabilityPolicy.TRANSIENT_LOCAL,
         liveliness=LivelinessPolicy.MANUAL_BY_TOPIC,
-        liveliness_lease_duration=Duration(seconds=3),
+        liveliness_lease_duration=Duration(seconds=5),
+    )
+
+
+def _make_sub_qos():
+    """Subscriber 側 QoS: AUTOMATIC + 5s lease (旧 publisher 互換、#212 codex review)."""
+    return QoSProfile(
+        depth=1,
+        durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        liveliness=LivelinessPolicy.AUTOMATIC,
+        liveliness_lease_duration=Duration(seconds=5),
     )
 
 
 class TestBackendStatusLiveliness(unittest.TestCase):
-    """MANUAL_BY_TOPIC liveliness + 3s lease の contract を pin する (#208)."""
+    """MANUAL_BY_TOPIC publisher + AUTOMATIC subscriber + 5s lease を pin する (#208)."""
 
-    LEASE_PLUS_MARGIN_SEC = 6.0
+    LEASE_PLUS_MARGIN_SEC = 8.0
 
     @classmethod
     def setUpClass(cls):
@@ -58,18 +69,19 @@ class TestBackendStatusLiveliness(unittest.TestCase):
             rclpy.spin_once(sub_node, timeout_sec=0.1)
 
     def _run_liveliness_lease_test(self, msg_type, topic_name):
-        qos = _make_qos()
+        sub_qos = _make_sub_qos()
+        pub_qos = _make_pub_qos()
         events = []
 
         sub_node = rclpy.create_node(f'liveliness_sub_{topic_name.replace("/", "_")}')
         sub_node.create_subscription(
-            msg_type, topic_name, lambda msg: None, qos,
+            msg_type, topic_name, lambda msg: None, sub_qos,
             event_callbacks=SubscriptionEventCallbacks(
                 liveliness=lambda event: events.append(
                     (event.alive_count, event.not_alive_count))))
 
         pub_node = rclpy.create_node(f'liveliness_pub_{topic_name.replace("/", "_")}')
-        pub = pub_node.create_publisher(msg_type, topic_name, qos)
+        pub = pub_node.create_publisher(msg_type, topic_name, pub_qos)
 
         # publish 1 件 → publisher discover + lease 起動
         msg = msg_type()
@@ -87,7 +99,7 @@ class TestBackendStatusLiveliness(unittest.TestCase):
 
         events_after_alive = len(events)
 
-        # publish を止めて lease (3s) 経過を待つ。pub_node は生かしたままなので
+        # publish を止めて lease (5s) 経過を待つ。pub_node は生かしたままなので
         # 「publisher process は生きているが 1Hz publish が止まった」状態を再現する
         # (= bridge で 1Hz timer が止まったケースの模倣、これが #208 の本質)。
         self._spin_until(
