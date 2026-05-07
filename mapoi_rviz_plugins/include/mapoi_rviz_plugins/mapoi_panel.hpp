@@ -13,6 +13,7 @@
 #include <std_msgs/msg/int8.hpp>
 #include <std_msgs/msg/string.hpp>
 #include "mapoi_interfaces/msg/point_of_interest.hpp"
+#include "mapoi_interfaces/msg/navigation_backend_status.hpp"
 #include "mapoi_interfaces/srv/get_pois_info.hpp"
 #include "mapoi_interfaces/srv/get_maps_info.hpp"
 #include "mapoi_interfaces/srv/get_route_pois.hpp"
@@ -81,6 +82,15 @@ protected:
   void NavStatusCallback(std_msgs::msg::String::SharedPtr msg);
   std::string current_nav_mode_;
   std::string current_nav_target_;
+
+  // Navigation backend readiness subscribe (#198, #205 minimal contract):
+  // bridge が `mapoi/nav/backend_status` を publish する場合は backend_ready で navigation
+  // 操作ボタンと MapComboBox を一括 gate する。topic 不在 (古い nav_server) では「全 enable」の
+  // ままで後方互換を保つ。Minimal contract なので per-capability gate は持たない。
+  rclcpp::Subscription<mapoi_interfaces::msg::NavigationBackendStatus>::SharedPtr backend_status_sub_;
+  void BackendStatusCallback(mapoi_interfaces::msg::NavigationBackendStatus::SharedPtr msg);
+  void UpdateNavButtonsEnabled(bool backend_ready);
+  bool backend_status_received_ {false};
 
   void RequestSetCmdVelMode(std::string cm);
   void SetMapComboBox(std::string map_name);

@@ -15,7 +15,7 @@ from rclpy.qos import QoSProfile, DurabilityPolicy
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from mapoi_interfaces.srv import GetMapsInfo, GetTagDefinitions, SelectMap
-from mapoi_interfaces.msg import InitialPoseRequest
+from mapoi_interfaces.msg import InitialPoseRequest, NavigationBackendStatus
 import tf2_ros
 
 from flask import Flask, jsonify, request, send_from_directory, Response
@@ -176,6 +176,16 @@ class MapoiWebNode(Node):
         self.nav_status_sub_ = self.create_subscription(
             String, 'mapoi/nav/status', self.nav_status_callback, nav_status_qos)
 
+        # Navigation backend readiness (#198): mapoi_nav_server が 1Hz で publish する
+        # readiness summary。WebUI / panel はこの値で navigation 操作 UI を gate する。
+        # backend_status topic 不在の場合 (古い nav_server 等) は None のまま、command topic
+        # subscriber 数による旧判定にフォールバックする。
+        self.backend_status_ = None
+        backend_status_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.backend_status_sub_ = self.create_subscription(
+            NavigationBackendStatus, 'mapoi/nav/backend_status',
+            self.backend_status_callback, backend_status_qos)
+
         # Subscribe to mapoi/config_path for external map switches.
         # transient_local QoS で publisher (mapoi_server) の latched 値を受信する (#135)。
         config_path_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -211,6 +221,17 @@ class MapoiWebNode(Node):
         # so that succeeded/aborted/canceled still show the target name.
         if len(parts) > 1:
             self.nav_status_target_ = parts[1]
+
+    def backend_status_callback(self, msg):
+        """Cache the latest navigation backend readiness payload (#198, #205)."""
+        # Minimal contract (#205 review): backend_type / backend_ready / reason のみ。
+        # bridge 実装者の負担を減らすため per-capability フィールドは持たない。
+        # localization readiness は別 topic (#209) で扱う。
+        self.backend_status_ = {
+            'backend_type': msg.backend_type,
+            'backend_ready': bool(msg.backend_ready),
+            'reason': msg.reason,
+        }
 
     def update_robot_pose(self):
         """Lookup TF map->base_link and cache robot pose."""
@@ -327,7 +348,19 @@ class MapoiWebNode(Node):
         return True, None
 
     def get_navigation_capabilities(self):
-        """Return best-effort navigation backend availability from command subscribers."""
+        """Return navigation backend availability for the WebUI / API consumers.
+
+        Priority (#198):
+        1. mapoi/nav/backend_status topic 受信済 → backend_ready をそのまま使う。
+           Nav2 action / service の存在を含めた厳密 readiness。
+        2. backend_status 未受信 (古い nav_server や bridge 未実装) → command topic
+           subscriber 数による旧判定にフォールバック (= bridge 起動だけは検知できる)。
+
+        旧フィールド名 (navigation_available 等) は frontend 既存利用のため維持する。
+        Minimal contract に合わせて返す情報も backend_ready / topics 程度に絞る (#205 review)。
+        フォールバック path で `navigation_available` と操作ボタン enable の条件が完全一致しないのは
+        意図的な後方互換 — 新 nav_server に切り替われば backend_status path で整合する。
+        """
         publishers = {
             'switch_map': (self.switch_map_pub_, 'mapoi/nav/switch_map'),
             'goal': (self.goal_poi_pub_, 'mapoi/nav/goal_pose_poi'),
@@ -351,11 +384,25 @@ class MapoiWebNode(Node):
         command_keys = ('goal', 'route', 'cancel', 'pause', 'resume')
         command_available = any(topics[key]['available'] for key in command_keys)
         switch_map_available = topics['switch_map']['available']
+        legacy_available = switch_map_available or command_available
+
+        backend = self.backend_status_
+        if backend is not None:
+            navigation_available = bool(backend['backend_ready'])
+            # backend_status path では map switch も backend_ready の AND に含まれているため
+            # alias として同じ値を返す (#205 round 3 review high #2 後方互換)。
+            switch_map_available_final = navigation_available
+        else:
+            navigation_available = legacy_available
+            switch_map_available_final = switch_map_available
         return {
-            'navigation_available': switch_map_available or command_available,
-            'switch_map_available': switch_map_available,
+            'navigation_available': navigation_available,
+            # `switch_map_available` は backend_status 不在時のフォールバック表示用に維持。
+            # 旧 API 互換のため key を消さない (#205 round 3 review high #2)。
+            'switch_map_available': switch_map_available_final,
             'command_available': command_available,
             'topics': topics,
+            'backend_status': backend,
         }
 
     def _call_service_sync(self, client, request, service_name, timeout_sec=3.0,

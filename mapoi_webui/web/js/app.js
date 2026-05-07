@@ -483,9 +483,15 @@
   function updateNavControlsAvailability(navigation) {
     currentNavigationCapabilities = navigation || currentNavigationCapabilities;
     const capabilities = currentNavigationCapabilities || {};
+    const backendStatus = capabilities.backend_status || null;
     const commandAvailable = !!capabilities.command_available;
-    const switchMapAvailable = !!capabilities.switch_map_available;
     const navigationAvailable = !!capabilities.navigation_available;
+    // backend_status が届いている場合 (#198) は backend_ready をそのまま操作 enable に使う。
+    // Minimal contract (#205 review) なので per-capability gate は持たず、navigation 操作 UI 全体を
+    // 一括 gate する。後方互換: backend_status 不在は subscriber 数 (command_available) で代用。
+    const operationsEnabled = backendStatus
+      ? !!backendStatus.backend_ready
+      : commandAvailable;
     const navBody = document.getElementById('nav-body');
     if (navBody) {
       navBody.classList.toggle('navigation-unavailable-state', !navigationAvailable);
@@ -497,10 +503,20 @@
       navigationAvailabilityText.textContent = navigationAvailable
         ? 'Navigation connected'
         : 'Navigation unavailable';
-      const topics = capabilities.topics || {};
-      navigationAvailability.title = Object.values(topics)
-        .map((topic) => `${topic.topic}: ${topic.subscribers}`)
-        .join('\n');
+      const tooltipLines = [];
+      if (backendStatus) {
+        tooltipLines.push(`backend_type: ${backendStatus.backend_type || 'unknown'}`);
+        tooltipLines.push(`backend_ready: ${backendStatus.backend_ready}`);
+        if (backendStatus.reason) {
+          tooltipLines.push(`reason: ${backendStatus.reason}`);
+        }
+      } else {
+        const topics = capabilities.topics || {};
+        Object.values(topics).forEach((topic) => {
+          tooltipLines.push(`${topic.topic}: ${topic.subscribers}`);
+        });
+      }
+      navigationAvailability.title = tooltipLines.join('\n');
     }
 
     [
@@ -511,10 +527,12 @@
       document.getElementById('btn-nav-stop'),
       document.getElementById('btn-nav-setpose'),
     ].forEach((btn) => {
-      if (btn) btn.disabled = !commandAvailable;
+      if (btn) btn.disabled = !operationsEnabled;
     });
 
-    if (navigationMapSelect) navigationMapSelect.disabled = !switchMapAvailable;
+    // Operator map switch も bridge を経由するため backend_ready で gate する。
+    // Editor 側の map dropdown (header の Map:) は `/api/maps/select` で bridge 不問。
+    if (navigationMapSelect) navigationMapSelect.disabled = !operationsEnabled;
     refreshResponsiveLayout();
   }
 
@@ -559,6 +577,7 @@
     map_switching: 'Switching map',
     map_switch_succeeded: 'Map switched',
     map_switch_failed: 'Map switch failed',
+    backend_unavailable: 'Navigation backend unavailable',
   };
 
   function updateNavStatus(status, target) {
