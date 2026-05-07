@@ -91,14 +91,14 @@ protected:
 
   // Navigation backend readiness subscribe (#198, #205 minimal contract):
   // bridge が `mapoi/nav/backend_status` を publish する場合は backend_ready で navigation
-  // 操作ボタンと MapComboBox を一括 gate する。topic 不在 (古い nav bridge build (backend_status contract 未実装)) では「全 enable」の
+  // 操作ボタンと MapComboBox を一括 gate する。topic 不在 (旧 mapoi_nav_server build (#208 以前 backend_status contract 未実装、#204 で nav2_bridge へ rename)) では「全 enable」の
   // ままで後方互換を保つ。Minimal contract なので per-capability gate は持たない。
   rclcpp::Subscription<mapoi_interfaces::msg::NavigationBackendStatus>::SharedPtr backend_status_sub_;
   void BackendStatusCallback(mapoi_interfaces::msg::NavigationBackendStatus::SharedPtr msg);
   // backend_status 不在 (contract 未実装の bridge build / editor 構成) では callback が呼ばれず、初期値
   // (true = enable) のままで後方互換を保つ。Minimal contract なので per-capability gate は持たない。
   bool last_navigation_backend_ready_ {true};
-  // 一度でも navigation backend_status を受信したか。受信実績なし = contract 未実装の旧 bridge build
+  // 一度でも navigation backend_status を受信したか。受信実績なし = 旧 mapoi_nav_server build (#208 以前 contract 未実装、#204 で rename)
   // / editor 構成として enable のまま (後方互換)。受信実績ありの publisher が liveliness lost
   // (= bridge 死亡) した場合のみ disable に倒す。
   bool nav_backend_status_received_ {false};

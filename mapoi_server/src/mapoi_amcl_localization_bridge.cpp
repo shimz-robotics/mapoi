@@ -70,7 +70,7 @@ void MapoiAmclLocalizationBridge::initialpose_poi_callback(
       "Received empty initialpose POI name for map '%s'; skipping.", msg->map_name.c_str());
     return;
   }
-  // 注: map_name 世代検証は旧 nav bridge 実装 (rename 前 mapoi_nav_server 時代)と同じく行わない。理由は #149 round 10 のコメント
+  // 注: map_name 世代検証は旧 mapoi_nav_server 実装 (#204 で nav2_bridge へ rename)と同じく行わない。理由は #149 round 10 のコメント
   //   (current map と不一致なら無視) が、map switch 中に InitialPoseRequest が config_path より
   //   先に到着する正当ケースを「stale」と誤判定する regression を生むため。現状は publisher 上書き
   //   (transient_local depth=1) で stale を排除する想定。

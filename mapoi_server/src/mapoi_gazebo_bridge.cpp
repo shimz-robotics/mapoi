@@ -477,7 +477,8 @@ void MapoiGazeboBridge::publish_initialpose_after_respawn(double x, double y, do
   msg.pose.pose.position.z = 0.0;
   msg.pose.pose.orientation.z = std::sin(yaw / 2.0);
   msg.pose.pose.orientation.w = std::cos(yaw / 2.0);
-  // covariance は mapoi_nav2_bridge::publish_initial_pose と同じ default。
+  // covariance は mapoi_amcl_localization_bridge::publish_initial_pose と同じ default
+  // (#209 で AMCL adapter を旧 mapoi_nav_server から分離した時点で実装はそちら側に移動)。
   // 0.25 (m^2, x/y) と ~0.069 (rad^2, yaw、約 ±15deg) は AMCL の典型値。
   msg.pose.covariance[0] = 0.25;
   msg.pose.covariance[7] = 0.25;

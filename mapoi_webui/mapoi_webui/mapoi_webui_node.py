@@ -200,7 +200,7 @@ class MapoiWebNode(Node):
 
         # Navigation backend readiness (#198): mapoi_nav2_bridge が 1Hz で publish する
         # readiness summary。WebUI / panel はこの値で navigation 操作 UI を gate する。
-        # backend_status topic 不在の場合 (古い nav bridge build (backend_status contract 未実装) 等) は None のまま、command topic
+        # backend_status topic 不在の場合 (旧 mapoi_nav_server build (#208 以前 backend_status contract 未実装、#204 で nav2_bridge へ rename) 等) は None のまま、command topic
         # subscriber 数による旧判定にフォールバックする (`get_navigation_capabilities`)。
         self.backend_status_ = None
         # `nav_backend_alive_` は liveliness event_callback が更新する publisher 生存 flag。
@@ -442,7 +442,7 @@ class MapoiWebNode(Node):
         Priority (#198):
         1. mapoi/nav/backend_status topic 受信済 → backend_ready をそのまま使う。
            Nav2 action / service の存在を含めた厳密 readiness。
-        2. backend_status 未受信 (古い nav bridge build (backend_status contract 未実装) や bridge 未実装) → command topic
+        2. backend_status 未受信 (旧 mapoi_nav_server build (#208 以前 backend_status contract 未実装、#204 で nav2_bridge へ rename) や bridge 未実装) → command topic
            subscriber 数による旧判定にフォールバック (= bridge 起動だけは検知できる)。
 
         旧フィールド名 (navigation_available 等) は frontend 既存利用のため維持する。
@@ -479,7 +479,7 @@ class MapoiWebNode(Node):
         # self.localization_status_) は subscriber callback が呼ばれない限り古い値を持ち続ける。
         # liveliness QoS (#208) で取得した `*_backend_alive_` flag を `_resolve_backend_status_for_ui`
         # で反映する。
-        # - 未受信: backend = None → legacy fallback (contract 未実装の旧 bridge build / bridge 不在の後方互換)
+        # - 未受信: backend = None → legacy fallback (旧 mapoi_nav_server build (#208 以前 contract 未実装、#204 で rename) / bridge 不在の後方互換)
         # - 受信済み + alive: cache をそのまま使う
         # - 受信済み + lost: backend_ready=false に上書きした dict を返す → UI 確実 disable
         #   (#212 codex review high: legacy fallback path に落とすと command subscriber が残った
