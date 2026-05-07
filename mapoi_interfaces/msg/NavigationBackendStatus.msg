@@ -23,13 +23,15 @@
 #   liveliness_lease_duration: 5 s              (the QoS rule `pub.lease <= sub.lease` MUST hold;
 #                                                we enforce 5 s on both sides for simplicity)
 #
-# Contract violations are intentionally rejected by QoS incompatibility:
-#   - publisher with no liveliness QoS (= infinite lease) → connection refused by subscribers
-#     (sub.lease=5s < pub.lease=inf)
-#   - publisher with liveliness=AUTOMATIC → connection refused (pub policy < sub policy)
-# This means custom bridges MUST follow this contract to interoperate with mapoi UI consumers
-# (mapoi_webui, mapoi_rviz_plugins). See test_backend_status_liveliness.py for the
-# incompatibility tests that pin this behaviour.
+# Contract violations rejected by QoS incompatibility:
+#   - publisher with no liveliness QoS (= infinite lease) → connection refused by subscribers,
+#     because the QoS rule sub.lease (5 s) >= pub.lease (∞) cannot be satisfied.
+# Note: a publisher using `liveliness=AUTOMATIC` with lease <= 5 s is technically QoS-compatible
+# with our `AUTOMATIC` subscribers, but its staleness detection is weaker (Node-level liveness:
+# any publisher in the same node keeps the topic "alive"). Bridges SHOULD use MANUAL_BY_TOPIC
+# so that backend_status timer freeze is detected even when the node has other publishers.
+# See test_backend_status_liveliness.py for the incompatibility tests that pin the
+# infinite-lease rejection.
 #
 # UI gating: subscribers MUST treat a lost-liveliness state as `backend_ready=false`
 # regardless of the latched payload (see `_resolve_backend_status_for_ui` in mapoi_webui).

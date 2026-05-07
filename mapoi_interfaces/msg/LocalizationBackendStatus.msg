@@ -17,8 +17,8 @@
 #   reliability              : RELIABLE
 #   liveliness (publisher)   : MANUAL_BY_TOPIC
 #   liveliness (subscriber)  : AUTOMATIC
-#   liveliness_lease_duration: 5 s              (BOTH sides; contract violators are
-#                                                intentionally rejected via QoS incompatibility)
+#   liveliness_lease_duration: 5 s              (BOTH sides; publishers with infinite lease
+#                                                are rejected via QoS incompatibility)
 # Subscribers detect bridge death by handling the Liveliness Changed event
 # (alive_count transitions to 0). See NavigationBackendStatus.msg for the full
 # rationale, contract-violation behaviour, and the link to follow-up issue #213.

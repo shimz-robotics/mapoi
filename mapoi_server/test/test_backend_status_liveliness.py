@@ -45,7 +45,7 @@ def _make_pub_qos():
 
 
 def _make_sub_qos():
-    """Subscriber 側 QoS: AUTOMATIC + 5s lease (旧 publisher 互換、#212 codex review)."""
+    """Subscriber 側 QoS: AUTOMATIC + 5s lease (msg contract、new-contract-only)."""
     return QoSProfile(
         depth=1,
         durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -147,7 +147,9 @@ class TestBackendStatusLiveliness(unittest.TestCase):
         sub_node = rclpy.create_node(
             f'incompat_sub_{topic_name.replace("/", "_")}')
         sub_node.create_subscription(
-            msg_type, topic_name, lambda msg: messages.append(msg.data), sub_qos,
+            msg_type, topic_name,
+            lambda msg: messages.append(msg.backend_type),
+            sub_qos,
             event_callbacks=SubscriptionEventCallbacks(
                 incompatible_qos=lambda event: incompatible_events.append(
                     (event.total_count, event.last_policy_kind))))
