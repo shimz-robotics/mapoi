@@ -22,6 +22,11 @@
 #   when `backend_ready` is false, list missing capabilities joined by ", "
 #   prefixed with "not ready: " (see mapoi_nav_server::publish_backend_status
 #   for the canonical format).
+#   Privacy: `reason` is surfaced in the operator UI and may be logged by
+#   bag recorders or remote dashboards. Bridges MUST NOT include sensitive
+#   runtime info — credentials/tokens, absolute filesystem paths, internal
+#   hostnames/IPs, user identifiers, or stack traces. Stick to capability
+#   names and short status verbs (e.g. "not ready: navigate_to_pose action").
 #
 # Localization readiness (initial pose / AMCL etc.) is intentionally NOT
 # part of this contract; it will be exposed by a separate

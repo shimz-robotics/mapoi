@@ -48,7 +48,7 @@ Navigation bridge (Nav2 bridge / 自前 bridge) が 1 Hz で `mapoi/nav/backend_
 | --- | --- | --- |
 | `backend_type` | `string` | bridge 識別子 (例: `nav2`, `custom_lidar_planner`)。tooltip 表示用 |
 | `backend_ready` | `bool` | bridge が navigation コマンドを受け付け実行できる状態か |
-| `reason` | `string` | `backend_ready=false` 時の human-readable 理由 (任意) |
+| `reason` | `string` | `backend_ready=false` 時の human-readable 理由 (任意、機微情報は含めない — 下記参照) |
 
 #### QoS contract (issue #208)
 
@@ -67,6 +67,8 @@ publisher / subscriber 双方で以下を必ず指定:
 `backend_ready` の算出は bridge ごとに「実際に expose する capability の AND」とすること。`mapoi_nav_server` (Nav2 bridge) の `goal_ready && route_ready && switch_map_ready` は **3 capability 全部を expose する bridge にのみ正しい**。片機能 bridge (例: NavigateToPose のみ) でこれを真似ると、expose していない capability が常に false → `backend_ready` も常に false → UI が常に "Navigation unavailable" になる。
 
 具体例とフィールド populate 方針 (`reason` の慣習表記含む) は `msg/NavigationBackendStatus.msg` の冒頭コメントに記載。
+
+`reason` は operator UI に表示され bag や remote dashboard に記録され得るため、credentials / token / 絶対パス / 内部 hostname / IP / user identifier / stack trace 等の機微情報を含めないこと。capability 名と短い状態動詞 (例: `not ready: navigate_to_pose action`) に留める。
 
 ## サービス (srv)
 
