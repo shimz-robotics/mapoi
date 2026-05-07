@@ -62,9 +62,10 @@ BACKEND_STATUS_FUNCTIONS = (
 # 各 pattern は `(label, regex)` で、検出時は label を fail メッセージに出す。
 # false positive を避けるため、pattern は string literal 内のみに適用する
 # (関数本体の生 source ではなく、抽出した string literal token のみ走査)。
+_OCTET = r'(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)'
 FORBIDDEN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ('absolute path', re.compile(r'(?:^|[\s\'"`(])(/(?:home|etc|usr|var)/)')),
-    ('IP literal', re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b')),
+    ('absolute path', re.compile(r'(?:^|[\s\'"`(])(/(?:home|etc|usr|var|opt|root)/)')),
+    ('IP literal', re.compile(rf'\b{_OCTET}(?:\.{_OCTET}){{3}}\b')),
     ('credential keyword', re.compile(r'\b(?:password|secret|credential|api[_-]?key|token)\b', re.IGNORECASE)),
     ('internal hostname', re.compile(r'\b[a-z][a-z0-9-]*\.(?:local|lan|internal|corp)\b', re.IGNORECASE)),
 )
@@ -76,14 +77,29 @@ def parse_cmake_inventory() -> dict[str, list[str]]:
 
     返り値: ``{'msg': [...], 'srv': [...]}`` (basename のみ、拡張子なし)。
     """
-    text = INTERFACES_CMAKELISTS.read_text()
-    m = re.search(r'rosidl_generate_interfaces\s*\([^)]*?\)', text, re.DOTALL)
-    if not m:
+    text = INTERFACES_CMAKELISTS.read_text(errors='replace')
+    head = re.search(r'rosidl_generate_interfaces\s*\(', text)
+    if not head:
         raise SystemExit(
             f'ERROR: rosidl_generate_interfaces() block が見つかりません: '
             f'{INTERFACES_CMAKELISTS.relative_to(REPO_ROOT)}'
         )
-    block = m.group(0)
+    # `(` から対応する `)` まで括弧を数えて切り出す。`[^)]*?` の最短マッチでは
+    # nested 括弧があれば途中で閉じてしまうので、明示的にカウントする。
+    depth = 1
+    i = head.end()
+    while i < len(text) and depth > 0:
+        if text[i] == '(':
+            depth += 1
+        elif text[i] == ')':
+            depth -= 1
+        i += 1
+    if depth != 0:
+        raise SystemExit(
+            f'ERROR: rosidl_generate_interfaces() の対応 ) が見つかりません: '
+            f'{INTERFACES_CMAKELISTS.relative_to(REPO_ROOT)}'
+        )
+    block = text[head.start():i]
     inventory: dict[str, list[str]] = {'msg': [], 'srv': []}
     # "msg/Foo.msg" / "srv/Bar.srv" のみ抽出 (DEPENDENCIES 等は無視)。
     for kind, name in re.findall(r'"(msg|srv)/([A-Za-z0-9_]+)\.(?:msg|srv)"', block):
@@ -100,7 +116,7 @@ def check_readme_section_presence(inventory: dict[str, list[str]]) -> list[str]:
     if not INTERFACES_README.exists():
         return [f'{INTERFACES_README.relative_to(REPO_ROOT)} が存在しません']
 
-    readme_text = INTERFACES_README.read_text()
+    readme_text = INTERFACES_README.read_text(errors='replace')
     # `### Foo.msg` / `### Foo.srv` パターン
     found_sections: set[str] = set()
     for m in re.finditer(r'^###\s+([A-Za-z0-9_]+)\.(msg|srv)\s*$', readme_text, re.MULTILINE):
@@ -152,70 +168,179 @@ def collect_scan_targets() -> list[Path]:
 
 
 def check_cross_references(targets: list[Path]) -> list[str]:
-    """走査対象内の `mapoi_interfaces/(msg|srv)/X.(msg|srv)` 参照が実在するか確認する。"""
+    """走査対象内の `mapoi_interfaces/(msg|srv)/X.(msg|srv)` 参照が実在するか確認する。
+
+    `re.DOTALL` 相当のテキスト全体スキャンで、Markdown の折り返しや C++ の
+    複数行コメントで参照が分割表記されたケースにも追従する。
+    """
     issues: list[str] = []
     pattern = re.compile(r'mapoi_interfaces/(msg|srv)/([A-Za-z0-9_]+)\.(msg|srv)')
     for path in targets:
         text = path.read_text(errors='replace')
-        for lineno, line in enumerate(text.splitlines(), start=1):
-            for m in pattern.finditer(line):
-                kind, name, ext = m.group(1), m.group(2), m.group(3)
-                if kind != ext:
-                    issues.append(
-                        f'{path.relative_to(REPO_ROOT)}:{lineno}: '
-                        f'kind 不一致 ({kind}/{name}.{ext})'
-                    )
-                    continue
-                target = INTERFACES_PKG / kind / f'{name}.{ext}'
-                if not target.exists():
-                    issues.append(
-                        f'{path.relative_to(REPO_ROOT)}:{lineno}: '
-                        f'参照先不在 `{m.group(0)}` -> {target.relative_to(REPO_ROOT)}'
-                    )
+        for m in pattern.finditer(text):
+            kind, name, ext = m.group(1), m.group(2), m.group(3)
+            lineno = text.count('\n', 0, m.start()) + 1
+            if kind != ext:
+                issues.append(
+                    f'{path.relative_to(REPO_ROOT)}:{lineno}: '
+                    f'kind 不一致 ({kind}/{name}.{ext})'
+                )
+                continue
+            target = INTERFACES_PKG / kind / f'{name}.{ext}'
+            if not target.exists():
+                issues.append(
+                    f'{path.relative_to(REPO_ROOT)}:{lineno}: '
+                    f'参照先不在 `{m.group(0)}` -> {target.relative_to(REPO_ROOT)}'
+                )
     return issues
+
+
+def _strip_cpp_comments(text: str) -> str:
+    """C++ コメント (`// ...` / `/* ... */`) を空白に置換する。
+
+    string literal 内の `//` `/*` を誤って削らないよう、文字列状態を track する。
+    改行は保持する (行番号情報を残すため)。
+    """
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    in_string = False
+    in_char = False
+    in_line_comment = False
+    in_block_comment = False
+    escape = False
+    while i < n:
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < n else ''
+        if in_line_comment:
+            if ch == '\n':
+                in_line_comment = False
+                out.append(ch)
+            else:
+                out.append(' ')
+            i += 1
+            continue
+        if in_block_comment:
+            if ch == '*' and nxt == '/':
+                in_block_comment = False
+                out.extend(['  '])
+                i += 2
+                continue
+            out.append('\n' if ch == '\n' else ' ')
+            i += 1
+            continue
+        if in_string:
+            if escape:
+                escape = False
+                out.append(ch)
+            elif ch == '\\':
+                escape = True
+                out.append(ch)
+            elif ch == '"':
+                in_string = False
+                out.append(ch)
+            else:
+                out.append(ch)
+            i += 1
+            continue
+        if in_char:
+            if escape:
+                escape = False
+                out.append(ch)
+            elif ch == '\\':
+                escape = True
+                out.append(ch)
+            elif ch == "'":
+                in_char = False
+                out.append(ch)
+            else:
+                out.append(ch)
+            i += 1
+            continue
+        if ch == '/' and nxt == '/':
+            in_line_comment = True
+            out.extend(['  '])
+            i += 2
+            continue
+        if ch == '/' and nxt == '*':
+            in_block_comment = True
+            out.extend(['  '])
+            i += 2
+            continue
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "'":
+            in_char = True
+            out.append(ch)
+            i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return ''.join(out)
 
 
 def extract_function_body(text: str, func_name: str) -> tuple[int, str] | None:
     """C++ ソースから ``func_name`` の関数本体を抽出する。
 
     ``Foo::func_name`` / ``ReturnType func_name`` のいずれの定義形式にも対応する
-    ため、関数名 + 開き ``{`` の組を起点に対応 brace を数える。
+    ため、関数名 + 引数 list を経た後、宣言終端 ``;`` か関数本体開始 ``{`` の
+    どちらが先に出現するかを判定する。``)`` と ``{`` の間に ``const`` /
+    ``noexcept`` / ``-> ReturnType`` / 属性 / 改行 / コメントが挟まる定義に追従する。
+
+    実装: ``)`` から先頭非空白を見て ``;`` なら宣言なのでスキップ、それ以外なら
+    次の ``{`` を関数本体開始として扱う (= modifier 群を読み飛ばす)。コメントは
+    ``_strip_cpp_comments`` で先に除去してあるので modifier の同定が単純化される。
 
     返り値: ``(行番号 (開始 brace), 本体文字列)`` または None。
     """
-    # 関数定義の「名前」部分を見つける (引数 list を経て `)` の後の `{` まで)。
-    # 簡易: `func_name\s*\(` を探し、対応する `)` を見つけ、その後の最初の `{` から
-    # 対応 brace まで抽出する。
-    for name_match in re.finditer(rf'\b{re.escape(func_name)}\s*\(', text):
+    cleaned = _strip_cpp_comments(text)
+    n = len(cleaned)
+    for name_match in re.finditer(rf'\b{re.escape(func_name)}\s*\(', cleaned):
         start_paren = name_match.end() - 1
         depth = 1
         i = start_paren + 1
-        while i < len(text) and depth > 0:
-            if text[i] == '(':
+        while i < n and depth > 0:
+            if cleaned[i] == '(':
                 depth += 1
-            elif text[i] == ')':
+            elif cleaned[i] == ')':
                 depth -= 1
             i += 1
         if depth != 0:
             continue
-        # i は `)` の次。次の `{` を探す。
-        # ただし宣言だけ (i.e. 後続が `;`) ならスキップ。
-        rest = text[i:].lstrip()
-        if not rest or rest[0] != '{':
-            continue
-        body_start = text.index('{', i)
-        depth = 1
-        j = body_start + 1
-        while j < len(text) and depth > 0:
-            if text[j] == '{':
-                depth += 1
-            elif text[j] == '}':
-                depth -= 1
+        # i は `)` の次。次に出現するのが `{` (= 関数定義) か `;` (= 宣言) かを
+        # ``const`` / ``noexcept`` / ``-> ReturnType`` / 属性等を読み飛ばしながら判定する。
+        body_start = -1
+        is_declaration = False
+        j = i
+        while j < n:
+            ch = cleaned[j]
+            if ch == '{':
+                body_start = j
+                break
+            if ch == ';':
+                is_declaration = True
+                break
             j += 1
+        if is_declaration or body_start < 0:
+            continue
+        depth = 1
+        k = body_start + 1
+        while k < n and depth > 0:
+            if cleaned[k] == '{':
+                depth += 1
+            elif cleaned[k] == '}':
+                depth -= 1
+            k += 1
         if depth != 0:
             continue
-        body_lineno = text.count('\n', 0, body_start) + 1
-        return (body_lineno, text[body_start + 1:j - 1])
+        body_lineno = cleaned.count('\n', 0, body_start) + 1
+        # 本体抽出は cleaned から切り出す (コメント除去済み = 後続の reason 抽出も
+        # コメント混入の影響を受けない)。行番号は元 text と cleaned で一致する
+        # (改行は保存しているため)。
+        return (body_lineno, cleaned[body_start + 1:k - 1])
     return None
 
 
