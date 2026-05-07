@@ -324,7 +324,7 @@ bridge 実装者の必須実装は **`backend_ready` を真にする** ことだ
 
 bridge 実装者の必須実装は **`backend_ready` を真にする** ことだけです。Navigation 軸との独立性により、Nav2 を使わない localization 単体構成（POI editor + AMCL のみ）も成立します。
 
-**Navigation backend との関係**: WebUI / RViz panel は **2 つのバッジを別 indicator として表示** します（`Navigation connected` / `Localization connected`）。Nav2 が落ちても AMCL は ready のまま、その逆もあり得ます。Operator map switch（`mapoi/nav/switch_map`）は Nav2 LoadMap → mapoi/initialpose_poi publish → localization bridge resolve のシーケンスで進むため、**両方の backend が ready** になっている必要があります。
+**Navigation backend との関係**: WebUI / RViz panel は **2 つのバッジを別 indicator として表示** します（`Navigation connected` / `Localization connected`）。Nav2 が落ちても AMCL は ready のまま、その逆もあり得ます。Operator map switch（`mapoi/nav/switch_map`）は Nav2 LoadMap → mapoi/initialpose_poi publish → localization bridge resolve のシーケンスで進みますが、UI の **map switch ボタンは navigation backend_ready のみで gate** しています（localization bridge 不在 / 一時不通でも localization bridge 側の subscriber 後起動 retry で initial pose 配信が吸収できるため）。確実に initial pose まで通したい場合は operator が両バッジを目視確認してから map switch を実行してください。
 
 ## 自分のロボットへの導入方法
 
