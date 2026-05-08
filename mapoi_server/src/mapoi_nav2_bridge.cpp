@@ -89,9 +89,9 @@ MapoiNav2Bridge::MapoiNav2Bridge(const rclcpp::NodeOptions & options)
   this->declare_parameter<double>("hysteresis_exit_multiplier", 1.15);
   this->declare_parameter<std::string>("map_frame", "map");
   this->declare_parameter<std::string>("base_frame", "base_link");
-  // EVENT_PAUSED_AT 判定 (#220 で旧 STOPPED/RESUMED から spec 変更): 線速ノルムと角速度絶対値
+  // EVENT_PAUSED 判定 (#220 で旧 STOPPED/RESUMED から spec 変更): 線速ノルムと角速度絶対値
   // の両方が ``stopped_speed_threshold`` 未満の状態が ``stopped_dwell_time_sec`` 続いたら、
-  // pause タグ付き route POI 内に居る場合のみ EVENT_PAUSED_AT publish。線速 (m/s) と角速 (rad/s)
+  // pause タグ付き route POI 内に居る場合のみ EVENT_PAUSED publish。線速 (m/s) と角速 (rad/s)
   // に同一閾値を使う割り切りで「その場旋回も停止扱いしない」用途を表現する。
   this->declare_parameter<double>("stopped_speed_threshold", 0.01);
   this->declare_parameter<double>("stopped_dwell_time_sec", 1.0);
@@ -147,7 +147,7 @@ void MapoiNav2Bridge::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::Shared
   std::string poi_name = msg->data;
   RCLCPP_INFO(this->get_logger(), "Received POI name for goal pose: %s", poi_name.c_str());
   // #220 で RESUMED event は撤去 (resume は client request + status topic で観測可能)。
-  // poi_paused_at_published_ flag は VISITED → EXIT の lifecycle で reset される (EXIT 時 clear)。
+  // poi_paused_published_ flag は ENTER → EXIT の lifecycle で reset される (EXIT 時 clear)。
   // target は send_goal_options に lambda capture で bind し、callback 側で
   // goal 固有の target を使って publish_nav_status する (#104 race fix)。
   // current_target_name_ は acceptance 時 (goal_response_callback) に更新され、
@@ -615,7 +615,7 @@ void MapoiNav2Bridge::result_callback(std::string target, size_t nav_generation,
       publish_nav_status("succeeded", target);
       RCLCPP_INFO(this->get_logger(), "Navigation SUCCEEDED!");
       // #220 で Nav2 SUCCEEDED hook 経由の event publish は撤去
-      // (PAUSED_AT は cmd_vel dwell only で trigger、STOPPED event 自体撤去)。
+      // (PAUSED は cmd_vel dwell only で trigger、STOPPED event 自体撤去)。
       break;
     case rclcpp_action::ResultCode::ABORTED:
       reset_nav_state();
@@ -790,13 +790,13 @@ void MapoiNav2Bridge::reset_nav_state()
   current_waypoint_index_ = 0;
   // active route POI set / per-POI 状態をここで clear (#143 / #220)。
   // route 終端 / cancel / failure 等で route が終わったあと、次回 route mode 開始時に
-  // 「既に inside / paused 状態」のまま開始されて VISITED / PAUSED_AT が発火しない、
+  // 「既に inside / paused 状態」のまま開始されて ENTER / PAUSED が発火しない、
   // または lifecycle 順序が崩れる、を防ぐ。
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
     current_route_poi_names_.clear();
     poi_inside_state_.clear();
-    poi_paused_at_published_.clear();
+    poi_paused_published_.clear();
   }
 }
 
@@ -1016,7 +1016,7 @@ void MapoiNav2Bridge::tolerance_check_callback()
   double rx = transform.transform.translation.x;
   double ry = transform.transform.translation.y;
   double hysteresis = this->get_parameter("hysteresis_exit_multiplier").as_double();
-  // PAUSED_AT 判定 (#220): zero_velocity が dwell threshold 以上続いたら停止扱い。
+  // PAUSED 判定 (#220): zero_velocity が dwell threshold 以上続いたら停止扱い。
   // 全 POI 共通の判定なので timer tick 内で 1 回計算して使い回す。
   bool zero_velocity_dwelled = false;
   if (zero_velocity_active_) {
@@ -1025,7 +1025,7 @@ void MapoiNav2Bridge::tolerance_check_callback()
     zero_velocity_dwelled = (dwell >= stopped_dwell_time_sec_);
   }
 
-  // pause タグ POI の VISITED を収集（mutex 外で auto-pause trigger するため）
+  // pause タグ POI の ENTER を収集（mutex 外で auto-pause trigger するため）
   std::string pause_triggered_poi;
 
   {
@@ -1034,12 +1034,12 @@ void MapoiNav2Bridge::tolerance_check_callback()
       return;
     }
 
-    // EVENT_VISITED / EVENT_PAUSED_AT / EVENT_EXIT は route 走行中 + route 登録 POI のみが
+    // EVENT_ENTER / EVENT_PAUSED / EVENT_EXIT は route 走行中 + route 登録 POI のみが
     // publish 対象 (#220)。route 走行外 (IDLE / GOAL mode) や non-route POI への侵入は通知
-    // しない。lifecycle invariant: VISITED → [PAUSED_AT] → EXIT を守るため、is_route_poi で
+    // しない。lifecycle invariant: ENTER → [PAUSED] → EXIT を守るため、is_route_poi で
     // ない POI の inside/paused state は **書き換えない** (旧 build / route 外で勝手に内部
-    // 状態が進むと、ROUTE 開始時に既に inside=true で VISITED が出ない / PAUSED_AT が
-    // VISITED を経ずに出る等の lifecycle 違反になる)。
+    // 状態が進むと、ROUTE 開始時に既に inside=true で ENTER が出ない / PAUSED が
+    // ENTER を経ずに出る等の lifecycle 違反になる)。
 
     for (const auto & poi : event_pois_) {
       double dist = distance_2d(poi.pose, rx, ry);
@@ -1061,14 +1061,14 @@ void MapoiNav2Bridge::tolerance_check_callback()
       bool was_inside = poi_inside_state_[poi.name];
 
       if (!was_inside && dist <= poi.tolerance.xy) {
-        // VISITED event
+        // ENTER event
         poi_inside_state_[poi.name] = true;
         mapoi_interfaces::msg::PoiEvent event;
-        event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_VISITED;
+        event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_ENTER;
         event.poi = poi;
         event.stamp = this->now();
         poi_event_pub_->publish(event);
-        RCLCPP_INFO(this->get_logger(), "POI VISITED: %s (dist=%.2f, tolerance.xy=%.2f)",
+        RCLCPP_INFO(this->get_logger(), "POI ENTER: %s (dist=%.2f, tolerance.xy=%.2f)",
                     poi.name.c_str(), dist, poi.tolerance.xy);
         // pauseタグがあれば自動pause対象
         if (is_pause_poi) {
@@ -1077,8 +1077,8 @@ void MapoiNav2Bridge::tolerance_check_callback()
       } else if (was_inside && dist > poi.tolerance.xy * hysteresis) {
         // EXIT event
         poi_inside_state_[poi.name] = false;
-        // PAUSED_AT 発火済 flag も EXIT で reset (#220 lifecycle: VISITED → [PAUSED_AT] → EXIT)
-        poi_paused_at_published_[poi.name] = false;
+        // PAUSED 発火済 flag も EXIT で reset (#220 lifecycle: ENTER → [PAUSED] → EXIT)
+        poi_paused_published_[poi.name] = false;
         mapoi_interfaces::msg::PoiEvent event;
         event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_EXIT;
         event.poi = poi;
@@ -1086,25 +1086,25 @@ void MapoiNav2Bridge::tolerance_check_callback()
         poi_event_pub_->publish(event);
         RCLCPP_INFO(this->get_logger(), "POI EXIT: %s (dist=%.2f, tolerance.xy=%.2f)",
                     poi.name.c_str(), dist, poi.tolerance.xy);
-        continue;  // PAUSED_AT 判定不要 (今 tick で OUTSIDE 化)
+        continue;  // PAUSED 判定不要 (今 tick で OUTSIDE 化)
       }
 
-      // PAUSED_AT 判定 (#220): inside かつ pause タグ持ち かつ cmd_vel dwell かつ未発火
+      // PAUSED 判定 (#220): inside かつ pause タグ持ち かつ cmd_vel dwell かつ未発火
       if (!poi_inside_state_[poi.name]) continue;
       if (!is_pause_poi) continue;
       if (!zero_velocity_dwelled) continue;
-      if (poi_paused_at_published_[poi.name]) continue;
-      poi_paused_at_published_[poi.name] = true;
+      if (poi_paused_published_[poi.name]) continue;
+      poi_paused_published_[poi.name] = true;
       mapoi_interfaces::msg::PoiEvent event;
-      event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_PAUSED_AT;
+      event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_PAUSED;
       event.poi = poi;
       event.stamp = this->now();
       poi_event_pub_->publish(event);
-      RCLCPP_INFO(this->get_logger(), "POI PAUSED_AT: %s", poi.name.c_str());
+      RCLCPP_INFO(this->get_logger(), "POI PAUSED: %s", poi.name.c_str());
     }
   }  // data_mutex_ をここで解放
 
-  // pause タグ POI の VISITED → 自動 pause (is_pause_poi 判定で route + ROUTE mode を確認済)
+  // pause タグ POI の ENTER → 自動 pause (is_pause_poi 判定で route + ROUTE mode を確認済)
   if (!pause_triggered_poi.empty() && !is_paused_) {
     RCLCPP_INFO(this->get_logger(),
       "Auto-pausing route navigation: entered pause POI '%s'", pause_triggered_poi.c_str());

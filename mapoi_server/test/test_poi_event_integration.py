@@ -129,7 +129,7 @@ class TestPoiEventIntegration(unittest.TestCase):
     @classmethod
     def _event_callback(cls, msg):
         cls.received_events.append(msg)
-        if msg.event_type == PoiEvent.EVENT_VISITED:
+        if msg.event_type == PoiEvent.EVENT_ENTER:
             cls.inside_state[msg.poi.name] = True
         elif msg.event_type == PoiEvent.EVENT_EXIT:
             cls.inside_state[msg.poi.name] = False
@@ -236,12 +236,12 @@ class TestPoiEventIntegration(unittest.TestCase):
         return False
 
     # 旧 _enter_poi / _enter_and_stop_poi は #220 で撤去。新 spec では _activate_route
-    # 経由で ROUTE mode に入ってから VISITED を待つ流れに変更 (各 test 内で構築)。
+    # 経由で ROUTE mode に入ってから ENTER を待つ流れに変更 (各 test 内で構築)。
 
     # --- 新 PoiEvent 仕様 (#220) ---
-    # EVENT_VISITED / EVENT_PAUSED_AT / EVENT_EXIT の 3 種別 + route 走行中 + route 登録 POI のみ。
+    # EVENT_ENTER / EVENT_PAUSED / EVENT_EXIT の 3 種別 + route 走行中 + route 登録 POI のみ。
     #
-    # NOTE: ROUTE-mode integration test (VISITED / PAUSED_AT / EXIT 発火確認) は本 PR では
+    # NOTE: ROUTE-mode integration test (ENTER / PAUSED / EXIT 発火確認) は本 PR では
     # 含まない。bridge は `mapoi_route_cb` で Nav2 FollowWaypoints action server に
     # 接続できないと `reset_nav_state()` で `nav_mode_` を IDLE に戻すため、ROUTE mode
     # を維持して event 発火を観測するには Nav2 action server mock が必要。これは scope が

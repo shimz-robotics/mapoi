@@ -194,12 +194,12 @@ private:
   std::unordered_set<std::string> system_tags_;
   bool system_tags_loaded_ = false;
   std::unordered_map<std::string, bool> poi_inside_state_;  // key: poi.name
-  // EVENT_PAUSED_AT 発火済 per-POI 状態 (#220)。
-  //   true: 既に EVENT_PAUSED_AT publish 済 (再 publish しない、EXIT で reset)
-  //   false: 未発火 / VISITED 後 / EXIT 後
-  // VISITED/EXIT 判定 (poi_inside_state_) と独立して持つ: PAUSED_AT は inside 内での
+  // EVENT_PAUSED 発火済 per-POI 状態 (#220)。
+  //   true: 既に EVENT_PAUSED publish 済 (再 publish しない、EXIT で reset)
+  //   false: 未発火 / ENTER 後 / EXIT 後
+  // ENTER/EXIT 判定 (poi_inside_state_) と独立して持つ: PAUSED は inside 内での
   // sub-state なので、EXIT 時は inside_state→false と同時に paused_state→false に reset する。
-  std::unordered_map<std::string, bool> poi_paused_at_published_;  // key: poi.name
+  std::unordered_map<std::string, bool> poi_paused_published_;  // key: poi.name
   std::vector<mapoi_interfaces::msg::PointOfInterest> event_pois_;
 
   // initial pose POI 名の publisher (Nav2 LoadMap 完了後 trigger 用、#209)。
@@ -208,7 +208,7 @@ private:
   // bridge が担当する (#209 で mapoi_nav2_bridge から分離)。
   rclcpp::Publisher<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr mapoi_initialpose_poi_pub_;
 
-  // --- EVENT_PAUSED_AT trigger 用 cmd_vel dwell 検知 (#220) ---
+  // --- EVENT_PAUSED trigger 用 cmd_vel dwell 検知 (#220) ---
   // cmd_vel subscriber: pause タグ POI 内で navigation 停止を検知する source。
   // dwell 判定は robot 全体で 1 つ (POI ごとには持たない)。線速ノルムと角速度絶対値の両方が
   // 同じ閾値 ``stopped_speed_threshold`` 未満のとき停止扱い。線速 (m/s) と角速 (rad/s) に
@@ -216,13 +216,13 @@ private:
   // 用途と整合する (param 説明 / docs にも明記)。
   // 前提: 採用 controller が navigation 停止中も cmd_vel = 0 を継続 publish すること
   // (Nav2 default の挙動)。controller が静止時に cmd_vel publish を止める実装の場合、
-  // EVENT_PAUSED_AT は発火しない。
+  // EVENT_PAUSED は発火しない。
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
   void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
   // 速度が閾値以下になり始めた時刻 (steady_clock)。閾値超えに戻ったら reset。
   std::chrono::steady_clock::time_point last_zero_velocity_start_ {};
   bool zero_velocity_active_ {false};
-  // PAUSED_AT 判定 param のキャッシュ (cmd_vel callback で毎 tick 取得すると lock コストが高いため
+  // PAUSED 判定 param のキャッシュ (cmd_vel callback で毎 tick 取得すると lock コストが高いため
   // constructor で読み込んで保持。ROS 動的 reconfigure で変更したい場合は再起動が必要)。
   double stopped_speed_threshold_ {0.01};
   double stopped_dwell_time_sec_ {1.0};
