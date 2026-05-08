@@ -1,0 +1,98 @@
+# 自分のロボットへの導入方法
+
+現状は本リポジトリを clone して colcon build で組み込んでください。**将来的に apt/rosdep での提供を予定しています**（[#20](https://github.com/shimz-robotics/mapoi/issues/20)）。
+
+## 1. 地図ディレクトリの作成
+
+パッケージ内に `maps/<地図名>/` ディレクトリを作成し、地図ファイルと設定ファイルを配置します。
+
+```
+maps/
+├── site_a/
+│   ├── mapoi_config.yaml    # POI・ルート・ユーザータグ設定
+│   ├── map.pgm              # 地図画像
+│   └── map.yaml             # 地図メタデータ
+└── site_b/
+    ├── mapoi_config.yaml
+    ├── map.pgm
+    └── map.yaml
+```
+
+`mapoi_config.yaml` のフォーマットについては [`mapoi_server` の README](../mapoi_server/README.md) を参照してください。
+
+## 2. launch ファイルへの追加
+
+`your_robot_launch.yaml` に mapoi のノードを追加します。
+
+```yaml
+# Mapoi Server
+- node:
+    pkg: mapoi_server
+    exec: mapoi_server
+    param:
+      - {name: maps_path, value: "$(find-pkg-share your_package)/maps"}
+      - {name: map_name, value: "site_a"}
+      - {name: config_file, value: "mapoi_config.yaml"}
+
+- node:
+    pkg: mapoi_server
+    exec: mapoi_nav2_bridge
+
+- node:
+    pkg: mapoi_server
+    exec: mapoi_amcl_localization_bridge
+
+- node:
+    pkg: mapoi_server
+    exec: mapoi_rviz2_publisher
+
+# Mapoi Web UI（オプション）
+- node:
+    pkg: mapoi_webui
+    exec: mapoi_webui_node.py
+    param:
+      - {name: maps_path, value: "$(find-pkg-share your_package)/maps"}
+      - {name: map_name, value: "site_a"}
+      - {name: web_port, value: 8765}
+```
+
+CLI から `mapoi_bringup.launch.yaml` を直接起動する例 (引数 semantics 含む) は [`mapoi_server/README.md`](../mapoi_server/README.md) を参照してください。
+
+## 3. AMCL パラメータの設定
+
+初期位置は `mapoi_config.yaml` の **POI list 先頭の非 landmark POI** を default として `mapoi_amcl_localization_bridge` が `/initialpose` topic に自動配信します（#144 で旧 `initial_pose` system tag を廃止し、yaml 順序で表現する semantics に統一。#209 で `mapoi_nav2_bridge` から AMCL adapter を分離）。明示的に POI を指定したい場合は `select_map` service の `initial_poi_name` 引数を使ってください。AMCL の `set_initial_pose` (Nav2 native の self-init) と二重管理にならないよう、AMCL 側はそれを無効化し、地図切り替えは `first_map_only_` を `False` にしてください。
+
+```yaml
+amcl:
+  ros__parameters:
+    # 初期位置は mapoi_amcl_localization_bridge から /initialpose topic 経由で配信される
+    # POI single source of truth 化のため AMCL native の self-init は使わない
+    set_initial_pose: False
+    # 地図切り替えの有効化
+    first_map_only_: False
+```
+
+`mapoi_config.yaml` 側は普通の POI 定義のままで OK (default initial pose に使う POI を yaml の **先頭** に置くだけ):
+
+```yaml
+poi:
+  - name: elevator_hall   # この POI が default 初期位置になる (POI list 先頭)
+    pose: {x: -2.0, y: -0.5, yaw: 0.0}
+    tags: [waypoint]
+  - name: meeting_room_a
+    pose: {x: 1.0, y: 0.5, yaw: 1.57}
+    tags: [waypoint]
+```
+
+別 topic 名・別 message 型を使う localization パッケージへの対応については [`mapoi_server/README.md`](../mapoi_server/README.md) の「対応 localization パッケージの要件」節を参照してください。
+
+## 4. POI 半径イベントの利用（オプション）
+
+ユーザータグを持つ POI の半径内にロボットが入ると `mapoi/events` トピックにイベントが配信されます。
+
+```sh
+# イベントの確認
+ros2 topic echo /mapoi/events
+```
+
+詳細は [`mapoi_server` の README](../mapoi_server/README.md) を参照してください。
