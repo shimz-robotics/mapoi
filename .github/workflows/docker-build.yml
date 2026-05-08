@@ -30,8 +30,8 @@ jobs:
 
       # タグ戦略:
       # - ${{ matrix.distro }} (例: humble / jazzy): default branch の main push で発行
-      # - latest: humble ビルドかつ default branch の main push のみ（primary distro を指す）
-      # - v{{version}}: humble ビルドかつ v* tag push のみ（primary distro を指す）
+      # - latest: jazzy ビルドかつ default branch の main push のみ（primary distro を指す）
+      # - v{{version}}: jazzy ビルドかつ v* tag push のみ（primary distro を指す）
       # - v{{version}}-${{ matrix.distro }}: v* tag push で distro 別に発行
       - id: meta
         uses: docker/metadata-action@v5
@@ -39,8 +39,8 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=${{ matrix.distro }},enable={{is_default_branch}}
-            type=raw,value=latest,enable=${{ matrix.distro == 'humble' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
-            type=semver,pattern=v{{version}},enable=${{ matrix.distro == 'humble' }}
+            type=raw,value=latest,enable=${{ matrix.distro == 'jazzy' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+            type=semver,pattern=v{{version}},enable=${{ matrix.distro == 'jazzy' }}
             type=semver,pattern=v{{version}}-${{ matrix.distro }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
