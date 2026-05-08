@@ -238,7 +238,7 @@ TEST_F(Nav2BridgeTestFixture, ResetNavStateClearsRouteContext)
 }
 
 // (#220 で compute_stopped_transition / StoppedDetectionInputs / StoppedTransition を撤去。
-//  EVENT_STOPPED / EVENT_RESUMED 自体が消え、PAUSED_AT は cmd_vel dwell ベースの単純判定で
+//  EVENT_STOPPED / EVENT_RESUMED 自体が消え、PAUSED は cmd_vel dwell ベースの単純判定で
 //  純関数 state machine 不要になったため、unit test 群も併せて削除した。)
 
 int main(int argc, char ** argv)
