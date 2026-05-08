@@ -88,11 +88,11 @@ poi:
 
 ## 4. POI 半径イベントの利用（オプション）
 
-ユーザータグを持つ POI の半径内にロボットが入ると `mapoi/events` トピックにイベントが配信されます。
+route 走行中に route 登録 POI に入ると `mapoi/events` トピックに `EVENT_VISITED` / `EVENT_PAUSED_AT` (pause タグのみ) / `EVENT_EXIT` の 3 種別 event が配信されます。route 走行外 (IDLE / GOAL mode、`NavigateToPose` 単発 goal や手動操縦) では発火しません。
 
 ```sh
 # イベントの確認
 ros2 topic echo /mapoi/events
 ```
 
-詳細は [`mapoi_server` の README](../mapoi_server/README.md) を参照してください。
+詳細仕様は [`mapoi_server` の README](../mapoi_server/README.md) の「POI 半径イベント検知」節を参照してください。

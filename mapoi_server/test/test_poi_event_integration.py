@@ -129,7 +129,7 @@ class TestPoiEventIntegration(unittest.TestCase):
     @classmethod
     def _event_callback(cls, msg):
         cls.received_events.append(msg)
-        if msg.event_type == PoiEvent.EVENT_ENTER:
+        if msg.event_type == PoiEvent.EVENT_VISITED:
             cls.inside_state[msg.poi.name] = True
         elif msg.event_type == PoiEvent.EVENT_EXIT:
             cls.inside_state[msg.poi.name] = False
@@ -235,159 +235,31 @@ class TestPoiEventIntegration(unittest.TestCase):
                 return True
         return False
 
-    def _enter_poi(self, poi_name, x, y):
-        self._set_cmd_vel(0.2, 0.0)
-        self._spin_for(0.2)
-        self._set_robot_pose(x, y)
-        found = self._wait_for_event(
-            lambda e: (e.event_type == PoiEvent.EVENT_ENTER
-                       and e.poi.name == poi_name))
-        self.assertTrue(found, f"{poi_name} に ENTER できるべき")
+    # 旧 _enter_poi / _enter_and_stop_poi は #220 で撤去。新 spec では _activate_route
+    # 経由で ROUTE mode に入ってから VISITED を待つ流れに変更 (各 test 内で構築)。
 
-    def _enter_and_stop_poi(self, poi_name='poi_goal_only', x=1.0, y=0.0):
-        self._enter_poi(poi_name, x, y)
-        self.received_events.clear()
-        self._set_cmd_vel(0.0, 0.0)
-        found = self._wait_for_event(
-            lambda e: (e.event_type == PoiEvent.EVENT_STOPPED
-                       and e.poi.name == poi_name),
-            timeout_sec=self.EVENT_WAIT_TIMEOUT)
-        self.assertTrue(found, f"{poi_name} の EVENT_STOPPED が発行されるべき")
+    # --- 新 PoiEvent 仕様 (#220) ---
+    # EVENT_VISITED / EVENT_PAUSED_AT / EVENT_EXIT の 3 種別 + route 走行中 + route 登録 POI のみ。
+    #
+    # NOTE: ROUTE-mode integration test (VISITED / PAUSED_AT / EXIT 発火確認) は本 PR では
+    # 含まない。bridge は `mapoi_route_cb` で Nav2 FollowWaypoints action server に
+    # 接続できないと `reset_nav_state()` で `nav_mode_` を IDLE に戻すため、ROUTE mode
+    # を維持して event 発火を観測するには Nav2 action server mock が必要。これは scope が
+    # 中規模 (mock setup + test infra) のため別 issue で扱う。本 PR では下の
+    # `test_no_event_in_non_route_mode` で「新 spec で route 走行外 (IDLE / GOAL mode) は
+    # event を発火しない」ことを negative evidence として確認する。
 
-    def test_enter_event_goal_only_poi(self):
-        """goalタグのみのPOI (1.0, 0.0) 付近 → ENTER イベント発行"""
-        self._set_robot_pose(1.0, 0.0)
-        found = self._wait_for_event(
-            lambda e: (e.event_type == PoiEvent.EVENT_ENTER
-                       and e.poi.name == 'poi_goal_only'))
-        self.assertTrue(found,
-                        "goal-only POI の ENTER イベントが発行されるべき")
+    def test_no_event_in_non_route_mode(self):
+        """route 走行外 (IDLE / GOAL mode、ROUTE 未開始) では POI に侵入しても event 発火しない (#220)。
 
-    def test_isolation_re_enter_same_poi(self):
-        """isolation 検証 (#165): 同 POI に ENTER → reset → 再 ENTER できる
-        ことを 1 test 内で完結確認する。実行順や個別実行に依存しない。
-
-        reset helper で `poi_inside_state_` を false に戻していなければ
-        ENTER の再発火条件 (was_inside=false && dist <= radius) を満たせず
-        2 回目の `_wait_for_event` が timeout する。helper を tearDown とも
-        共有しているので、本 test が PASS する限り tearDown isolation も
-        実装上等価に検証できる。
+        旧 spec では IDLE / GOAL でも EVENT_ENTER が発火していたため、本 test は
+        新 spec への migration evidence として機能する (旧コードでは fail、新コードで pass)。
         """
+        # ROUTE mode に入っていない = nav_mode_ は IDLE のまま
         self._set_robot_pose(1.0, 0.0)
-        found1 = self._wait_for_event(
-            lambda e: (e.event_type == PoiEvent.EVENT_ENTER
-                       and e.poi.name == 'poi_goal_only'))
-        self.assertTrue(found1,
-                        "1 回目: poi_goal_only に ENTER できるべき")
-
-        self._reset_inside_state()
-
-        self._set_robot_pose(1.0, 0.0)
-        found2 = self._wait_for_event(
-            lambda e: (e.event_type == PoiEvent.EVENT_ENTER
-                       and e.poi.name == 'poi_goal_only'))
-        self.assertTrue(found2,
-                        "reset 後: 同 POI への再 ENTER が観測されるべき")
-
-    def test_enter_event_pause_poi(self):
-        """pauseタグ付きPOI (0.0, 2.0) 付近 → ENTER イベント発行"""
-        self._set_robot_pose(0.0, 2.0)
-        found = self._wait_for_event(
-            lambda e: (e.event_type == PoiEvent.EVENT_ENTER
-                       and e.poi.name == 'poi_with_pause'))
-        self.assertTrue(found,
-                        "pause POI の ENTER イベントが発行されるべき")
-
-    def test_enter_event_custom_poi(self):
-        """custom_tag付きPOI (3.0, 0.0) 付近 → ENTER イベント発行"""
-        self._set_robot_pose(3.0, 0.0)
-        found = self._wait_for_event(
-            lambda e: (e.event_type == PoiEvent.EVENT_ENTER
-                       and e.poi.name == 'poi_with_custom'))
-        self.assertTrue(found,
-                        "custom_tag POI の ENTER イベントが発行されるべき")
-
-    def test_exit_event(self):
-        """POI内 → radius外 に移動 → EXIT イベント発行"""
-        # 後段の EXIT 条件 (was_inside && dist > radius*hyst) は前段で ENTER して
-        # was_inside=true を成立させないと永遠に満たせない。前提を assert で固定する。
-        self._set_robot_pose(1.0, 0.0)
-        enter_found = self._wait_for_event(
-            lambda e: (e.event_type == PoiEvent.EVENT_ENTER
-                       and e.poi.name == 'poi_goal_only'))
-        self.assertTrue(enter_found,
-                        "前提: poi_goal_only が ENTER 状態になっていること")
-        self.received_events.clear()
-        # radius=0.5, hysteresis=1.15 → 0.575m以上離れる
-        self._set_robot_pose(5.0, 5.0)
-        exit_found = self._wait_for_event(
-            lambda e: (e.event_type == PoiEvent.EVENT_EXIT
-                       and e.poi.name == 'poi_goal_only'))
-        self.assertTrue(exit_found,
-                        "poi_goal_only の EXIT イベントが発行されるべき")
-
-    def test_stopped_event_from_cmd_vel_dwell_once(self):
-        """cmd_vel=0 の dwell 継続で STOPPED が 1 回だけ発火する (#177)。"""
-        self._enter_poi('poi_goal_only', 1.0, 0.0)
-        self.received_events.clear()
-
-        self._set_cmd_vel(0.0, 0.0)
-        stopped_found = self._wait_for_event(
-            lambda e: (e.event_type == PoiEvent.EVENT_STOPPED
-                       and e.poi.name == 'poi_goal_only'))
-        self.assertTrue(stopped_found,
-                        "cmd_vel=0 dwell 後に EVENT_STOPPED が発行されるべき")
-        stopped_count = self._count_events(
-            lambda e: (e.event_type == PoiEvent.EVENT_STOPPED
-                       and e.poi.name == 'poi_goal_only'))
-
-        self._spin_for(STOPPED_DWELL_TIME_SEC + 0.5)
-        self.assertEqual(
-            self._count_events(
-                lambda e: (e.event_type == PoiEvent.EVENT_STOPPED
-                           and e.poi.name == 'poi_goal_only')),
-            stopped_count,
-            "停止継続中に EVENT_STOPPED が重複発行されるべきではない")
-
-    def test_resumed_event_when_cmd_vel_recovers(self):
-        """STOPPED 中に cmd_vel が復活すると dwell なしで RESUMED が発火する (#177)。"""
-        self._enter_and_stop_poi('poi_goal_only', 1.0, 0.0)
-        self.received_events.clear()
-
-        self._set_cmd_vel(0.2, 0.0)
-        resumed_found = self._wait_for_event(
-            lambda e: (e.event_type == PoiEvent.EVENT_RESUMED
-                       and e.poi.name == 'poi_goal_only'))
-        self.assertTrue(resumed_found,
-                        "cmd_vel 復活後に EVENT_RESUMED が発行されるべき")
-
-    def test_new_goal_resumes_stopped_poi_and_allows_next_stop_flow(self):
-        """STOPPED 中の新規 goal 受信で RESUMED し、次 POI でも STOPPED できる (#177)。"""
-        self._enter_and_stop_poi('poi_goal_only', 1.0, 0.0)
-        self.received_events.clear()
-
-        self.assertTrue(
-            self._wait_for_subscriber('mapoi/nav/goal_pose_poi'),
-            "mapoi_nav2_bridge が mapoi/nav/goal_pose_poi を subscribe しているべき")
-        msg = String()
-        msg.data = 'poi_with_custom'
-        self.goal_pose_poi_pub.publish(msg)
-
-        resumed_found = self._wait_for_event(
-            lambda e: (e.event_type == PoiEvent.EVENT_RESUMED
-                       and e.poi.name == 'poi_goal_only'))
-        self.assertTrue(resumed_found,
-                        "新規 goal 受信で stopped POI の EVENT_RESUMED が発行されるべき")
-
-        # 新規 goal に向かって動き始めた状況を cmd_vel/TF で模擬し、次の POI でも
-        # ENTER → STOPPED flow が成立することを固定する。
-        self._set_cmd_vel(0.2, 0.0)
-        self._set_robot_pose(100.0, 100.0)
-        exit_found = self._wait_for_event(
-            lambda e: (e.event_type == PoiEvent.EVENT_EXIT
-                       and e.poi.name == 'poi_goal_only'))
-        self.assertTrue(exit_found,
-                        "新規 goal 走行開始後に旧 POI から EXIT できるべき")
-
-        self.received_events.clear()
-        self._enter_and_stop_poi('poi_with_custom', 3.0, 0.0)
+        # 発火しないことを timeout で確認
+        not_found = self._wait_for_event(
+            lambda e: e.poi.name == 'poi_goal_only',
+            timeout_sec=2.0)
+        self.assertFalse(not_found,
+                         "route 走行外 (IDLE / GOAL mode) では route POI でも event 発火しないべき")

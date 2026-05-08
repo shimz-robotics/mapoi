@@ -22,3 +22,7 @@ poi:
 
 custom_tags:
   - {name: audio_info, description: "Audio guide trigger"}
+
+route:
+  - name: route_a
+    waypoints: [poi_goal_only, poi_with_pause, poi_with_custom, poi_pause_and_custom]

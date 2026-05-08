@@ -28,17 +28,25 @@ POI（Point of Interest）を表すメッセージです。
 
 ### PoiEvent.msg
 
-POI tolerance.xy 半径への侵入・退出 / 停止 / 再開イベントを表すメッセージです。
+route 走行中に route 登録 POI への侵入 / 退出、および `pause` タグ付き POI で navigation 停止が発生した時に publish されるイベントメッセージです (#220 で 4 種別 → 3 種別に簡素化)。
 
 | フィールド | 型 | 説明 |
 | --- | --- | --- |
-| `EVENT_ENTER` | `uint8` (定数=1) | 侵入イベント |
-| `EVENT_EXIT` | `uint8` (定数=2) | 退出イベント |
-| `EVENT_STOPPED` | `uint8` (定数=3) | tolerance.xy 半径内で停止 (publish 判定 logic は別 issue) |
-| `EVENT_RESUMED` | `uint8` (定数=4) | 停止後に動き出した (publish 判定 logic は別 issue) |
-| `event_type` | `uint8` | イベント種別 |
+| `EVENT_VISITED` | `uint8` (定数=1) | route 走行中に route 登録 POI の `tolerance.xy` 半径へ侵入 (`nav_mode == ROUTE` かつ `current_route_poi_names_` 該当 POI のみ、route 走行外 (IDLE / GOAL mode) では publish しない) |
+| `EVENT_PAUSED_AT` | `uint8` (定数=2) | `pause` タグ付き POI の `tolerance.xy` 内で navigation 停止 (cmd_vel dwell で検知)。pause 自動 trigger 後に Nav2 が停止状態に入った瞬間 |
+| `EVENT_EXIT` | `uint8` (定数=3) | route 登録 POI から `tolerance.xy * hysteresis_exit_multiplier` を超えて退出 |
+| `event_type` | `uint8` | イベント種別 (上記 3 種のいずれか) |
 | `poi` | `mapoi_interfaces/PointOfInterest` | 対象 POI の情報 |
 | `stamp` | `builtin_interfaces/Time` | イベント発生時刻 |
+
+ライフサイクル:
+```
+EVENT_VISITED -> [EVENT_PAUSED_AT (only if pause-tagged + nav stops)] -> EVENT_EXIT
+```
+
+`EVENT_PAUSED_AT` の前提:
+- 採用 controller が **navigation 停止中も cmd_vel = 0 を継続 publish する** こと (Nav2 default の挙動)。controller が静止時に cmd_vel publish を止める実装の場合、`EVENT_PAUSED_AT` は発火しません。
+- pause 自動 trigger は `mapoi_server` 側で実施し、resume は client 側 `mapoi/nav/resume` request で発動するため、`RESUMED` 相当の event は本仕様に含めません (resume は status topic で観測可能)。
 
 ### TagDefinition.msg
 
