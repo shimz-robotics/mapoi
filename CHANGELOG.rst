@@ -16,36 +16,74 @@ For releases prior to v0.2.0, see the
 Unreleased
 ==========
 
+
+0.4.0 (2026-05-08)
+==================
+
+**Notable for downstream users**: ``latest`` and ``vX.Y.Z`` (no distro
+suffix) Docker tags now point at the **jazzy** build (was humble in
+v0.3.0). Humble images remain available as ``humble`` /
+``vX.Y.Z-humble``. See the "Default distro switch" entry below.
+
 Breaking changes
 ----------------
 
-* AMCL adapter has been split out of ``mapoi_nav_server`` into a new
-  ``mapoi_amcl_localization_bridge`` executable in ``mapoi_server`` (#209).
-  ``mapoi_nav_server`` is now a Nav2-only navigation bridge and no longer
-  publishes ``/initialpose``. Users who launch nodes individually must add
-  ``mapoi_amcl_localization_bridge`` next to ``mapoi_nav_server`` (the
+* The Nav2 bridge node has been renamed from ``mapoi_nav_server`` to
+  ``mapoi_nav2_bridge`` (#204, PR #218). Executable name, ROS 2 node name,
+  C++ class (``MapoiNavServer`` → ``MapoiNav2Bridge``), header path
+  (``mapoi_server/mapoi_nav2_bridge.hpp``), and the launch arg
+  ``with_nav_server`` (now ``with_nav2_bridge``) all changed. No
+  compatibility alias is provided. See ``docs/migration/v0.4.0.md`` for
+  the full migration guide. Quick highlights:
+
+  - Update launch files / scripts / docs that reference
+    ``mapoi_nav_server`` (executable / node / arg name) to
+    ``mapoi_nav2_bridge`` / ``with_nav2_bridge``.
+  - ROS 2 launch silently ignores unknown args and applies defaults, so
+    passing the old ``with_nav_server:=false`` to an updated
+    ``mapoi_bringup.launch.yaml`` will be ignored and the bridge starts
+    with its default. Audit your downstream launch with
+    ``grep -rn 'with_nav_server:=\|mapoi_nav_server' --include='*.launch.*'``.
+  - Auto-derived ROS 2 services (``/<node>/get_parameters``,
+    ``/list_parameters``, ``/describe_parameters``, ``/set_parameters``)
+    change with the node name. External monitoring tools like
+    ``ros2 param get /mapoi_nav_server ...`` must be updated to
+    ``/mapoi_nav2_bridge``.
+  - ROS 2 topics, services (e.g. ``/mapoi/nav/...``,
+    ``select_map``, ``get_pois_info``), explicitly declared parameters
+    (``maps_path``, ``map_name``, ``config_file``, etc.), and Nav2 native
+    actions (``navigate_to_pose`` etc.) are unchanged.
+
+* AMCL adapter has been split out of the Nav2 bridge node into a new
+  ``mapoi_amcl_localization_bridge`` executable in ``mapoi_server``
+  (#209, PR #210). The bridge node (now called ``mapoi_nav2_bridge`` —
+  see breaking entry above) is a Nav2-only navigation bridge and no
+  longer publishes ``/initialpose``. Users who launch nodes individually
+  must add ``mapoi_amcl_localization_bridge`` next to the bridge (the
   ``mapoi_bringup.launch.yaml`` already does this; new launch arg
   ``with_amcl_localization_bridge``, default ``true``). The following
-  parameters moved from ``mapoi_nav_server`` to the new bridge:
+  parameters moved from the old ``mapoi_nav_server`` to the new bridge:
   ``initial_pose_topic``, ``initialpose_retry_interval_sec``,
   ``initialpose_retry_max_attempts``,
   ``initialpose_post_subscribe_republish_count``. A new minimal contract
   message ``mapoi_interfaces/LocalizationBackendStatus`` and topic
-  ``mapoi/localization/backend_status`` (``transient_local``) are
-  published by the bridge; WebUI / RViz panel now show a separate
-  ``Localization`` indicator and gate the Set Initial Pose UI on it,
-  independent from the Navigation indicator. See the new
-  "Localization backend 仕様" section in ``README.md``.
+  ``mapoi/localization/backend_status`` (``transient_local`` +
+  ``MANUAL_BY_TOPIC`` liveliness, 5 s lease) are published by the bridge;
+  WebUI / RViz panel now show a separate ``Localization`` indicator and
+  gate the Set Initial Pose UI on it, independent from the Navigation
+  indicator. See ``docs/backend-status.md`` for the full Navigation /
+  Localization contract.
 
 * System tag definitions (``waypoint`` / ``landmark`` / ``pause``) are now
   hardcoded in ``mapoi_server/include/mapoi_server/system_tags.hpp``
   (``mapoi::kSystemTags``); the
   ``mapoi_server/maps/tag_definitions.yaml`` file and the
-  ``mapoi_server/maps/`` directory have been removed (#191). The
-  ``get_tag_definitions`` service contract is unchanged (3 system tags +
-  user tags). Users who edited ``tag_definitions.yaml`` to override system
-  tag names or descriptions must edit ``kSystemTags`` and rebuild instead.
-  Standard usage (no edits to system tags) is unaffected.
+  ``mapoi_server/maps/`` directory have been removed (#191, PR #192).
+  The ``get_tag_definitions`` service contract is unchanged (3 system
+  tags + user tags). Users who edited ``tag_definitions.yaml`` to
+  override system tag names or descriptions must edit ``kSystemTags``
+  and rebuild instead. Standard usage (no edits to system tags) is
+  unaffected.
 
   Additional behavior changes worth noting:
 
@@ -57,6 +95,130 @@ Breaking changes
   - The package install layout under ``share/mapoi_server/`` no longer
     contains a ``maps/`` directory. External scripts that listed
     ``share/mapoi_server/maps/`` must be updated.
+
+* **Default distro switched from Humble to Jazzy** (PR #222). The
+  Dockerfile ``ARG ROS_DISTRO`` default, ``docker-compose.yml``
+  ``${ROS_DISTRO:-...}`` fallbacks, and the GHA tag-emit conditions for
+  ``latest`` / ``vX.Y.Z`` (no distro suffix) all moved from ``humble`` to
+  ``jazzy``. The motivation is that Gazebo Classic (shipped with the
+  Humble image) reached EoL in 2025-01 and is no longer receiving
+  upstream maintenance, while Jazzy bundles the actively maintained
+  gz-sim (Gazebo Harmonic). Humble continues to be supported as a
+  first-class option:
+
+  - ``ghcr.io/shimz-robotics/mapoi:humble`` keeps shipping per-commit and
+    per-release. ``vX.Y.Z-humble`` tags remain on every release.
+  - ``ROS_DISTRO=humble docker compose build / up / run`` continues to
+    produce ``mapoi:dev-humble`` / ``mapoi:demo-humble`` images.
+  - The Dockerfile and compose file are unchanged for users who already
+    pass ``ROS_DISTRO=humble`` explicitly.
+
+  The break-on-upgrade case is users who pull ``ghcr.io/...:latest`` or
+  ``ghcr.io/...:vX.Y.Z`` (no suffix) and expect a Humble build. From v0.4.0
+  onward those tags resolve to a Jazzy image; pin ``:humble`` /
+  ``:vX.Y.Z-humble`` to retain the old behavior.
+
+Features
+--------
+
+* Navigation backend readiness contract (#198, PR #205). Introduced a
+  minimal 3-field message ``mapoi_interfaces/NavigationBackendStatus``
+  (``backend_type`` / ``backend_ready`` / ``reason``) published at 1 Hz on
+  ``mapoi/nav/backend_status`` (``transient_local`` QoS). WebUI and RViz
+  panel gate navigation operations on ``backend_ready`` alone, decoupling
+  the UI from per-capability internals. Custom navigation bridges can
+  integrate by populating the 3 fields, no other plumbing required.
+  Localization readiness is exposed as a parallel
+  ``LocalizationBackendStatus`` (#209 above).
+
+* Liveliness QoS for ``backend_status`` topics (#208, PR #212). Both
+  ``mapoi/nav/backend_status`` and ``mapoi/localization/backend_status``
+  publishers now use ``MANUAL_BY_TOPIC`` liveliness with a 5 s lease;
+  subscribers use ``AUTOMATIC`` liveliness. UI consumers detect bridge
+  death via ``LivelinessChangedEvent`` (alive_count → 0) and treat the
+  cached status as ``backend_ready=false`` regardless of the latched
+  payload. Publishers without a finite liveliness QoS (legacy / no-config
+  bridges) are rejected via QoS incompatibility (``pub.lease (∞) >
+  sub.lease (5 s)``) — this is intentional, see the
+  ``NavigationBackendStatus.msg`` header comment for the full rationale.
+
+* WebUI Navigation detection and mobile-friendly focus UI (PR #197).
+  WebUI now subscribes to ``mapoi/nav/backend_status`` and shows a
+  ``Navigation connected / disconnected`` indicator; navigation control
+  UI is enabled only when the bridge reports ``backend_ready=true``.
+  Mobile (smartphone) focus interaction was reworked to match the panel
+  layout for narrower screens.
+
+* ``mapoi_gazebo_bridge`` AMCL drift fix on operator map switch (#91, PR
+  #200). After a ``select_map`` flow the bridge now teleports the robot
+  via Gazebo Classic ``delete_entity`` + ``spawn_entity`` re-creation to
+  the first non-landmark POI, avoiding stale TF / costmap state in AMCL.
+
+Fixes
+-----
+
+* ``backend_status`` 1 Hz publish keeps running during blocking calls
+  (#213, PR #214). The Nav2 bridge node was previously a
+  ``SingleThreadedExecutor`` with all callbacks in the default mutually
+  exclusive group; ``send_load_map_request`` could block the executor
+  for up to ~11 s per Nav2 map node and stall the ``backend_status``
+  timer beyond the 5 s liveliness lease, causing false-positive
+  ``LivelinessChanged`` events. The timer now runs on a separate
+  ``MutuallyExclusive`` callback group within a
+  ``MultiThreadedExecutor`` (thread count fixed at 2 to avoid
+  ``hardware_concurrency()`` returning 1 in CPU-limited containers).
+
+Documentation
+-------------
+
+* README split into a slim entry point + ``docs/`` directory (PR #223).
+  Root ``README.md`` shrank from 430 → 95 lines (78% reduction); long
+  sections moved to ``docs/migration/v0.4.0.md`` (rename + AMCL split +
+  system tag hardcode), ``docs/migration/v0.3.0.md``,
+  ``docs/docker.md`` (Docker demo / dev / GPU 詳細),
+  ``docs/integration.md`` (自分のロボットへの導入手順),
+  ``docs/backend-status.md`` (Navigation + Localization 仕様統合). Root
+  README keeps package list, version policy, planned breaking changes,
+  quickstart, Docker quickstart (Jazzy 1-liner), main features, and a
+  table of links to the docs/.
+
+* Custom navigation bridge ``backend_ready`` computation guidance
+  (#207, PR #215). Added comments in
+  ``mapoi_interfaces/msg/NavigationBackendStatus.msg``,
+  ``mapoi_interfaces/README.md``, and the bridge source explaining how
+  to compute ``backend_ready`` for partial-capability bridges
+  (goal-only, route-only, etc.) and the privacy rules for the
+  ``reason`` string (no credentials / absolute paths / internal hostnames
+  / IPs / stack traces).
+
+* CLI launch examples and ``maps_path`` / ``map_name`` argument
+  semantics (#172, PR #219). Added a new section in
+  ``mapoi_server/README.md`` with both ``$(ros2 pkg prefix --share ...)``
+  and source-tree forms, an arguments table, and a worked example of the
+  common ``maps_path``-points-to-config-file misuse with the actual
+  FATAL log output.
+
+Internal / tests
+----------------
+
+* ``mapoi_interfaces`` docs ↔ implementation consistency lint (#216, PR
+  #217). New CI step (``scripts/check_docs_consistency.py``) runs in the
+  existing ``Consistency Check`` workflow and verifies (a) every
+  ``rosidl_generate_interfaces``-listed msg / srv has a matching
+  ``###`` heading in ``mapoi_interfaces/README.md``; (b)
+  cross-references like ``mapoi_interfaces/msg/X.msg`` resolve to real
+  files; (c) ``reason`` string literals in ``publish_backend_status``
+  functions don't contain absolute paths / IPs / credentials /
+  hostname-like literals. The first run of the lint also surfaced 3
+  missing README sections (``TagDefinition`` / ``InitialPoseRequest`` /
+  ``LocalizationBackendStatus``) which were filled in the same PR.
+
+* Test suite reorganization and contract tests (PR #194, #195, #196).
+  Test layout cleaned up (#193 in-progress); added
+  ``test_system_tags_contract.cpp`` to pin ``kSystemTags`` against the
+  WebUI tag list, ``test_resolve_backend_status_for_ui.py`` for the
+  WebUI legacy-fallback / lost-liveliness logic, and three integration
+  tests for ``EVENT_STOPPED`` / ``EVENT_RESUMED`` lifecycle (#177).
 
 
 0.3.0 (2026-05-02)
