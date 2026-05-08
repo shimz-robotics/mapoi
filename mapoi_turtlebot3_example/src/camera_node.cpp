@@ -22,32 +22,46 @@
 // `landmark` + `capture_target` tag 持ち) は別位置に置くのが自然なので、`EVENT_PAUSED`
 // で停止した後に landmark の方向を向いてから撮影する処理が必要になる。
 //
-// 推奨フロー:
+// シナリオ全体像:
+//   pause タグ POI ENTER → 自動 pause (bridge が FollowWaypoints を cancel + 残
+//   waypoints を保存) → cmd_vel dwell → EVENT_PAUSED → camera_node が landmark
+//   方向へ yaw 制御 → 撮影 → camera_node が `mapoi/nav/resume` publish → bridge が
+//   `paused_waypoints_` から FollowWaypoints 再送 → route 走行復帰
+//
+// 推奨フロー (camera_node 側):
 //   1. `mapoi_server` の `get_pois_info` service を呼び POI list を取得
 //   2. `capture_target` tag 持ちの landmark POI を 1 つ選ぶ (sample yaml 命名規約として
 //      `capture_target_<name>` 形式、例えば trigger POI 名 `conference_room` → 対応
 //      landmark `capture_target_painting` のようにマッピングルールを yaml で表現)
 //   3. robot の現位置を TF lookup (`map` → `base_link`) で取得
 //   4. `dx = landmark.x - robot.x`、`dy = landmark.y - robot.y`、`yaw = atan2(dy, dx)`
-//      で landmark を向く yaw 角を計算
-//   5. 姿勢制御:
-//      a. Nav2 `NavigateToPose` action を `goal_pose = (robot.x, robot.y, yaw)` で送る
-//         (in-place rotation + position 維持)、または
-//      b. `cmd_vel` topic に角速度 publish して in-place rotation、TF で yaw 整合確認
-//   6. yaw 整合 (`|robot_yaw - target_yaw| < threshold`、例: 0.05 rad) を確認
+//      で landmark を向く target yaw を計算
+//   5. **`cmd_vel` topic へ角速度を直接 publish** して in-place rotation。簡易 P
+//      制御で `angular.z = kp * (target_yaw - current_yaw)` の式、TF で current_yaw
+//      を周期取得しながら closed-loop。
+//      **NavigateToPose は使わない**: mapoi_nav2_bridge は pause で FollowWaypoints を
+//      cancel しているだけで `paused_waypoints_` を保持しており、camera_node が
+//      NavigateToPose を別途送ると bridge の resume 経路と Nav2 action server で
+//      goal 上書き race になる
+//   6. yaw 整合 (`|current_yaw - target_yaw| < threshold`、例: 0.05 rad) を確認、
+//      角速度 = 0 を 1 tick publish して停止
 //   7. 実 capture (画像保存 / camera2_v4l2 / image_transport / OpenCV trigger 等)
-//   8. 必要なら robot を元の方向 (route waypoint の `pose.yaw`) に戻してから resume
+//   8. **`mapoi/nav/resume` topic に publish** して route 走行に復帰させる。
+//      bridge が `paused_waypoints_` から FollowWaypoints を再送するので、
+//      robot は次の waypoint へ自動進行 (新規 yaw 整合は Nav2 controller が解決)
 //
-// 注: 5.a の Nav2 NavigateToPose は `mapoi_nav2_bridge` の current FollowWaypoints
-// goal と競合する可能性があるため、route 内 capture では 5.b (cmd_vel 直接制御) +
-// 一時的な local_costmap mute / Nav2 controller_server の cancel など慎重設計が必要。
-// 撮影専用 sub-state (例: `mapoi/nav/capture_in_progress` topic) を別途定義して
-// `mapoi_nav2_bridge` 側で controller を一時 mute する拡張も検討候補。
+// 前提条件:
+//   - 採用 controller が pause 中に `cmd_vel` publish を停止していること (Nav2 default)。
+//     pause 中も controller_server が cmd_vel publish を継続する特殊 implementation
+//     では camera_node の cmd_vel と衝突する。対策は controller_server の `cmd_vel`
+//     remap で出力を空 topic に逸らす、または撮影専用 sub-state を bridge 側に追加
+//     する拡張 (今後 issue 化候補)
+//   - 撮影直後に `mapoi/nav/resume` を出さないと、route が無限 pause のまま停止
 //
 // 本 sample では実装ハードルが高いため、まずは「PAUSED イベントの受信 → log で trigger
 // 確認」までを示す mock に留めている。本番化する場合は上記フロー + camera_node に
-// `get_pois_info` client + tf_buffer + Nav2 action client (or cmd_vel publisher) を
-// 持たせて実装する。
+// `get_pois_info` client + tf_buffer + cmd_vel publisher + `mapoi/nav/resume`
+// publisher を持たせて実装する。
 #include <algorithm>
 #include <memory>
 #include <string>
