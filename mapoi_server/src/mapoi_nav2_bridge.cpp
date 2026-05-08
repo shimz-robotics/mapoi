@@ -788,11 +788,15 @@ void MapoiNav2Bridge::reset_nav_state()
   current_route_waypoints_.clear();
   paused_waypoints_.clear();
   current_waypoint_index_ = 0;
-  // active route POI set もここで clear (#143)。route 終端 / cancel / failure 等で route が
-  // 終わったあとに pause 発火条件が誤って残らないようにする。
+  // active route POI set / per-POI 状態をここで clear (#143 / #220)。
+  // route 終端 / cancel / failure 等で route が終わったあと、次回 route mode 開始時に
+  // 「既に inside / paused 状態」のまま開始されて VISITED / PAUSED_AT が発火しない、
+  // または lifecycle 順序が崩れる、を防ぐ。
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
     current_route_poi_names_.clear();
+    poi_inside_state_.clear();
+    poi_paused_at_published_.clear();
   }
 }
 
@@ -1030,52 +1034,58 @@ void MapoiNav2Bridge::tolerance_check_callback()
       return;
     }
 
-    // EVENT_VISITED は route 走行中 + route 登録 POI のみが publish 対象 (#220)。
-    // route 走行外 (IDLE / GOAL mode) や non-route POI への侵入は通知しない。
-    const bool route_active = (nav_mode_ == NavMode::ROUTE);
+    // EVENT_VISITED / EVENT_PAUSED_AT / EVENT_EXIT は route 走行中 + route 登録 POI のみが
+    // publish 対象 (#220)。route 走行外 (IDLE / GOAL mode) や non-route POI への侵入は通知
+    // しない。lifecycle invariant: VISITED → [PAUSED_AT] → EXIT を守るため、is_route_poi で
+    // ない POI の inside/paused state は **書き換えない** (旧 build / route 外で勝手に内部
+    // 状態が進むと、ROUTE 開始時に既に inside=true で VISITED が出ない / PAUSED_AT が
+    // VISITED を経ずに出る等の lifecycle 違反になる)。
 
     for (const auto & poi : event_pois_) {
       double dist = distance_2d(poi.pose, rx, ry);
-      bool was_inside = poi_inside_state_[poi.name];
 
       // route 登録 POI かつ ROUTE mode 走行中なら event 発火対象 (#220)。
-      const bool is_route_poi = route_active &&
+      // is_pause_eligible は同じ前提 (ROUTE mode + active route POI) + pause タグの
+      // 3 条件、is_route_poi はそこから tag check を除いた superset。
+      // invariant: !is_route_poi → !is_pause_poi (is_pause_poi は is_route_poi の subset)。
+      const bool is_pause_poi = is_pause_eligible(poi, nav_mode_, current_route_poi_names_);
+      const bool is_route_poi = (nav_mode_ == NavMode::ROUTE) &&
         current_route_poi_names_.find(poi.name) != current_route_poi_names_.end();
 
-      // pause 自動発火は ROUTE 走行中 + active route POI + "pause" タグの 3 条件 (#143)。
-      // (is_route_poi と前提が一致するため、is_pause_eligible で同じ check を行う。)
-      const bool is_pause_poi = is_pause_eligible(poi, nav_mode_, current_route_poi_names_);
+      if (!is_route_poi) {
+        // route 外 POI / route 走行外 mode では state を書き換えない (lifecycle 保護)。
+        // pause 自動 trigger も is_pause_eligible で false なので発火しない。
+        continue;
+      }
+
+      bool was_inside = poi_inside_state_[poi.name];
 
       if (!was_inside && dist <= poi.tolerance.xy) {
-        // VISITED event: route POI のみ publish
+        // VISITED event
         poi_inside_state_[poi.name] = true;
-        if (is_route_poi) {
-          mapoi_interfaces::msg::PoiEvent event;
-          event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_VISITED;
-          event.poi = poi;
-          event.stamp = this->now();
-          poi_event_pub_->publish(event);
-          RCLCPP_INFO(this->get_logger(), "POI VISITED: %s (dist=%.2f, tolerance.xy=%.2f)",
-                      poi.name.c_str(), dist, poi.tolerance.xy);
-        }
-        // pauseタグがあれば自動pause対象 (active route POI かつ ROUTE 走行中のみ)
+        mapoi_interfaces::msg::PoiEvent event;
+        event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_VISITED;
+        event.poi = poi;
+        event.stamp = this->now();
+        poi_event_pub_->publish(event);
+        RCLCPP_INFO(this->get_logger(), "POI VISITED: %s (dist=%.2f, tolerance.xy=%.2f)",
+                    poi.name.c_str(), dist, poi.tolerance.xy);
+        // pauseタグがあれば自動pause対象
         if (is_pause_poi) {
           pause_triggered_poi = poi.name;
         }
       } else if (was_inside && dist > poi.tolerance.xy * hysteresis) {
-        // EXIT event: route POI のみ publish
+        // EXIT event
         poi_inside_state_[poi.name] = false;
         // PAUSED_AT 発火済 flag も EXIT で reset (#220 lifecycle: VISITED → [PAUSED_AT] → EXIT)
         poi_paused_at_published_[poi.name] = false;
-        if (is_route_poi) {
-          mapoi_interfaces::msg::PoiEvent event;
-          event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_EXIT;
-          event.poi = poi;
-          event.stamp = this->now();
-          poi_event_pub_->publish(event);
-          RCLCPP_INFO(this->get_logger(), "POI EXIT: %s (dist=%.2f, tolerance.xy=%.2f)",
-                      poi.name.c_str(), dist, poi.tolerance.xy);
-        }
+        mapoi_interfaces::msg::PoiEvent event;
+        event.event_type = mapoi_interfaces::msg::PoiEvent::EVENT_EXIT;
+        event.poi = poi;
+        event.stamp = this->now();
+        poi_event_pub_->publish(event);
+        RCLCPP_INFO(this->get_logger(), "POI EXIT: %s (dist=%.2f, tolerance.xy=%.2f)",
+                    poi.name.c_str(), dist, poi.tolerance.xy);
         continue;  // PAUSED_AT 判定不要 (今 tick で OUTSIDE 化)
       }
 
