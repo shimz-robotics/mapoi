@@ -43,11 +43,12 @@ poi:
   pose: {x: -0.6, y: -0.6, yaw: 0.0}
   tolerance: {xy: 0.35, yaw: 0.785}
   tags: [waypoint]
-- description: 大会議室 (撮影地点、yaw 厳密)
+- description: 大会議室 (撮影地点、yaw 厳密、pause で停止後 EVENT_PAUSED で撮影 #88)
   name: conference_room
   pose: {x: 0.7, y: -0.4, yaw: 1.57}
   tolerance: {xy: 0.45, yaw: 0.10}
-  tags: [waypoint, capture_trigger]
+  # capture_trigger + pause: pause で停止 → cmd_vel dwell → EVENT_PAUSED → camera_node 撮影
+  tags: [waypoint, capture_trigger, pause]
 - description: 廊下A (連続 pause #1、yaw 不問で通り過ぎる)
   name: corridor_a
   pose: {x: 0.4, y: 0.6, yaw: -3.14}

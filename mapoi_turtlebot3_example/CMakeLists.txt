@@ -28,6 +28,16 @@ ament_auto_add_executable(follow_waypoints_client
   src/follow_waypoints_client.cpp
 )
 
+# PoiEvent 駆動 sample subscriber (#88)。route 走行中に audio_info / capture_trigger
+# tag 付き POI で audio guide / camera trigger を mock 実行する参照実装。
+ament_auto_add_executable(audio_guide_node
+  src/audio_guide_node.cpp
+)
+
+ament_auto_add_executable(camera_node
+  src/camera_node.cpp
+)
+
 
 install(
   DIRECTORY
