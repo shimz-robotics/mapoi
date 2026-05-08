@@ -156,7 +156,7 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 | `goal_pose` | `geometry_msgs/PoseStamped` | ゴール位置の配信 |
 | `mapoi/nav/status` | `std_msgs/String` | ナビゲーション状態を `"status"` または `"status:target"` 形式で配信（例: `"navigating:kitchen"`、`"succeeded:patrol_route"`、`"paused:patrol_route"`、`"map_switching:turtlebot3_world"`）。`status` は `navigating` / `succeeded` / `aborted` / `canceled` / `paused` / `map_switching` / `map_switch_succeeded` / `map_switch_failed` / `backend_unavailable`。`backend_unavailable` は Nav2 action / service 不在で goal / route / resume を実行できなかった場合（#198）。`target` は POI 名（goal mode）、route 名（route mode）、または map 名で、subscriber 側は最初の `:` で split して復元する（target 内に `:` が含まれても残り全体を target として扱える）。`transient_local` QoS の **現在状態 snapshot**（depth=1）で、後起動 subscriber が最後の状態を受信できるが状態遷移履歴は復元できない。現在走行中かは `navigating` / `paused` / `map_switching` で判定し、終端状態（`succeeded` / `aborted` / `canceled` / `map_switch_succeeded` / `map_switch_failed` / `backend_unavailable`）は直近結果として扱う |
 | `mapoi/nav/backend_status` | `mapoi_interfaces/NavigationBackendStatus` | navigation bridge の readiness summary を 1Hz で配信（#198）。`transient_local` QoS。Minimal 3 フィールド（`backend_type` / `backend_ready` / `reason`）。WebUI / panel は `backend_ready` で navigation 操作 UI を一括 gate する。詳細は ルート README "Navigation backend 仕様" 節を参照 |
-| `mapoi/events` | `mapoi_interfaces/PoiEvent` | POI 侵入・退出イベント |
+| `mapoi/events` | `mapoi_interfaces/PoiEvent` | route 走行中の POI 侵入 (`EVENT_VISITED`) / pause POI で navigation 停止 (`EVENT_PAUSED_AT`) / 退出 (`EVENT_EXIT`) イベント (#220) |
 
 #### アクションクライアント
 
@@ -165,15 +165,23 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 | `follow_waypoints` | `nav2_msgs/FollowWaypoints` | ウェイポイント追従 |
 | `navigate_to_pose` | `nav2_msgs/NavigateToPose` | 単一ゴールナビゲーション |
 
-#### POI 半径イベント検知
+#### POI 半径イベント検知 (`PoiEvent`)
 
-POI の半径内にロボットが侵入/退出した際に `mapoi/events` トピックにイベントを発行します。全 POI がタグに関わらず検知対象です。
+`mapoi/events` topic で 3 種別の event を publish します (#220 で 4 種別 → 3 種別に簡素化)。検知対象は **route 走行中 (`nav_mode == ROUTE`、`FollowWaypoints` 駆動)** + **route 登録 POI** のみで、route 走行外 (`IDLE` / `GOAL` mode) では event は発火しません。
+
+| event_type | 発火条件 |
+| --- | --- |
+| `EVENT_VISITED` | route POI の `tolerance.xy` 半径内へ侵入 |
+| `EVENT_PAUSED_AT` | `pause` タグ付き POI の `tolerance.xy` 内で **navigation 停止** (cmd_vel dwell で検知)、1 visit につき 1 回のみ |
+| `EVENT_EXIT` | route POI から `tolerance.xy * hysteresis_exit_multiplier` を超えて退出 |
+
+検知の前提:
 
 - TF lookup (`map` -> `base_link`) でロボット位置を取得（デフォルト 5Hz）
-- **侵入判定**: 距離 <= `tolerance.xy`
-- **退出判定**: 距離 > `tolerance.xy * hysteresis_exit_multiplier`（デフォルト 1.15）
-- `pause` タグ付き POI では侵入時に走行を自動一時停止（併せてイベントも発行）
+- `pause` タグ付き POI では侵入時に走行を自動一時停止 (併せて `EVENT_PAUSED_AT` を nav 停止後に publish)
+- `EVENT_PAUSED_AT` は採用 controller が **navigation 停止中も cmd_vel = 0 を継続 publish** する前提 (Nav2 default の挙動)。controller が静止時に cmd_vel publish を止める実装の場合、`EVENT_PAUSED_AT` は発火しません
 - マップ切替時は内部状態をリセットし、新しい POI リストで監視を再開
+- `RESUMED` 相当の event はありません (resume は client 側 request + `mapoi/nav/status` で観測可能)
 
 ### mapoi_amcl_localization_bridge
 
