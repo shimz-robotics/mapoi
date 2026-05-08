@@ -235,10 +235,10 @@ class TestPoiEventIntegration(unittest.TestCase):
                 return True
         return False
 
-    # 旧 _enter_poi / _enter_and_stop_poi は #220 で撤去。新 spec では _activate_route
+    # 旧 _enter_poi / _enter_and_stop_poi は #220 で撤去。v0.5.0+ spec では _activate_route
     # 経由で ROUTE mode に入ってから ENTER を待つ流れに変更 (各 test 内で構築)。
 
-    # --- 新 PoiEvent 仕様 (#220) ---
+    # --- v0.5.0+ の PoiEvent 仕様 (#220) ---
     # EVENT_ENTER / EVENT_PAUSED / EVENT_EXIT の 3 種別 + route 走行中 + route 登録 POI のみ。
     #
     # NOTE: ROUTE-mode integration test (ENTER / PAUSED / EXIT 発火確認) は本 PR では
@@ -246,14 +246,14 @@ class TestPoiEventIntegration(unittest.TestCase):
     # 接続できないと `reset_nav_state()` で `nav_mode_` を IDLE に戻すため、ROUTE mode
     # を維持して event 発火を観測するには Nav2 action server mock が必要。これは scope が
     # 中規模 (mock setup + test infra) のため別 issue で扱う。本 PR では下の
-    # `test_no_event_in_non_route_mode` で「新 spec で route 走行外 (IDLE / GOAL mode) は
+    # `test_no_event_in_non_route_mode` で「v0.5.0+ spec で route 走行外 (IDLE / GOAL mode) は
     # event を発火しない」ことを negative evidence として確認する。
 
     def test_no_event_in_non_route_mode(self):
         """route 走行外 (IDLE / GOAL mode、ROUTE 未開始) では POI に侵入しても event 発火しない (#220)。
 
         旧 spec では IDLE / GOAL でも EVENT_ENTER が発火していたため、本 test は
-        新 spec への migration evidence として機能する (旧コードでは fail、新コードで pass)。
+        v0.5.0+ spec への migration evidence として機能する (旧コードでは fail、新コードで pass)。
         """
         # ROUTE mode に入っていない = nav_mode_ は IDLE のまま
         self._set_robot_pose(1.0, 0.0)

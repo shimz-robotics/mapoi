@@ -8,7 +8,7 @@
 // 関数を音声合成 / 再生 system call に差し替える。
 //
 // 仕様 (#220 / #88):
-//   - `EVENT_ENTER` は route 走行中 + route 登録 POI のみ発火 (新 PoiEvent 仕様)。
+//   - `EVENT_ENTER` は route 走行中 + route 登録 POI のみ発火 (v0.5.0+ の PoiEvent 仕様)。
 //   - `audio_info` tag を持つ POI で EVENT_ENTER 受信 → ガイド再生 trigger。
 //   - 同 POI で EXIT までは再 trigger しない (lifecycle 上 1 visit = 1 ENTER で十分)。
 #include <algorithm>

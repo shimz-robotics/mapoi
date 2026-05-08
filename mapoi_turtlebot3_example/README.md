@@ -116,13 +116,13 @@ ros2 run mapoi_turtlebot3_example get_pois_info_client
 
 ### 起動方法
 
-main launch に組み込んで一括起動 (推奨):
+`turtlebot3_navigation.launch.yaml` は demo 用集約 launch のため、**audio_guide_node / camera_node を常時起動** します:
 
 ```sh
-ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml with_event_samples:=true
+ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml
 ```
 
-または個別起動:
+自前 robot に sample subscriber **だけ** を流用したい場合は単独 launch を使用:
 
 ```sh
 ros2 launch mapoi_turtlebot3_example mapoi_event_samples.launch.yaml
