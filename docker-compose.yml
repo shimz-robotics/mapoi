@@ -4,14 +4,14 @@
 #   xhost +local:docker
 #
 # 開発用 (bind mount + bash):
+#   docker compose run --rm dev                    # default: Jazzy (gz-sim)
 #   ROS_DISTRO=humble docker compose run --rm dev  # Humble (Gazebo Classic)
-#   ROS_DISTRO=jazzy  docker compose run --rm dev  # Jazzy (gz-sim)
 #
 # お試し/デモ (Turtlebot3 + Gazebo + mapoi):
-#   ROS_DISTRO=humble docker compose up demo
-#   ROS_DISTRO=jazzy  docker compose up demo
+#   docker compose up demo                    # default: Jazzy (gz-sim)
+#   ROS_DISTRO=humble docker compose up demo  # Humble (Gazebo Classic)
 #
-# distro 選択: ${ROS_DISTRO:-humble} (shell / .env で非空ならその値、空または未設定なら humble)
+# distro 選択: ${ROS_DISTRO:-jazzy} (shell / .env で非空ならその値、空または未設定なら jazzy)
 # image: mapoi:<service>-${ROS_DISTRO} で distro 別保存、並行運用可、切替時 rebuild 不要
 # 詳細: README "ソースから docker compose build" 節
 services:
@@ -20,14 +20,14 @@ services:
       context: .
       target: dev
       args:
-        ROS_DISTRO: ${ROS_DISTRO:-humble}
+        ROS_DISTRO: ${ROS_DISTRO:-jazzy}
         USER_ID: ${USER_ID:-1000}
         GROUP_ID: ${GROUP_ID:-1000}
     # image タグに ROS_DISTRO を含めて distro 別に保持する。
     # 共通タグ (mapoi:dev) だと build arg を変えても 'docker compose run' は前回 build を
     # silently 再利用する (ARG 変更で cache invalidate されるのは build 時のみ)。
     # distro 別タグなら humble / jazzy 両 image を独立保持でき、切替時の rebuild も並行運用も不要。
-    image: mapoi:dev-${ROS_DISTRO:-humble}
+    image: mapoi:dev-${ROS_DISTRO:-jazzy}
     network_mode: host
     ipc: host
     environment:
@@ -60,11 +60,11 @@ services:
       context: .
       target: runtime
       args:
-        ROS_DISTRO: ${ROS_DISTRO:-humble}
+        ROS_DISTRO: ${ROS_DISTRO:-jazzy}
         USER_ID: ${USER_ID:-1000}
         GROUP_ID: ${GROUP_ID:-1000}
     # dev と同じく distro 別タグで保持
-    image: mapoi:demo-${ROS_DISTRO:-humble}
+    image: mapoi:demo-${ROS_DISTRO:-jazzy}
     network_mode: host
     ipc: host
     environment:
