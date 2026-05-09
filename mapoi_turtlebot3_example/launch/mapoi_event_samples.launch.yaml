@@ -1,22 +1,16 @@
-# PoiEvent 駆動 sample subscriber 群を起動する launch (#88)。
+# PoiEvent 駆動 sample subscriber を起動する launch (#88)。
 #
 # audio_guide_node: audio_info tag POI で EVENT_ENTER → audio guide log
-# camera_node:      capture_trigger tag POI で EVENT_PAUSED → capture log
 #
 # 使い方:
 #   ros2 launch mapoi_turtlebot3_example mapoi_event_samples.launch.yaml
 #
-# main launch (turtlebot3_navigation.launch.yaml) に組み込んで一括起動するなら
-# `with_event_samples:=true` arg を渡す:
-#   ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml with_event_samples:=true
+# 本 launch は turtlebot3_navigation.launch.yaml から無条件 include される
+# (集約 launch は demo 用途のため)。自前 robot に sample subscriber だけ流用したい
+# 場合は本 launch を単独で include する。
 launch:
 
 - node:
     pkg: mapoi_turtlebot3_example
     exec: audio_guide_node
     name: audio_guide_node
-
-- node:
-    pkg: mapoi_turtlebot3_example
-    exec: camera_node
-    name: camera_node

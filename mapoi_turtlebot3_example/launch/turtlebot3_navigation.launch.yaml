@@ -94,7 +94,7 @@ launch:
       - {name: robot_radius, value: "0.1"}
 
 # PoiEvent 駆動 sample subscriber (#88)。turtlebot3_navigation.launch.yaml は demo 用途の
-# 集約 launch なので常時起動 (audio_guide_node / camera_node)。自前 robot に sample subscriber
-# だけ流用したい場合は mapoi_event_samples.launch.yaml を単独 include する。
+# 集約 launch なので常時起動 (audio_guide_node)。自前 robot に sample subscriber だけ流用
+# したい場合は mapoi_event_samples.launch.yaml を単独 include する。
 - include:
     file: "$(find-pkg-share mapoi_turtlebot3_example)/launch/mapoi_event_samples.launch.yaml"
