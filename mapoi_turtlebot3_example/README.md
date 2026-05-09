@@ -165,19 +165,25 @@ pause タグ POI ENTER
   └→ mapoi_nav2_bridge が auto_pause: FollowWaypoints を cancel + 残 waypoints を paused_waypoints_ に保存
   └→ cmd_vel dwell (~1s) → EVENT_PAUSED 発火
        └→ camera_node:
-            (1) get_pois_info で capture_target tag 持ち landmark POI 取得
-            (2) TF (map → base_link) で robot 現位置取得
-            (3) yaw = atan2(landmark.y - robot.y, landmark.x - robot.x) 計算
-            (4) cmd_vel 直接 publish で in-place rotation (closed-loop)
-            (5) yaw 整合確認 → 撮影実行
-            (6) mapoi/nav/resume へ publish
+            (1) 撮影実行 (robot は既に pose.yaw 整合状態)
+            (2) mapoi/nav/resume へ publish
                  └→ mapoi_nav2_bridge が paused_waypoints_ から FollowWaypoints 再送
                       └→ route 走行復帰、次 waypoint へ進行
 ```
 
+**設計のポイント — landmark 方向への姿勢制御は yaml の `pose.yaw` で静的に決めるのが最もシンプル**:
+
+- 撮影 POI (`capture_trigger` 付き waypoint) と撮影対象 landmark (`capture_target` 付き) は別位置だが、**Nav2 が SimpleGoalChecker で waypoint の `pose.yaw` を整合させて停止**するため、yaml 編集時に `atan2(landmark.y - waypoint.y, landmark.x - waypoint.x)` で landmark 方向の yaw を計算して `pose.yaw` に書いておけば、camera_node 側では動的 yaw 制御が不要
+- mapoi の `tolerance.yaw` は **mapoi 内部メタデータのみ** (RViz 描画 / validation) で Nav2 controller には forward されない。yaw の実効精度は Nav2 controller の global parameter `yaw_goal_tolerance` (`burger.yaml` の `controller_server.FollowPath.goal_checker.yaw_goal_tolerance`) が支配。default `0.25` rad (~14°) で大半の撮影 sample は画角内に収まる
+- 必要なら `yaw_goal_tolerance` を tighten (推奨 range 0.05-0.30 rad、これ以下は controller 振動 risk)
+- 想定 worst case yaw 誤差 = `yaw_goal_tolerance + atan2(xy_goal_tolerance, distance_to_landmark)`。例: yaw_tol=0.25, xy_tol=0.25, d=2m → 0.37 rad (~21°)。一般的カメラ FOV (60-90°) なら余裕に収まる
+
+**動的 yaw 計算が必要なケース** (本指針で対応できない、follow-up issue 候補):
+
+- landmark が waypoint から非常に近い (距離 < 0.5m): xy_tol drift で角度誤差が画角を超える可能性
+- 走行中の動的 landmark (人間追跡等): static yaml 設定では不可、camera_node で TF lookup + closed-loop 制御が必要
+
 **注意点**:
-- 姿勢制御は **`cmd_vel` 直接制御を推奨** (NavigateToPose は不可)。bridge は pause で FollowWaypoints を cancel + 残 waypoints 保存しており、camera_node が NavigateToPose を別送すると `mapoi/nav/resume` 時に goal 上書き race になる
-- `cmd_vel` 直接制御は採用 controller が pause 中に cmd_vel publish を停止している前提 (Nav2 default)。controller によっては衝突するため、controller_server 側の `cmd_vel` remap や撮影専用 sub-state 追加 (今後 issue 化候補) で対応
 - 撮影完了後に `mapoi/nav/resume` を必ず publish しないと route が無限 pause で停止する
 
 詳細は [`camera_node.cpp` のヘッダコメント](./src/camera_node.cpp) に実装指針を記載。詳細仕様は [mapoi_interfaces の README](../mapoi_interfaces/README.md#poieventmsg) と [PoiEvent.msg](../mapoi_interfaces/msg/PoiEvent.msg) のヘッダコメント参照。
