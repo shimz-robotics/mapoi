@@ -1,17 +1,15 @@
-# シナリオ: オフィス見学ツアー (見学客を案内、要所で撮影 / 音声ガイド / 自動停止)。
+# シナリオ: オフィス見学ツアー (見学客を案内、要所で音声ガイド / 自動停止)。
 # 検証カバレッジ (#146): system tag 単独 / 複合、tolerance.yaw 厳密 ↔ 緩い、route の
-# waypoints + landmarks 両方持ち、連続 pause、撮影 / 音声 / 観察対象の custom tag。
+# waypoints + landmarks 両方持ち、連続 pause、音声 / 観察対象の custom tag。
 custom_tags:
 - {name: destination, description: General destination point}
 - {name: audio_info, description: Audio guide trigger (POI 進入で音声再生)}
-- {name: capture_trigger, description: Capture action trigger (POI 進入で撮影起動)}
-- {name: capture_target, description: Capture action target (撮影対象、landmark で参照)}
 route:
-# tour_full: フルツアー。waypoints + landmarks 両方を持ち、連続 pause / 撮影 / 観察対象の
+# tour_full: フルツアー。waypoints + landmarks 両方を持ち、連続 pause / 観察対象の
 # 全シナリオを 1 route で踏む (#143 route.landmarks の動作確認用)。
 - name: tour_full
   waypoints: [meeting_room_a, conference_room, corridor_a, corridor_b, model_exhibit]
-  landmarks: [tour_landmark, exhibit_display, capture_target_painting]
+  landmarks: [tour_landmark, exhibit_display]
 # tour_short: landmarks 無しの短縮版 (旧 route_2 互換、corridor_a 経由)。
 # route schema が landmarks 省略でも動く検証用。
 - name: tour_short
@@ -30,8 +28,8 @@ gazebo:
 # tolerance.xy 内に入る前にゴール判定で停止し radius event が発火しない。最小 0.30 (5cm 余裕) で
 # 各部屋の規模感に合わせ 0.30〜0.50 にバラす。
 # tolerance.yaw は >= 0.001 (rad) を指定する (msg spec #138 で 0 / 負値は禁止)。
-# default 0.785 (≒ π/4 = 45°)。撮影位置等 yaw を厳密制御したい POI はより小さい値、
-# 通り過ぎる経由点等 yaw を問わない POI は π (≒ 180°) 近辺を指定する。
+# default 0.785 (≒ π/4 = 45°)。yaw を厳密制御したい POI はより小さい値、通り過ぎる
+# 経由点等 yaw を問わない POI は π (≒ 180°) 近辺を指定する。
 poi:
 - description: エレベーターホール (POI list 先頭 = default initial pose)
   name: elevator_hall
@@ -43,11 +41,11 @@ poi:
   pose: {x: -0.6, y: -0.6, yaw: 0.0}
   tolerance: {xy: 0.35, yaw: 0.785}
   tags: [waypoint]
-- description: 大会議室 (撮影地点、yaw 厳密)
+- description: 大会議室 (yaw 厳密な経由点)
   name: conference_room
   pose: {x: 0.7, y: -0.4, yaw: 1.57}
   tolerance: {xy: 0.45, yaw: 0.10}
-  tags: [waypoint, capture_trigger]
+  tags: [waypoint]
 - description: 廊下A (連続 pause #1、yaw 不問で通り過ぎる)
   name: corridor_a
   pose: {x: 0.4, y: 0.6, yaw: -3.14}
@@ -76,8 +74,3 @@ poi:
   pose: {x: -0.3, y: 0.3, yaw: 0.0}
   tolerance: {xy: 0.30, yaw: 0.785}
   tags: [landmark, audio_info]
-- description: 絵画 (landmark + capture_target、撮影アクションの対象として参照)
-  name: capture_target_painting
-  pose: {x: 0.6, y: 0.0, yaw: 1.57}
-  tolerance: {xy: 0.30, yaw: 0.785}
-  tags: [landmark, capture_target]

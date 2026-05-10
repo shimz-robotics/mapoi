@@ -27,6 +27,7 @@ launch:
     default: "true"
     description: "Launch シミュレータ GUI (Humble: gzclient / Jazzy: gz sim -g). false で headless. server は常時起動"
 
+
 # Gazebo launch (distro 別の headless-aware wrapper を使い分け)
 # - Humble: Gazebo Classic 用 (gazebo_ros gzserver/gzclient を条件化)
 # - Jazzy 以降: gz-sim 用 (ros_gz_sim gz_sim を server/GUI で条件化)
@@ -91,3 +92,9 @@ launch:
       - {name: web_port, value: "8765"}
       - {name: web_host, value: "0.0.0.0"}
       - {name: robot_radius, value: "0.1"}
+
+# PoiEvent 駆動 sample subscriber (#88)。turtlebot3_navigation.launch.yaml は demo 用途の
+# 集約 launch なので常時起動 (audio_guide_node)。自前 robot に sample subscriber だけ流用
+# したい場合は mapoi_event_samples.launch.yaml を単独 include する。
+- include:
+    file: "$(find-pkg-share mapoi_turtlebot3_example)/launch/mapoi_event_samples.launch.yaml"
