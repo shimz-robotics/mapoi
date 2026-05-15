@@ -140,7 +140,12 @@ class FakeFollowWaypointsServer:
         try:
             self._executor.shutdown()
         finally:
-            self._node.destroy_node()
+            # ActionServer は Node.destroy_node() で waitable が確実に掃除されないため
+            # (humble の rclpy examples も destroy() を明示)、先に明示破棄する。
+            try:
+                self._action_server.destroy()
+            finally:
+                self._node.destroy_node()
 
 
 class TestPoiEventRouteIntegration(unittest.TestCase):
@@ -243,6 +248,11 @@ class TestPoiEventRouteIntegration(unittest.TestCase):
         # 全 POI から十分遠い位置で開始し、ROUTE 起動前の inside ENTER を防ぐ。
         self._set_robot_pose(*self.FAR_AWAY_XY)
         self._set_cmd_vel(0.2, 0.0)
+        # tearDown の cancel が遅延配送されて新 route を kill する race を防ぐ
+        # 防御 cancel + spin。idempotent (bridge 側 ``mapoi_cancel_cb`` は active
+        # goal 不在でも reset_nav_state() のみ呼ぶ)。
+        self._publish_cancel()
+        self._spin_for(0.2)
         self.received_events.clear()
         self.received_nav_status.clear()
         # POI list の初期 fetch + tag definitions の取得まで bridge が落ち着くのを待つ。
@@ -257,8 +267,11 @@ class TestPoiEventRouteIntegration(unittest.TestCase):
         reset 済等) でも ``reset_nav_state()`` を呼ぶため、cancel publish だけで
         ``nav_mode_`` / ``poi_inside_state_`` / ``is_paused_`` は IDLE にリセット
         される。``"canceled"`` status は経路によっては publish されない (pause 後の
-        2 度目 cancel 等) ので待たない (浪費)。代わりに 1 周期分 spin して
-        reset_nav_state の効果が反映されるのを待つ。
+        2 度目 cancel 等) ので待たない (浪費)。代わりに 0.5s spin して cancel
+        message が bridge へ届き ``reset_nav_state`` が実行されるのを待つ
+        (local DDS + reliable QoS で sub-ms latency、bridge は default executor
+        で tolerance_check を 100ms 周期で回しているので、tick 間に cancel が
+        処理される。3-5x マージン)。後段 setUp 側でも防御 cancel を打つ。
 
         test 側の ``inside_state`` (subscriber 視点) は EVENT_EXIT 受信で更新する
         が、cancel 後は bridge が ``current_route_poi_names_`` を空にしているため
@@ -266,7 +279,7 @@ class TestPoiEventRouteIntegration(unittest.TestCase):
         test 側 tracker を bridge の reset と整合させるため明示クリアする。
         """
         self._publish_cancel()
-        self._spin_for(0.3)
+        self._spin_for(0.5)
         type(self).inside_state.clear()
         self.received_events.clear()
         self.received_nav_status.clear()
@@ -325,9 +338,6 @@ class TestPoiEventRouteIntegration(unittest.TestCase):
     def _count_events(self, predicate):
         return sum(1 for e in self.received_events if predicate(e))
 
-    def _compute_inside_pois(self):
-        return {name for name, inside in type(self).inside_state.items() if inside}
-
     def _publish_route(self, route_name=None):
         msg = String()
         msg.data = route_name if route_name is not None else self.DEFAULT_ROUTE_NAME
@@ -383,7 +393,14 @@ class TestPoiEventRouteIntegration(unittest.TestCase):
             'POI から十分離れたら EVENT_EXIT が発火するはず')
 
     def test_paused_event_in_pause_poi(self):
-        """pause タグ付き route POI 内で cmd_vel が dwell すると EVENT_PAUSED が 1 回発火する。"""
+        """pause タグ付き route POI 内で cmd_vel が dwell すると EVENT_PAUSED が 1 回発火する。
+
+        EVENT_PAUSED 単独の assertion だけだと、auto-pause / FollowWaypoints cancel
+        の経路が壊れていても (TF + cmd_vel 由来の判定で) PAUSED は発火しうる。
+        bridge は pause タグ POI に ENTER した瞬間 ``mapoi_pause_cb`` 経由で
+        ``"paused"`` nav status を発行する (mapoi_nav2_bridge.cpp:903) ので、その
+        observation を併せて確認することで auto-pause regression も検出する。
+        """
         self._activate_route()
         self._set_robot_pose(0.0, 2.0)  # poi_with_pause
         self.assertTrue(
@@ -391,6 +408,11 @@ class TestPoiEventRouteIntegration(unittest.TestCase):
                 lambda e: (e.event_type == PoiEvent.EVENT_ENTER
                            and e.poi.name == 'poi_with_pause')),
             '前提: pause POI への ENTER')
+        # ENTER 直後に bridge が auto-pause を発火し "paused" nav status を出すはず。
+        # ここを assert することで auto-pause / cancel 経路の regression も検出する。
+        self.assertTrue(
+            self._wait_for_nav_status('paused', timeout_sec=2.0),
+            'pause POI への ENTER 直後に bridge が auto-pause で "paused" status を出すはず')
         # cmd_vel を 0 にして dwell 経過させる
         self._set_cmd_vel(0.0, 0.0)
         self.assertTrue(
