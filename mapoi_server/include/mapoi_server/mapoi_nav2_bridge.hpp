@@ -294,6 +294,7 @@ private:
   FRIEND_TEST(Nav2BridgeTestFixture, ResetNavStateClearsRouteContext);
   FRIEND_TEST(Nav2BridgeTestFixture, AutoResumeTimeoutDefaultDisabled);
   FRIEND_TEST(Nav2BridgeTestFixture, AutoResumeTimeoutNegativeClampedToZero);
+  FRIEND_TEST(Nav2BridgeTestFixture, AutoResumeTimeoutNonFiniteClampedToZero);
   FRIEND_TEST(Nav2BridgeTestFixture, CancelAutoResumeTimerIsIdempotent);
   FRIEND_TEST(Nav2BridgeTestFixture, ResetNavStateCancelsAutoResumeTimer);
 #endif

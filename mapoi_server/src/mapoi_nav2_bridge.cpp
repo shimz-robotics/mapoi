@@ -105,9 +105,15 @@ MapoiNav2Bridge::MapoiNav2Bridge(const rclcpp::NodeOptions & options)
   stopped_speed_threshold_ = this->get_parameter("stopped_speed_threshold").as_double();
   stopped_dwell_time_sec_ = this->get_parameter("stopped_dwell_time_sec").as_double();
   const double auto_resume_param = this->get_parameter("auto_resume_timeout_sec").as_double();
-  if (auto_resume_param < 0.0) {
+  // 負値 / NaN / Inf は全て invalid として 0.0 に clamp する (#231)。
+  // NaN は `< 0.0` でも `> 0.0` でもないため `std::isfinite` の組合せが必要。
+  // 通常運用では override ミス以外で混入しないが、混入時に timer 周期が異常になる
+  // (NaN: schedule_auto_resume_ で常に no-op、Inf: chrono cast でオーバーフロー) のを
+  // 起動時に潰す。
+  if (!std::isfinite(auto_resume_param) || auto_resume_param < 0.0) {
     RCLCPP_ERROR(this->get_logger(),
-      "auto_resume_timeout_sec=%.3f is negative; clamping to 0.0 (auto-resume disabled).",
+      "auto_resume_timeout_sec=%f is invalid (must be finite and non-negative); "
+      "clamping to 0.0 (auto-resume disabled).",
       auto_resume_param);
     auto_resume_timeout_sec_ = 0.0;
   } else {

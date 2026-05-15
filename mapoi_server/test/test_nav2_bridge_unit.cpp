@@ -1,4 +1,7 @@
 // UNIT_TEST マクロは CMakeLists.txt の target_compile_definitions で定義する
+#include <cmath>
+#include <limits>
+
 #include <gtest/gtest.h>
 #include <rclcpp/rclcpp.hpp>
 #include "mapoi_server/mapoi_nav2_bridge.hpp"
@@ -256,6 +259,21 @@ TEST_F(Nav2BridgeTestFixture, AutoResumeTimeoutNegativeClampedToZero)
   options.append_parameter_override("auto_resume_timeout_sec", -1.5);
   auto node_with_negative = std::make_shared<MapoiNav2Bridge>(options);
   EXPECT_DOUBLE_EQ(node_with_negative->auto_resume_timeout_sec_, 0.0);
+}
+
+TEST_F(Nav2BridgeTestFixture, AutoResumeTimeoutNonFiniteClampedToZero)
+{
+  // NaN / Inf も constructor で 0.0 に clamp する (#231 / cursor review medium 対応)。
+  // NaN は `< 0.0` でも `> 0.0` でもないため isfinite 込みで弾く必要がある。
+  for (double bad : {std::numeric_limits<double>::quiet_NaN(),
+                     std::numeric_limits<double>::infinity(),
+                     -std::numeric_limits<double>::infinity()}) {
+    rclcpp::NodeOptions options;
+    options.append_parameter_override("auto_resume_timeout_sec", bad);
+    auto node_with_bad = std::make_shared<MapoiNav2Bridge>(options);
+    EXPECT_DOUBLE_EQ(node_with_bad->auto_resume_timeout_sec_, 0.0)
+      << "auto_resume_timeout_sec=" << bad << " should be clamped to 0.0";
+  }
 }
 
 TEST_F(Nav2BridgeTestFixture, CancelAutoResumeTimerIsIdempotent)
