@@ -241,6 +241,46 @@ TEST_F(Nav2BridgeTestFixture, ResetNavStateClearsRouteContext)
 //  EVENT_STOPPED / EVENT_RESUMED 自体が消え、PAUSED は cmd_vel dwell ベースの単純判定で
 //  純関数 state machine 不要になったため、unit test 群も併せて削除した。)
 
+// --- auto_resume_timeout_sec (#231) ---
+
+TEST_F(Nav2BridgeTestFixture, AutoResumeTimeoutDefaultDisabled)
+{
+  // default では disabled (= 0.0)。負値以外の正値検証は launch_test / 結合 test に委ねる。
+  EXPECT_DOUBLE_EQ(node_->auto_resume_timeout_sec_, 0.0);
+}
+
+TEST_F(Nav2BridgeTestFixture, AutoResumeTimeoutNegativeClampedToZero)
+{
+  // 負値は constructor で 0.0 に clamp する。RAII で別 node を作って検証する。
+  rclcpp::NodeOptions options;
+  options.append_parameter_override("auto_resume_timeout_sec", -1.5);
+  auto node_with_negative = std::make_shared<MapoiNav2Bridge>(options);
+  EXPECT_DOUBLE_EQ(node_with_negative->auto_resume_timeout_sec_, 0.0);
+}
+
+TEST_F(Nav2BridgeTestFixture, CancelAutoResumeTimerIsIdempotent)
+{
+  // 何も schedule していない状態で cancel を呼んでも安全 (二重 resume 経路で呼ばれる想定)。
+  EXPECT_NO_THROW(node_->cancel_auto_resume_timer_());
+  EXPECT_EQ(node_->auto_resume_timer_, nullptr);
+}
+
+TEST_F(Nav2BridgeTestFixture, ResetNavStateCancelsAutoResumeTimer)
+{
+  // reset_nav_state は pending auto-resume timer も明示的に破棄する契約 (#231)。
+  // 直接 timer を生やして reset で消えることを確認する (実際の schedule は ROUTE mode 起点で
+  // ros 時計が必要だが、ここでは契約のみを検証)。
+  node_->auto_resume_timer_ = node_->create_wall_timer(
+    std::chrono::seconds(60), []() {});
+  node_->auto_resume_target_poi_ = "dummy_poi";
+  EXPECT_NE(node_->auto_resume_timer_, nullptr);
+
+  node_->reset_nav_state();
+
+  EXPECT_EQ(node_->auto_resume_timer_, nullptr);
+  EXPECT_TRUE(node_->auto_resume_target_poi_.empty());
+}
+
 int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

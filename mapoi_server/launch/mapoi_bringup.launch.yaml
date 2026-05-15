@@ -70,6 +70,15 @@ launch:
       mapoi_nav2_bridge を起動するか。Nav2 連携が不要な構成 (POI/Route 編集のみの editor 用途等) で false。
 
 - arg:
+    name: auto_resume_timeout_sec
+    default: "0.0"
+    description: >
+      mapoi_nav2_bridge の auto_resume_timeout_sec parameter forward (#231)。
+      0.0 = disabled (現行仕様、外部 /mapoi/nav/resume を無限待ち)。
+      正値で「EVENT_PAUSED 発火から N 秒後に内部で resume を呼ぶ」demo / 自動運転シナリオ向け
+      opt-in 動作を有効化。負値は bridge 側で 0.0 に clamp。
+
+- arg:
     name: with_amcl_localization_bridge
     default: "true"
     description: >
@@ -95,6 +104,8 @@ launch:
 - node:
     pkg: mapoi_server
     exec: mapoi_nav2_bridge
+    param:
+      - {name: auto_resume_timeout_sec, value: $(var auto_resume_timeout_sec)}
     if: $(var with_nav2_bridge)
 
 - node:
