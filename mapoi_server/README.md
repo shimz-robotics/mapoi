@@ -135,6 +135,7 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 | `hysteresis_exit_multiplier` | `double` | `1.15` | EXIT 判定の閾値倍率（チャタリング防止） |
 | `map_frame` | `string` | `map` | TF の親フレーム |
 | `base_frame` | `string` | `base_link` | TF の子フレーム |
+| `auto_resume_timeout_sec` | `double` | `0.0` | `EVENT_PAUSED` 発火後の auto-resume timeout (秒、#231)。`0.0` で disabled (現行仕様、外部 `/mapoi/nav/resume` を無限待ち)。正値で「PAUSED から N 秒後に内部 resume を呼ぶ」demo / 自動運転シナリオ向け opt-in 動作を有効化。負値は起動時に `0.0` へ clamp。動的 reconfigure 非対応 |
 
 #### サブスクライバー
 
@@ -182,6 +183,7 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 - `EVENT_PAUSED` は採用 controller が **navigation 停止中も cmd_vel = 0 を継続 publish** する前提 (Nav2 default の挙動)。controller が静止時に cmd_vel publish を止める実装の場合、`EVENT_PAUSED` は発火しません
 - マップ切替時は内部状態をリセットし、新しい POI リストで監視を再開
 - `RESUMED` 相当の event はありません (resume は client 側 request + `mapoi/nav/status` で観測可能)
+- `auto_resume_timeout_sec > 0.0` を設定すると、`EVENT_PAUSED` 発火後 N 秒で内部的に resume を呼ぶ opt-in 動作になります (#231)。外部 `/mapoi/nav/resume` が timer より先に届けば pending timer はキャンセル、route cancel / 別 route 投入 / 新たな PAUSED 発火でも上書きキャンセルされます。default `0.0` (= disabled) では現行仕様 (無限待ち) を維持します
 
 ### mapoi_amcl_localization_bridge
 

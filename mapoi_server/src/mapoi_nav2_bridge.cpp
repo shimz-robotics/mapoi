@@ -96,10 +96,29 @@ MapoiNav2Bridge::MapoiNav2Bridge(const rclcpp::NodeOptions & options)
   this->declare_parameter<double>("stopped_speed_threshold", 0.01);
   this->declare_parameter<double>("stopped_dwell_time_sec", 1.0);
   this->declare_parameter<std::string>("cmd_vel_topic", "cmd_vel");
+  // EVENT_PAUSED 発火後の auto-resume timeout (#231)。default 0.0 = disabled で現行仕様 (無限待ち) を維持。
+  // 正値で demo / 自動運転シナリオ向けの opt-in auto-resume を有効化。負値は invalid として 0.0 に clamp。
+  // 動的 reconfigure 非対応 (起動時 1 回 read してキャッシュ)。
+  this->declare_parameter<double>("auto_resume_timeout_sec", 0.0);
   // パラメータを cmd_vel_callback / tolerance_check_callback の hot path で毎回取得すると
   // lock コストが高いため、起動時にキャッシュして以降は member を読む (#176 review low #4)。
   stopped_speed_threshold_ = this->get_parameter("stopped_speed_threshold").as_double();
   stopped_dwell_time_sec_ = this->get_parameter("stopped_dwell_time_sec").as_double();
+  const double auto_resume_param = this->get_parameter("auto_resume_timeout_sec").as_double();
+  // 負値 / NaN / Inf は全て invalid として 0.0 に clamp する (#231)。
+  // NaN は `< 0.0` でも `> 0.0` でもないため `std::isfinite` の組合せが必要。
+  // 通常運用では override ミス以外で混入しないが、混入時に timer 周期が異常になる
+  // (NaN: schedule_auto_resume_ で常に no-op、Inf: chrono cast でオーバーフロー) のを
+  // 起動時に潰す。
+  if (!std::isfinite(auto_resume_param) || auto_resume_param < 0.0) {
+    RCLCPP_ERROR(this->get_logger(),
+      "auto_resume_timeout_sec=%f is invalid (must be finite and non-negative); "
+      "clamping to 0.0 (auto-resume disabled).",
+      auto_resume_param);
+    auto_resume_timeout_sec_ = 0.0;
+  } else {
+    auto_resume_timeout_sec_ = auto_resume_param;
+  }
 
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -798,6 +817,60 @@ void MapoiNav2Bridge::reset_nav_state()
     poi_inside_state_.clear();
     poi_paused_published_.clear();
   }
+  // route が終わる経路 (cancel / SUCCEEDED / ABORTED / GOAL 切替 / 新 route 投入) では
+  // pending auto-resume timer も必ず破棄する (#231)。残すと別 nav 進行中に古い timer が
+  // 満了して mapoi_resume_cb を呼んでしまう。
+  cancel_auto_resume_timer_();
+}
+
+void MapoiNav2Bridge::cancel_auto_resume_timer_()
+{
+  if (auto_resume_timer_) {
+    auto_resume_timer_->cancel();
+    auto_resume_timer_.reset();
+    auto_resume_target_poi_.clear();
+  }
+}
+
+void MapoiNav2Bridge::schedule_auto_resume_(const std::string & poi_name)
+{
+  // EVENT_PAUSED 発火直後の入口 (#231): default disabled (0.0) の場合は no-op。
+  if (auto_resume_timeout_sec_ <= 0.0) {
+    return;
+  }
+  // 連続 pause POI (例: corridor_a → corridor_b) で前の timer が生きている場合は
+  // 上書きする (新しい PAUSED に従う)。idempotent な cancel を経由するので二重 cancel
+  // しても安全。
+  cancel_auto_resume_timer_();
+  auto_resume_target_poi_ = poi_name;
+  const auto period = std::chrono::duration_cast<std::chrono::nanoseconds>(
+    std::chrono::duration<double>(auto_resume_timeout_sec_));
+  // create_wall_timer は default callback group (mapoi_pause_cb / mapoi_resume_cb /
+  // tolerance_check_callback と同 MutuallyExclusive) に紐付くため、callback 実行は他の
+  // nav state 操作と直列化される (race free)。
+  auto_resume_timer_ = this->create_wall_timer(period, [this, poi_name]() {
+    // 自己 cancel: one-shot として扱う。先に timer を cancel/reset しないと callback 内で
+    // 再度 schedule_auto_resume_ → cancel_auto_resume_timer_ を呼んだ際に「自身を cancel
+    // する」経路が複雑になるため、ここで明示的に切り離す。
+    if (auto_resume_timer_) {
+      auto_resume_timer_->cancel();
+      auto_resume_timer_.reset();
+    }
+    auto_resume_target_poi_.clear();
+    // 既に外部 resume / route 切替 / new pause で paused 状態が降りていれば何もしない。
+    if (!is_paused_) {
+      RCLCPP_DEBUG(this->get_logger(),
+        "Auto-resume timer fired for POI '%s' but already resumed; ignoring.",
+        poi_name.c_str());
+      return;
+    }
+    RCLCPP_INFO(this->get_logger(),
+      "Auto-resuming after timeout (%.2fs) at POI '%s'.",
+      auto_resume_timeout_sec_, poi_name.c_str());
+    auto trigger = std::make_shared<std_msgs::msg::String>();
+    trigger->data = "auto_resume_timeout:" + poi_name;
+    mapoi_resume_cb(trigger);
+  });
 }
 
 void MapoiNav2Bridge::mapoi_pause_cb(const std_msgs::msg::String::SharedPtr msg)
@@ -840,8 +913,15 @@ void MapoiNav2Bridge::mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg
 
   if (!is_paused_) {
     RCLCPP_WARN(this->get_logger(), "Not paused — ignoring mapoi/nav/resume.");
+    // Not paused でも timer が残るパスは無いはずだが、念のため idempotent に cancel する
+    // (#231 二重 resume 防止)。
+    cancel_auto_resume_timer_();
     return;
   }
+  // 外部 resume publish が auto-resume timer 満了より先に来た場合は pending timer を捨てる
+  // (#231)。同 callback group で直列化されるので、timer callback と本 callback の race は
+  // 発生しない。
+  cancel_auto_resume_timer_();
   is_paused_ = false;
 
   // Resume の readiness check も即時判定に統一 (#198 review high): blocking wait は
@@ -1027,6 +1107,11 @@ void MapoiNav2Bridge::tolerance_check_callback()
 
   // pause タグ POI の ENTER を収集（mutex 外で auto-pause trigger するため）
   std::string pause_triggered_poi;
+  // PAUSED 発火 POI 名 (今 tick で publish したもの)。lock 外で auto-resume timer を
+  // schedule するため (#231)。1 tick 内で複数 POI が同時に PAUSED 化することは pause タグ
+  // 重なり等で理論上ありうるが、最後に publish した POI に従う (cancel 上書き含め
+  // schedule_auto_resume_ が idempotent に動く)。
+  std::string paused_event_poi;
 
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
@@ -1101,6 +1186,7 @@ void MapoiNav2Bridge::tolerance_check_callback()
       event.stamp = this->now();
       poi_event_pub_->publish(event);
       RCLCPP_INFO(this->get_logger(), "POI PAUSED: %s", poi.name.c_str());
+      paused_event_poi = poi.name;
     }
   }  // data_mutex_ をここで解放
 
@@ -1111,6 +1197,15 @@ void MapoiNav2Bridge::tolerance_check_callback()
     auto msg = std::make_shared<std_msgs::msg::String>();
     msg->data = "poi_event:" + pause_triggered_poi;
     mapoi_pause_cb(msg);
+  }
+
+  // EVENT_PAUSED 発火 POI に対する auto-resume timer 起動 (#231)。
+  // schedule_auto_resume_ は disabled (timeout=0.0) なら no-op、前 timer が生きてれば
+  // cancel して上書きする。is_paused_ チェックは callback 側 (発火時) に任せ、
+  // ここではあくまで「PAUSED が出た」ことだけを契機にする (auto-pause 経路で
+  // mapoi_pause_cb が直前に呼ばれて is_paused_=true になっている前提)。
+  if (!paused_event_poi.empty()) {
+    schedule_auto_resume_(paused_event_poi);
   }
 }
 

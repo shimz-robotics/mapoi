@@ -227,6 +227,23 @@ private:
   double stopped_speed_threshold_ {0.01};
   double stopped_dwell_time_sec_ {1.0};
 
+  // EVENT_PAUSED 発火後の auto-resume timeout (#231)。0.0 = disabled (現行仕様、外部からの
+  // `/mapoi/nav/resume` を無限待ち)。正値で「PAUSED 発火から N 秒後に内部で resume を呼ぶ」
+  // demo / 自動運転シナリオ向けの opt-in 動作。負値は constructor で reject (0.0 にフォールバック)。
+  // 動的 reconfigure には非対応。
+  double auto_resume_timeout_sec_ {0.0};
+  // pending one-shot timer。次の PAUSED 発火時 / 外部 resume / reset_nav_state で cancel し
+  // 上書きする。生存中は nav state を握る default MutuallyExclusive callback group で動くため、
+  // mapoi_pause_cb / mapoi_resume_cb / tolerance_check_callback と直列化される (= race free)。
+  rclcpp::TimerBase::SharedPtr auto_resume_timer_;
+  // pending timer がどの POI に対して張られているか (ログ・debug 用、cancel 判断には未使用)。
+  std::string auto_resume_target_poi_;
+  // PAUSED 発火 POI 用の helper。tolerance_check_callback で lock 外 + dwell 観測直後に
+  // 呼ぶ。呼び出し前提条件: `is_paused_` は既に true (auto-pause 経路で mapoi_pause_cb 済)。
+  void schedule_auto_resume_(const std::string & poi_name);
+  // 共通 cancel (mapoi_resume_cb / reset_nav_state / 新規 schedule_auto_resume_ で呼ぶ)。
+  void cancel_auto_resume_timer_();
+
   void fetch_system_tags();
   void on_system_tags_received(rclcpp::Client<mapoi_interfaces::srv::GetTagDefinitions>::SharedFuture future);
   void on_config_path_changed(const std_msgs::msg::String::SharedPtr msg);
@@ -275,6 +292,11 @@ private:
   FRIEND_TEST(Nav2BridgeTestFixture, IsPauseEligibleGoalMode);
   FRIEND_TEST(Nav2BridgeTestFixture, IsPauseEligibleIdleMode);
   FRIEND_TEST(Nav2BridgeTestFixture, ResetNavStateClearsRouteContext);
+  FRIEND_TEST(Nav2BridgeTestFixture, AutoResumeTimeoutDefaultDisabled);
+  FRIEND_TEST(Nav2BridgeTestFixture, AutoResumeTimeoutNegativeClampedToZero);
+  FRIEND_TEST(Nav2BridgeTestFixture, AutoResumeTimeoutNonFiniteClampedToZero);
+  FRIEND_TEST(Nav2BridgeTestFixture, CancelAutoResumeTimerIsIdempotent);
+  FRIEND_TEST(Nav2BridgeTestFixture, ResetNavStateCancelsAutoResumeTimer);
 #endif
 };
 
