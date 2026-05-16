@@ -109,6 +109,13 @@ if(BUILD_TESTING)
   add_launch_test(
     test/test_poi_event_integration.py
   )
+  # ROUTE-mode 経路は Nav2 follow_waypoints mock が前提なので別ファイルに分離 (#226)。
+  # mock の MultiThreadedExecutor 立ち上げ + 複数 test の cancel/cleanup 待ちで
+  # 5 test 合計 60s を超えやすいため、default 60s から 120s へ延長。
+  add_launch_test(
+    test/test_poi_event_route_integration.py
+    TIMEOUT 120
+  )
   add_launch_test(
     test/test_reload_clears_initialpose.py
   )
