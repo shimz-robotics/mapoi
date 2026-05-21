@@ -838,7 +838,7 @@ void MapoiNav2Bridge::schedule_auto_resume_(const std::string & poi_name)
   if (auto_resume_timeout_sec_ <= 0.0) {
     return;
   }
-  // 連続 pause POI (例: corridor_a → corridor_b) で前の timer が生きている場合は
+  // 連続して pause タグ POI が並ぶ route で前の timer が生きている場合は
   // 上書きする (新しい PAUSED に従う)。idempotent な cancel を経由するので二重 cancel
   // しても安全。
   cancel_auto_resume_timer_();

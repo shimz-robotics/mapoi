@@ -1,19 +1,39 @@
-# シナリオ: オフィス見学ツアー (見学客を案内、要所で音声ガイド / 自動停止)。
+# シナリオ: 機能カタログ demo (#230)。各機能 (waypoint / landmark / pause / custom tag) を
+# 1 route ずつ確認できる tutorial 系と、全機能を 1 route で踏む tour_full の集合。
+# 自前 robot への流用を意識し、地名・部屋名ではなく機能を示す抽象名で命名する。
 # 検証カバレッジ (#146): system tag 単独 / 複合、tolerance.yaw 厳密 ↔ 緩い、route の
-# waypoints + landmarks 両方持ち、連続 pause、音声 / 観察対象の custom tag。
+# waypoints + landmarks 両方持ち、custom tag。
 custom_tags:
-- {name: destination, description: General destination point}
 - {name: audio_info, description: Audio guide trigger (POI 進入で音声再生)}
 route:
-# tour_full: フルツアー。waypoints + landmarks 両方を持ち、連続 pause / 観察対象の
-# 全シナリオを 1 route で踏む (#143 route.landmarks の動作確認用)。
+# tutorial_01_basic: 基本 navigation demo。waypoint 3 点を順に踏む最小構成。
+# pause / landmark / custom tag いずれも持たない POI のみで「POI 名 goal + 順次走行」の
+# health check として使う。
+- name: tutorial_01_basic
+  waypoints: [start, mid_basic, goal]
+# tutorial_02_landmark: route.landmarks の概念 demo (#143)。route.landmarks に列挙した
+# landmark_listed は route 走行中だけ radius event 監視対象になり EVENT_ENTER が pub される。
+# 列挙外の landmark_unlisted は同 map 上の経路半径内に居ても pub されないコントラスト demo。
+# 経路 (start → goal の直線) 上に両 landmark の半径 0.30 内が来るよう座標を取った。
+- name: tutorial_02_landmark
+  waypoints: [start, goal]
+  landmarks: [landmark_listed]
+# tutorial_03_pause: pause タグ POI の停止 + resume demo (#231)。終点を mid_pause に
+# 置き、ENTER → EVENT_PAUSED → 停止 → resume の流れを観察。bridge の launch arg
+# auto_resume_timeout_sec で挙動を切替できる: 0.0 (default) = operator が手動で
+# mapoi/nav/resume を publish、正値 = N 秒後に bridge が自動 resume。
+- name: tutorial_03_pause
+  waypoints: [start, mid_pause]
+# tutorial_04_event_tag: custom tag + EVENT_ENTER の demo (#88)。終点を mid_audio に
+# 置き、audio_info タグ POI で audio_guide_node が EVENT_ENTER を契機に audio guide log を
+# 出す動作を確認する。
+- name: tutorial_04_event_tag
+  waypoints: [start, mid_audio]
+# tour_full: 全機能を 1 route で踏む総合 demo。waypoints + landmarks 両方持ち、
+# pause / custom tag も経由。tutorial_01〜04 を確認した後の「全部入り」確認用。
 - name: tour_full
-  waypoints: [meeting_room_a, conference_room, corridor_a, corridor_b, model_exhibit]
-  landmarks: [tour_landmark, exhibit_display]
-# tour_short: landmarks 無しの短縮版 (旧 route_2 互換、corridor_a 経由)。
-# route schema が landmarks 省略でも動く検証用。
-- name: tour_short
-  waypoints: [elevator_hall, corridor_a, conference_room]
+  waypoints: [start, mid_basic, mid_pause, mid_audio, goal]
+  landmarks: [landmark_listed]
 map:
 - {node_name: /map_server, map_file: turtlebot3_world.yaml}
 # mapoi_gazebo_bridge が operator map switch 時に読む。
@@ -22,55 +42,48 @@ gazebo:
   world_model:
     uri: model://turtlebot3_world
     name: turtlebot3_world
-# elevator_hall は POI list 先頭 (= default initial pose、#149) で、Gazebo robot spawn の
+# start は POI list 先頭 (= default initial pose、#149) で、Gazebo robot spawn の
 # デフォルト位置 (-2, -0.5) と一致。
 # tolerance.xy は Nav2 controller の xy_goal_tolerance (0.25) より大きく取らないと、Nav2 が POI
-# tolerance.xy 内に入る前にゴール判定で停止し radius event が発火しない。最小 0.30 (5cm 余裕) で
-# 各部屋の規模感に合わせ 0.30〜0.50 にバラす。
+# tolerance.xy 内に入る前にゴール判定で停止し radius event が発火しない。最小 0.30 (5cm 余裕)。
 # tolerance.yaw は >= 0.001 (rad) を指定する (msg spec #138 で 0 / 負値は禁止)。
-# default 0.785 (≒ π/4 = 45°)。yaw を厳密制御したい POI はより小さい値、通り過ぎる
-# 経由点等 yaw を問わない POI は π (≒ 180°) 近辺を指定する。
+# default 0.785 (≒ π/4 = 45°)。yaw を問わない通過点は π (≒ 180°) 近辺を指定する。
 poi:
-- description: エレベーターホール (POI list 先頭 = default initial pose)
-  name: elevator_hall
+- description: 全 route 起点 (POI list 先頭 = default initial pose, Gazebo spawn 位置)
+  name: start
   pose: {x: -2.0, y: -0.5, yaw: 0.0}
   tolerance: {xy: 0.50, yaw: 0.785}
   tags: [waypoint]
-- description: 会議室A (普通の経由点)
-  name: meeting_room_a
+- description: tutorial_01 / tour_full の南側中継点 (pure waypoint)
+  name: mid_basic
   pose: {x: -0.6, y: -0.6, yaw: 0.0}
   tolerance: {xy: 0.35, yaw: 0.785}
   tags: [waypoint]
-- description: 大会議室 (yaw 厳密な経由点)
-  name: conference_room
-  pose: {x: 0.7, y: -0.4, yaw: 1.57}
-  tolerance: {xy: 0.45, yaw: 0.10}
-  tags: [waypoint]
-- description: 廊下A (連続 pause #1、yaw 不問で通り過ぎる)
-  name: corridor_a
-  pose: {x: 0.4, y: 0.6, yaw: -3.14}
+- description: tutorial_03 / tour_full の pause POI (南東、両 landmark の半径外)
+  name: mid_pause
+  pose: {x: 1.0, y: -0.3, yaw: 0.0}
   tolerance: {xy: 0.30, yaw: 3.14}
   tags: [waypoint, pause]
-- description: 廊下B (連続 pause #2、tour_full で連続 pause 発火を検証)
-  name: corridor_b
-  pose: {x: 0.0, y: 0.6, yaw: -3.14}
-  tolerance: {xy: 0.30, yaw: 3.14}
-  tags: [waypoint, pause]
-- description: 模型展示 (音声ガイド再生、waypoint + custom tag)
-  name: model_exhibit
-  pose: {x: -0.5, y: 0.5, yaw: -1.57}
+- description: tutorial_04 / tour_full の audio_info POI (南、両 landmark の半径外)
+  name: mid_audio
+  pose: {x: -0.5, y: -0.8, yaw: 0.0}
   tolerance: {xy: 0.40, yaw: 0.785}
   tags: [waypoint, audio_info]
+- description: tutorial_01 / 02 / tour_full の終点 (北東、両 landmark の北側)
+  name: goal
+  pose: {x: 0.8, y: 0.6, yaw: 0.0}
+  tolerance: {xy: 0.40, yaw: 3.14}
+  tags: [waypoint]
 # 以下 landmark 群: Nav2 navigation 不可な reference 点 (#85, #143)。
-# tour_full の landmarks: [...] で route 走行中だけ radius event 監視対象として扱う。
+# tutorial_02_landmark / tour_full の landmarks: [...] で route 走行中だけ radius event 監視対象。
 # landmark × pause は排他 (#143 validation で reject) なので組み合わせない。
-- description: 観察点 (純粋 landmark、tag 単独)
-  name: tour_landmark
+- description: tutorial_02 / tour_full の route.landmarks 列挙対象
+  name: landmark_listed
   pose: {x: 0.0, y: 0.2, yaw: 0.0}
   tolerance: {xy: 0.30, yaw: 0.785}
   tags: [landmark]
-- description: 展示物 (landmark + audio_info、観察対象でガイド再生)
-  name: exhibit_display
+- description: tutorial_02 のコントラスト (route.landmarks に列挙されないので同 map 上でも pub されない)
+  name: landmark_unlisted
   pose: {x: -0.3, y: 0.3, yaw: 0.0}
   tolerance: {xy: 0.30, yaw: 0.785}
-  tags: [landmark, audio_info]
+  tags: [landmark]
