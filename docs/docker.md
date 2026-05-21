@@ -97,8 +97,9 @@ docker compose build dev
 # シェルに入る（ホストの ./ が /ros2_ws/src/mapoi にマウント済み）
 docker compose run --rm dev
 
-# コンテナ内
+# コンテナ内 (dev image は runtime と違い rosdep update 未実行のため初回のみ必要)
 cd /ros2_ws
+rosdep update --rosdistro ${ROS_DISTRO}   # 初回のみ (`ERROR: your rosdep installation has not been initialized yet` 回避)
 rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
 source install/setup.bash
