@@ -12,9 +12,12 @@ route:
   waypoints: [meeting_room_a, conference_room, elevator_hall]
 # tutorial_02_landmark: landmark POI の概念 demo (#230)。route.landmarks に列挙した
 # landmark は Nav2 navigate されないが、route 走行中だけ radius event 監視対象になる
-# (#143 検証)。audio_info 等の custom tag は含まない (tutorial_04 で扱う)。
+# (#143 検証)。両 landmark (tour_landmark / exhibit_display) の半径を 1 路で通過する
+# 経路を取り、route.landmarks に列挙した tour_landmark のみ EVENT_ENTER が pub され、
+# 同 map 上に存在する exhibit_display は列挙外なので pub されない動作を観測できる。
+# audio_info 等の custom tag は含まない (tutorial_04 で扱う)。
 - name: tutorial_02_landmark
-  waypoints: [meeting_room_a, conference_room]
+  waypoints: [landmark_demo_east, landmark_demo_west]
   landmarks: [tour_landmark]
 # tour_full: フルツアー。waypoints + landmarks 両方を持ち、連続 pause / 観察対象の
 # 全シナリオを 1 route で踏む (#143 route.landmarks の動作確認用)。
@@ -72,6 +75,20 @@ poi:
   pose: {x: -0.5, y: 0.5, yaw: -1.57}
   tolerance: {xy: 0.40, yaw: 0.785}
   tags: [waypoint, audio_info]
+# tutorial_02_landmark 専用の通過点ペア (#230)。東西に直線で抜けると、その間にある
+# tour_landmark (0.0, 0.2) と exhibit_display (-0.3, 0.3) の半径 0.30 内を robot が
+# 両方とも通過する。route.landmarks に列挙する側だけ EVENT_ENTER が pub される
+# コントラスト demo 用なので tour_full からは使わない。
+- description: tutorial_02_landmark 出発点 (両 landmark の東側、yaw 不問)
+  name: landmark_demo_east
+  pose: {x: 0.7, y: 0.4, yaw: 3.14}
+  tolerance: {xy: 0.40, yaw: 3.14}
+  tags: [waypoint]
+- description: tutorial_02_landmark 終点 (両 landmark の西側、yaw 不問)
+  name: landmark_demo_west
+  pose: {x: -0.8, y: 0.2, yaw: 3.14}
+  tolerance: {xy: 0.40, yaw: 3.14}
+  tags: [waypoint]
 # 以下 landmark 群: Nav2 navigation 不可な reference 点 (#85, #143)。
 # tour_full の landmarks: [...] で route 走行中だけ radius event 監視対象として扱う。
 # landmark × pause は排他 (#143 validation で reject) なので組み合わせない。
