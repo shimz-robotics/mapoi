@@ -70,10 +70,10 @@ poi:
   pose: {x: -0.5, y: -0.8, yaw: 0.0}
   tolerance: {xy: 0.40, yaw: 0.785}
   tags: [waypoint, audio_info]
-- description: tutorial_01 / 02 / tour_full の終点 (北東、両 landmark の北側)
+- description: tutorial_01 / 02 / tour_full の終点 (北東、両 landmark の北側、yaw 厳密)
   name: goal
   pose: {x: 0.8, y: 0.6, yaw: 0.0}
-  tolerance: {xy: 0.40, yaw: 3.14}
+  tolerance: {xy: 0.40, yaw: 0.10}
   tags: [waypoint]
 # 以下 landmark 群: Nav2 navigation 不可な reference 点 (#85, #143)。
 # tutorial_02_landmark / tour_full の landmarks: [...] で route 走行中だけ radius event 監視対象。
