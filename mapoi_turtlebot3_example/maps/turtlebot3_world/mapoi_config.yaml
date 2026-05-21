@@ -5,6 +5,17 @@ custom_tags:
 - {name: destination, description: General destination point}
 - {name: audio_info, description: Audio guide trigger (POI 進入で音声再生)}
 route:
+# tutorial_01_basic: 最初に試す基本 demo (#230)。waypoint だけの 3 POI で POI 単発
+# goal / route 走行が動くことを確認する。pause / landmark / custom tag いずれも
+# 持たないので、最小機能の health check 用途。
+- name: tutorial_01_basic
+  waypoints: [meeting_room_a, conference_room, elevator_hall]
+# tutorial_02_landmark: landmark POI の概念 demo (#230)。route.landmarks に列挙した
+# landmark は Nav2 navigate されないが、route 走行中だけ radius event 監視対象になる
+# (#143 検証)。audio_info 等の custom tag は含まない (tutorial_04 で扱う)。
+- name: tutorial_02_landmark
+  waypoints: [meeting_room_a, conference_room]
+  landmarks: [tour_landmark]
 # tour_full: フルツアー。waypoints + landmarks 両方を持ち、連続 pause / 観察対象の
 # 全シナリオを 1 route で踏む (#143 route.landmarks の動作確認用)。
 - name: tour_full
