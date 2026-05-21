@@ -14,7 +14,8 @@ route:
 # tutorial_02_landmark: route.landmarks の概念 demo (#143)。route.landmarks に列挙した
 # landmark_listed は route 走行中だけ radius event 監視対象になり EVENT_ENTER が pub される。
 # 列挙外の landmark_unlisted は同 map 上の経路半径内に居ても pub されないコントラスト demo。
-# 経路 (start → goal の直線) 上に両 landmark の半径 0.30 内が来るよう座標を取った。
+# 経路 (start → goal の直線) 上に両 landmark の tolerance.xy 円内が来るよう座標を取った。
+# また landmark_listed は tour_full の mid_audio → goal 区間にも入るよう半径 0.35 で広めに取る。
 - name: tutorial_02_landmark
   waypoints: [start, goal]
   landmarks: [landmark_listed]
@@ -80,7 +81,7 @@ poi:
 - description: tutorial_02 / tour_full の route.landmarks 列挙対象
   name: landmark_listed
   pose: {x: 0.0, y: 0.2, yaw: 0.0}
-  tolerance: {xy: 0.30, yaw: 0.785}
+  tolerance: {xy: 0.35, yaw: 0.785}
   tags: [landmark]
 - description: tutorial_02 のコントラスト (route.landmarks に列挙されないので同 map 上でも pub されない)
   name: landmark_unlisted
