@@ -32,6 +32,11 @@ if(BUILD_TESTING)
     test/test_yaml_handler_round.py
     TIMEOUT 10
   )
+  # yaml_handler.compute_config_version の決定性 / 変化検出 pin (#241 楽観的競合検出)。
+  ament_add_pytest_test(test_yaml_handler_version
+    test/test_yaml_handler_version.py
+    TIMEOUT 10
+  )
 endif()
 
 ament_package()
