@@ -4,9 +4,25 @@ Reads/writes mapoi_config.yaml, replacing only the 'poi' section
 while preserving 'map' and 'route' sections and unknown fields.
 """
 
+import hashlib
 import math
 
 import yaml
+
+
+def compute_config_version(config_path):
+    """Return a content-derived version string (sha256 hex) for the yaml file (#241).
+
+    POI Save 時の楽観的競合検出に使う: frontend が GET 時に受け取った version を
+    POST 時に送り返し、backend で current version と一致しなければ 409 を返す。
+    内容ベースなので mtime 解像度 (1 秒) や外部 git checkout 等にも安定して反応する。
+    ファイル不在時は None を返し、caller 側で「version check 不可」として 200 OK 経路に流す。
+    """
+    try:
+        with open(config_path, 'rb') as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except FileNotFoundError:
+        return None
 
 
 # yaml 書き出し時の有効桁数 (#242)。frontend (web/js/poi-filter.js) と必ず一致させる。

@@ -10,12 +10,17 @@ class PoiEditor {
     this.editingIndex = -1;  // -1 = closed, >=0 = editing existing, -2 = new POI
     this.placingMode = false;
     this.visiblePois = new Set(); // indices of visible POIs
+    // 楽観的競合検出用 yaml ハッシュ (#241)。GET 時に backend から受け取り、Save 時に送り返す。
+    this.configVersion = null;
 
     this.tagDefinitions = [];  // [{name, description, is_system}, ...]
     this.onDirtyChange = null;     // callback(isDirty)
     this.onSelectionChange = null; // callback(index)
     this.onPlacingModeChange = null; // callback(isPlacing)
     this.onVisibilityChange = null;  // callback(visibleSet)
+    // 409 受信時に app.js 側で全体 reload (loadMaps → loadPois/Routes) を発火させるためのフック。
+    // poi-editor 単独では route-editor の state を巻き戻せないため、解決は呼び出し側に委ねる (#241)。
+    this.onConflictReload = null;  // async callback() — full reload on version_mismatch
 
     // DOM references
     this.listEl = document.getElementById('poi-list');
@@ -47,12 +52,14 @@ class PoiEditor {
   /**
    * Load POIs from server response and reset state.
    */
-  loadPois(pois) {
+  loadPois(pois, configVersion) {
     this.pois = JSON.parse(JSON.stringify(pois));
     this.originalPois = JSON.parse(JSON.stringify(pois));
     this.selectedIndex = -1;
     this.editingIndex = -1;
     this.visiblePois = new Set(pois.map((_, i) => i));
+    // 楽観的競合検出 token (#241)。後続の save() で backend に送り返す。
+    this.configVersion = configVersion || null;
     this.setDirty(false);
     this.hideForm();
     this.renderList();
@@ -475,9 +482,27 @@ class PoiEditor {
     if (!this.dirty) return;
     this.btnSave.textContent = 'Saving...';
     try {
-      const result = await MapoiApi.savePois(this.pois);
-      if (result.success) {
+      const result = await MapoiApi.savePois(this.pois, this.configVersion);
+      // 409 (version_mismatch): yaml が外部 (yaml 直編集 / 他クライアント) で変わった (#241)。
+      // 黙って上書きせず、user に reload するかどうか確認する。
+      // reload を選んだら未保存の dirty 編集は失われる旨を明示。
+      if (result.conflict) {
+        this.btnSave.textContent = 'Save';
+        const shouldReload = window.confirm(
+          'YAML ファイルが外部で変更されています (例: 手動編集 + git pull / 他端末からの保存)。'
+          + '\n上書き保存すると最新の変更が失われます。'
+          + '\n\n[OK] 最新を再 load する (未保存の編集は破棄されます)'
+          + '\n[キャンセル] そのまま編集を続ける (再度 Save 時に同じ警告)'
+        );
+        if (shouldReload && this.onConflictReload) {
+          await this.onConflictReload();
+        }
+        return;
+      }
+      if (result.ok && result.success) {
         this.originalPois = JSON.parse(JSON.stringify(this.pois));
+        // backend が再計算した最新 version を frontend に反映 (#241)。
+        if (result.config_version) this.configVersion = result.config_version;
         this.setDirty(false);
         this.btnSave.textContent = 'Saved!';
         setTimeout(() => { this.btnSave.textContent = 'Save'; }, 1500);

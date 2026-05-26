@@ -157,7 +157,8 @@
   // --- Load POIs ---
   async function loadPois() {
     const data = await MapoiApi.getPois();
-    poiEditor.loadPois(data.pois || []);
+    // config_version は楽観的競合検出 token (#241): backend から受け取り、save() で送り返す。
+    poiEditor.loadPois(data.pois || [], data.config_version);
     mapViewer.showPois(poiEditor.pois, poiEditor.visiblePois);
     populateNavGoalSelect(data.pois || []);
     populateInitialPoseSelect(data.pois || []);
@@ -303,6 +304,14 @@
       mapViewer.showPois(poiEditor.pois, poiEditor.visiblePois);
       loadRoutes();
     }
+  };
+
+  // 409 version_mismatch 受信時の全体 reload (#241)。POI だけ再 load しても route 側
+  // の参照が壊れる可能性があるため、loadTagDefinitions → loadPois → loadRoutes を一括で。
+  poiEditor.onConflictReload = async () => {
+    await loadTagDefinitions();
+    await loadPois();
+    await loadRoutes();
   };
 
   // Route click on map

@@ -26,7 +26,10 @@ import tf2_ros
 
 from flask import Flask, jsonify, request, send_from_directory, Response
 
-from mapoi_webui.yaml_handler import load_config, save_pois, save_routes, save_custom_tags, get_pois, get_routes
+from mapoi_webui.yaml_handler import (
+    compute_config_version, get_pois, get_routes,
+    load_config, save_custom_tags, save_pois, save_routes,
+)
 from mapoi_webui.map_image import get_map_metadata, get_map_png
 
 
@@ -688,7 +691,12 @@ class MapoiWebNode(Node):
             if not os.path.exists(config_path):
                 return jsonify({'error': 'Config not found'}), 404
             pois = get_pois(config_path)
-            return jsonify({'pois': pois, 'map_name': node.map_name_})
+            return jsonify({
+                'pois': pois,
+                'map_name': node.map_name_,
+                # 楽観的競合検出のため frontend に渡す yaml 内容ハッシュ (#241)。
+                'config_version': compute_config_version(config_path),
+            })
 
         @app.route('/api/pois', methods=['POST'])
         def api_save_pois():
@@ -710,16 +718,31 @@ class MapoiWebNode(Node):
             config_path = node.get_config_path()
             if not os.path.exists(config_path):
                 return jsonify({'error': 'Config not found'}), 404
+            # 楽観的競合検出 (#241): frontend が GET 時に受け取った version を `expected_version`
+            # として送り返す。current version と不一致なら 409 を返し、frontend に reload を促す。
+            # `expected_version` 不在 (旧クライアント / curl) の場合は check をスキップ。
+            expected_version = data.get('expected_version')
+            if expected_version is not None:
+                current_version = compute_config_version(config_path)
+                if current_version is not None and current_version != expected_version:
+                    return jsonify({
+                        'error': 'yaml file has been modified externally; '
+                                 'please reload to fetch the latest state before saving',
+                        'code': 'version_mismatch',
+                        'current_version': current_version,
+                    }), 409
             try:
                 save_pois(config_path, data['pois'])
+                new_version = compute_config_version(config_path)
                 reloaded = node.call_reload_map_info()
                 if not reloaded:
                     return jsonify({
                         'success': True,
+                        'config_version': new_version,
                         'warning': 'YAML は保存しましたが、mapoi_server の reload_map_info '
                                    'service が応答しなかったか失敗しました。詳細はログを確認してください'
                     })
-                return jsonify({'success': True})
+                return jsonify({'success': True, 'config_version': new_version})
             except Exception as e:
                 node.get_logger().error(f'Failed to save POIs: {e}')
                 return jsonify({'error': str(e)}), 500

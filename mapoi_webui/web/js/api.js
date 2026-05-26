@@ -39,13 +39,28 @@ const MapoiApi = {
     return res.json();
   },
 
-  async savePois(pois) {
+  /**
+   * POST /api/pois (#241): 楽観的競合検出のため expected_version を必ず送る。
+   * 受信側 (mapoi_webui_node) は yaml の sha256 と比較し、不一致なら 409 を返す。
+   * 返値は backend JSON に { ok, status, conflict } を付加して呼び出し側に渡す:
+   *   - ok === true: 通常 success (status 200)
+   *   - conflict === true: version 不一致 (status 409)、reload して再試行を促す
+   *   - ok === false かつ conflict !== true: その他のエラー (validation 400 / 500 等)
+   * 呼び出し側は ok=false 時に `result.error` をユーザーに表示する。
+   */
+  async savePois(pois, expectedVersion) {
     const res = await fetch('/api/pois', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pois }),
+      body: JSON.stringify({ pois, expected_version: expectedVersion }),
     });
-    return res.json();
+    const body = await res.json().catch(() => ({}));
+    return {
+      ok: res.ok,
+      status: res.status,
+      conflict: res.status === 409,
+      ...body,
+    };
   },
 
   async getTagDefinitions() {
