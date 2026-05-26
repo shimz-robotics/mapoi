@@ -28,12 +28,17 @@ ament_auto_add_executable(follow_waypoints_client
   src/follow_waypoints_client.cpp
 )
 
-# PoiEvent 駆動 sample subscriber (#88)。route 走行中に audio_info tag 付き POI で
-# audio guide を mock 実行する参照実装 (EVENT_ENTER 受信例)。
-# EVENT_PAUSED 用 subscriber も同型で書ける (event_type の比較値を変えるだけ) ので
-# 別 sample は本 PR では同梱せず、follow-up で必要になれば再導入する。
+# PoiEvent 駆動 demo subscriber (#88 / #238)。route 走行中の特定 POI でアクションを
+# mock 実行する参照実装。集約 launch から外して mapoi_event_samples.launch.yaml
+# 単独で起動する分離方針 (#238)。
+#   - audio_guide_node: EVENT_ENTER + `audio_info` tag → 音声ガイド再生 mock
+#   - camera_node:      EVENT_PAUSED + `capture_trigger` tag → 撮影 mock + auto-resume
 ament_auto_add_executable(audio_guide_node
   src/audio_guide_node.cpp
+)
+
+ament_auto_add_executable(camera_node
+  src/camera_node.cpp
 )
 
 

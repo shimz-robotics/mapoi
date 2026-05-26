@@ -93,8 +93,10 @@ launch:
       - {name: web_host, value: "0.0.0.0"}
       - {name: robot_radius, value: "0.1"}
 
-# PoiEvent 駆動 sample subscriber (#88)。turtlebot3_navigation.launch.yaml は demo 用途の
-# 集約 launch なので常時起動 (audio_guide_node)。自前 robot に sample subscriber だけ流用
-# したい場合は mapoi_event_samples.launch.yaml を単独 include する。
-- include:
-    file: "$(find-pkg-share mapoi_turtlebot3_example)/launch/mapoi_event_samples.launch.yaml"
+# PoiEvent 駆動 demo subscriber (#238): 本 launch は base navigation / Nav2 / mapoi_server /
+# WebUI のみを集約する。`audio_guide_node` / `camera_node` 等の demo subscriber は別 launch
+# (`mapoi_event_samples.launch.yaml`) で起動する分離方針 (#230 で確定、#238 で実装)。
+#   - subscriber を立ち上げずに /mapoi/events の発火だけ確認 → ros2 topic echo /mapoi/events
+#   - subscriber を立ち上げて demo シナリオを動かす → ros2 launch mapoi_turtlebot3_example
+#     mapoi_event_samples.launch.yaml を別 shell で起動 (README "PoiEvent 駆動 sample
+#     subscriber" 節参照)
