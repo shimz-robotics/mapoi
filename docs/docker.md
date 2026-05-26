@@ -94,11 +94,13 @@ docker compose up demo
 # 初回ビルド
 docker compose build dev
 
-# シェルに入る（ホストの ./ が /ros2_ws/src/mapoi にマウント済み）
-docker compose run --rm dev
+# シェルに入る（ホストの ./ が /ros2_ws/src/mapoi にマウント済み、--name で
+# 後続の別 terminal が docker exec で入れるよう名前を付ける）
+docker compose run --rm --name mapoi-dev dev
 
 # コンテナ内
 cd /ros2_ws
+rosdep update --rosdistro ${ROS_DISTRO}
 rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
 source install/setup.bash
@@ -106,6 +108,31 @@ ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml
 ```
 
 ホスト側の `git` / VSCode でソース編集し、コンテナ内で再ビルドして反復できます。
+
+### 複数 terminal で同じ container に入る
+
+`ros2 topic echo` / `ros2 topic pub` を別 terminal から流したい場合、`docker compose run --rm dev` を別 terminal で再実行すると **新しい container** が立ち上がり、`/ros2_ws/install/` (= 1 つ目で `colcon build` した出力) が無いため `ros2 topic echo` で msg 型解決に失敗する (`mapoi_interfaces/msg/PoiEvent` 等が未知)。同 container に入るには `docker exec` を使う:
+
+```sh
+# 1 つ目の terminal で起動済み container に入る
+docker exec -it mapoi-dev bash
+# container 内 (1 つ目の install/ をそのまま参照)
+source /ros2_ws/install/setup.bash
+ros2 topic echo /mapoi/events
+```
+
+`network_mode: host` 越しに別 container からも DDS 通信は通るが、msg 型の install dir は container 固有なので、観測する側に同じ install dir が無いと echo が出力できない点に注意。
+
+#### `Container mapoi-dev Error response from daemon: Conflict ... name "/mapoi-dev" is already in use` が出た場合
+
+直前の `docker compose run --rm --name mapoi-dev dev` を Ctrl-C で抜けた場合等、停止済の container `mapoi-dev` が orphan として残ることがあります。次の `run` で同名衝突するので、再起動前に削除します:
+
+```sh
+docker rm mapoi-dev    # 停止済の container を削除
+ROS_DISTRO=jazzy docker compose run --rm --name mapoi-dev dev    # 改めて起動
+```
+
+`--rm` flag は通常の exit (Ctrl-D / `exit`) では消える挙動ですが、Ctrl-C や強制 kill の経路では残るパターンがあります。
 
 ## 権限（UID/GID）の調整
 

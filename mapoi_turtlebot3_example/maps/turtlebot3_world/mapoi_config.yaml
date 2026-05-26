@@ -1,76 +1,61 @@
-# シナリオ: オフィス見学ツアー (見学客を案内、要所で音声ガイド / 自動停止)。
-# 検証カバレッジ (#146): system tag 単独 / 複合、tolerance.yaw 厳密 ↔ 緩い、route の
-# waypoints + landmarks 両方持ち、連続 pause、音声 / 観察対象の custom tag。
+# シナリオ: 機能カタログ demo (#230)。各機能 (waypoint / landmark / pause) を 1 route ずつ
+# 確認できる tutorial 系と、全機能を 1 route で踏む tour_full の集合。自前 robot への
+# 流用を意識し、地名・部屋名ではなく機能を示す抽象名で命名する。
+#
+# demo subscriber (audio_guide_node / camera_node) の起動は本 launch から分離する方針
+# (#230 follow-up #238)。subscriber を立ち上げない場合は ros2 topic echo /mapoi/events で
+# 動作確認、立ち上げる場合は audio 発話 / camera 撮影 mock が走る。
+#
+# POI 座標調整時の制約:
+# - tolerance.xy は Nav2 controller の xy_goal_tolerance (0.25) より大きく取る。Nav2 が POI
+#   tolerance.xy 内に入る前にゴール判定で停止し radius event が発火しないため、最小 0.30
+#   (5cm 余裕)。
+# - tolerance.yaw は >= 0.001 (rad) を指定 (msg spec #138 で 0 / 負値は禁止)。yaw を問わない
+#   通過点は π (≒ 180°) 近辺。yaw 厳密化したい POI は小さい値 (例: goal は 0.10)。
+# - tag 排他: landmark × pause / landmark × waypoint は #143 validation で reject される。
 custom_tags:
-- {name: destination, description: General destination point}
-- {name: audio_info, description: Audio guide trigger (POI 進入で音声再生)}
+- {name: audio_info, description: Audio guide trigger (POI 進入で音声再生 mock)}
+- {name: capture_trigger, description: Camera capture trigger (pause POI で停止中に撮影 mock)}
 route:
-# tour_full: フルツアー。waypoints + landmarks 両方を持ち、連続 pause / 観察対象の
-# 全シナリオを 1 route で踏む (#143 route.landmarks の動作確認用)。
-- name: tour_full
-  waypoints: [meeting_room_a, conference_room, corridor_a, corridor_b, model_exhibit]
-  landmarks: [tour_landmark, exhibit_display]
-# tour_short: landmarks 無しの短縮版 (旧 route_2 互換、corridor_a 経由)。
-# route schema が landmarks 省略でも動く検証用。
-- name: tour_short
-  waypoints: [elevator_hall, corridor_a, conference_room]
+- name: tutorial_01_basic
+  waypoints: [start, basic_waypoint, goal]
+- landmarks: [audio_landmark]
+  name: tutorial_02_landmark
+  waypoints: [start, basic_waypoint, goal]
+- name: tutorial_03_pause
+  waypoints: [start, pause_waypoint, goal]
+  landmarks: []
+- landmarks: [audio_landmark]
+  name: tour_full
+  waypoints: [start, basic_waypoint, pause_waypoint, goal]
 map:
 - {node_name: /map_server, map_file: turtlebot3_world.yaml}
-# mapoi_gazebo_bridge が operator map switch 時に読む。
-# ground_plane / sun は共通なので入れ替え不要、world を構成する主モデルのみ swap。
 gazebo:
-  world_model:
-    uri: model://turtlebot3_world
-    name: turtlebot3_world
-# elevator_hall は POI list 先頭 (= default initial pose、#149) で、Gazebo robot spawn の
-# デフォルト位置 (-2, -0.5) と一致。
-# tolerance.xy は Nav2 controller の xy_goal_tolerance (0.25) より大きく取らないと、Nav2 が POI
-# tolerance.xy 内に入る前にゴール判定で停止し radius event が発火しない。最小 0.30 (5cm 余裕) で
-# 各部屋の規模感に合わせ 0.30〜0.50 にバラす。
-# tolerance.yaw は >= 0.001 (rad) を指定する (msg spec #138 で 0 / 負値は禁止)。
-# default 0.785 (≒ π/4 = 45°)。yaw を厳密制御したい POI はより小さい値、通り過ぎる
-# 経由点等 yaw を問わない POI は π (≒ 180°) 近辺を指定する。
+  world_model: {uri: 'model://turtlebot3_world', name: turtlebot3_world}
 poi:
-- description: エレベーターホール (POI list 先頭 = default initial pose)
-  name: elevator_hall
-  pose: {x: -2.0, y: -0.5, yaw: 0.0}
-  tolerance: {xy: 0.50, yaw: 0.785}
+- description: 全 route 起点 (POI list 先頭 = default initial pose, Gazebo spawn 位置)
+  name: start
+  pose: {x: -2, y: -0.5, yaw: 0}
   tags: [waypoint]
-- description: 会議室A (普通の経由点)
-  name: meeting_room_a
-  pose: {x: -0.6, y: -0.6, yaw: 0.0}
-  tolerance: {xy: 0.35, yaw: 0.785}
+  tolerance: {xy: 0.5, yaw: 0.785}
+- description: tutorial_01 / 02 / tour_full の南側中継点 (pure waypoint)
+  name: basic_waypoint
+  pose: {x: -0.6, y: -0.89, yaw: 0.06}
   tags: [waypoint]
-- description: 大会議室 (yaw 厳密な経由点)
-  name: conference_room
-  pose: {x: 0.7, y: -0.4, yaw: 1.57}
-  tolerance: {xy: 0.45, yaw: 0.10}
+  tolerance: {xy: 0.35, yaw: 0.7850002283279937}
+- description: tutorial_03 / tour_full の pause POI (停止中に camera 撮影 mock を発火)
+  name: pause_waypoint
+  pose: {x: 0.01, y: -0.27, yaw: -0.08}
+  tags: [waypoint, pause, capture_trigger]
+  tolerance: {xy: 0.3, yaw: 3.1399991679827224}
+- description: tutorial_01 / 02 / tour_full の終点 (北、yaw 厳密)
+  name: goal
+  pose: {x: 0.66, y: -0.65, yaw: 0.01}
   tags: [waypoint]
-- description: 廊下A (連続 pause #1、yaw 不問で通り過ぎる)
-  name: corridor_a
-  pose: {x: 0.4, y: 0.6, yaw: -3.14}
-  tolerance: {xy: 0.30, yaw: 3.14}
-  tags: [waypoint, pause]
-- description: 廊下B (連続 pause #2、tour_full で連続 pause 発火を検証)
-  name: corridor_b
-  pose: {x: 0.0, y: 0.6, yaw: -3.14}
-  tolerance: {xy: 0.30, yaw: 3.14}
-  tags: [waypoint, pause]
-- description: 模型展示 (音声ガイド再生、waypoint + custom tag)
-  name: model_exhibit
-  pose: {x: -0.5, y: 0.5, yaw: -1.57}
-  tolerance: {xy: 0.40, yaw: 0.785}
-  tags: [waypoint, audio_info]
-# 以下 landmark 群: Nav2 navigation 不可な reference 点 (#85, #143)。
-# tour_full の landmarks: [...] で route 走行中だけ radius event 監視対象として扱う。
-# landmark × pause は排他 (#143 validation で reject) なので組み合わせない。
-- description: 観察点 (純粋 landmark、tag 単独)
-  name: tour_landmark
-  pose: {x: 0.0, y: 0.2, yaw: 0.0}
-  tolerance: {xy: 0.30, yaw: 0.785}
-  tags: [landmark]
-- description: 展示物 (landmark + audio_info、観察対象でガイド再生)
-  name: exhibit_display
-  pose: {x: -0.3, y: 0.3, yaw: 0.0}
-  tolerance: {xy: 0.30, yaw: 0.785}
+  tolerance: {xy: 0.4, yaw: 0.10000038482226709}
+- description: tutorial_02 / tour_full の route.landmarks 列挙対象 (audio_info で audio_guide_node
+    発火対象)
+  name: audio_landmark
+  pose: {x: -1.09, y: -0.5, yaw: -0.03}
   tags: [landmark, audio_info]
+  tolerance: {xy: 0.35, yaw: 0.7850002283279937}

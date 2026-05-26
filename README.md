@@ -59,7 +59,7 @@ http://localhost:8765
 コマンドで目的地をしたい場合には、別ターミナルから自律走行をテストできます。
 
 ```sh
-ros2 topic pub -1 /mapoi/nav/goal_pose_poi std_msgs/msg/String "{data: conference_room}"
+ros2 topic pub -1 /mapoi/nav/goal_pose_poi std_msgs/msg/String "{data: goal}"
 ```
 
 ## Docker quickstart
