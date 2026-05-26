@@ -1,35 +1,18 @@
-# シナリオ: 機能カタログ demo (#230)。各機能 (waypoint / landmark / pause) を 1 route ずつ
-# 確認できる tutorial 系と、全機能を 1 route で踏む tour_full の集合。自前 robot への
-# 流用を意識し、地名・部屋名ではなく機能を示す抽象名で命名する。
-#
-# demo subscriber (audio_guide_node / camera_node) の起動は本 launch から分離する方針
-# (#230 follow-up)。subscriber を立ち上げない場合は ros2 topic echo /mapoi/events で
-# 動作確認、立ち上げる場合は audio 発話 / camera 撮影 mock が走る。
 custom_tags:
 - {name: audio_info, description: Audio guide trigger (POI 進入で音声再生 mock)}
 - {name: capture_trigger, description: Camera capture trigger (pause POI で停止中に撮影 mock)}
 route:
-# tutorial_01_basic: 基本 navigation の確認。landmark / pause / custom tag いずれも持たない
-# pure な waypoint 列で「移動だけ」を見せる。
 - name: tutorial_01_basic
-  waypoints: [start, mid_basic, goal]
-# tutorial_02_landmark: landmark 機能の確認。tutorial_01 と同じ waypoint で
-# route.landmarks に landmark_listed を登録、route 走行中だけ radius event 監視対象になる
-# 動作を見せる。demo launch 起動時は audio_guide_node が landmark_listed の EVENT_ENTER で
-# 発話 mock。未起動時は ros2 topic echo /mapoi/events で EVENT_ENTER 観測。
-- name: tutorial_02_landmark
-  waypoints: [start, mid_basic, goal]
-  landmarks: [landmark_listed]
-# tutorial_03_pause: pause 機能の確認。pause タグ POI (mid_pause) に到達 → 自動 pause →
-# resume の流れを見せる。mid_pause には capture_trigger custom tag も付与しており、demo
-# launch 起動時は camera_node が pause 中に撮影 mock を実行、未起動時は別 shell から
-# ros2 topic pub /mapoi/nav/resume で手動 resume。
+  waypoints: [start, basic_waypoint, goal]
+- landmarks: [audio_landmark]
+  name: tutorial_02_landmark
+  waypoints: [start, basic_waypoint, goal]
 - name: tutorial_03_pause
-  waypoints: [start, mid_pause]
-# tour_full: 全機能を 1 route で踏む総合 demo。tutorial_01〜03 を確認した後の「全部入り」用途。
-- name: tour_full
-  waypoints: [start, mid_basic, mid_pause, goal]
-  landmarks: [landmark_listed]
+  waypoints: [start, pause_waypoint, goal]
+  landmarks: []
+- landmarks: [audio_landmark]
+  name: tour_full
+  waypoints: [start, basic_waypoint, pause_waypoint, goal]
 map:
 - {node_name: /map_server, map_file: turtlebot3_world.yaml}
 gazebo:
@@ -41,22 +24,23 @@ poi:
   tags: [waypoint]
   tolerance: {xy: 0.5, yaw: 0.785}
 - description: tutorial_01 / 02 / tour_full の南側中継点 (pure waypoint)
-  name: mid_basic
-  pose: {x: -0.6, y: -0.6, yaw: 0}
+  name: basic_waypoint
+  pose: {x: -0.6, y: -0.89, yaw: 0.06}
   tags: [waypoint]
-  tolerance: {xy: 0.35, yaw: 0.785}
+  tolerance: {xy: 0.35, yaw: 0.7850002283279937}
 - description: tutorial_03 / tour_full の pause POI (停止中に camera 撮影 mock を発火)
-  name: mid_pause
-  pose: {x: 0.6, y: -0.6, yaw: -0.02}
+  name: pause_waypoint
+  pose: {x: 0.01, y: -0.27, yaw: -0.08}
   tags: [waypoint, pause, capture_trigger]
   tolerance: {xy: 0.3, yaw: 3.1399991679827224}
 - description: tutorial_01 / 02 / tour_full の終点 (北、yaw 厳密)
   name: goal
-  pose: {x: -0.53, y: 0.58, yaw: 3.13}
+  pose: {x: 0.66, y: -0.65, yaw: 0.01}
   tags: [waypoint]
   tolerance: {xy: 0.4, yaw: 0.10000038482226709}
-- description: tutorial_02 / tour_full の route.landmarks 列挙対象 (audio_info で audio_guide_node 発火対象)
-  name: landmark_listed
-  pose: {x: -0.55, y: -0.03, yaw: 1.51}
+- description: tutorial_02 / tour_full の route.landmarks 列挙対象 (audio_info で audio_guide_node
+    発火対象)
+  name: audio_landmark
+  pose: {x: 0, y: -0.63, yaw: -0.04}
   tags: [landmark, audio_info]
   tolerance: {xy: 0.35, yaw: 0.7850002283279937}
