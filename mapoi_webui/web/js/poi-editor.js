@@ -242,9 +242,16 @@ class PoiEditor {
 
     const newPoi = {
       name: `poi_${this.pois.length}`,
-      pose: { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100, yaw: 0.0 },
+      pose: {
+        x: MapoiPoiFilter.roundTo(x, MapoiPoiFilter.POSE_XY_DIGITS),
+        y: MapoiPoiFilter.roundTo(y, MapoiPoiFilter.POSE_XY_DIGITS),
+        yaw: 0.0,
+      },
       // default tolerance: xy=0.5 m / yaw=π/4 (45°) — sample yaml と整合 (#138)
-      tolerance: { xy: 0.5, yaw: Math.PI / 4 },
+      tolerance: {
+        xy: 0.5,
+        yaw: MapoiPoiFilter.roundTo(Math.PI / 4, MapoiPoiFilter.TOLERANCE_YAW_DIGITS),
+      },
       tags: ['waypoint'],
       description: '',
     };
@@ -315,15 +322,21 @@ class PoiEditor {
   fillForm(poi) {
     this.inputName.value = poi.name || '';
     const pose = poi.pose || {};
-    this.inputX.value = pose.x || 0;
-    this.inputY.value = pose.y || 0;
-    this.inputYaw.value = pose.yaw || 0;
+    // 入力欄表示時点で yaml の有効桁数に丸める (#242)。display と Save 値の不一致を防ぐ。
+    const xRounded = MapoiPoiFilter.roundTo(pose.x, MapoiPoiFilter.POSE_XY_DIGITS);
+    const yRounded = MapoiPoiFilter.roundTo(pose.y, MapoiPoiFilter.POSE_XY_DIGITS);
+    const yawRounded = MapoiPoiFilter.roundTo(pose.yaw, MapoiPoiFilter.POSE_YAW_DIGITS);
+    this.inputX.value = Number.isFinite(xRounded) ? xRounded : 0;
+    this.inputY.value = Number.isFinite(yRounded) ? yRounded : 0;
+    this.inputYaw.value = Number.isFinite(yawRounded) ? yawRounded : 0;
     // tolerance: xy は m そのまま、yaw は rad → deg 変換して UI に表示 (#138)。
     // `||` だと意図的な小さい値も default で上書きされるので Number.isFinite ベースで判定。
     // toFixed(4) で round-trip 精度を 0.0001° (≒ 0.00000175 rad) 以内に抑える
     // (Codex review #139 low 対応: toFixed(2) だと未編集 save で yaml 値が微小に変化する懸念)。
     const xyVal = poi.tolerance && poi.tolerance.xy;
-    this.inputToleranceXy.value = Number.isFinite(xyVal) ? xyVal : 0.5;
+    this.inputToleranceXy.value = Number.isFinite(xyVal)
+      ? MapoiPoiFilter.roundTo(xyVal, MapoiPoiFilter.TOLERANCE_XY_DIGITS)
+      : 0.5;
     const yawValRad = poi.tolerance && poi.tolerance.yaw;
     this.inputToleranceYaw.value = Number.isFinite(yawValRad)
       ? MapoiPoiFilter.radToDeg(yawValRad).toFixed(4)
@@ -337,19 +350,30 @@ class PoiEditor {
    * Read POI data from the form.
    */
   readForm() {
+    // pose / tolerance を yaml の有効桁数に丸めて Save する (#242)。
+    // 丸めないと parseFloat の浮動小数点誤差 (例: 0.1 → 0.10000038...) や
+    // deg ↔ rad 変換の累積誤差で yaml 値が膨らみ、git diff / 可読性が劣化する。
+    // 桁数定数は poi-filter.js に集約し、backend (yaml_handler.save_pois) と一致させる。
+    const xRaw = MapoiPoiFilter.roundTo(this.inputX.value, MapoiPoiFilter.POSE_XY_DIGITS);
+    const yRaw = MapoiPoiFilter.roundTo(this.inputY.value, MapoiPoiFilter.POSE_XY_DIGITS);
+    const yawRaw = MapoiPoiFilter.roundTo(this.inputYaw.value, MapoiPoiFilter.POSE_YAW_DIGITS);
+    // tolerance: xy は m そのまま、yaw は UI deg → rad 変換して dict / yaml に保存 (#138)。
+    // parseTolerance が finite 判定 + min 0.001 強制 (HTML min を bypass する経路の防御) を担う。
+    const tol = MapoiPoiFilter.parseTolerance(
+      this.inputToleranceXy.value,
+      MapoiPoiFilter.degToRad(this.inputToleranceYaw.value),
+    );
     return {
       name: this.inputName.value.trim(),
       pose: {
-        x: parseFloat(this.inputX.value) || 0,
-        y: parseFloat(this.inputY.value) || 0,
-        yaw: parseFloat(this.inputYaw.value) || 0,
+        x: Number.isFinite(xRaw) ? xRaw : 0,
+        y: Number.isFinite(yRaw) ? yRaw : 0,
+        yaw: Number.isFinite(yawRaw) ? yawRaw : 0,
       },
-      // tolerance: xy は m そのまま、yaw は UI deg → rad 変換して dict / yaml に保存 (#138)。
-      // parseTolerance が finite 判定 + min 0.001 強制 (HTML min を bypass する経路の防御) を担う。
-      tolerance: MapoiPoiFilter.parseTolerance(
-        this.inputToleranceXy.value,
-        MapoiPoiFilter.degToRad(this.inputToleranceYaw.value),
-      ),
+      tolerance: {
+        xy: MapoiPoiFilter.roundTo(tol.xy, MapoiPoiFilter.TOLERANCE_XY_DIGITS),
+        yaw: MapoiPoiFilter.roundTo(tol.yaw, MapoiPoiFilter.TOLERANCE_YAW_DIGITS),
+      },
       tags: this.inputTags.value.split(',').map(t => t.trim()).filter(t => t),
       description: this.inputDescription.value.trim(),
     };
@@ -422,8 +446,8 @@ class PoiEditor {
    */
   updateFormPosition(x, y) {
     if (this.editingIndex === -1) return;
-    this.inputX.value = Math.round(x * 100) / 100;
-    this.inputY.value = Math.round(y * 100) / 100;
+    this.inputX.value = MapoiPoiFilter.roundTo(x, MapoiPoiFilter.POSE_XY_DIGITS);
+    this.inputY.value = MapoiPoiFilter.roundTo(y, MapoiPoiFilter.POSE_XY_DIGITS);
   }
 
   /**
@@ -431,7 +455,7 @@ class PoiEditor {
    */
   updateFormYaw(yaw) {
     if (this.editingIndex === -1) return;
-    this.inputYaw.value = Math.round(yaw * 100) / 100;
+    this.inputYaw.value = MapoiPoiFilter.roundTo(yaw, MapoiPoiFilter.POSE_YAW_DIGITS);
   }
 
   setDirty(isDirty) {

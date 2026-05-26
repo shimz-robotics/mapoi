@@ -26,6 +26,12 @@ if(BUILD_TESTING)
     test/test_resolve_backend_status_for_ui.py
     TIMEOUT 10
   )
+  # yaml_handler._round_poi_floats の桁数契約 pin (#242)。frontend (poi-filter.js
+  # roundTo + POSE_*_DIGITS / TOLERANCE_*_DIGITS) と必ず一致させる。
+  ament_add_pytest_test(test_yaml_handler_round
+    test/test_yaml_handler_round.py
+    TIMEOUT 10
+  )
 endif()
 
 ament_package()
