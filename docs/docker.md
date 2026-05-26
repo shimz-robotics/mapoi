@@ -123,6 +123,17 @@ ros2 topic echo /mapoi/events
 
 `network_mode: host` 越しに別 container からも DDS 通信は通るが、msg 型の install dir は container 固有なので、観測する側に同じ install dir が無いと echo が出力できない点に注意。
 
+#### `Container mapoi-dev Error response from daemon: Conflict ... name "/mapoi-dev" is already in use` が出た場合
+
+直前の `docker compose run --rm --name mapoi-dev dev` を Ctrl-C で抜けた場合等、停止済の container `mapoi-dev` が orphan として残ることがあります。次の `run` で同名衝突するので、再起動前に削除します:
+
+```sh
+docker rm mapoi-dev    # 停止済の container を削除
+ROS_DISTRO=jazzy docker compose run --rm --name mapoi-dev dev    # 改めて起動
+```
+
+`--rm` flag は通常の exit (Ctrl-D / `exit`) では消える挙動ですが、Ctrl-C や強制 kill の経路では残るパターンがあります。
+
 ## 権限（UID/GID）の調整
 
 container 内 `ros` user (default UID 1000) と host user の UID/GID が一致しないと、bind mount (`./:/ros2_ws/src/mapoi`) 越しの **書き込み操作で permission denied** が発生します。代表ケース:

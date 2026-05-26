@@ -1,3 +1,18 @@
+# シナリオ: 機能カタログ demo (#230)。各機能 (waypoint / landmark / pause) を 1 route ずつ
+# 確認できる tutorial 系と、全機能を 1 route で踏む tour_full の集合。自前 robot への
+# 流用を意識し、地名・部屋名ではなく機能を示す抽象名で命名する。
+#
+# demo subscriber (audio_guide_node / camera_node) の起動は本 launch から分離する方針
+# (#230 follow-up #238)。subscriber を立ち上げない場合は ros2 topic echo /mapoi/events で
+# 動作確認、立ち上げる場合は audio 発話 / camera 撮影 mock が走る。
+#
+# POI 座標調整時の制約:
+# - tolerance.xy は Nav2 controller の xy_goal_tolerance (0.25) より大きく取る。Nav2 が POI
+#   tolerance.xy 内に入る前にゴール判定で停止し radius event が発火しないため、最小 0.30
+#   (5cm 余裕)。
+# - tolerance.yaw は >= 0.001 (rad) を指定 (msg spec #138 で 0 / 負値は禁止)。yaw を問わない
+#   通過点は π (≒ 180°) 近辺。yaw 厳密化したい POI は小さい値 (例: goal は 0.10)。
+# - tag 排他: landmark × pause / landmark × waypoint は #143 validation で reject される。
 custom_tags:
 - {name: audio_info, description: Audio guide trigger (POI 進入で音声再生 mock)}
 - {name: capture_trigger, description: Camera capture trigger (pause POI で停止中に撮影 mock)}
@@ -41,6 +56,6 @@ poi:
 - description: tutorial_02 / tour_full の route.landmarks 列挙対象 (audio_info で audio_guide_node
     発火対象)
   name: audio_landmark
-  pose: {x: 0, y: -0.63, yaw: -0.04}
+  pose: {x: -1.09, y: -0.5, yaw: -0.03}
   tags: [landmark, audio_info]
   tolerance: {xy: 0.35, yaw: 0.7850002283279937}
