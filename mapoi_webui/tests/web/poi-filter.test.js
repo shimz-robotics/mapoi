@@ -22,7 +22,12 @@ const {
   parseTolerance,
   degToRad,
   radToDeg,
+  roundTo,
   TOLERANCE_MIN,
+  POSE_XY_DIGITS,
+  POSE_YAW_DIGITS,
+  TOLERANCE_XY_DIGITS,
+  TOLERANCE_YAW_DIGITS,
 } = filter;
 
 const poi = (name, tags) => ({ name, tags });
@@ -150,6 +155,38 @@ describe('degToRad / radToDeg', () => {
     [0.1, 1, 45, 90, 180, 359].forEach((deg) => {
       expect(radToDeg(degToRad(deg))).toBeCloseTo(deg, 6);
     });
+  });
+});
+
+describe('roundTo (#242)', () => {
+  it('exposes save-path digit constants', () => {
+    // backend yaml_handler._POSE_XY_DIGITS 等と必ず一致させる (両層 defense-in-depth)
+    expect(POSE_XY_DIGITS).toBe(3);
+    expect(POSE_YAW_DIGITS).toBe(4);
+    expect(TOLERANCE_XY_DIGITS).toBe(3);
+    expect(TOLERANCE_YAW_DIGITS).toBe(4);
+  });
+
+  it('rounds finite numbers to the requested digits', () => {
+    expect(roundTo(0.10000038482226709, POSE_XY_DIGITS)).toBe(0.1);
+    expect(roundTo(3.1399991679827224, POSE_YAW_DIGITS)).toBe(3.14);
+    expect(roundTo(0.7850002283279937, TOLERANCE_YAW_DIGITS)).toBe(0.785);
+    expect(roundTo(1.2345, 2)).toBe(1.23);
+    expect(roundTo(1.2355, 2)).toBe(1.24);
+  });
+
+  it('accepts string input alongside numeric', () => {
+    expect(roundTo('1.23456', 3)).toBe(1.235);
+    // 数値文字列 → 丸めた結果が 0 (≒ -0 / +0 区別なく 0 扱い) になることだけを確認
+    expect(roundTo('-0.0049', 2) === 0).toBe(true);
+  });
+
+  it('returns NaN for non-numeric / non-finite input', () => {
+    expect(Number.isNaN(roundTo('', 3))).toBe(true);
+    expect(Number.isNaN(roundTo('abc', 3))).toBe(true);
+    expect(Number.isNaN(roundTo(NaN, 3))).toBe(true);
+    expect(Number.isNaN(roundTo(Infinity, 3))).toBe(true);
+    expect(Number.isNaN(roundTo(-Infinity, 3))).toBe(true);
   });
 });
 

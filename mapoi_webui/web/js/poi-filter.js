@@ -50,6 +50,29 @@
   // 0 / 負値 は「無反応 POI」を許してしまうため明示的に禁止。
   const TOLERANCE_MIN = 0.001;
 
+  // yaml 書き出し時の有効桁数 (#242)。
+  // xy は mm 精度 (3 桁)、yaw は rad で約 0.006° 精度 (4 桁) — 0.0001 rad ≒ 0.0057°。
+  // frontend readForm と backend save_pois 両方で同じ値を使う defense-in-depth。
+  const POSE_XY_DIGITS = 3;
+  const POSE_YAW_DIGITS = 4;
+  const TOLERANCE_XY_DIGITS = 3;
+  const TOLERANCE_YAW_DIGITS = 4;
+
+  /**
+   * 数値を指定桁数で丸める。非数値 / NaN / Infinity は NaN を返す。
+   * yaml の可読性と git diff の安定性のため、Save 経路で必ず通す (#242)。
+   *
+   * @param {string|number} value 数値 or parse 可能な文字列
+   * @param {number} digits 小数点以下桁数 (>= 0)
+   * @returns {number} 丸めた値、または NaN
+   */
+  function roundTo(value, digits) {
+    const v = parseFloat(value);
+    if (!Number.isFinite(v)) return NaN;
+    const factor = Math.pow(10, digits);
+    return Math.round(v * factor) / factor;
+  }
+
   function degToRad(deg) {
     const v = parseFloat(deg);
     return Number.isFinite(v) ? v * Math.PI / 180.0 : NaN;
@@ -116,7 +139,12 @@
     parseTolerance,
     degToRad,
     radToDeg,
+    roundTo,
     TOLERANCE_MIN,
+    POSE_XY_DIGITS,
+    POSE_YAW_DIGITS,
+    TOLERANCE_XY_DIGITS,
+    TOLERANCE_YAW_DIGITS,
   };
 
   if (typeof window !== 'undefined') {
