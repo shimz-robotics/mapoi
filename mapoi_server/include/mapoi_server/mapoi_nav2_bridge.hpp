@@ -327,6 +327,9 @@ private:
   FRIEND_TEST(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeExplicit);
   FRIEND_TEST(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeAutoByDistro);
   FRIEND_TEST(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeUnknownFallback);
+  FRIEND_TEST(Nav2BridgeTestFixture, ConstructorTwistStampedParamCreatesStampedSub);
+  FRIEND_TEST(Nav2BridgeTestFixture, ConstructorTwistParamCreatesTwistSub);
+  FRIEND_TEST(Nav2BridgeTestFixture, ConstructorUnknownParamFallsBackToDistroBranch);
 #endif
 };
 

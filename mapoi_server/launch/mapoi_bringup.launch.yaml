@@ -79,6 +79,19 @@ launch:
       opt-in 動作を有効化。負値は bridge 側で 0.0 に clamp。
 
 - arg:
+    name: cmd_vel_msg_type
+    default: "auto"
+    description: >
+      mapoi_nav2_bridge の cmd_vel_msg_type parameter forward (#249 / #251)。
+      twist = geometry_msgs/Twist (humble Nav2 互換)、
+      twist_stamped = geometry_msgs/TwistStamped (jazzy 以降 Nav2)、
+      auto (default) = ROS_DISTRO で自動選択 (humble → twist、それ以外 / unset → twist_stamped)。
+      auto を override する必要があるのは下記の混在構成:
+        - jazzy 上で自前 controller が Twist のまま publish (= twist 明示)
+        - humble 上で自前 controller が TwistStamped 先取り (= twist_stamped 明示)
+        - ROS_DISTRO 未設定環境で humble を使う (= default fallback が twist_stamped のため twist 明示)
+
+- arg:
     name: with_amcl_localization_bridge
     default: "true"
     description: >
@@ -106,6 +119,7 @@ launch:
     exec: mapoi_nav2_bridge
     param:
       - {name: auto_resume_timeout_sec, value: $(var auto_resume_timeout_sec)}
+      - {name: cmd_vel_msg_type, value: "$(var cmd_vel_msg_type)"}
     if: $(var with_nav2_bridge)
 
 - node:

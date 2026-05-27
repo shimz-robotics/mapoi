@@ -380,6 +380,60 @@ TEST_F(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeAutoByDistro)
   }
 }
 
+// Constructor の分岐自体 (declare_parameter → if (msg_type == "twist_stamped") { ... } else { ... })
+// が壊れていないことを pin する (#251 follow-up)。resolve_cmd_vel_msg_type の純関数 test は
+// 解決ロジックだけを見ているため、constructor で「解決後の型に対応する sub を 1 本だけ作る」
+// 部分を独立に検証しないと、リファクタで if 分岐の typo / どちらかの create_subscription が
+// 漏れても unit test が緑のまま通る余地が残る。
+//
+// 同 process の fixture node が default 設定で `/cmd_vel` に sub を貼っているため、本 test 群は
+// 必ず専用 `cmd_vel_topic` を割り当てる: 同 topic に違う型の sub を作ると rcl が
+// `invalid allocator` で crash する (#249 lessons)。
+
+TEST_F(Nav2BridgeTestFixture, ConstructorTwistStampedParamCreatesStampedSub)
+{
+  rclcpp::NodeOptions options;
+  options.append_parameter_override("cmd_vel_msg_type", std::string("twist_stamped"));
+  options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_stamped_branch"));
+  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  EXPECT_NE(node->cmd_vel_stamped_sub_, nullptr);
+  EXPECT_EQ(node->cmd_vel_sub_, nullptr);
+}
+
+TEST_F(Nav2BridgeTestFixture, ConstructorTwistParamCreatesTwistSub)
+{
+  rclcpp::NodeOptions options;
+  options.append_parameter_override("cmd_vel_msg_type", std::string("twist"));
+  options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_twist_branch"));
+  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  EXPECT_NE(node->cmd_vel_sub_, nullptr);
+  EXPECT_EQ(node->cmd_vel_stamped_sub_, nullptr);
+}
+
+TEST_F(Nav2BridgeTestFixture, ConstructorUnknownParamFallsBackToDistroBranch)
+{
+  // 未知値は resolve_cmd_vel_msg_type で ROS_DISTRO 適合型に解決され、対応 sub が 1 本だけ作られる。
+  // caller 側の WARN log は ResolveCmdVelMsgTypeUnknownFallback で pin 済なので、
+  // ここでは「fallback 後に正しい型の sub が wire されているか」だけを見る。
+  const char * original = std::getenv("ROS_DISTRO");
+  std::string saved = original ? original : "";
+  bool was_unset = (original == nullptr);
+
+  setenv("ROS_DISTRO", "jazzy", 1);
+  rclcpp::NodeOptions options;
+  options.append_parameter_override("cmd_vel_msg_type", std::string("Twist"));  // case-sensitive typo
+  options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_unknown_branch"));
+  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  EXPECT_NE(node->cmd_vel_stamped_sub_, nullptr);
+  EXPECT_EQ(node->cmd_vel_sub_, nullptr);
+
+  if (was_unset) {
+    unsetenv("ROS_DISTRO");
+  } else {
+    setenv("ROS_DISTRO", saved.c_str(), 1);
+  }
+}
+
 TEST_F(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeUnknownFallback)
 {
   // 未知値 (typo / 設定ミス) は auto と同じく ROS_DISTRO ベースでフォールバック。
