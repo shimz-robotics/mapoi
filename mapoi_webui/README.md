@@ -100,7 +100,7 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 | --- | --- |
 | 省略 (`null` / 不在) | check skip → 200 OK で保存 (後方互換、旧クライアント / curl 用) |
 | `compute_config_version(yaml)` と一致 | 保存して 200 OK + `config_version: <new>` を返す |
-| 一致しない | **409 Conflict** + `code: "version_mismatch"` + `current_version: <new>` + `error: "...please reload..."` を返す。frontend は reload して新版で再 Save 入力 |
+| 一致しない (`""` 空文字 / 別 hash 値 / 形式不正の文字列等) | **409 Conflict** + `code: "version_mismatch"` + `current_version: <new>` + `error: "...please reload..."` を返す。frontend は reload して新版で再 Save 入力 |
 
 **WebUI 経由なら safe**: poi-editor は GET 時の `config_version` を保持して Save 時に必ず送り返す (#241 frontend 改修)。Save 時に外部編集を踏むと 409 + 警告ダイアログで reload を促す。
 

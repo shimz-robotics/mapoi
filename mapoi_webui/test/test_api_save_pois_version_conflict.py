@@ -36,17 +36,21 @@ class _NullLogger:
 
 
 class _FakeNode:
-    """`/api/pois` 経路で参照される最小限の attr / method だけを持つ duck-typed node."""
+    """`/api/pois` 経路で参照される最小限の attr / method だけを持つ duck-typed node.
 
-    def __init__(self, config_path, reload_succeeds=True):
+    `call_reload_map_info()` は常に True を返す: 本 test は競合検出 / 保存契約を pin する
+    のが目的で、reload 失敗時の挙動 (200 + warning フィールド) は scope 外 (`/api/pois` の
+    別 follow-up で扱う、PR #253 round 2 review medium #3 メモ)。
+    """
+
+    def __init__(self, config_path):
         self._config_path = config_path
-        self._reload_succeeds = reload_succeeds
 
     def get_config_path(self, _map_name=None):
         return self._config_path
 
     def call_reload_map_info(self):
-        return self._reload_succeeds
+        return True
 
     def get_logger(self):
         return _NullLogger()
@@ -91,8 +95,9 @@ class TestApiSavePoisVersionConflict(unittest.TestCase):
         v_before = self._current_version()
         self.assertIsNotNone(v_before)
 
+        payload = _valid_pois_payload()
         resp = self.client.post('/api/pois', json={
-            'pois': _valid_pois_payload(),
+            'pois': payload,
             'expected_version': v_before,
         })
         self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
@@ -102,6 +107,14 @@ class TestApiSavePoisVersionConflict(unittest.TestCase):
         self.assertIn('config_version', body)
         self.assertNotEqual(body['config_version'], v_before)
         self.assertEqual(body['config_version'], self._current_version())
+        # 実際にディスクの yaml が新 payload で書き換わっていることを直接確認
+        # (version 系 assert だけだと「config_version は更新したが pois は書かない」回帰を
+        # 検知できない、PR #253 round 2 review medium #1 対応)。
+        with open(self.config_path, 'r') as f:
+            saved = yaml.safe_load(f)
+        saved_pois = saved.get('poi') or []
+        self.assertEqual(len(saved_pois), 1)
+        self.assertEqual(saved_pois[0]['name'], payload[0]['name'])
 
     def test_save_with_mismatched_expected_version_returns_409_without_writing(self):
         # GET 時点と POST 時点の間で外部編集が入ったケースをシミュレート: client は古い
@@ -168,6 +181,23 @@ class TestApiSavePoisVersionConflict(unittest.TestCase):
         self.assertTrue(body.get('success'))
         self.assertNotEqual(body.get('config_version'), v_before)
         self.assertEqual(body['config_version'], self._current_version())
+
+    def test_save_with_explicit_empty_string_expected_version_returns_409(self):
+        """`expected_version: ""` (空文字) は省略扱いではなく「明示送信された不一致値」として
+        409 になることを pin (round 2 review medium #2 対応)。
+
+        実装は `data.get('expected_version')` の戻り値を `is not None` でしか除外しないため、
+        `""` は check に入り、必ず current sha256 (64 桁 hex) と不一致になる。空文字を
+        「省略と同じ」と扱う実装にすると意図しない競合バイパス経路ができるため、現実装の
+        「明示送信は常に check」契約を test で固定する。
+        """
+        resp = self.client.post('/api/pois', json={
+            'pois': _valid_pois_payload(),
+            'expected_version': '',
+        })
+        self.assertEqual(resp.status_code, 409, resp.get_data(as_text=True))
+        body = resp.get_json()
+        self.assertEqual(body.get('code'), 'version_mismatch')
 
 
 if __name__ == '__main__':
