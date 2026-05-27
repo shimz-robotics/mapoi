@@ -382,10 +382,28 @@ TEST_F(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeAutoByDistro)
 
 TEST_F(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeUnknownFallback)
 {
-  // 未知値 (typo / 設定ミス) は安全側で Twist 互換にフォールバック。
+  // 未知値 (typo / 設定ミス) は auto と同じく ROS_DISTRO ベースでフォールバック。
+  // 旧仕様 (常に "twist") だと jazzy 本番で誤設定すると subscribe 不成立で
+  // EVENT_PAUSED が再び silent に壊れる回帰につながるため、distro 適合型に揃える。
+  // (caller 側は別途 WARN log で typo を可視化する、cursor review PR #250 medium #1)
+  const char * original = std::getenv("ROS_DISTRO");
+  std::string saved = original ? original : "";
+  bool was_unset = (original == nullptr);
+
+  setenv("ROS_DISTRO", "jazzy", 1);
+  EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("twst"), "twist_stamped");
+  EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type(""), "twist_stamped");
+  EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("Twist"), "twist_stamped");  // case-sensitive
+
+  setenv("ROS_DISTRO", "humble", 1);
   EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("twst"), "twist");
-  EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type(""), "twist");
-  EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("Twist"), "twist");  // case-sensitive
+
+  // restore
+  if (was_unset) {
+    unsetenv("ROS_DISTRO");
+  } else {
+    setenv("ROS_DISTRO", saved.c_str(), 1);
+  }
 }
 
 int main(int argc, char ** argv)

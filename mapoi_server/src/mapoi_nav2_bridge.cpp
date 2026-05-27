@@ -136,8 +136,19 @@ MapoiNav2Bridge::MapoiNav2Bridge(const rclcpp::NodeOptions & options)
   // ため、必ず片方のみ)。
   this->declare_parameter<std::string>("cmd_vel_msg_type", "auto");
   const std::string cmd_vel_topic = this->get_parameter("cmd_vel_topic").as_string();
-  const std::string cmd_vel_msg_type = resolve_cmd_vel_msg_type(
-    this->get_parameter("cmd_vel_msg_type").as_string());
+  const std::string cmd_vel_msg_type_param =
+    this->get_parameter("cmd_vel_msg_type").as_string();
+  const std::string cmd_vel_msg_type = resolve_cmd_vel_msg_type(cmd_vel_msg_type_param);
+  // 既知の 3 値 (twist / twist_stamped / auto) 以外は WARN: 黙って distro fallback すると
+  // typo を見逃す。Cursor review #250 medium #1 対応。
+  if (cmd_vel_msg_type_param != "twist"
+      && cmd_vel_msg_type_param != "twist_stamped"
+      && cmd_vel_msg_type_param != "auto") {
+    RCLCPP_WARN(this->get_logger(),
+      "cmd_vel_msg_type='%s' は未知の値です。ROS_DISTRO ベースで '%s' にフォールバックしました。"
+      " 有効値: 'twist' / 'twist_stamped' / 'auto'",
+      cmd_vel_msg_type_param.c_str(), cmd_vel_msg_type.c_str());
+  }
   if (cmd_vel_msg_type == "twist_stamped") {
     cmd_vel_stamped_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
       cmd_vel_topic, 10,
@@ -1259,16 +1270,16 @@ std::string MapoiNav2Bridge::resolve_cmd_vel_msg_type(const std::string & param_
   if (param_value == "twist" || param_value == "twist_stamped") {
     return param_value;
   }
-  if (param_value == "auto") {
-    const char * distro = std::getenv("ROS_DISTRO");
-    if (distro && std::string(distro) == "humble") {
-      return "twist";
-    }
-    // jazzy / kilted / それ以降は TwistStamped。env が unset の場合も今後の主流に倣う。
-    return "twist_stamped";
+  // "auto" / 未知値はどちらも ROS_DISTRO ベースで自動判定する (#249 cursor review medium #1)。
+  // 未知値を無条件 "twist" にフォールバックすると jazzy 以降の本番で再び silent に
+  // subscribe 不成立 → EVENT_PAUSED 不発火の bug が復活する。auto と同じ判定にして
+  // 「不一致だが distro 適合型を選んだ」という意図に揃える (WARN log は caller 側で出す)。
+  const char * distro = std::getenv("ROS_DISTRO");
+  if (distro && std::string(distro) == "humble") {
+    return "twist";
   }
-  // 未知値は安全側で Twist 互換にフォールバック (例: typo)。
-  return "twist";
+  // jazzy / kilted / それ以降は TwistStamped。env が unset の場合も今後の主流に倣う。
+  return "twist_stamped";
 }
 
 void MapoiNav2Bridge::update_zero_velocity_state(
