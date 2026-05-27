@@ -85,7 +85,7 @@ launch:
       mapoi_nav2_bridge の cmd_vel_msg_type parameter forward (#249 / #251)。
       twist = geometry_msgs/Twist (humble Nav2 互換)、
       twist_stamped = geometry_msgs/TwistStamped (jazzy 以降 Nav2)、
-      auto (default) = ROS_DISTRO で自動選択 (humble → twist、それ以外 / unset → twist_stamped)。
+      auto (default) = ROS_DISTRO で自動選択 (humble → twist、それ以外 / 未設定 → twist_stamped)。
       auto を override する必要があるのは下記の混在構成:
         - jazzy 上で自前 controller が Twist のまま publish (= twist 明示)
         - humble 上で自前 controller が TwistStamped 先取り (= twist_stamped 明示)

@@ -137,7 +137,27 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 | `base_frame` | `string` | `base_link` | TF の子フレーム |
 | `auto_resume_timeout_sec` | `double` | `0.0` | `EVENT_PAUSED` 発火後の auto-resume timeout (秒、#231)。`0.0` で disabled (現行仕様、外部 `/mapoi/nav/resume` を無限待ち)。正値で「PAUSED から N 秒後に内部 resume を呼ぶ」demo / 自動運転シナリオ向け opt-in 動作を有効化。負値は起動時に `0.0` へ clamp。動的 reconfigure 非対応 |
 | `cmd_vel_topic` | `string` | `cmd_vel` | `EVENT_PAUSED` 判定用 `cmd_vel` の subscribe 先 topic 名。Nav2 と同じ topic を見る前提 (停止判定 source) |
-| `cmd_vel_msg_type` | `string` | `auto` | `cmd_vel` の message 型 (#249 / #251)。`twist` = `geometry_msgs/Twist` (humble Nav2 互換)、`twist_stamped` = `geometry_msgs/TwistStamped` (jazzy 以降 Nav2: `collision_monitor` / `docking_server` 等が TwistStamped 化済)、`auto` (default) = `ROS_DISTRO` 環境変数で自動選択 (`humble` → `twist`、それ以外 / 未設定 → `twist_stamped`)。同 topic に違う型の sub を作ると rcl が crash するため、`auto` を上書きする必要があるのは下記ケース: (a) jazzy 上で自前 controller が Twist のまま publish する混在構成 → `twist` を明示、(b) humble 上で自前 controller が TwistStamped を先取りしている構成 → `twist_stamped` を明示、(c) 最小 CI / 自作 container で `ROS_DISTRO` が unset の環境で humble を使う場合 → `twist` を明示 (default fallback は `twist_stamped`)。未知値 (typo) は WARN を出した上で `ROS_DISTRO` ベースで安全側にフォールバック |
+| `cmd_vel_msg_type` | `string` | `auto` | `cmd_vel` の message 型 (#249 / #251)。`twist` / `twist_stamped` / `auto` (default = `ROS_DISTRO` から自動選択)。詳細と override が必要なケースは下記サブセクション参照 |
+
+##### `cmd_vel_msg_type` の値と override が必要な構成 (#249 / #251)
+
+`cmd_vel` の publisher 型は ROS 2 distro / 採用 controller によって `geometry_msgs/Twist` と `geometry_msgs/TwistStamped` に分かれる:
+
+- `twist` — `geometry_msgs/Twist` で subscribe (humble Nav2 互換)
+- `twist_stamped` — `geometry_msgs/TwistStamped` で subscribe (jazzy 以降 Nav2: `collision_monitor` / `docking_server` 等が TwistStamped 化済)
+- `auto` (default) — `ROS_DISTRO` 環境変数で自動選択 (`humble` → `twist`、それ以外 / 未設定 → `twist_stamped`)
+
+**型不一致は単に subscribe が空になるのではなく process が落ちる**: 同じ topic に違う型の subscriber を 2 つ作ると rcl が `invalid allocator` で crash する (#249 で実機再発)。`auto` の選ぶ型と実際に流れる publisher 型を揃えるのが大前提。
+
+`auto` を override する必要があるのは下記の混在構成:
+
+| ケース | override |
+| --- | --- |
+| jazzy 上で自前 controller が Twist のまま publish | `cmd_vel_msg_type: "twist"` を明示 |
+| humble 上で自前 controller が TwistStamped を先取りしている | `cmd_vel_msg_type: "twist_stamped"` を明示 |
+| 最小 CI / 自作 container で `ROS_DISTRO` が unset、かつ humble を使う | `cmd_vel_msg_type: "twist"` を明示 (default fallback は `twist_stamped` のため) |
+
+未知値 (typo) は WARN を出した上で `ROS_DISTRO` ベースで安全側にフォールバックする。
 
 #### サブスクライバー
 
