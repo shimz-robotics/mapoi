@@ -103,12 +103,18 @@ class TestApiSavePoisVersionConflict(unittest.TestCase):
         self.assertNotEqual(body['config_version'], v_before)
         self.assertEqual(body['config_version'], self._current_version())
 
-    def test_save_with_mismatched_expected_version_returns_409(self):
+    def test_save_with_mismatched_expected_version_returns_409_without_writing(self):
         # GET 時点と POST 時点の間で外部編集が入ったケースをシミュレート: client は古い
         # version を握ったまま POST するが、backend file は別 client が書き換えて新 version に
-        # なっている → 409 で reject されること、code / current_version フィールドを返すこと。
-        stale_version = 'a' * 64  # 64 桁の偽 sha256
-        self.assertNotEqual(stale_version, self._current_version())
+        # なっている → 409 で reject されること、code / current_version フィールドを返すこと、
+        # かつ **ディスク上の yaml が一切変更されないこと** (= 競合時に誤保存しない契約) を pin。
+        # status_code だけだと「409 返したのに裏で save_pois も呼んでた」回帰を検知できないため、
+        # PR #253 round 1 review medium #1 対応で content / version の不変も併せて assert する。
+        v_before = self._current_version()
+        with open(self.config_path, 'rb') as f:
+            content_before = f.read()
+        stale_version = 'a' * 64  # 64 桁の偽 sha256 (任意の不一致値)
+        self.assertNotEqual(stale_version, v_before)
 
         resp = self.client.post('/api/pois', json={
             'pois': _valid_pois_payload(),
@@ -119,14 +125,20 @@ class TestApiSavePoisVersionConflict(unittest.TestCase):
         self.assertEqual(body.get('code'), 'version_mismatch')
         # frontend が直後の reload で受け取るべき current_version を含むこと
         self.assertIn('current_version', body)
-        self.assertEqual(body['current_version'], self._current_version())
+        self.assertEqual(body['current_version'], v_before)
         # error フィールドにも reload を促す説明文を含むこと (UI banner で表示する想定)
         self.assertIn('reload', str(body.get('error', '')).lower())
+
+        # 競合時に save_pois が呼ばれていないこと: version 不変 + byte 単位で content 不変
+        self.assertEqual(self._current_version(), v_before)
+        with open(self.config_path, 'rb') as f:
+            self.assertEqual(f.read(), content_before)
 
     def test_save_without_expected_version_returns_200(self):
         """`expected_version` 省略時は version check をスキップして従来通り保存する
         (旧クライアント / curl / 別 client からの POST 後方互換、PR #245)。
         """
+        v_before = self._current_version()
         resp = self.client.post('/api/pois', json={
             'pois': _valid_pois_payload(),
             # expected_version を意図的に省略
@@ -135,6 +147,27 @@ class TestApiSavePoisVersionConflict(unittest.TestCase):
         body = resp.get_json()
         self.assertTrue(body.get('success'))
         self.assertIn('config_version', body)
+        # 実際に保存された証拠として version が変わっていること (config_version 存在だけだと
+        # 「response 形だけ整えて中身は書いていない」を検知できない、round 1 review low)。
+        self.assertNotEqual(body['config_version'], v_before)
+        self.assertEqual(body['config_version'], self._current_version())
+
+    def test_save_with_explicit_null_expected_version_returns_200(self):
+        """`expected_version: null` を明示送信した場合も省略時と同じ後方互換挙動 (200 OK + 保存)
+        になることを pin。README には「省略 (null / 不在)」と書いており、frontend が
+        `JSON.stringify({expected_version: null})` 経路でも壊れないことを保証する
+        (round 1 review medium #2 対応)。
+        """
+        v_before = self._current_version()
+        resp = self.client.post('/api/pois', json={
+            'pois': _valid_pois_payload(),
+            'expected_version': None,
+        })
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+        body = resp.get_json()
+        self.assertTrue(body.get('success'))
+        self.assertNotEqual(body.get('config_version'), v_before)
+        self.assertEqual(body['config_version'], self._current_version())
 
 
 if __name__ == '__main__':
