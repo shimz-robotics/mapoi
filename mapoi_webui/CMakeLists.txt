@@ -37,6 +37,12 @@ if(BUILD_TESTING)
     test/test_yaml_handler_version.py
     TIMEOUT 10
   )
+  # Flask endpoint レベルでの `/api/pois` POST 楽観的競合検出契約 (#241 / #246)。
+  # 純関数 test (test_yaml_handler_version) と分けて、409 + code + current_version 経路を pin。
+  ament_add_pytest_test(test_api_save_pois_version_conflict
+    test/test_api_save_pois_version_conflict.py
+    TIMEOUT 10
+  )
 endif()
 
 ament_package()
