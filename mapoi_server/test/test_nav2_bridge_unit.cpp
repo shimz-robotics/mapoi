@@ -352,6 +352,12 @@ TEST_F(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeExplicit)
   EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("twist_stamped"), "twist_stamped");
 }
 
+// **本 test binary は ROS_DISTRO を setenv/unsetenv で書き換える** ため、gtest を並列実行
+// (`--gtest_parallel` / ctest `-j` で他 test と同居) すると env race の温床になる。現状の
+// colcon 構成は逐次実行前提で問題ないが、将来 parallel に切替える場合は本 binary を
+// シングル process に固定 (例: `RUN_SERIAL TRUE`) するか、ROS_DISTRO 依存テストを別 binary に
+// 分割する必要がある (#252 round 2 review medium #3 メモ)。
+
 // RAII guard for ROS_DISTRO env: テスト中の setenv/unsetenv が EXPECT 失敗 / 例外 / 早期 return で
 // 復元漏れになり、後続テスト (特に "auto" 解決を含む test) へリークするのを防ぐ (#251 review medium)。
 // destructor で必ず元値へ戻す。
@@ -495,6 +501,22 @@ TEST_F(Nav2BridgeTestFixture, ConstructorAutoParamHumbleCreatesTwistSub)
   auto node = std::make_shared<MapoiNav2Bridge>(options);
   EXPECT_NE(node->cmd_vel_sub_, nullptr);
   EXPECT_EQ(node->cmd_vel_stamped_sub_, nullptr);
+}
+
+TEST_F(Nav2BridgeTestFixture, ConstructorAutoParamUnsetDistroCreatesStampedSub)
+{
+  // ROS_DISTRO 未設定 + auto: README / launch description で「未設定 → twist_stamped」と運用上の
+  // 重要ケースとして明記している経路。最小 CI / 自作 container 等で env が落ちた状態で
+  // bridge を起動するシナリオの constructor 側を pin する (#252 round 3 review medium #1)。
+  ScopedRosDistro distro_guard;
+  unsetenv("ROS_DISTRO");
+
+  rclcpp::NodeOptions options;
+  options.append_parameter_override("cmd_vel_msg_type", std::string("auto"));
+  options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_auto_unset_branch"));
+  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  EXPECT_NE(node->cmd_vel_stamped_sub_, nullptr);
+  EXPECT_EQ(node->cmd_vel_sub_, nullptr);
 }
 
 TEST_F(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeUnknownFallback)

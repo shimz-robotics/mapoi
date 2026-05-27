@@ -333,6 +333,7 @@ private:
   FRIEND_TEST(Nav2BridgeTestFixture, ConstructorUnknownParamHumbleFallsBackToTwistSub);
   FRIEND_TEST(Nav2BridgeTestFixture, ConstructorAutoParamJazzyCreatesStampedSub);
   FRIEND_TEST(Nav2BridgeTestFixture, ConstructorAutoParamHumbleCreatesTwistSub);
+  FRIEND_TEST(Nav2BridgeTestFixture, ConstructorAutoParamUnsetDistroCreatesStampedSub);
 #endif
 };
 
