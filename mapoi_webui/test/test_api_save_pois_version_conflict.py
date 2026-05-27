@@ -116,36 +116,44 @@ class TestApiSavePoisVersionConflict(unittest.TestCase):
         self.assertEqual(len(saved_pois), 1)
         self.assertEqual(saved_pois[0]['name'], payload[0]['name'])
 
-    def test_save_with_mismatched_expected_version_returns_409_without_writing(self):
-        # GET 時点と POST 時点の間で外部編集が入ったケースをシミュレート: client は古い
-        # version を握ったまま POST するが、backend file は別 client が書き換えて新 version に
-        # なっている → 409 で reject されること、code / current_version フィールドを返すこと、
-        # かつ **ディスク上の yaml が一切変更されないこと** (= 競合時に誤保存しない契約) を pin。
-        # status_code だけだと「409 返したのに裏で save_pois も呼んでた」回帰を検知できないため、
-        # PR #253 round 1 review medium #1 対応で content / version の不変も併せて assert する。
+    def _assert_409_version_mismatch_without_writing(self, sent_expected_version):
+        """409 経路の共通 assert ヘルパー (PR #253 round 3 review medium #1)。
+
+        全 409 経路 (任意の不一致値 / 空文字 / 等) で同じ契約を pin する:
+        - status 409
+        - code: 'version_mismatch'
+        - current_version: 現在の sha256
+        - error 文言に 'reload' を含む (UI banner 用)
+        - **ディスク上 yaml が一切変更されない** (競合時 non-save 契約)
+        """
         v_before = self._current_version()
         with open(self.config_path, 'rb') as f:
             content_before = f.read()
-        stale_version = 'a' * 64  # 64 桁の偽 sha256 (任意の不一致値)
-        self.assertNotEqual(stale_version, v_before)
 
         resp = self.client.post('/api/pois', json={
             'pois': _valid_pois_payload(),
-            'expected_version': stale_version,
+            'expected_version': sent_expected_version,
         })
         self.assertEqual(resp.status_code, 409, resp.get_data(as_text=True))
         body = resp.get_json()
         self.assertEqual(body.get('code'), 'version_mismatch')
-        # frontend が直後の reload で受け取るべき current_version を含むこと
         self.assertIn('current_version', body)
         self.assertEqual(body['current_version'], v_before)
-        # error フィールドにも reload を促す説明文を含むこと (UI banner で表示する想定)
         self.assertIn('reload', str(body.get('error', '')).lower())
 
         # 競合時に save_pois が呼ばれていないこと: version 不変 + byte 単位で content 不変
         self.assertEqual(self._current_version(), v_before)
         with open(self.config_path, 'rb') as f:
             self.assertEqual(f.read(), content_before)
+
+    def test_save_with_mismatched_expected_version_returns_409_without_writing(self):
+        # GET 時点と POST 時点の間で外部編集が入ったケースをシミュレート: client は古い
+        # version を握ったまま POST するが、backend file は別 client が書き換えて新 version に
+        # なっている → 409 で reject、ディスク上 yaml は一切変更されない (誤保存しない契約)。
+        # PR #253 round 1 review medium #1 対応。
+        stale_version = 'a' * 64  # 64 桁の偽 sha256 (任意の不一致値)
+        self.assertNotEqual(stale_version, self._current_version())
+        self._assert_409_version_mismatch_without_writing(stale_version)
 
     def test_save_without_expected_version_returns_200(self):
         """`expected_version` 省略時は version check をスキップして従来通り保存する
@@ -184,20 +192,15 @@ class TestApiSavePoisVersionConflict(unittest.TestCase):
 
     def test_save_with_explicit_empty_string_expected_version_returns_409(self):
         """`expected_version: ""` (空文字) は省略扱いではなく「明示送信された不一致値」として
-        409 になることを pin (round 2 review medium #2 対応)。
+        409 になることを pin (round 2 review medium #2 対応)。任意の不一致値ケースと同じ
+        contract (current_version 返却 / reload 文言 / non-save) も round 3 review で揃え。
 
         実装は `data.get('expected_version')` の戻り値を `is not None` でしか除外しないため、
         `""` は check に入り、必ず current sha256 (64 桁 hex) と不一致になる。空文字を
         「省略と同じ」と扱う実装にすると意図しない競合バイパス経路ができるため、現実装の
         「明示送信は常に check」契約を test で固定する。
         """
-        resp = self.client.post('/api/pois', json={
-            'pois': _valid_pois_payload(),
-            'expected_version': '',
-        })
-        self.assertEqual(resp.status_code, 409, resp.get_data(as_text=True))
-        body = resp.get_json()
-        self.assertEqual(body.get('code'), 'version_mismatch')
+        self._assert_409_version_mismatch_without_writing('')
 
 
 if __name__ == '__main__':
