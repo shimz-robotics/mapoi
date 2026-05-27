@@ -1,6 +1,7 @@
 #include "mapoi_server/mapoi_nav2_bridge.hpp"
 
 #include <chrono>
+#include <cstdlib>
 #include <functional>
 #include <cmath>
 #include <thread>
@@ -129,12 +130,39 @@ MapoiNav2Bridge::MapoiNav2Bridge(const rclcpp::NodeOptions & options)
     "mapoi/config_path", rclcpp::QoS(1).transient_local(),
     std::bind(&MapoiNav2Bridge::on_config_path_changed, this, _1));
 
-  // cmd_vel subscribe (#140): STOPPED 判定の source の一つ (もう一つは Nav2 SUCCEEDED)。
-  // QoS は Nav2 の cmd_vel publisher と同じ default (reliable, depth=10)。
+  // cmd_vel subscribe (#140 / #249): STOPPED 判定 source。QoS は Nav2 publisher と同じ
+  // default (reliable, depth=10)。distro 移行で publisher 型が変わるため subscription 型を
+  // 選択する (同じ topic に 2 種類の sub を作ると rcl が invalid allocator で crash する
+  // ため、必ず片方のみ)。
+  this->declare_parameter<std::string>("cmd_vel_msg_type", "auto");
   const std::string cmd_vel_topic = this->get_parameter("cmd_vel_topic").as_string();
-  cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
-    cmd_vel_topic, 10,
-    std::bind(&MapoiNav2Bridge::cmd_vel_callback, this, _1));
+  const std::string cmd_vel_msg_type_param =
+    this->get_parameter("cmd_vel_msg_type").as_string();
+  const std::string cmd_vel_msg_type = resolve_cmd_vel_msg_type(cmd_vel_msg_type_param);
+  // 既知の 3 値 (twist / twist_stamped / auto) 以外は WARN: 黙って distro fallback すると
+  // typo を見逃す。Cursor review #250 medium #1 対応。
+  if (cmd_vel_msg_type_param != "twist"
+      && cmd_vel_msg_type_param != "twist_stamped"
+      && cmd_vel_msg_type_param != "auto") {
+    RCLCPP_WARN(this->get_logger(),
+      "cmd_vel_msg_type='%s' は未知の値です。ROS_DISTRO ベースで '%s' にフォールバックしました。"
+      " 有効値: 'twist' / 'twist_stamped' / 'auto'",
+      cmd_vel_msg_type_param.c_str(), cmd_vel_msg_type.c_str());
+  }
+  if (cmd_vel_msg_type == "twist_stamped") {
+    cmd_vel_stamped_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
+      cmd_vel_topic, 10,
+      std::bind(&MapoiNav2Bridge::cmd_vel_stamped_callback, this, _1));
+    RCLCPP_INFO(this->get_logger(),
+      "cmd_vel subscribed as TwistStamped (msg_type=%s)", cmd_vel_msg_type.c_str());
+  } else {
+    // "twist" / 未知の値は安全側で Twist にフォールバック (humble 互換)。
+    cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+      cmd_vel_topic, 10,
+      std::bind(&MapoiNav2Bridge::cmd_vel_callback, this, _1));
+    RCLCPP_INFO(this->get_logger(),
+      "cmd_vel subscribed as Twist (msg_type=%s)", cmd_vel_msg_type.c_str());
+  }
 
   tag_defs_client_ = this->create_client<mapoi_interfaces::srv::GetTagDefinitions>("get_tag_definitions");
   fetch_system_tags();
@@ -1226,14 +1254,43 @@ double MapoiNav2Bridge::distance_2d(const geometry_msgs::msg::Pose & poi_pose, d
 
 void MapoiNav2Bridge::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
+  update_zero_velocity_state(
+    msg->linear.x, msg->linear.y, msg->linear.z, msg->angular.z);
+}
+
+void MapoiNav2Bridge::cmd_vel_stamped_callback(
+  const geometry_msgs::msg::TwistStamped::SharedPtr msg)
+{
+  update_zero_velocity_state(
+    msg->twist.linear.x, msg->twist.linear.y, msg->twist.linear.z, msg->twist.angular.z);
+}
+
+std::string MapoiNav2Bridge::resolve_cmd_vel_msg_type(const std::string & param_value)
+{
+  if (param_value == "twist" || param_value == "twist_stamped") {
+    return param_value;
+  }
+  // "auto" / 未知値はどちらも ROS_DISTRO ベースで自動判定する (#249 cursor review medium #1)。
+  // 未知値を無条件 "twist" にフォールバックすると jazzy 以降の本番で再び silent に
+  // subscribe 不成立 → EVENT_PAUSED 不発火の bug が復活する。auto と同じ判定にして
+  // 「不一致だが distro 適合型を選んだ」という意図に揃える (WARN log は caller 側で出す)。
+  const char * distro = std::getenv("ROS_DISTRO");
+  if (distro && std::string(distro) == "humble") {
+    return "twist";
+  }
+  // jazzy / kilted / それ以降は TwistStamped。env が unset の場合も今後の主流に倣う。
+  return "twist_stamped";
+}
+
+void MapoiNav2Bridge::update_zero_velocity_state(
+  double linear_x, double linear_y, double linear_z, double angular_z)
+{
   // 線速ノルム (3D) と角速度絶対値 (yaw 軸) の両方が閾値以下のとき「停止」とみなす。
   // 撮影シナリオでは「その場旋回も停止扱いしない」前提のため、angular.z も判定に含める。
   // 単位が異なるが同一閾値を使う割り切り (param 説明参照、#140)。
   const double linear_norm = std::sqrt(
-    msg->linear.x * msg->linear.x +
-    msg->linear.y * msg->linear.y +
-    msg->linear.z * msg->linear.z);
-  const double angular_norm = std::abs(msg->angular.z);
+    linear_x * linear_x + linear_y * linear_y + linear_z * linear_z);
+  const double angular_norm = std::abs(angular_z);
   const bool zero_now =
     (linear_norm < stopped_speed_threshold_) && (angular_norm < stopped_speed_threshold_);
   if (zero_now) {

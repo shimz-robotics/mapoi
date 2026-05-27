@@ -19,6 +19,7 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/twist.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
 #include <nav2_msgs/action/follow_waypoints.hpp>
 #include <nav2_msgs/action/navigate_to_pose.hpp>
 #include <nav2_msgs/srv/load_map.hpp>
@@ -217,8 +218,31 @@ private:
   // 前提: 採用 controller が navigation 停止中も cmd_vel = 0 を継続 publish すること
   // (Nav2 default の挙動)。controller が静止時に cmd_vel publish を止める実装の場合、
   // EVENT_PAUSED は発火しない。
+  // cmd_vel は ROS 2 distro / controller によって型が分かれる (#249):
+  //   - Humble Nav2 等: geometry_msgs::msg::Twist
+  //   - Jazzy 以降の Nav2: geometry_msgs::msg::TwistStamped (collision_monitor /
+  //     docking_server などが TwistStamped 化済)
+  // どちらか一方だけを subscribe する: 同じ topic に違う型の subscriber を 2 つ
+  // 作ると rcl が `invalid allocator` で crash するため (DDS の type registry が
+  // 型不一致を受け付けない)。`cmd_vel_msg_type` parameter で選択する:
+  //   - "twist":         Twist で subscribe (humble デフォルト互換)
+  //   - "twist_stamped": TwistStamped で subscribe (jazzy 以降 Nav2 互換)
+  //   - "auto" (default): ROS_DISTRO 環境変数を見て自動選択
+  //     ROS_DISTRO=humble → twist、それ以外 (jazzy, kilted, ...) → twist_stamped
+  // 一方しか作らないので shared_ptr の片方は nullptr のまま。
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr cmd_vel_stamped_sub_;
   void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
+  void cmd_vel_stamped_callback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);
+  // zero-velocity 判定の本体 (両 callback の共通実装、#249)。linear_x/y/z + angular_z を
+  // 渡せば Twist / TwistStamped どちらでも同じ閾値判定で `zero_velocity_active_` /
+  // `last_zero_velocity_start_` を更新する。
+  void update_zero_velocity_state(
+    double linear_x, double linear_y, double linear_z, double angular_z);
+  // `cmd_vel_msg_type` parameter を実 type 名 ("twist" or "twist_stamped") に解決する (#249)。
+  // "auto" は ROS_DISTRO env を見て humble なら "twist"、それ以外 (jazzy 以降) は
+  // "twist_stamped"。未知値は安全側で "twist" にフォールバック。
+  static std::string resolve_cmd_vel_msg_type(const std::string & param_value);
   // 速度が閾値以下になり始めた時刻 (steady_clock)。閾値超えに戻ったら reset。
   std::chrono::steady_clock::time_point last_zero_velocity_start_ {};
   bool zero_velocity_active_ {false};
@@ -297,6 +321,12 @@ private:
   FRIEND_TEST(Nav2BridgeTestFixture, AutoResumeTimeoutNonFiniteClampedToZero);
   FRIEND_TEST(Nav2BridgeTestFixture, CancelAutoResumeTimerIsIdempotent);
   FRIEND_TEST(Nav2BridgeTestFixture, ResetNavStateCancelsAutoResumeTimer);
+  FRIEND_TEST(Nav2BridgeTestFixture, CmdVelTwistCallbackUpdatesZeroVelocityState);
+  FRIEND_TEST(Nav2BridgeTestFixture, CmdVelTwistStampedCallbackUpdatesZeroVelocityState);
+  FRIEND_TEST(Nav2BridgeTestFixture, CmdVelNonZeroClearsZeroVelocityState);
+  FRIEND_TEST(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeExplicit);
+  FRIEND_TEST(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeAutoByDistro);
+  FRIEND_TEST(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeUnknownFallback);
 #endif
 };
 
