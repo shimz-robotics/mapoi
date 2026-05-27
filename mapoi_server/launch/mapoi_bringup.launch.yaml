@@ -92,6 +92,16 @@ launch:
         - ROS_DISTRO 未設定環境で humble を使う (= default fallback が twist_stamped のため twist 明示)
 
 - arg:
+    name: cmd_vel_topic
+    default: "cmd_vel"
+    description: >
+      mapoi_nav2_bridge の cmd_vel_topic parameter forward (#249)。
+      EVENT_PAUSED 判定用に subscribe する cmd_vel 互換 topic 名。
+      Nav2 と同じ topic を見る前提 (停止判定 source として一致が必要)。
+      default は標準的な Nav2 命名 'cmd_vel'。namespace 化 / multi-robot 構成で
+      上書き必要時に override する。
+
+- arg:
     name: with_amcl_localization_bridge
     default: "true"
     description: >
@@ -120,6 +130,7 @@ launch:
     param:
       - {name: auto_resume_timeout_sec, value: $(var auto_resume_timeout_sec)}
       - {name: cmd_vel_msg_type, value: "$(var cmd_vel_msg_type)"}
+      - {name: cmd_vel_topic, value: "$(var cmd_vel_topic)"}
     if: $(var with_nav2_bridge)
 
 - node:

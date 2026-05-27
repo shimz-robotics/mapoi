@@ -465,6 +465,38 @@ TEST_F(Nav2BridgeTestFixture, ConstructorUnknownParamHumbleFallsBackToTwistSub)
   EXPECT_EQ(node->cmd_vel_stamped_sub_, nullptr);
 }
 
+// "auto" 自身の constructor 経路も両 distro で pin する (#252 round 2 review medium #1)。
+// 純関数 ResolveCmdVelMsgTypeAutoByDistro は解決ロジックだけを見ているため、constructor 内で
+// 「auto を渡したときに resolve 結果へ正しく分岐する」部分が壊れても (例: リファクタで auto
+// 経路だけ解決結果を無視するような typo) 検知できない余地が残る。default param が "auto" で
+// あることと合わせて、本番運用パスの回帰検知として両 distro 分を pin する。
+
+TEST_F(Nav2BridgeTestFixture, ConstructorAutoParamJazzyCreatesStampedSub)
+{
+  ScopedRosDistro distro_guard;
+  setenv("ROS_DISTRO", "jazzy", 1);
+
+  rclcpp::NodeOptions options;
+  options.append_parameter_override("cmd_vel_msg_type", std::string("auto"));
+  options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_auto_jazzy_branch"));
+  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  EXPECT_NE(node->cmd_vel_stamped_sub_, nullptr);
+  EXPECT_EQ(node->cmd_vel_sub_, nullptr);
+}
+
+TEST_F(Nav2BridgeTestFixture, ConstructorAutoParamHumbleCreatesTwistSub)
+{
+  ScopedRosDistro distro_guard;
+  setenv("ROS_DISTRO", "humble", 1);
+
+  rclcpp::NodeOptions options;
+  options.append_parameter_override("cmd_vel_msg_type", std::string("auto"));
+  options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_auto_humble_branch"));
+  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  EXPECT_NE(node->cmd_vel_sub_, nullptr);
+  EXPECT_EQ(node->cmd_vel_stamped_sub_, nullptr);
+}
+
 TEST_F(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeUnknownFallback)
 {
   // 未知値 (typo / 設定ミス) は auto と同じく ROS_DISTRO ベースでフォールバック。
