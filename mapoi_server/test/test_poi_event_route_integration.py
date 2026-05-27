@@ -67,6 +67,9 @@ def generate_test_description():
             'map_frame': 'map',
             'base_frame': 'base_link',
             'stopped_dwell_time_sec': STOPPED_DWELL_TIME_SEC,
+            # 本 test は Twist で cmd_vel を publish するため、distro auto-detect (jazzy で
+            # TwistStamped 化) を上書きして Twist 固定 (#249)。
+            'cmd_vel_msg_type': 'twist',
         }],
     )
 

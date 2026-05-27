@@ -299,6 +299,95 @@ TEST_F(Nav2BridgeTestFixture, ResetNavStateCancelsAutoResumeTimer)
   EXPECT_TRUE(node_->auto_resume_target_poi_.empty());
 }
 
+// --- cmd_vel callback / TwistStamped 互換 (#249) ---
+//
+// jazzy で Nav2 が cmd_vel を TwistStamped で publish するように変わったため、
+// 旧 Twist subscriber だけだと 1 通も受信できず EVENT_PAUSED が永久に発火しない
+// silent regression が起きていた。両 callback が同じ zero-velocity 判定 helper
+// (update_zero_velocity_state) を呼ぶ contract を pin する。
+
+TEST_F(Nav2BridgeTestFixture, CmdVelTwistCallbackUpdatesZeroVelocityState)
+{
+  // Humble 系の Twist publisher: zero 入力で zero_velocity_active_ が true に遷移。
+  EXPECT_FALSE(node_->zero_velocity_active_);
+  auto msg = std::make_shared<geometry_msgs::msg::Twist>();
+  msg->linear.x = 0.0;
+  msg->linear.y = 0.0;
+  msg->linear.z = 0.0;
+  msg->angular.z = 0.0;
+  node_->cmd_vel_callback(msg);
+  EXPECT_TRUE(node_->zero_velocity_active_);
+}
+
+TEST_F(Nav2BridgeTestFixture, CmdVelTwistStampedCallbackUpdatesZeroVelocityState)
+{
+  // Jazzy 系の TwistStamped publisher: 内包 twist を unwrap して同じ判定を通す。
+  EXPECT_FALSE(node_->zero_velocity_active_);
+  auto msg = std::make_shared<geometry_msgs::msg::TwistStamped>();
+  msg->twist.linear.x = 0.0;
+  msg->twist.linear.y = 0.0;
+  msg->twist.linear.z = 0.0;
+  msg->twist.angular.z = 0.0;
+  node_->cmd_vel_stamped_callback(msg);
+  EXPECT_TRUE(node_->zero_velocity_active_);
+}
+
+TEST_F(Nav2BridgeTestFixture, CmdVelNonZeroClearsZeroVelocityState)
+{
+  // zero で active 化 → 非 zero で即 clear。Twist / TwistStamped どちらの経路でも同じ。
+  auto zero = std::make_shared<geometry_msgs::msg::Twist>();
+  node_->cmd_vel_callback(zero);
+  EXPECT_TRUE(node_->zero_velocity_active_);
+
+  auto moving = std::make_shared<geometry_msgs::msg::TwistStamped>();
+  moving->twist.linear.x = 0.5;  // 閾値 0.01 を超える
+  node_->cmd_vel_stamped_callback(moving);
+  EXPECT_FALSE(node_->zero_velocity_active_);
+}
+
+TEST_F(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeExplicit)
+{
+  // 明示指定はそのまま透過。typo / 未知値は "twist" にフォールバック。
+  EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("twist"), "twist");
+  EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("twist_stamped"), "twist_stamped");
+}
+
+TEST_F(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeAutoByDistro)
+{
+  // "auto" は ROS_DISTRO 環境変数で決まる: humble → twist、それ以外 → twist_stamped。
+  // 既存の ROS_DISTRO 値を保存して復元する (テストが Docker / launch_test 環境を壊さない)。
+  const char * original = std::getenv("ROS_DISTRO");
+  std::string saved = original ? original : "";
+  bool was_unset = (original == nullptr);
+
+  setenv("ROS_DISTRO", "humble", 1);
+  EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("auto"), "twist");
+
+  setenv("ROS_DISTRO", "jazzy", 1);
+  EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("auto"), "twist_stamped");
+
+  setenv("ROS_DISTRO", "kilted", 1);
+  EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("auto"), "twist_stamped");
+
+  unsetenv("ROS_DISTRO");
+  EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("auto"), "twist_stamped");
+
+  // restore
+  if (was_unset) {
+    unsetenv("ROS_DISTRO");
+  } else {
+    setenv("ROS_DISTRO", saved.c_str(), 1);
+  }
+}
+
+TEST_F(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeUnknownFallback)
+{
+  // 未知値 (typo / 設定ミス) は安全側で Twist 互換にフォールバック。
+  EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("twst"), "twist");
+  EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type(""), "twist");
+  EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("Twist"), "twist");  // case-sensitive
+}
+
 int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);
