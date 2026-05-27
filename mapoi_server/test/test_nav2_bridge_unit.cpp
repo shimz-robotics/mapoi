@@ -352,13 +352,46 @@ TEST_F(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeExplicit)
   EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("twist_stamped"), "twist_stamped");
 }
 
+// **本 test binary は ROS_DISTRO を setenv/unsetenv で書き換える** ため、gtest を並列実行
+// (`--gtest_parallel` / ctest `-j` で他 test と同居) すると env race の温床になる。現状の
+// colcon 構成は逐次実行前提で問題ないが、将来 parallel に切替える場合は本 binary を
+// シングル process に固定 (例: `RUN_SERIAL TRUE`) するか、ROS_DISTRO 依存テストを別 binary に
+// 分割する必要がある (#252 round 2 review medium #3 メモ)。
+
+// RAII guard for ROS_DISTRO env: テスト中の setenv/unsetenv が EXPECT 失敗 / 例外 / 早期 return で
+// 復元漏れになり、後続テスト (特に "auto" 解決を含む test) へリークするのを防ぐ (#251 review medium)。
+// destructor で必ず元値へ戻す。
+class ScopedRosDistro
+{
+public:
+  ScopedRosDistro()
+  {
+    const char * original = std::getenv("ROS_DISTRO");
+    if (original != nullptr) {
+      saved_ = original;
+      was_set_ = true;
+    }
+  }
+  ~ScopedRosDistro()
+  {
+    if (was_set_) {
+      setenv("ROS_DISTRO", saved_.c_str(), 1);
+    } else {
+      unsetenv("ROS_DISTRO");
+    }
+  }
+  ScopedRosDistro(const ScopedRosDistro &) = delete;
+  ScopedRosDistro & operator=(const ScopedRosDistro &) = delete;
+
+private:
+  std::string saved_;
+  bool was_set_ {false};
+};
+
 TEST_F(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeAutoByDistro)
 {
   // "auto" は ROS_DISTRO 環境変数で決まる: humble → twist、それ以外 → twist_stamped。
-  // 既存の ROS_DISTRO 値を保存して復元する (テストが Docker / launch_test 環境を壊さない)。
-  const char * original = std::getenv("ROS_DISTRO");
-  std::string saved = original ? original : "";
-  bool was_unset = (original == nullptr);
+  ScopedRosDistro distro_guard;
 
   setenv("ROS_DISTRO", "humble", 1);
   EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("auto"), "twist");
@@ -371,13 +404,119 @@ TEST_F(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeAutoByDistro)
 
   unsetenv("ROS_DISTRO");
   EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("auto"), "twist_stamped");
+}
 
-  // restore
-  if (was_unset) {
-    unsetenv("ROS_DISTRO");
-  } else {
-    setenv("ROS_DISTRO", saved.c_str(), 1);
-  }
+// Constructor の分岐自体 (declare_parameter → if (msg_type == "twist_stamped") { ... } else { ... })
+// が壊れていないことを pin する (#251 follow-up)。resolve_cmd_vel_msg_type の純関数 test は
+// 解決ロジックだけを見ているため、constructor で「解決後の型に対応する sub を 1 本だけ作る」
+// 部分を独立に検証しないと、リファクタで if 分岐の typo / どちらかの create_subscription が
+// 漏れても unit test が緑のまま通る余地が残る。
+//
+// 本 test 群が確認するのは「create_subscription が呼ばれて該当 member が non-null になる」
+// ことのみで、subscription が実際に message を受信できるかは scope 外 (それは
+// CmdVel*CallbackUpdatesZeroVelocityState / route_integration launch_test で別途 pin)。
+//
+// 同 process の fixture node が default 設定で `/cmd_vel` に sub を貼っているため、本 test 群は
+// 必ず専用 `cmd_vel_topic` を割り当てる: 同 topic に違う型の sub を作ると rcl が
+// `invalid allocator` で crash する (#249 lessons)。
+
+TEST_F(Nav2BridgeTestFixture, ConstructorTwistStampedParamCreatesStampedSub)
+{
+  rclcpp::NodeOptions options;
+  options.append_parameter_override("cmd_vel_msg_type", std::string("twist_stamped"));
+  options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_stamped_branch"));
+  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  EXPECT_NE(node->cmd_vel_stamped_sub_, nullptr);
+  EXPECT_EQ(node->cmd_vel_sub_, nullptr);
+}
+
+TEST_F(Nav2BridgeTestFixture, ConstructorTwistParamCreatesTwistSub)
+{
+  rclcpp::NodeOptions options;
+  options.append_parameter_override("cmd_vel_msg_type", std::string("twist"));
+  options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_twist_branch"));
+  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  EXPECT_NE(node->cmd_vel_sub_, nullptr);
+  EXPECT_EQ(node->cmd_vel_stamped_sub_, nullptr);
+}
+
+TEST_F(Nav2BridgeTestFixture, ConstructorUnknownParamJazzyFallsBackToStampedSub)
+{
+  // 未知値 + ROS_DISTRO=jazzy: resolve_cmd_vel_msg_type 経由で "twist_stamped" に解決され
+  // TwistStamped sub が wire される。caller 側の WARN log は ResolveCmdVelMsgTypeUnknownFallback
+  // で pin 済なので、ここでは「fallback 後に正しい型の sub が wire されているか」だけを見る。
+  ScopedRosDistro distro_guard;
+  setenv("ROS_DISTRO", "jazzy", 1);
+
+  rclcpp::NodeOptions options;
+  options.append_parameter_override("cmd_vel_msg_type", std::string("Twist"));  // case-sensitive typo
+  options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_unknown_jazzy_branch"));
+  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  EXPECT_NE(node->cmd_vel_stamped_sub_, nullptr);
+  EXPECT_EQ(node->cmd_vel_sub_, nullptr);
+}
+
+TEST_F(Nav2BridgeTestFixture, ConstructorUnknownParamHumbleFallsBackToTwistSub)
+{
+  // 未知値 + ROS_DISTRO=humble: resolve_cmd_vel_msg_type 経由で "twist" に解決され Twist sub
+  // が wire される。jazzy 側と同じく constructor の if/else 漏れを両 distro で潰す。
+  ScopedRosDistro distro_guard;
+  setenv("ROS_DISTRO", "humble", 1);
+
+  rclcpp::NodeOptions options;
+  options.append_parameter_override("cmd_vel_msg_type", std::string("twst"));  // typo
+  options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_unknown_humble_branch"));
+  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  EXPECT_NE(node->cmd_vel_sub_, nullptr);
+  EXPECT_EQ(node->cmd_vel_stamped_sub_, nullptr);
+}
+
+// "auto" 自身の constructor 経路も両 distro で pin する (#252 round 2 review medium #1)。
+// 純関数 ResolveCmdVelMsgTypeAutoByDistro は解決ロジックだけを見ているため、constructor 内で
+// 「auto を渡したときに resolve 結果へ正しく分岐する」部分が壊れても (例: リファクタで auto
+// 経路だけ解決結果を無視するような typo) 検知できない余地が残る。default param が "auto" で
+// あることと合わせて、本番運用パスの回帰検知として両 distro 分を pin する。
+
+TEST_F(Nav2BridgeTestFixture, ConstructorAutoParamJazzyCreatesStampedSub)
+{
+  ScopedRosDistro distro_guard;
+  setenv("ROS_DISTRO", "jazzy", 1);
+
+  rclcpp::NodeOptions options;
+  options.append_parameter_override("cmd_vel_msg_type", std::string("auto"));
+  options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_auto_jazzy_branch"));
+  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  EXPECT_NE(node->cmd_vel_stamped_sub_, nullptr);
+  EXPECT_EQ(node->cmd_vel_sub_, nullptr);
+}
+
+TEST_F(Nav2BridgeTestFixture, ConstructorAutoParamHumbleCreatesTwistSub)
+{
+  ScopedRosDistro distro_guard;
+  setenv("ROS_DISTRO", "humble", 1);
+
+  rclcpp::NodeOptions options;
+  options.append_parameter_override("cmd_vel_msg_type", std::string("auto"));
+  options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_auto_humble_branch"));
+  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  EXPECT_NE(node->cmd_vel_sub_, nullptr);
+  EXPECT_EQ(node->cmd_vel_stamped_sub_, nullptr);
+}
+
+TEST_F(Nav2BridgeTestFixture, ConstructorAutoParamUnsetDistroCreatesStampedSub)
+{
+  // ROS_DISTRO 未設定 + auto: README / launch description で「未設定 → twist_stamped」と運用上の
+  // 重要ケースとして明記している経路。最小 CI / 自作 container 等で env が落ちた状態で
+  // bridge を起動するシナリオの constructor 側を pin する (#252 round 3 review medium #1)。
+  ScopedRosDistro distro_guard;
+  unsetenv("ROS_DISTRO");
+
+  rclcpp::NodeOptions options;
+  options.append_parameter_override("cmd_vel_msg_type", std::string("auto"));
+  options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_auto_unset_branch"));
+  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  EXPECT_NE(node->cmd_vel_stamped_sub_, nullptr);
+  EXPECT_EQ(node->cmd_vel_sub_, nullptr);
 }
 
 TEST_F(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeUnknownFallback)
@@ -386,9 +525,7 @@ TEST_F(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeUnknownFallback)
   // 旧仕様 (常に "twist") だと jazzy 本番で誤設定すると subscribe 不成立で
   // EVENT_PAUSED が再び silent に壊れる回帰につながるため、distro 適合型に揃える。
   // (caller 側は別途 WARN log で typo を可視化する、cursor review PR #250 medium #1)
-  const char * original = std::getenv("ROS_DISTRO");
-  std::string saved = original ? original : "";
-  bool was_unset = (original == nullptr);
+  ScopedRosDistro distro_guard;
 
   setenv("ROS_DISTRO", "jazzy", 1);
   EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("twst"), "twist_stamped");
@@ -397,13 +534,6 @@ TEST_F(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeUnknownFallback)
 
   setenv("ROS_DISTRO", "humble", 1);
   EXPECT_EQ(MapoiNav2Bridge::resolve_cmd_vel_msg_type("twst"), "twist");
-
-  // restore
-  if (was_unset) {
-    unsetenv("ROS_DISTRO");
-  } else {
-    setenv("ROS_DISTRO", saved.c_str(), 1);
-  }
 }
 
 int main(int argc, char ** argv)
