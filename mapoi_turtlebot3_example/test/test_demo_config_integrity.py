@@ -107,7 +107,9 @@ def test_goal_yaw_is_strict():
     pois = _poi_by_name(_load_config())
     assert "goal" in pois, "demo config に 'goal' POI が無い"
     yaw = pois["goal"]["tolerance"]["yaw"]
-    assert math.isclose(yaw, GOAL_YAW_TOLERANCE, abs_tol=1e-3), (
+    # abs_tol は config 値の浮動小数表現誤差 (0.10000038…) を許容しつつ、0.0001 rad 超の
+    # 意図しないドリフトは弾く厳しさ ("厳密 yaw" の意図に合わせる)。
+    assert math.isclose(yaw, GOAL_YAW_TOLERANCE, rel_tol=0.0, abs_tol=1e-4), (
         f"goal の tolerance.yaw={yaw} が厳密値 {GOAL_YAW_TOLERANCE} から外れた"
     )
 
