@@ -83,6 +83,26 @@
     return Number.isFinite(v) ? v * 180.0 / Math.PI : NaN;
   }
 
+  // POI editor の tolerance.yaw 入力欄の度数表示桁数 (#267)。内部 / yaml は rad だが editor は
+  // 度数で入出力する (#138)。2 桁丸め + 末尾ゼロ除去で 30/45/90/180 等の区切りの良い度数を
+  // 綺麗に表示する (rad 4 桁保存 → 度数 0.01° 解像度で round-trip も安定)。
+  const TOLERANCE_YAW_DISPLAY_DIGITS = 2;
+
+  /**
+   * tolerance.yaw (rad) を editor 表示用の度数値に変換する純関数 (#267)。
+   * radToDeg 後に 2 桁で丸め、parseFloat で末尾ゼロを落とす (例: 45.00 → 45、180.00 → 180)。
+   * 区切りの良い度数 (30/45/90/180 等) が綺麗に表示され、入力 → 保存 → 再表示の round-trip も
+   * 安定する。旧実装は toFixed(4) で 3.14 rad → "179.9088"、180° 入力 → "180.0002" と汚かった。
+   *
+   * @param {string|number} rad
+   * @returns {number} 度数 (非数値入力時は NaN)
+   */
+  function formatToleranceYawDeg(rad) {
+    const deg = radToDeg(rad);
+    if (!Number.isFinite(deg)) return NaN;
+    return parseFloat(deg.toFixed(TOLERANCE_YAW_DISPLAY_DIGITS));
+  }
+
   /**
    * POI form の tolerance round-trip を保つ純関数 (#87 / #138)。
    * `||` だと意図的な小さい値も default で上書きされるので Number.isFinite で判定。
@@ -139,12 +159,14 @@
     parseTolerance,
     degToRad,
     radToDeg,
+    formatToleranceYawDeg,
     roundTo,
     TOLERANCE_MIN,
     POSE_XY_DIGITS,
     POSE_YAW_DIGITS,
     TOLERANCE_XY_DIGITS,
     TOLERANCE_YAW_DIGITS,
+    TOLERANCE_YAW_DISPLAY_DIGITS,
   };
 
   if (typeof window !== 'undefined') {

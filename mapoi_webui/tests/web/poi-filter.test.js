@@ -22,6 +22,7 @@ const {
   parseTolerance,
   degToRad,
   radToDeg,
+  formatToleranceYawDeg,
   roundTo,
   TOLERANCE_MIN,
   POSE_XY_DIGITS,
@@ -155,6 +156,41 @@ describe('degToRad / radToDeg', () => {
     [0.1, 1, 45, 90, 180, 359].forEach((deg) => {
       expect(radToDeg(degToRad(deg))).toBeCloseTo(deg, 6);
     });
+  });
+});
+
+describe('formatToleranceYawDeg (#267)', () => {
+  // editor は rad を保存し度数で表示する。保存値は roundTo(degToRad(deg), 4) なので、
+  // 区切りの良い度数は綺麗に表示され編集なし save でも churn しないことを pin する。
+  it('displays round degrees cleanly (integer, no trailing zeros)', () => {
+    [30, 45, 90, 120, 180].forEach((deg) => {
+      const storedRad = roundTo(degToRad(deg), TOLERANCE_YAW_DIGITS);
+      expect(formatToleranceYawDeg(storedRad)).toBe(deg);
+    });
+  });
+
+  it('treats yaw 不問 (π / 3.1416) as 180', () => {
+    expect(formatToleranceYawDeg(3.1416)).toBe(180);
+    expect(formatToleranceYawDeg(Math.PI)).toBe(180);
+  });
+
+  it('keeps two-decimal precision for non-round values', () => {
+    // goal の strict yaw 0.1 rad ≈ 5.73°
+    expect(formatToleranceYawDeg(0.1)).toBe(5.73);
+  });
+
+  it('round-trips round degrees without drift (deg → rad(4桁) → deg)', () => {
+    [30, 45, 90, 120, 180].forEach((deg) => {
+      const storedRad = roundTo(degToRad(deg), TOLERANCE_YAW_DIGITS);
+      const shownDeg = formatToleranceYawDeg(storedRad);
+      const resavedRad = roundTo(degToRad(shownDeg), TOLERANCE_YAW_DIGITS);
+      expect(resavedRad).toBe(storedRad);
+    });
+  });
+
+  it('returns NaN for non-numeric input', () => {
+    expect(Number.isNaN(formatToleranceYawDeg('abc'))).toBe(true);
+    expect(Number.isNaN(formatToleranceYawDeg(NaN))).toBe(true);
   });
 });
 
