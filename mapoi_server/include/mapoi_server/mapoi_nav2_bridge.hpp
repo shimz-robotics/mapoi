@@ -143,13 +143,14 @@ private:
   // ("nav2", 既定) にするか、mapoi が tolerance.xy 到達判定で 1 waypoint ずつ
   // NavigateToPose を送って進める ("mapoi") かを切り替える。constructor で resolve。
   //   - "nav2":  従来挙動。Nav2 が xy_goal_tolerance で waypoint 進行、mapoi は radius observer。
-  //   - "mapoi": mapoi が「tolerance.xy 進入 ∨ NavigateToPose SUCCEEDED」(OR) で次 waypoint へ。
-  //              最終 goal だけは Nav2 完走 (yaw 厳密着地) を待つ。tolerance.xy < xy_goal_tolerance
-  //              が可能になる (POI を小さくできる)。
-  //              単発 Go (GOAL モード) も同 mode 下で「(tolerance.xy 進入 ∧ yaw 一致) ∨ Nav2
-  //              SUCCEEDED」で完了する (#261)。姿勢が自然に合っていれば即完了、合っていなければ
-  //              Nav2 の最終姿勢合わせ (SUCCEEDED) を待つ。"nav2" モードでは Go は従来通り Nav2
-  //              の goal_checker 任せ。
+  //   - "mapoi": 到達 = OR((tolerance.xy ∧ tolerance.yaw) ∨ NavigateToPose SUCCEEDED) で
+  //              統一 (#265)。route 中間 waypoint / 最終 goal / 単発 Go (GOAL モード) すべて
+  //              同じ判定式。姿勢が tolerance.yaw 内に自然に収まっていれば Nav2 完走を待たず
+  //              即到達/前進 (snappy)、ずれていれば Nav2 の姿勢合わせ (SUCCEEDED) を待つ。
+  //              「yaw を見るか」は per-POI tolerance.yaw で表現 (通過点は大きく ≒ yaw 不問、
+  //              厳密点は小さく)。tolerance.xy < xy_goal_tolerance も可能 (POI を小さくできる)。
+  //              "nav2" モードでは route は Nav2 FollowWaypoints の xy_goal_tolerance 任せ、
+  //              Go も Nav2 goal_checker 任せ (mapoi は radius observer)。
   std::string waypoint_arrival_mode_ {"nav2"};
   // mapoi モードで進行中の route waypoint POI 列 (順序保持、landmarks は含まない)。
   // current_waypoint_index_ が指す POI へ NavigateToPose を送る。
