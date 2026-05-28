@@ -81,6 +81,8 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 | POST | `/api/nav/switch-map` | Navigation map switch。`mapoi/nav/switch_map` に map 名を publish |
 | GET | `/api/mode` | navigation 機能の検出結果 (`navigation_available`, topic subscriber 数) |
 
+`POST /api/pois` は楽観的競合検出 (`expected_version` フィールド) に対応 (#241)。WebUI 経由は frontend が自動でハンドリング、外部 POST (curl / 別 client) で `expected_version` 省略時は check skip のため、競合上書きを避けたい場合は呼び出し側が `GET /api/pois` の `config_version` を送り返す責任を負う。詳細仕様は実装コメント (`api_save_pois`) / test (`test_api_save_pois_version_conflict.py`) を参照。
+
 ## 起動方法 (3 つのシナリオ)
 
 利用目的に応じて 3 つの起動方法を使い分けてください。いずれもブラウザで `http://<ホスト>:8765` にアクセスします。
