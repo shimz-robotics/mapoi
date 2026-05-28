@@ -287,10 +287,16 @@ class MapViewer {
     // Escape で yaw 選択モードを解除する (#269)。map container はクリックしないとフォーカスを
     // 持たないので、document に listen する。tool が active かつ yaw phase の時だけ作用させ、
     // 他の Escape ハンドラ (modal 閉じる等) を妨げないよう preventDefault しない。
+    // 入力欄 (name / x / y 等) で編集中の Escape は pose キャンセルではなく入力操作なので、
+    // editable な target からの Escape は無視する (Cursor review #270 medium 対応)。
     this._poseTool.keydownHandler = (e) => {
-      if (e.key === 'Escape') {
-        this._cancelPoseToolYaw();
-      }
+      if (e.key !== 'Escape') return;
+      const t = e.target;
+      const tag = t && t.tagName ? t.tagName.toUpperCase() : '';
+      const isEditable = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+        || (t && t.isContentEditable);
+      if (isEditable) return;
+      this._cancelPoseToolYaw();
     };
     document.addEventListener('keydown', this._poseTool.keydownHandler);
     if (initialLatLng) {
