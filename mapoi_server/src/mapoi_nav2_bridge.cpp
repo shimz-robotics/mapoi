@@ -709,9 +709,15 @@ void MapoiNav2Bridge::on_waypoint_reached_()
     return;  // resume (mapoi_resume_cb) が次 waypoint へ進める
   }
 
-  // 非 pause waypoint: 進行中の NavigateToPose goal を cancel (tolerance.xy 進入トリガ時。
-  // SUCCEEDED トリガ時は ntp_result_callback で既に reset 済) して次 waypoint へ。
+  // 非 pause waypoint: 進行中の NavigateToPose goal を cancel (tolerance.xy ∧ yaw 到達トリガ時。
+  // Nav2 SUCCEEDED トリガ時は ntp_result_callback で既に reset 済) して次 waypoint へ。
+  // cancel に伴う CANCELED result が遅れて届く前に generation を進めて stale 化する (#265)。
+  // 中間 waypoint は直後の send_current_waypoint_goal_ が generation を更に進めるので元々
+  // stale 化されるが、最終 waypoint (= 末尾) では send 側が新 goal を送らず generation を
+  // 進めないため、ここで進めないと CANCELED result が ntp_result_callback で "canceled" を
+  // publish して route succeeded を上書きしてしまう。
   if (current_ntp_goal_handle_) {
+    ++nav_attempt_generation_;
     nav_to_pose_client_->async_cancel_goal(current_ntp_goal_handle_);
     current_ntp_goal_handle_.reset();
   }
@@ -1321,11 +1327,13 @@ void MapoiNav2Bridge::tolerance_check_callback()
   // 重なり等で理論上ありうるが、最後に publish した POI に従う (cancel 上書き含め
   // schedule_auto_resume_ が idempotent に動く)。
   std::string paused_event_poi;
-  // mapoi 主導モード (#243): 現 target waypoint の tolerance.xy 進入で到達したか (OR トリガ a)。
-  // lock 外で on_waypoint_reached_ (cancel + 次 send) を呼ぶための flag。
-  bool mapoi_waypoint_radius_arrival = false;
+  // 統一到達判定 (#265): mapoi モードでは route waypoint / 単発 Go ともに到達 =
+  // OR((tolerance.xy ∧ tolerance.yaw) ∨ Nav2 SUCCEEDED)。ここは OR トリガ a (xy ∧ yaw) を
+  // レベル判定 (毎 tick) で見る。lock 外で on_waypoint_reached_ / on_goal_radius_arrival_ を
+  // 呼ぶための flag。route mode と GOAL mode は nav_mode_ で排他なので同時には立たない。
+  bool route_waypoint_arrival = false;
 
-  // GOAL モード (#261): 単発 Go (mapoi モード) の POI 個別 tolerance.xy + yaw 到達判定。
+  // GOAL モード (#261/#265): 単発 Go (mapoi モード) の POI 個別 tolerance.xy + yaw 到達判定。
   // active な NavigateToPose goal がある時のみ対象 (current_ntp_goal_handle_ 非 null = acceptance
   // 済 = current_target_name_ が goal POI 名で確定済)。topic fallback (action 不在) では handle が
   // null のままなので対象外。nav state member は default callback group で本 callback と直列化される
@@ -1343,16 +1351,17 @@ void MapoiNav2Bridge::tolerance_check_callback()
       return;
     }
 
-    // mapoi 主導モードの現 target waypoint 名と「末尾か」を tick 先頭で snapshot。
-    // 末尾 (= 最終 goal) は radius 進入では進めず Nav2 SUCCEEDED (yaw 厳密) を待つので除外する。
+    // mapoi 主導モードの現 target waypoint 名を tick 先頭で snapshot (#265)。最終 goal も
+    // 含め全 waypoint が同じ (tolerance.xy ∧ tolerance.yaw) ∨ Nav2 SUCCEEDED で進むので、
+    // 旧来の「末尾だけ radius 除外」特別扱いは廃止した。
+    // !is_paused_ を含める: arrival は level 判定 (毎 tick) なので、pause 中に (xy ∧ yaw) を
+    // 満たすと on_waypoint_reached_ が誤って次へ進めてしまう (特に非 pause waypoint で外部
+    // pause された場合)。GOAL の goal_mode と同じく paused 中は arrival を抑止する。
     const bool mapoi_mode =
-      (waypoint_arrival_mode_ == "mapoi" && nav_mode_ == NavMode::ROUTE);
+      (waypoint_arrival_mode_ == "mapoi" && nav_mode_ == NavMode::ROUTE && !is_paused_);
     std::string mapoi_target_wp_name;
-    bool mapoi_target_is_last = false;
     if (mapoi_mode && current_waypoint_index_ < current_route_pois_.size()) {
       mapoi_target_wp_name = current_route_pois_[current_waypoint_index_].name;
-      mapoi_target_is_last =
-        (current_waypoint_index_ + 1 == current_route_pois_.size());
     }
 
     // EVENT_ENTER / EVENT_PAUSED / EVENT_EXIT は route 走行中 + route 登録 POI のみが
@@ -1365,16 +1374,26 @@ void MapoiNav2Bridge::tolerance_check_callback()
     for (const auto & poi : event_pois_) {
       double dist = distance_2d(poi.pose, rx, ry);
 
-      // GOAL モード到達判定 (#261): 単発 Go は route lifecycle (ENTER/EXIT/PAUSED) とは独立で、
-      // 現 goal POI に対して「(tolerance.xy 進入 ∧ yaw 一致) ∨ Nav2 SUCCEEDED」で完了する。
-      // ここは OR トリガ a (radius + yaw)。姿勢が tolerance.yaw 内に収まっていれば即完了し、
-      // 収まっていなければ false のまま → Nav2 の最終姿勢合わせ (SUCCEEDED, OR トリガ b) を待つ。
-      // poi_inside_state_ 等の lifecycle state は触らない (GOAL では ENTER/EXIT を出さない)。
+      // 統一到達判定 (OR トリガ a: tolerance.xy ∧ tolerance.yaw) は route lifecycle
+      // (ENTER/EXIT/PAUSED) とは独立に、現 target POI に対してレベル判定する (#261/#265)。
+      // 姿勢が tolerance.yaw 内に収まっていれば即到達、収まっていなければ false のまま →
+      // Nav2 の姿勢合わせ (SUCCEEDED, OR トリガ b) を待つ。radius 進入後に旋回して yaw が
+      // 合うケースも毎 tick 再評価で拾える (edge ではなく level)。poi_inside_state_ 等の
+      // lifecycle state は触らない。
+      // GOAL モード (単発 Go)。
       if (goal_mode && !goal_radius_yaw_arrival && poi.name == goal_target_name) {
         const double yaw_diff =
           angle_diff_abs(r_yaw, yaw_from_quaternion(poi.pose.orientation));
         if (dist <= poi.tolerance.xy && yaw_diff <= poi.tolerance.yaw) {
           goal_radius_yaw_arrival = true;
+        }
+      }
+      // ROUTE モード (現 target waypoint、最終 goal 含む #265)。
+      if (mapoi_mode && !route_waypoint_arrival && poi.name == mapoi_target_wp_name) {
+        const double yaw_diff =
+          angle_diff_abs(r_yaw, yaw_from_quaternion(poi.pose.orientation));
+        if (dist <= poi.tolerance.xy && yaw_diff <= poi.tolerance.yaw) {
+          route_waypoint_arrival = true;
         }
       }
 
@@ -1404,14 +1423,13 @@ void MapoiNav2Bridge::tolerance_check_callback()
         poi_event_pub_->publish(event);
         RCLCPP_INFO(this->get_logger(), "POI ENTER: %s (dist=%.2f, tolerance.xy=%.2f)",
                     poi.name.c_str(), dist, poi.tolerance.xy);
-        // pauseタグがあれば自動pause対象
-        if (is_pause_poi) {
+        // pause タグがあれば自動 pause 対象。ただし nav2 モードのみ ENTER (radius 進入) で
+        // 発火する (#265)。mapoi モードでは pause も統一到達 (tolerance.xy ∧ tolerance.yaw)
+        // で判定したいので、on_waypoint_reached_ 経由 (route_waypoint_arrival or Nav2 SUCCEEDED)
+        // で pause を起こす。nav2 モードは bridge が passive observer で on_waypoint_reached_ を
+        // 呼ばないため、ここで pause を起こさないと止められない。
+        if (is_pause_poi && waypoint_arrival_mode_ != "mapoi") {
           pause_triggered_poi = poi.name;
-        }
-        // mapoi 主導モード (#243): 現 target waypoint の tolerance.xy に入ったら到達
-        // (OR トリガ a)。最終 goal は除外 (Nav2 SUCCEEDED で yaw 厳密着地を待つ)。
-        if (mapoi_mode && !mapoi_target_is_last && poi.name == mapoi_target_wp_name) {
-          mapoi_waypoint_radius_arrival = true;
         }
       } else if (was_inside && dist > poi.tolerance.xy * hysteresis) {
         // EXIT event
@@ -1465,12 +1483,14 @@ void MapoiNav2Bridge::tolerance_check_callback()
   // mapoi 主導モード (#243): 現 waypoint の tolerance.xy 到達で次 waypoint へ進む。
   // pause トリガの後に置く: pause waypoint の場合は上で is_paused_ が立ち、
   // on_waypoint_reached_ は pause 判定で進めず resume を待つ (= 二重に進めない)。
-  if (mapoi_waypoint_radius_arrival) {
+  // 統一到達 (#265): route 現 waypoint が (tolerance.xy ∧ tolerance.yaw) に到達 → 次へ進む
+  // (pause waypoint なら on_waypoint_reached_ が pause を起こす)。
+  if (route_waypoint_arrival) {
     on_waypoint_reached_();
   }
 
   // GOAL モード (#261): radius + yaw 到達で単発 Go を完了する。route mode とは nav_mode_ で
-  // 排他なので mapoi_waypoint_radius_arrival とは同時に立たない。
+  // 排他なので route_waypoint_arrival とは同時に立たない。
   if (goal_radius_yaw_arrival) {
     on_goal_radius_arrival_();
   }
