@@ -62,6 +62,12 @@ CameraNode::~CameraNode()
   // 「callback 発火直前 / 別 thread での timer 内部 state 破棄」の競合を
   // 避けるため明示する。Reentrant callback_group + MultiThreadedExecutor
   // 利用時の安全側挙動。
+  // **限界**: `cancel()` は「未実行 callback の発火を止める」意図であり、
+  // 既に別 thread で callback が走り始めた直後の競合 (`publish_resume` が
+  // `this` を触る最中の destructor 進行) までは完全には排除できない。
+  // 本 mock の用途 (demo / 試験) ではこの残り race は許容する。実機での厳密
+  // な lifecycle 制御が必要な場合は executor 停止 + node 破棄の順序を呼び出し
+  // 側で保証するか、weak_from_this パターンを併用する。
   if (resume_timer_) {
     resume_timer_->cancel();
     resume_timer_.reset();
@@ -106,10 +112,11 @@ bool CameraNode::has_tag(const std::vector<std::string> & tags, const std::strin
 
 void CameraNode::do_capture(const std::string & poi_name, const std::string & description)
 {
-  // capture_in_flight_ は on_poi_event 側で compare_exchange により true 化済み
-  // (do_capture 単独で flag を立てない)。on_poi_event 経由以外から do_capture
-  // を直接呼ぶ test ケース等の存在を許容するため、念のため最終 true 化を行う。
-  capture_in_flight_.store(true);
+  // **呼び出し契約**: do_capture を呼ぶ前に capture_in_flight_ が true 化されている
+  // こと (= on_poi_event の compare_exchange で獲得済) を前提とする。
+  // do_capture 側で再度 store(true) すると CAS の「獲得できた thread だけが
+  // capture する」という排他根拠が弱まるため、do_capture では flag を触らない。
+  // do_capture を直接呼ぶ test ケースもこの契約に合わせて事前 true 化する。
 
   // 既存 resume_timer_ が残っていれば明示 cancel + reset する (#248 項目 4)。
   // capture_in_flight_ flag による単線化が破れた場合 (フラグ管理バグ / 将来の
