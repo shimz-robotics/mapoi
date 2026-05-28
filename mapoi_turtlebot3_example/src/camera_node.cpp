@@ -105,11 +105,6 @@ void CameraNode::on_poi_event(const mapoi_interfaces::msg::PoiEvent::SharedPtr m
   do_capture(msg->poi.name, msg->poi.description);
 }
 
-bool CameraNode::has_tag(const std::vector<std::string> & tags, const std::string & target)
-{
-  return std::find(tags.begin(), tags.end(), target) != tags.end();
-}
-
 void CameraNode::do_capture(const std::string & poi_name, const std::string & description)
 {
   // **呼び出し契約**: do_capture を呼ぶ前に capture_in_flight_ が true 化されている

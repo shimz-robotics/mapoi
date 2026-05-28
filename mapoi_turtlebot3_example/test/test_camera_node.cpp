@@ -195,17 +195,17 @@ TEST_F(CameraNodeTestFixture, SanitizeCaptureDurationRejectsTooLarge)
     CameraNode::kCaptureDurationDefaultSec);
 }
 
-// --- has_tag --------------------------------------------------------------
+// --- has_tag (共通ユーティリティ #248 項目 8) ------------------------------
 
 TEST_F(CameraNodeTestFixture, HasTagFindsExisting)
 {
-  EXPECT_TRUE(CameraNode::has_tag({"pause", "capture_trigger"}, "capture_trigger"));
+  EXPECT_TRUE(has_tag({"pause", "capture_trigger"}, "capture_trigger"));
 }
 
 TEST_F(CameraNodeTestFixture, HasTagSkipsAbsent)
 {
-  EXPECT_FALSE(CameraNode::has_tag({"pause"}, "capture_trigger"));
-  EXPECT_FALSE(CameraNode::has_tag({}, "capture_trigger"));
+  EXPECT_FALSE(has_tag({"pause"}, "capture_trigger"));
+  EXPECT_FALSE(has_tag({}, "capture_trigger"));
 }
 
 // --- on_poi_event behavior -----------------------------------------------

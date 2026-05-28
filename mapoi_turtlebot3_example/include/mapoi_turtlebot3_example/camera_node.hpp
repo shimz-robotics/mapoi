@@ -16,6 +16,8 @@
 #include <std_msgs/msg/string.hpp>
 #include <mapoi_interfaces/msg/poi_event.hpp>
 
+#include "mapoi_turtlebot3_example/poi_event_utils.hpp"
+
 namespace mapoi_turtlebot3_example
 {
 
@@ -53,8 +55,6 @@ private:
   void do_capture(const std::string & poi_name, const std::string & description);
   void publish_resume(const std::string & poi_name);
 
-  static bool has_tag(const std::vector<std::string> & tags, const std::string & target);
-
   rclcpp::Subscription<mapoi_interfaces::msg::PoiEvent>::SharedPtr poi_event_sub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr resume_pub_;
   rclcpp::TimerBase::SharedPtr resume_timer_;
@@ -74,8 +74,6 @@ private:
   FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationRejectsNaN);
   FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationRejectsInfinity);
   FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationRejectsTooLarge);
-  FRIEND_TEST(CameraNodeTestFixture, HasTagFindsExisting);
-  FRIEND_TEST(CameraNodeTestFixture, HasTagSkipsAbsent);
   FRIEND_TEST(CameraNodeTestFixture, IgnoresNonPausedEvents);
   FRIEND_TEST(CameraNodeTestFixture, IgnoresEventsWithoutCaptureTriggerTag);
   FRIEND_TEST(CameraNodeTestFixture, CapturesAndPublishesResumeAfterDuration);
