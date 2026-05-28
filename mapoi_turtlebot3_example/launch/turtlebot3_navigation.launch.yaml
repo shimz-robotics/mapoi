@@ -29,12 +29,15 @@ launch:
 
 - arg:
     name: waypoint_arrival_mode
-    default: "nav2"
+    default: "mapoi"
     description: >
-      waypoint 到達モード (#243)。nav2 (default) = 従来の Nav2 FollowWaypoints 主導。
-      mapoi = mapoi が tolerance.xy 到達判定で 1 waypoint ずつ進める (POI を小さくできる)。
-      mapoi モードで小さい POI を活かすには param/<distro>/burger.yaml の goal_checker
-      xy_goal_tolerance (既定 0.25) も下げること。詳細は mapoi_server/README.md 参照。
+      waypoint 到達モード (#243)。mapoi (本 demo の既定) = mapoi が tolerance.xy 到達判定で
+      1 waypoint ずつ進める。nav2 = 従来の Nav2 FollowWaypoints 主導。本 demo の config は
+      mapoi モード前提で調整済 (waypoint tolerance.xy 一律 0.3)。さらに POI を小さくするには
+      param/<distro>/burger.yaml の goal_checker xy_goal_tolerance も下げる。詳細は
+      mapoi_server/README.md「waypoint 到達モード」節。
+      ※ mapoi_nav2_bridge param 自体の既定は nav2 のまま (downstream 影響回避)。本 arg は
+        demo launch だけ mapoi を既定にする。
 
 
 # Gazebo launch (distro 別の headless-aware wrapper を使い分け)

@@ -28,9 +28,10 @@ CONFIG_PATH = (
     Path(__file__).resolve().parents[1] / "maps" / "turtlebot3_world" / "mapoi_config.yaml"
 )
 
-# Nav2 controller の xy_goal_tolerance 既定値。POI tolerance.xy がこれ以下だと Nav2 が
-# POI 半径内に入る前に goal 到達判定で停止し、radius event (ENTER 等) が発火しない。
-# config 冒頭コメントの「tolerance.xy は最小 0.30 (5cm 余裕)」に対応する下限。
+# waypoint tolerance.xy の下限。本 demo は waypoint_arrival_mode=mapoi 既定 (#243) だが、
+# Nav2 の xy_goal_tolerance (0.25) より小さいと robot が radius 内に入る前に Nav2 が停止し、
+# ENTER / pause の EVENT_PAUSED を取りこぼす。安全側に Nav2 tol + 余裕の 0.30 を下限とする
+# (mapoi モードでも進行自体は OR で保証されるが、event 発火には radius 進入が必要)。
 XY_TOLERANCE_FLOOR = 0.30
 
 # msg spec (#138): tolerance.yaw は 0 / 負値禁止、最小 0.001 rad。
@@ -82,7 +83,11 @@ def test_config_file_exists():
 
 
 def test_all_poi_xy_tolerance_above_floor():
-    """全 POI の tolerance.xy が Nav2 xy_goal_tolerance + 余裕の下限 (0.30) 以上 (#230)。"""
+    """全 POI の tolerance.xy が下限 (0.30) 以上 (#230 / #243)。
+
+    mapoi モード既定でも ENTER / EVENT_PAUSED 発火には robot が radius 内に入る必要があり、
+    Nav2 が停止する ~0.25 より小さいと取りこぼすため、Nav2 tol + 余裕の 0.30 を下限に保つ。
+    """
     cfg = _load_config()
     for poi in cfg["poi"]:
         xy = poi["tolerance"]["xy"]
