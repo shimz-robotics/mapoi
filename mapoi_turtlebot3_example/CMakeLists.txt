@@ -51,4 +51,18 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+
+  # camera_node の挙動を pin する unit test (#248)。
+  # UNIT_TEST マクロで camera_node.cpp の main() を抜き、テスト fixture を
+  # friend に許可した状態で再 compile する (mapoi_server の test_nav2_bridge_unit
+  # と同じパターン)。
+  ament_auto_add_gtest(test_camera_node
+    test/test_camera_node.cpp
+    src/camera_node.cpp
+  )
+  target_compile_definitions(test_camera_node PRIVATE UNIT_TEST)
+endif()
+
 ament_auto_package(USE_SCOPED_HEADER_INSTALL_DIR)
