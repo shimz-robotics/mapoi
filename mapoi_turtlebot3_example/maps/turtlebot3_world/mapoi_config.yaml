@@ -14,10 +14,11 @@
 # - landmark tolerance.xy は ENTER トリガ半径で waypoint 進行とは独立。経路 (waypoint 直線) が
 #   radius に掛かる程度の広さを保てばよく、audio_landmark は 0.35 のまま (狭めない)。
 # - tolerance.yaw >= 0.001 (msg spec #138)。統一仕様 (#265) で yaw は中間 waypoint / 最終 goal /
-#   単発 Go すべての到達判定に効く。到達判定の角度差は [0, π] (最大 π ≈ 180°) なので、yaw を
-#   問わない純通過点は π 以上にする (fly-through、basic_waypoint は 3.15 = π より大)。向きが
-#   要る POI は小値 (goal は 0.1、pause は撮影向きを緩く問う 1.5708)。姿勢がずれていても Nav2
-#   完走 (姿勢合わせ) を待つフォールバックが効くのでスタックはしない。
+#   単発 Go すべての到達判定に効く。到達判定の角度差は [0, π] (最大 π ≈ 180°)。yaw を問わない
+#   純通過点は π 直下の 3.14 にする (fly-through、basic_waypoint)。3.14 だと真後ろ ±0.09° のごく
+#   狭い帯だけ radius 未到達になるが Nav2 SUCCEEDED が保険になるので実害なし。π 以上 (3.15 等) に
+#   すると RViz/WebUI の扇形が全周になり描画されなくなるため 3.14 に留める。向きが要る POI は
+#   小値 (goal は 0.1、pause は撮影向きを緩く問う 1.5708)。
 # - tag 排他: landmark × pause / landmark × waypoint は #143 validation で reject。
 custom_tags:
 - {name: audio_info, description: Audio guide trigger (POI 進入で音声再生 mock)}
@@ -48,7 +49,7 @@ poi:
   name: basic_waypoint
   pose: {x: -0.6, y: -0.89, yaw: 0.06}
   tags: [waypoint]
-  tolerance: {xy: 0.3, yaw: 3.15}
+  tolerance: {xy: 0.3, yaw: 3.14}
 - description: tutorial_03 / tour_full の pause POI (停止中に camera 撮影 mock を発火)
   name: pause_waypoint
   pose: {x: 0.01, y: -0.27, yaw: -0.08}
