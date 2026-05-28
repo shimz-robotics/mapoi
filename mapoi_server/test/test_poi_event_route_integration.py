@@ -487,3 +487,87 @@ class TestPoiEventRouteIntegration(unittest.TestCase):
                 lambda e: (e.event_type == PoiEvent.EVENT_ENTER
                            and e.poi.name == 'poi_goal_only')),
             '再 route 後に同じ POI から再 ENTER が発火するはず')
+
+    def test_consecutive_pause_pois_each_fire_paused(self):
+        """同一 route 内で複数の pause POI を順次踏むと各 POI で EVENT_PAUSED が発火する (#236 medium #4)。
+
+        旧 ``corridor_a`` / ``corridor_b`` の暗黙 demo (PR #235 で削除) が担保していた
+        「route 内に pause POI が複数並んでも各々で停止する」shape を test に移管する。
+        ``route_a`` は ``poi_with_pause`` (0,2) と ``poi_pause_and_custom`` (0,4) の 2 つの
+        pause POI を持つ。1 個目の ENTER で auto-pause が FollowWaypoints を cancel するが、
+        ``is_paused_`` 中の CANCELED は ``reset_nav_state`` を呼ばない
+        (mapoi_nav2_bridge.cpp:672) ため ``current_route_poi_names_`` は維持され、2 個目でも
+        ENTER / PAUSED が発火する。2 個目の auto-pause は ``is_paused_`` 既 true で抑止されるが
+        (mapoi_nav2_bridge.cpp:1222)、EVENT_PAUSED 自体は per-POI ``poi_paused_published_``
+        判定なので独立に発火する。
+        """
+        self._activate_route()  # route_a
+        # --- 1 個目の pause POI ---
+        self._set_robot_pose(0.0, 2.0)  # poi_with_pause
+        self.assertTrue(
+            self._wait_for_event(
+                lambda e: (e.event_type == PoiEvent.EVENT_ENTER
+                           and e.poi.name == 'poi_with_pause')),
+            '前提: 1 個目 pause POI への ENTER')
+        # 1 個目 ENTER 直後に auto-pause で "paused" status が出るはず (regression guard)。
+        self.assertTrue(
+            self._wait_for_nav_status('paused', timeout_sec=2.0),
+            '1 個目 pause POI の ENTER 直後に auto-pause "paused" status が出るはず')
+        self._set_cmd_vel(0.0, 0.0)
+        self.assertTrue(
+            self._wait_for_event(
+                lambda e: (e.event_type == PoiEvent.EVENT_PAUSED
+                           and e.poi.name == 'poi_with_pause')),
+            '1 個目 pause POI で EVENT_PAUSED が発火するはず')
+        # --- 2 個目の pause POI ---
+        # cmd_vel を一旦動かして dwell を解除 → 次 POI 到達後に再び停止させる。
+        self._set_cmd_vel(0.2, 0.0)
+        self._set_robot_pose(0.0, 4.0)  # poi_pause_and_custom
+        self.assertTrue(
+            self._wait_for_event(
+                lambda e: (e.event_type == PoiEvent.EVENT_ENTER
+                           and e.poi.name == 'poi_pause_and_custom')),
+            '前提: 2 個目 pause POI への ENTER')
+        self._set_cmd_vel(0.0, 0.0)
+        self.assertTrue(
+            self._wait_for_event(
+                lambda e: (e.event_type == PoiEvent.EVENT_PAUSED
+                           and e.poi.name == 'poi_pause_and_custom')),
+            '2 個目 pause POI でも EVENT_PAUSED が発火するはず (連続 pause)')
+        # 各 POI とも PAUSED は 1 回ずつ。
+        for poi_name in ('poi_with_pause', 'poi_pause_and_custom'):
+            count = self._count_events(
+                lambda e, n=poi_name: (e.event_type == PoiEvent.EVENT_PAUSED
+                                       and e.poi.name == n))
+            self.assertEqual(
+                count, 1,
+                f"'{poi_name}' の EVENT_PAUSED は 1 回のみ (実際: {count} 回)")
+
+    def test_landmark_listed_fires_enter_but_unlisted_does_not(self):
+        """route.landmarks 列挙対象だけが radius 監視され ENTER を発火する (#236 medium #5)。
+
+        ``route_landmark`` は waypoints=[poi_goal_only], landmarks=[poi_landmark_listed]。
+        bridge は ``build_route_poi_names`` で waypoints ∪ landmarks を
+        ``current_route_poi_names_`` に入れる (mapoi_nav2_bridge.cpp:485)。
+        ``poi_landmark_unlisted`` は ``landmark`` tag を持つが route に列挙されないため
+        この set に入らず、``is_route_poi=false`` (mapoi_nav2_bridge.cpp:1165) で radius 内に
+        居ても ENTER は発火しない。両 landmark を同条件 (POI 中心に robot を置く) で対照する。
+        """
+        self._activate_route('route_landmark')
+        # 列挙対象 landmark: radius 内 (中心) で ENTER が発火する。
+        self._set_robot_pose(-3.0, 0.0)  # poi_landmark_listed 中心
+        self.assertTrue(
+            self._wait_for_event(
+                lambda e: (e.event_type == PoiEvent.EVENT_ENTER
+                           and e.poi.name == 'poi_landmark_listed')),
+            'route.landmarks 列挙 landmark は radius 内で ENTER が発火するはず')
+        # 列挙外 landmark: 中心 (dist=0 < tolerance.xy) に居ても ENTER は発火しない。
+        self._set_robot_pose(-5.0, 0.0)  # poi_landmark_unlisted 中心
+        # 数 tick (100ms 周期) 分 spin して「発火しうる余地を与えても出ない」ことを確認。
+        self._spin_for(STOPPED_DWELL_TIME_SEC + 0.5)
+        unlisted_enter = self._count_events(
+            lambda e: (e.event_type == PoiEvent.EVENT_ENTER
+                       and e.poi.name == 'poi_landmark_unlisted'))
+        self.assertEqual(
+            unlisted_enter, 0,
+            f'route 未列挙 landmark は radius 内でも ENTER しないはず (実際: {unlisted_enter} 回)')
