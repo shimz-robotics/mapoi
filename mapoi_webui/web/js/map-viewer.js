@@ -435,7 +435,10 @@ class MapViewer {
     const r = poi.tolerance.xy;
     const yawCenter = poi.pose.yaw || 0;
     const yawTol = (typeof poi.tolerance.yaw === 'number') ? poi.tolerance.yaw : 0;
+    // 到達判定の角度差は [0, π] なので yawTol >= π は「yaw 不問 (全方位)」。0 < yawTol < π は
+    // 扇形 (wedge)、>= π は塗りつぶし円 (disc) で表す (#267)。
     const hasYawConstraint = yawTol > 0 && yawTol < Math.PI;
+    const isYawUnconstrained = yawTol >= Math.PI;
 
     const color = this.getPoiColor(poi);
 
@@ -459,8 +462,8 @@ class MapViewer {
     circle.bringToBack();
     this.sectorLayers.push(circle);
 
-    // 扇形 (yaw 制約): 0 < yaw < π の時のみ重ね描き (#179)。
-    // 完全円 (yaw 不問) なら扇形 = 円で情報冗長になるため省略。
+    // 扇形 (yaw 制約): 0 < yaw < π の時に重ね描き (#179)。
+    const fillOpacity = isWaypoint ? 0.25 : 0.10;  // waypoint=塗り、landmark=薄塗り (#179 ユーザー確認 2)
     if (hasYawConstraint) {
       const totalAngle = 2 * yawTol;
       const N = Math.max(8, Math.ceil(totalAngle / 0.1));
@@ -478,11 +481,25 @@ class MapViewer {
         weight: 1,
         opacity: 0.7,
         fillColor: color,
-        fillOpacity: isWaypoint ? 0.25 : 0.10,  // waypoint=塗り、landmark=薄塗り (#179 ユーザー確認 2)
+        fillOpacity,
         interactive: false,
       }).addTo(this.map);
       sector.bringToBack();
       this.sectorLayers.push(sector);
+    } else if (isYawUnconstrained) {
+      // yaw 不問 (yawTol >= π = 全方位): 扇形を省略すると xy 円の outline だけになり「描画され
+      // ていない?」と誤認されるため、xy 円を塗りつぶした disc で「全方位 OK」を明示する (#267)。
+      // 扇形 (wedge) が広がりきって円になったもの、という連続的な見た目になる。
+      const disc = L.polygon(circlePoints, {
+        color,
+        weight: 1,
+        opacity: 0.7,
+        fillColor: color,
+        fillOpacity,
+        interactive: false,
+      }).addTo(this.map);
+      disc.bringToBack();
+      this.sectorLayers.push(disc);
     }
 
     // pause overlay: xy 円沿いに dot pattern を重ね描き (#179)。

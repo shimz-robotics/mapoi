@@ -338,16 +338,18 @@ class PoiEditor {
     this.inputYaw.value = Number.isFinite(yawRounded) ? yawRounded : 0;
     // tolerance: xy は m そのまま、yaw は rad → deg 変換して UI に表示 (#138)。
     // `||` だと意図的な小さい値も default で上書きされるので Number.isFinite ベースで判定。
-    // toFixed(4) で round-trip 精度を 0.0001° (≒ 0.00000175 rad) 以内に抑える
-    // (Codex review #139 low 対応: toFixed(2) だと未編集 save で yaml 値が微小に変化する懸念)。
+    // yaw は formatToleranceYawDeg で 2 桁丸め + 末尾ゼロ除去し、30/45/90/180 等の区切りの
+    // 良い度数を綺麗に表示する (#267)。区切りの良い度数は rad 4 桁保存と完全に round-trip し
+    // 未編集 save で churn しない (旧 toFixed(4) は #139 で churn 回避のため採用したが
+    // "180.0002" 等と汚かった)。非 round 値はごく稀に ≤0.0001 rad ≒ 0.006° drift しうるが
+    // yaml 4 桁粒度内で実害なし。
     const xyVal = poi.tolerance && poi.tolerance.xy;
     this.inputToleranceXy.value = Number.isFinite(xyVal)
       ? MapoiPoiFilter.roundTo(xyVal, MapoiPoiFilter.TOLERANCE_XY_DIGITS)
       : 0.5;
     const yawValRad = poi.tolerance && poi.tolerance.yaw;
-    this.inputToleranceYaw.value = Number.isFinite(yawValRad)
-      ? MapoiPoiFilter.radToDeg(yawValRad).toFixed(4)
-      : 45;
+    const yawDeg = MapoiPoiFilter.formatToleranceYawDeg(yawValRad);
+    this.inputToleranceYaw.value = Number.isFinite(yawDeg) ? yawDeg : 45;
     this.inputTags.value = (poi.tags || []).join(', ');
     this.inputDescription.value = poi.description || '';
     this.renderTagChips();
