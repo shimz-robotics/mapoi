@@ -81,30 +81,7 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 | POST | `/api/nav/switch-map` | Navigation map switch。`mapoi/nav/switch_map` に map 名を publish |
 | GET | `/api/mode` | navigation 機能の検出結果 (`navigation_available`, topic subscriber 数) |
 
-### `POST /api/pois` の楽観的競合検出 (#241)
-
-外部編集 (別 WebUI tab / yaml 直編集 / 別 client からの POST) との衝突を検知するため、`POST /api/pois` は `expected_version` フィールドを受け付ける。
-
-リクエスト body:
-
-```json
-{
-  "pois": [...],
-  "expected_version": "<GET /api/pois で受け取った config_version (sha256 hex 64 桁)>"
-}
-```
-
-挙動:
-
-| `expected_version` | 動作 |
-| --- | --- |
-| 省略 (`null` / 不在) | check skip → 200 OK で保存 (後方互換、旧クライアント / curl 用) |
-| `compute_config_version(yaml)` と一致 | 保存して 200 OK + `config_version: <new>` を返す |
-| 一致しない (`""` 空文字 / 別 hash 値 / 形式不正の文字列等) | **409 Conflict** + `code: "version_mismatch"` + `current_version: <new>` + `error: "...please reload..."` を返す。frontend は reload して新版で再 Save 入力 |
-
-**WebUI 経由なら safe**: poi-editor は GET 時の `config_version` を保持して Save 時に必ず送り返す (#241 frontend 改修)。Save 時に外部編集を踏むと 409 + 警告ダイアログで reload を促す。
-
-**外部 POST (curl / 別 client) は責任ベース**: `expected_version` 省略時は意図的に check を skip するため、外部 client が WebUI 中の編集を knowingly に上書きするのは可能 (旧クライアント / scripted batch update を壊さないための後方互換)。外部 POST 利用者は (a) GET → POST 間の race を避ける運用にする、(b) 必要なら自前で `expected_version` を送って 409 を扱う、のいずれかで責任を負う。
+`POST /api/pois` は楽観的競合検出 (`expected_version` フィールド) に対応 (#241)。WebUI 経由は frontend が自動でハンドリング、外部 POST (curl / 別 client) で `expected_version` 省略時は check skip のため、競合上書きを避けたい場合は呼び出し側が `GET /api/pois` の `config_version` を送り返す責任を負う。詳細仕様は実装コメント (`api_save_pois`) / test (`test_api_save_pois_version_conflict.py`) を参照。
 
 ## 起動方法 (3 つのシナリオ)
 
