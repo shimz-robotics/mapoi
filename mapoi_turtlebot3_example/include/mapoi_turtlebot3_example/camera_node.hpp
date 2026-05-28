@@ -6,6 +6,7 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <string>
@@ -34,6 +35,12 @@ public:
 
   explicit CameraNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
+  // shutdown 時に pending な resume_timer_ を明示 cancel する。
+  // 通常 destructor で shared_ptr<Timer> が破棄されれば良いが、callback が
+  // 別 thread で発火する寸前のタイミングで node 内部 state が壊れた状態を
+  // 触らせない安全側の挙動 (#248 項目 7)。
+  ~CameraNode() override;
+
   // capture_duration_sec の入力値を安全な範囲に正規化する純関数。
   //   - NaN / inf / kCaptureDurationMinSec 未満 / kCaptureDurationMaxSec 超
   //     → kCaptureDurationDefaultSec
@@ -51,7 +58,11 @@ private:
   rclcpp::Subscription<mapoi_interfaces::msg::PoiEvent>::SharedPtr poi_event_sub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr resume_pub_;
   rclcpp::TimerBase::SharedPtr resume_timer_;
-  bool capture_in_flight_{false};
+  // MultiThreadedExecutor / Reentrant callback_group での同時 2 発火に耐える
+  // ように atomic + compare_exchange で「false → true」遷移を取れたスレッド
+  // だけが capture を実行する。SingleThreadedExecutor 前提でも race を作らない
+  // 防御 (#248 項目 3)。
+  std::atomic<bool> capture_in_flight_{false};
 
 #ifdef UNIT_TEST
   friend class CameraNodeTestFixture;
@@ -69,6 +80,8 @@ private:
   FRIEND_TEST(CameraNodeTestFixture, IgnoresEventsWithoutCaptureTriggerTag);
   FRIEND_TEST(CameraNodeTestFixture, CapturesAndPublishesResumeAfterDuration);
   FRIEND_TEST(CameraNodeTestFixture, IgnoresSecondPausedWhileCaptureInFlight);
+  FRIEND_TEST(CameraNodeTestFixture, ResumeMessageIncludesPoiName);
+  FRIEND_TEST(CameraNodeTestFixture, DestructorCancelsPendingResumeTimer);
 #endif
 };
 

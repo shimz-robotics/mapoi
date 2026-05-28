@@ -215,7 +215,7 @@ TEST_F(CameraNodeTestFixture, IgnoresNonPausedEvents)
   auto ev = std::make_shared<mapoi_interfaces::msg::PoiEvent>(make_event(
     mapoi_interfaces::msg::PoiEvent::EVENT_ENTER, "poi_a", {"capture_trigger"}));
   node_->on_poi_event(ev);
-  EXPECT_FALSE(node_->capture_in_flight_);
+  EXPECT_FALSE(node_->capture_in_flight_.load());
   spin_until(200ms);
   EXPECT_TRUE(resume_messages_.empty());
 }
@@ -225,7 +225,7 @@ TEST_F(CameraNodeTestFixture, IgnoresEventsWithoutCaptureTriggerTag)
   auto ev = std::make_shared<mapoi_interfaces::msg::PoiEvent>(make_event(
     mapoi_interfaces::msg::PoiEvent::EVENT_PAUSED, "poi_a", {"pause"}));
   node_->on_poi_event(ev);
-  EXPECT_FALSE(node_->capture_in_flight_);
+  EXPECT_FALSE(node_->capture_in_flight_.load());
   spin_until(200ms);
   EXPECT_TRUE(resume_messages_.empty());
 }
@@ -235,13 +235,14 @@ TEST_F(CameraNodeTestFixture, CapturesAndPublishesResumeAfterDuration)
   auto ev = std::make_shared<mapoi_interfaces::msg::PoiEvent>(make_event(
     mapoi_interfaces::msg::PoiEvent::EVENT_PAUSED, "poi_a", {"pause", "capture_trigger"}));
   node_->on_poi_event(ev);
-  EXPECT_TRUE(node_->capture_in_flight_);
+  EXPECT_TRUE(node_->capture_in_flight_.load());
 
   // wall timer は 50ms 後に発火する想定。500ms は十分なマージン。
   spin_until(500ms, 1);
   ASSERT_EQ(resume_messages_.size(), 1u);
-  EXPECT_EQ(resume_messages_[0], "camera_node");
-  EXPECT_FALSE(node_->capture_in_flight_);
+  // resume identifier に POI 名を含める (#248 項目 5)
+  EXPECT_EQ(resume_messages_[0], "camera_node:poi_a");
+  EXPECT_FALSE(node_->capture_in_flight_.load());
 }
 
 TEST_F(CameraNodeTestFixture, IgnoresSecondPausedWhileCaptureInFlight)
@@ -250,10 +251,11 @@ TEST_F(CameraNodeTestFixture, IgnoresSecondPausedWhileCaptureInFlight)
   auto ev1 = std::make_shared<mapoi_interfaces::msg::PoiEvent>(make_event(
     mapoi_interfaces::msg::PoiEvent::EVENT_PAUSED, "poi_a", {"pause", "capture_trigger"}));
   node_->on_poi_event(ev1);
-  ASSERT_TRUE(node_->capture_in_flight_);
+  ASSERT_TRUE(node_->capture_in_flight_.load());
 
-  // 2 回目: capture_in_flight_ の間に来た EVENT_PAUSED は弾かれる。
-  // resume_timer_ が上書きされていないことも publish 回数で間接確認する。
+  // 2 回目: capture_in_flight_ の間に来た EVENT_PAUSED は compare_exchange で
+  // 弾かれる (#248 項目 3)。resume_timer_ が上書きされていないことも publish
+  // 回数で間接確認する。
   auto ev2 = std::make_shared<mapoi_interfaces::msg::PoiEvent>(make_event(
     mapoi_interfaces::msg::PoiEvent::EVENT_PAUSED, "poi_b", {"pause", "capture_trigger"}));
   node_->on_poi_event(ev2);
@@ -261,9 +263,50 @@ TEST_F(CameraNodeTestFixture, IgnoresSecondPausedWhileCaptureInFlight)
   // timer 発火を待つ。capture が 1 回だけなら resume publish も 1 回。
   spin_until(500ms, 1);
   ASSERT_EQ(resume_messages_.size(), 1u);
+  // 識別子は最初に capture を取った poi_a のみ。poi_b は弾かれている。
+  EXPECT_EQ(resume_messages_[0], "camera_node:poi_a");
   // capture 完了後にさらに spin しても 2 回目の resume は来ない。
   spin_until(200ms);
   EXPECT_EQ(resume_messages_.size(), 1u);
+}
+
+TEST_F(CameraNodeTestFixture, ResumeMessageIncludesPoiName)
+{
+  // poi 名違いの 2 連続 capture を sequential に走らせて、それぞれ
+  // `camera_node:<poi_name>` 形式で識別できることを pin する (#248 項目 5)。
+  auto ev1 = std::make_shared<mapoi_interfaces::msg::PoiEvent>(make_event(
+    mapoi_interfaces::msg::PoiEvent::EVENT_PAUSED, "spot_north", {"capture_trigger"}));
+  node_->on_poi_event(ev1);
+  spin_until(500ms, 1);
+  ASSERT_EQ(resume_messages_.size(), 1u);
+  EXPECT_EQ(resume_messages_[0], "camera_node:spot_north");
+
+  auto ev2 = std::make_shared<mapoi_interfaces::msg::PoiEvent>(make_event(
+    mapoi_interfaces::msg::PoiEvent::EVENT_PAUSED, "spot_south", {"capture_trigger"}));
+  node_->on_poi_event(ev2);
+  spin_until(500ms, 2);
+  ASSERT_EQ(resume_messages_.size(), 2u);
+  EXPECT_EQ(resume_messages_[1], "camera_node:spot_south");
+}
+
+TEST_F(CameraNodeTestFixture, DestructorCancelsPendingResumeTimer)
+{
+  // do_capture で timer を仕掛けてから timer 発火前に node を destroy する。
+  // destructor で resume_timer_ が cancel + reset され、その後に
+  // timer callback が走って publish_resume されないことを pin する
+  // (#248 項目 7)。
+  auto ev = std::make_shared<mapoi_interfaces::msg::PoiEvent>(make_event(
+    mapoi_interfaces::msg::PoiEvent::EVENT_PAUSED, "poi_a", {"capture_trigger"}));
+  node_->on_poi_event(ev);
+  ASSERT_TRUE(node_->capture_in_flight_.load());
+
+  // timer 未発火のうちに node を破棄。executor からも外す。
+  exec_->remove_node(node_);
+  node_.reset();
+
+  // destructor 後に十分待っても resume が来ないことを確認する。
+  spin_until(300ms);
+  EXPECT_TRUE(resume_messages_.empty());
 }
 
 }  // namespace mapoi_turtlebot3_example
