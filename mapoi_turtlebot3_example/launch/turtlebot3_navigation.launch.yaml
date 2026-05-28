@@ -27,6 +27,15 @@ launch:
     default: "true"
     description: "Launch シミュレータ GUI (Humble: gzclient / Jazzy: gz sim -g). false で headless. server は常時起動"
 
+- arg:
+    name: waypoint_arrival_mode
+    default: "nav2"
+    description: >
+      waypoint 到達モード (#243)。nav2 (default) = 従来の Nav2 FollowWaypoints 主導。
+      mapoi = mapoi が tolerance.xy 到達判定で 1 waypoint ずつ進める (POI を小さくできる)。
+      mapoi モードで小さい POI を活かすには param/<distro>/burger.yaml の goal_checker
+      xy_goal_tolerance (既定 0.25) も下げること。詳細は mapoi_server/README.md 参照。
+
 
 # Gazebo launch (distro 別の headless-aware wrapper を使い分け)
 # - Humble: Gazebo Classic 用 (gazebo_ros gzserver/gzclient を条件化)
@@ -78,6 +87,7 @@ launch:
       - {name: simulator, value: "$(eval \"'gazebo' if '$(env ROS_DISTRO)' == 'humble' else 'gz'\")"}
       - {name: robot_entity_name, value: "$(env TURTLEBOT3_MODEL)"}
       - {name: robot_sdf_path, value: "$(find-pkg-share turtlebot3_gazebo)/models/turtlebot3_$(env TURTLEBOT3_MODEL)/model.sdf"}
+      - {name: waypoint_arrival_mode, value: "$(var waypoint_arrival_mode)"}
 
 # Mapoi Web UI
 # robot_radius は Nav2 param (param/$(ROS_DISTRO)/burger.yaml の `robot_radius: 0.1`)

@@ -138,6 +138,7 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 | `auto_resume_timeout_sec` | `double` | `0.0` | `EVENT_PAUSED` 発火後の auto-resume timeout (秒、#231)。`0.0` で disabled (現行仕様、外部 `/mapoi/nav/resume` を無限待ち)。正値で「PAUSED から N 秒後に内部 resume を呼ぶ」demo / 自動運転シナリオ向け opt-in 動作を有効化。負値は起動時に `0.0` へ clamp。動的 reconfigure 非対応 |
 | `cmd_vel_topic` | `string` | `cmd_vel` | `EVENT_PAUSED` 判定用 `cmd_vel` の subscribe 先 topic 名。Nav2 と同じ topic を見る前提 (停止判定 source) |
 | `cmd_vel_msg_type` | `string` | `auto` | `cmd_vel` の message 型 (#249 / #251)。`twist` / `twist_stamped` / `auto` (default = `ROS_DISTRO` から自動選択)。詳細と override が必要なケースは下記サブセクション参照 |
+| `waypoint_arrival_mode` | `string` | `nav2` | route の waypoint 到達判定の主導権 (#243)。`nav2` / `mapoi`。詳細は下記「waypoint 到達モード」節参照。動的 reconfigure 非対応 (起動時に解決、未知値は `nav2` にフォールバック) |
 
 ##### `cmd_vel_msg_type` の値と override が必要な構成 (#249 / #251)
 
@@ -158,6 +159,32 @@ POI 名を指定した自律走行と、POI 半径イベント検知を行うノ
 | 最小 CI / 自作 container で `ROS_DISTRO` が unset、かつ humble を使う | `cmd_vel_msg_type: "twist"` を明示 (default fallback は `twist_stamped` のため) |
 
 未知値 (typo) は WARN を出した上で `ROS_DISTRO` ベースで安全側にフォールバックする。
+
+##### waypoint 到達モード (`waypoint_arrival_mode`、#243)
+
+route 走行中に「ある waypoint に到達したので次へ進む」判定を **どちらが主導するか** を切り替える。
+
+| 値 | 到達判定の主導 | tolerance.xy と xy_goal_tolerance の関係 |
+| --- | --- | --- |
+| `nav2` (default) | Nav2 `FollowWaypoints` が `xy_goal_tolerance` で waypoint を進行。mapoi は radius observer (`EVENT_ENTER` 等を出すだけ) | `tolerance.xy` は `xy_goal_tolerance` **より大きく** 取る必要がある (Nav2 が radius に入る前に goal 判定で止まると ENTER が出ないため) |
+| `mapoi` | mapoi が 1 waypoint ずつ `NavigateToPose` を送り、**到達 = OR(`tolerance.xy` 進入 ∨ Nav2 SUCCEEDED)** で次へ進める | `tolerance.xy < xy_goal_tolerance` が可能 (POI を小さくできる) |
+
+**`mapoi` モードの設計ポイント:**
+
+- **OR 到達 (スタック防止)**: `tolerance.xy` を `xy_goal_tolerance` より小さくすると、AND 判定では「Nav2 が自分の半径で停止 → robot が mapoi の tighter 半径に入れず未到達のまま」でデッドロックする。OR にし Nav2 SUCCEEDED を保険にすることで route が止まらない。
+- **実効到達半径を真に小さくするには Nav2 も寄せる**: OR の実効到達半径は「緩い方」になる。`tolerance.xy=0.15` でも Nav2 が `xy_goal_tolerance=0.25` で止まれば実効 0.25 のまま (ENTER も出ない)。POI を実際に小さくするには `param/<distro>/burger.yaml` の `goal_checker.xy_goal_tolerance` も `tolerance.xy` 以下まで下げる。
+- **最終 goal の yaw**: route 最終 waypoint だけは `tolerance.xy` 進入では進めず、Nav2 `NavigateToPose` の完走 (= goal_checker の yaw 判定込み) を待つ。厳密 yaw を効かせたいなら Nav2 の `yaw_goal_tolerance` も下げる。
+- **landmark は対象外**: `landmark` は waypoint ではなく ENTER (音声等) トリガ半径なので本モードの進行判定に関与せず、半径は経路に掛かる程度に広いままでよい。
+- **pause waypoint**: 到達で auto-pause し、`mapoi/nav/resume` で次 waypoint へ進む。
+
+**demo (turtlebot3_example) で試す:**
+
+```sh
+# mapoi モードで起動 (POI を小さくする実験には burger.yaml の goal_checker.xy_goal_tolerance も下げる)
+ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml waypoint_arrival_mode:=mapoi
+```
+
+demo の sample config (`turtlebot3_world/mapoi_config.yaml`) は既定の `nav2` モード前提で tolerance を調整済み。`mapoi` モードで POI を縮小する場合は yaml の tolerance と Nav2 param をセットで sim 確認しながら調整する。
 
 #### サブスクライバー
 

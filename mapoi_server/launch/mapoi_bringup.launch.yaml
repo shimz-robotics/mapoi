@@ -102,6 +102,17 @@ launch:
       上書き必要時に override する。
 
 - arg:
+    name: waypoint_arrival_mode
+    default: "nav2"
+    description: >
+      mapoi_nav2_bridge の waypoint_arrival_mode parameter forward (#243)。
+      nav2 (default) = Nav2 FollowWaypoints が waypoint 進行を主導 (mapoi は radius observer)。
+      mapoi = mapoi が「tolerance.xy 進入 ∨ Nav2 SUCCEEDED」(OR) で 1 waypoint ずつ
+      NavigateToPose を送って進める。mapoi モードでは tolerance.xy < xy_goal_tolerance が可能で
+      POI を小さくできる。ただし実効到達半径を真に小さくするには Nav2 controller の
+      xy_goal_tolerance (param/<distro>/burger.yaml の goal_checker) も併せて下げる必要がある。
+
+- arg:
     name: with_amcl_localization_bridge
     default: "true"
     description: >
@@ -131,6 +142,7 @@ launch:
       - {name: auto_resume_timeout_sec, value: $(var auto_resume_timeout_sec)}
       - {name: cmd_vel_msg_type, value: "$(var cmd_vel_msg_type)"}
       - {name: cmd_vel_topic, value: "$(var cmd_vel_topic)"}
+      - {name: waypoint_arrival_mode, value: "$(var waypoint_arrival_mode)"}
     if: $(var with_nav2_bridge)
 
 - node:
