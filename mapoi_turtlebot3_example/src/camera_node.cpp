@@ -55,6 +55,25 @@ CameraNode::CameraNode(const rclcpp::NodeOptions & options)
     "camera_node started; waiting for EVENT_PAUSED on POIs tagged 'capture_trigger'.");
 }
 
+CameraNode::~CameraNode()
+{
+  // node 終了時に pending な timer を明示 cancel + reset (#248 項目 7)。
+  // rclcpp::shutdown 経由で SharedPtr 連鎖が落ちる流れでも通常は問題無いが、
+  // 「callback 発火直前 / 別 thread での timer 内部 state 破棄」の競合を
+  // 避けるため明示する。Reentrant callback_group + MultiThreadedExecutor
+  // 利用時の安全側挙動。
+  // **限界**: `cancel()` は「未実行 callback の発火を止める」意図であり、
+  // 既に別 thread で callback が走り始めた直後の競合 (`publish_resume` が
+  // `this` を触る最中の destructor 進行) までは完全には排除できない。
+  // 本 mock の用途 (demo / 試験) ではこの残り race は許容する。実機での厳密
+  // な lifecycle 制御が必要な場合は executor 停止 + node 破棄の順序を呼び出し
+  // 側で保証するか、weak_from_this パターンを併用する。
+  if (resume_timer_) {
+    resume_timer_->cancel();
+    resume_timer_.reset();
+  }
+}
+
 double CameraNode::sanitize_capture_duration_sec(double v)
 {
   if (!std::isfinite(v) || v < kCaptureDurationMinSec || v > kCaptureDurationMaxSec) {
@@ -71,9 +90,13 @@ void CameraNode::on_poi_event(const mapoi_interfaces::msg::PoiEvent::SharedPtr m
   if (!has_tag(msg->poi.tags, "capture_trigger")) {
     return;
   }
-  if (capture_in_flight_) {
-    // 連続 EVENT_PAUSED で同 capture 進行中に重ねて発火するのを防ぐ。実機
-    // ではカメラ device の二重起動を避ける意味でも単線化したい。
+  // compare_exchange で「false → true」遷移を取れたスレッドだけが capture を実行する。
+  // 旧実装の `if (capture_in_flight_) { ... } else { capture_in_flight_ = true; }` は
+  // check と set の間にギャップがあるため、MultiThreadedExecutor / Reentrant
+  // callback_group では 2 thread が両方 check を通過して二重 capture に至る race
+  // が成立した (#248 項目 3)。実機ではカメラ device の二重起動を避ける意味でも単線化したい。
+  bool expected = false;
+  if (!capture_in_flight_.compare_exchange_strong(expected, true)) {
     RCLCPP_WARN(this->get_logger(),
       "[CAMERA] capture already in flight; ignoring EVENT_PAUSED for poi='%s'",
       msg->poi.name.c_str());
@@ -89,12 +112,26 @@ bool CameraNode::has_tag(const std::vector<std::string> & tags, const std::strin
 
 void CameraNode::do_capture(const std::string & poi_name, const std::string & description)
 {
+  // **呼び出し契約**: do_capture を呼ぶ前に capture_in_flight_ が true 化されている
+  // こと (= on_poi_event の compare_exchange で獲得済) を前提とする。
+  // do_capture 側で再度 store(true) すると CAS の「獲得できた thread だけが
+  // capture する」という排他根拠が弱まるため、do_capture では flag を触らない。
+  // do_capture を直接呼ぶ test ケースもこの契約に合わせて事前 true 化する。
+
+  // 既存 resume_timer_ が残っていれば明示 cancel + reset する (#248 項目 4)。
+  // capture_in_flight_ flag による単線化が破れた場合 (フラグ管理バグ / 将来の
+  // リファクタで CAS が外れた等) でも、古いタイマーが生きたまま新タイマーで
+  // 上書きされて二重 resume publish に至る余地を消す防御。
+  if (resume_timer_) {
+    resume_timer_->cancel();
+    resume_timer_.reset();
+  }
+
   // mock 撮影: 実機では image_transport publish / 画像保存に差し替える。
   RCLCPP_INFO(this->get_logger(),
     "[CAMERA] capture: poi='%s' desc='%s'",
     poi_name.c_str(), description.c_str());
 
-  capture_in_flight_ = true;
   const auto raw_duration = this->get_parameter("capture_duration_sec").as_double();
   const auto duration_sec = sanitize_capture_duration_sec(raw_duration);
   if (duration_sec != raw_duration) {
@@ -129,13 +166,14 @@ void CameraNode::publish_resume(const std::string & poi_name)
   }
   std_msgs::msg::String msg;
   // mapoi_server の resume は data 内容を「resume 要求元 identifier」として log に
-  // 残すだけで意味解釈はしない (cancel / pause も同じ regime)。camera_node 由来で
-  // あることを debug 時に追えるよう identifier を入れる。
-  msg.data = "camera_node";
+  // 残すだけで意味解釈はしない (cancel / pause も同じ regime)。camera_node 由来 +
+  // どの POI の capture から発火した resume かを debug 時に topic 側で追えるよう
+  // `camera_node:<poi_name>` 形式で identifier を入れる (#248 項目 5)。
+  msg.data = "camera_node:" + poi_name;
   resume_pub_->publish(msg);
   RCLCPP_INFO(this->get_logger(),
     "[CAMERA] capture done; resume published for poi='%s'", poi_name.c_str());
-  capture_in_flight_ = false;
+  capture_in_flight_.store(false);
 }
 
 }  // namespace mapoi_turtlebot3_example
