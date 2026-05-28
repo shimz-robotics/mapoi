@@ -1057,7 +1057,9 @@ void MapoiNav2Bridge::mapoi_pause_cb(const std_msgs::msg::String::SharedPtr msg)
       nav_to_pose_client_->async_cancel_goal(current_ntp_goal_handle_);
     }
     is_paused_ = true;
-    publish_nav_status("paused", current_target_name_);
+    // mapoi モードの status target は route 名で統一する (waypoint goal の acceptance
+    // タイミングに依存する current_target_name_ ではなく current_route_name_ を使う)。
+    publish_nav_status("paused", current_route_name_);
 
   } else if (nav_mode_ == NavMode::ROUTE && current_goal_handle_) {
     uint32_t from = std::min(
@@ -1133,7 +1135,7 @@ void MapoiNav2Bridge::mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg
     if (!nav_to_pose_client_->action_server_is_ready()) {
       RCLCPP_ERROR(this->get_logger(), "NavigateToPose action server not available for resume.");
       is_paused_ = true;
-      publish_nav_status("backend_unavailable", current_target_name_);
+      publish_nav_status("backend_unavailable", current_route_name_);
       return;
     }
     RCLCPP_INFO(this->get_logger(),
