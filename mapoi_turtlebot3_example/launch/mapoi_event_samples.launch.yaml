@@ -5,12 +5,21 @@
 #
 # 使い方:
 #   ros2 launch mapoi_turtlebot3_example mapoi_event_samples.launch.yaml
+#   ros2 launch mapoi_turtlebot3_example mapoi_event_samples.launch.yaml capture_duration_sec:=3.0
 #
 # 本 launch は `turtlebot3_navigation.launch.yaml` (集約 demo launch) からは独立しており、
 # base navigation / Nav2 / mapoi_server / WebUI を立ち上げた別 shell でこの launch を
 # 追加で叩く想定 (#238 で分離した)。subscriber を立ち上げずに /mapoi/events だけ確認
 # したい場合は本 launch を起動せず `ros2 topic echo /mapoi/events` を使う。
 launch:
+
+# camera_node の撮影 mock 所要時間 (s)。撮影完了 → /mapoi/nav/resume publish までの
+# ウェイト。demo 時に launch arg で調整できるよう露出する (#248 項目 6)。
+# 不正値 (負/0/NaN/極大) は camera_node 側で default 1.5s に sanitize される。
+- arg:
+    name: capture_duration_sec
+    default: "1.5"
+    description: "camera_node capture mock duration in seconds (pause -> capture -> auto-resume wait)"
 
 - node:
     pkg: mapoi_turtlebot3_example
@@ -21,3 +30,9 @@ launch:
     pkg: mapoi_turtlebot3_example
     exec: camera_node
     name: camera_node
+    param:
+      # type: float を明示。CLI override `capture_duration_sec:=2` のような整数表記が
+      # int に coerce されると declare_parameter<double> と型不一致になる
+      # (mapoi_webui の robot_radius と同じ罠、#126)。launch frontend の有効型識別子は
+      # "float" のみで "double" は parse 失敗する点に注意。
+      - {name: capture_duration_sec, value: "$(var capture_duration_sec)", type: "float"}

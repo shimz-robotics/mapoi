@@ -11,12 +11,13 @@
 //   - `EVENT_ENTER` は route 走行中 + route 登録 POI のみ発火 (v0.5.0+ の PoiEvent 仕様)。
 //   - `audio_info` tag を持つ POI で EVENT_ENTER 受信 → ガイド再生 trigger。
 //   - 同 POI で EXIT までは再 trigger しない (lifecycle 上 1 visit = 1 ENTER で十分)。
-#include <algorithm>
 #include <memory>
 #include <string>
 
 #include <rclcpp/rclcpp.hpp>
 #include <mapoi_interfaces/msg/poi_event.hpp>
+
+#include "mapoi_turtlebot3_example/poi_event_utils.hpp"
 
 namespace mapoi_turtlebot3_example
 {
@@ -44,11 +45,6 @@ private:
       return;
     }
     play_guide(msg->poi.name, msg->poi.description);
-  }
-
-  static bool has_tag(const std::vector<std::string> & tags, const std::string & target)
-  {
-    return std::find(tags.begin(), tags.end(), target) != tags.end();
   }
 
   void play_guide(const std::string & poi_name, const std::string & description)
