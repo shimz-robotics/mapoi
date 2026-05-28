@@ -121,6 +121,24 @@ MapoiNav2Bridge::MapoiNav2Bridge(const rclcpp::NodeOptions & options)
     auto_resume_timeout_sec_ = auto_resume_param;
   }
 
+  // waypoint 到達モード (#243)。"nav2" (既定) は従来の FollowWaypoints 任せ、"mapoi" は
+  // mapoi が tolerance.xy 到達判定で 1 waypoint ずつ NavigateToPose を送って進める。
+  // 起動時 1 回 read してキャッシュ (動的 reconfigure 非対応)。未知値は "nav2" にフォールバック。
+  this->declare_parameter<std::string>("waypoint_arrival_mode", "nav2");
+  const std::string arrival_mode_param =
+    this->get_parameter("waypoint_arrival_mode").as_string();
+  if (arrival_mode_param == "nav2" || arrival_mode_param == "mapoi") {
+    waypoint_arrival_mode_ = arrival_mode_param;
+  } else {
+    RCLCPP_WARN(this->get_logger(),
+      "waypoint_arrival_mode='%s' は未知の値です。'nav2' にフォールバックしました。"
+      " 有効値: 'nav2' / 'mapoi'",
+      arrival_mode_param.c_str());
+    waypoint_arrival_mode_ = "nav2";
+  }
+  RCLCPP_INFO(this->get_logger(),
+    "waypoint_arrival_mode = '%s'", waypoint_arrival_mode_.c_str());
+
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
@@ -558,6 +576,19 @@ void MapoiNav2Bridge::on_route_received(
   current_waypoint_index_ = 0;
   nav_mode_ = NavMode::ROUTE;
   is_paused_ = false;
+
+  // mapoi 主導モード (#243): waypoints を Nav2 に一括投入せず、mapoi が tolerance.xy 到達
+  // 判定で 1 waypoint ずつ NavigateToPose を送って進める。route POI 列を保持し、先頭へ送る。
+  if (waypoint_arrival_mode_ == "mapoi") {
+    current_route_pois_ = route_poi;
+    current_route_name_ = route_name;
+    RCLCPP_INFO(this->get_logger(),
+      "Route '%s' in mapoi-driven mode: %zu waypoints, advancing by tolerance.xy.",
+      route_name.c_str(), current_route_pois_.size());
+    send_current_waypoint_goal_();
+    return;
+  }
+
   // navigation attempt generation を増分し、callback の stale 判定で使う
   // (Codex review #147 round 1 + 2 high)。
   const size_t my_generation = ++nav_attempt_generation_;
@@ -600,6 +631,92 @@ void MapoiNav2Bridge::on_route_received(
     };
 
   this->action_client_->async_send_goal(goal_msg, send_goal_options);
+}
+
+void MapoiNav2Bridge::send_current_waypoint_goal_()
+{
+  // route 終端: 全 waypoint を踏破したので route succeeded で終端処理する (#243)。
+  if (current_waypoint_index_ >= current_route_pois_.size()) {
+    const std::string route_name = current_route_name_;
+    RCLCPP_INFO(this->get_logger(), "Route '%s' completed (mapoi-driven).", route_name.c_str());
+    reset_nav_state();
+    publish_nav_status("succeeded", route_name);
+    return;
+  }
+
+  // NavigateToPose 不在なら route を放棄 (FollowWaypoints 経路と同じ #198 方針)。
+  if (!this->nav_to_pose_client_->action_server_is_ready()) {
+    RCLCPP_ERROR(this->get_logger(),
+      "NavigateToPose action server not available; aborting mapoi-driven route '%s'.",
+      current_route_name_.c_str());
+    publish_nav_status("backend_unavailable", current_route_name_);
+    reset_nav_state();
+    return;
+  }
+
+  const auto & poi = current_route_pois_[current_waypoint_index_];
+  geometry_msgs::msg::PoseStamped goal_pose;
+  goal_pose.header.frame_id = "map";
+  goal_pose.header.stamp = this->now();
+  goal_pose.pose = poi.pose;
+  // resume / pause 用に現 goal pose を保持 (GOAL モードと同じ用途)。
+  paused_goal_pose_ = goal_pose;
+
+  // 各 waypoint 送信は別 action attempt。generation を増分して旧 waypoint の遅延 callback
+  // (cancel result 等) を stale 化する。target は route 名で統一 (status は route 単位)。
+  const size_t my_generation = ++nav_attempt_generation_;
+  const std::string route_name = current_route_name_;
+
+  auto goal_msg = NavigateToPose::Goal();
+  goal_msg.pose = goal_pose;
+
+  auto send_goal_options = rclcpp_action::Client<NavigateToPose>::SendGoalOptions();
+  send_goal_options.goal_response_callback =
+    [this, target = route_name, my_generation](const GoalHandleNavigateToPose::SharedPtr & h) {
+      this->ntp_goal_response_callback(target, my_generation, h);
+    };
+  send_goal_options.result_callback =
+    [this, target = route_name, my_generation](const GoalHandleNavigateToPose::WrappedResult & r) {
+      this->ntp_result_callback(target, my_generation, r);
+    };
+
+  this->nav_to_pose_client_->async_send_goal(goal_msg, send_goal_options);
+  RCLCPP_INFO(this->get_logger(),
+    "mapoi-driven route '%s': navigating to waypoint[%u] '%s' (tolerance.xy=%.2f).",
+    route_name.c_str(), current_waypoint_index_, poi.name.c_str(), poi.tolerance.xy);
+}
+
+void MapoiNav2Bridge::on_waypoint_reached_()
+{
+  if (current_waypoint_index_ >= current_route_pois_.size()) {
+    return;  // 防御: 既に終端
+  }
+  const auto & poi = current_route_pois_[current_waypoint_index_];
+
+  // pause タグ waypoint に到達したら停止して resume を待つ (進めない)。auto-pause は
+  // tolerance_check の ENTER 経路でも発火するが、Nav2 SUCCEEDED 経由 (ENTER 不発) でも
+  // 確実に止めるためここでも idempotent に発火する (mapoi_pause_cb は is_paused_ で多重防御)。
+  bool is_pause = false;
+  for (const auto & tag : poi.tags) {
+    if (tag == "pause") { is_pause = true; break; }
+  }
+  if (is_pause) {
+    if (!is_paused_) {
+      auto trigger = std::make_shared<std_msgs::msg::String>();
+      trigger->data = "poi_event:" + poi.name;
+      mapoi_pause_cb(trigger);
+    }
+    return;  // resume (mapoi_resume_cb) が次 waypoint へ進める
+  }
+
+  // 非 pause waypoint: 進行中の NavigateToPose goal を cancel (tolerance.xy 進入トリガ時。
+  // SUCCEEDED トリガ時は ntp_result_callback で既に reset 済) して次 waypoint へ。
+  if (current_ntp_goal_handle_) {
+    nav_to_pose_client_->async_cancel_goal(current_ntp_goal_handle_);
+    current_ntp_goal_handle_.reset();
+  }
+  ++current_waypoint_index_;
+  send_current_waypoint_goal_();
 }
 
 void MapoiNav2Bridge::goal_response_callback(std::string target, size_t nav_generation,
@@ -721,10 +838,21 @@ void MapoiNav2Bridge::ntp_result_callback(std::string target, size_t nav_generat
   // bound target を使う (#104 race fix)。
   switch (result.code) {
     case rclcpp_action::ResultCode::SUCCEEDED:
-      reset_nav_state();
-      publish_nav_status("succeeded", target);
-      RCLCPP_INFO(this->get_logger(), "NavigateToPose SUCCEEDED!");
-      // #220 で Nav2 SUCCEEDED hook 経由の event publish は撤去。
+      if (nav_mode_ == NavMode::ROUTE && waypoint_arrival_mode_ == "mapoi") {
+        // mapoi 主導 route (#243): Nav2 が現 waypoint に到達 (OR トリガ b)。次 waypoint へ
+        // 進む。最終 goal の場合は on_waypoint_reached_ → send_current_waypoint_goal_ が
+        // index 末尾検出で route succeeded を publish する。最終 goal だけは tolerance.xy
+        // 進入では進めず、この SUCCEEDED (yaw 厳密着地込み) を待つ設計。
+        RCLCPP_INFO(this->get_logger(),
+          "NavigateToPose SUCCEEDED at route waypoint[%u] (mapoi-driven).",
+          current_waypoint_index_);
+        on_waypoint_reached_();
+      } else {
+        reset_nav_state();
+        publish_nav_status("succeeded", target);
+        RCLCPP_INFO(this->get_logger(), "NavigateToPose SUCCEEDED!");
+        // #220 で Nav2 SUCCEEDED hook 経由の event publish は撤去。
+      }
       break;
     case rclcpp_action::ResultCode::ABORTED:
       reset_nav_state();
@@ -835,6 +963,9 @@ void MapoiNav2Bridge::reset_nav_state()
   current_route_waypoints_.clear();
   paused_waypoints_.clear();
   current_waypoint_index_ = 0;
+  // mapoi 主導モードの route 状態も clear (#243)。
+  current_route_pois_.clear();
+  current_route_name_.clear();
   // active route POI set / per-POI 状態をここで clear (#143 / #220)。
   // route 終端 / cancel / failure 等で route が終わったあと、次回 route mode 開始時に
   // 「既に inside / paused 状態」のまま開始されて ENTER / PAUSED が発火しない、
@@ -916,6 +1047,20 @@ void MapoiNav2Bridge::mapoi_pause_cb(const std_msgs::msg::String::SharedPtr msg)
     is_paused_ = true;
     publish_nav_status("paused", current_target_name_);
 
+  } else if (nav_mode_ == NavMode::ROUTE && waypoint_arrival_mode_ == "mapoi") {
+    // mapoi 主導モード (#243): 進行中の NavigateToPose waypoint goal を cancel して停止。
+    // FollowWaypoints の paused_waypoints_ slice は使わず、resume は index++ で次 waypoint を
+    // 送る。current_ntp_goal_handle_ は Nav2 SUCCEEDED 経由 pause で既に null のこともある。
+    RCLCPP_INFO(this->get_logger(),
+      "Pausing mapoi-driven route at waypoint[%u].", current_waypoint_index_);
+    if (current_ntp_goal_handle_) {
+      nav_to_pose_client_->async_cancel_goal(current_ntp_goal_handle_);
+    }
+    is_paused_ = true;
+    // mapoi モードの status target は route 名で統一する (waypoint goal の acceptance
+    // タイミングに依存する current_target_name_ ではなく current_route_name_ を使う)。
+    publish_nav_status("paused", current_route_name_);
+
   } else if (nav_mode_ == NavMode::ROUTE && current_goal_handle_) {
     uint32_t from = std::min(
       current_waypoint_index_,
@@ -982,6 +1127,21 @@ void MapoiNav2Bridge::mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg
       };
 
     nav_to_pose_client_->async_send_goal(goal_msg, send_goal_options);
+
+  } else if (nav_mode_ == NavMode::ROUTE && waypoint_arrival_mode_ == "mapoi") {
+    // mapoi 主導モード (#243): pause は「現 waypoint に到達して停止」なので、resume は
+    // 次 waypoint へ進める (index++ → send)。最終 waypoint で pause していた場合は index が
+    // 末尾を越え、send_current_waypoint_goal_ が route succeeded を publish する。
+    if (!nav_to_pose_client_->action_server_is_ready()) {
+      RCLCPP_ERROR(this->get_logger(), "NavigateToPose action server not available for resume.");
+      is_paused_ = true;
+      publish_nav_status("backend_unavailable", current_route_name_);
+      return;
+    }
+    RCLCPP_INFO(this->get_logger(),
+      "Resuming mapoi-driven route: advancing from waypoint[%u].", current_waypoint_index_);
+    ++current_waypoint_index_;
+    send_current_waypoint_goal_();
 
   } else if (nav_mode_ == NavMode::ROUTE) {
     if (paused_waypoints_.empty()) {
@@ -1140,11 +1300,26 @@ void MapoiNav2Bridge::tolerance_check_callback()
   // 重なり等で理論上ありうるが、最後に publish した POI に従う (cancel 上書き含め
   // schedule_auto_resume_ が idempotent に動く)。
   std::string paused_event_poi;
+  // mapoi 主導モード (#243): 現 target waypoint の tolerance.xy 進入で到達したか (OR トリガ a)。
+  // lock 外で on_waypoint_reached_ (cancel + 次 send) を呼ぶための flag。
+  bool mapoi_waypoint_radius_arrival = false;
 
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
     if (event_pois_.empty()) {
       return;
+    }
+
+    // mapoi 主導モードの現 target waypoint 名と「末尾か」を tick 先頭で snapshot。
+    // 末尾 (= 最終 goal) は radius 進入では進めず Nav2 SUCCEEDED (yaw 厳密) を待つので除外する。
+    const bool mapoi_mode =
+      (waypoint_arrival_mode_ == "mapoi" && nav_mode_ == NavMode::ROUTE);
+    std::string mapoi_target_wp_name;
+    bool mapoi_target_is_last = false;
+    if (mapoi_mode && current_waypoint_index_ < current_route_pois_.size()) {
+      mapoi_target_wp_name = current_route_pois_[current_waypoint_index_].name;
+      mapoi_target_is_last =
+        (current_waypoint_index_ + 1 == current_route_pois_.size());
     }
 
     // EVENT_ENTER / EVENT_PAUSED / EVENT_EXIT は route 走行中 + route 登録 POI のみが
@@ -1186,6 +1361,11 @@ void MapoiNav2Bridge::tolerance_check_callback()
         // pauseタグがあれば自動pause対象
         if (is_pause_poi) {
           pause_triggered_poi = poi.name;
+        }
+        // mapoi 主導モード (#243): 現 target waypoint の tolerance.xy に入ったら到達
+        // (OR トリガ a)。最終 goal は除外 (Nav2 SUCCEEDED で yaw 厳密着地を待つ)。
+        if (mapoi_mode && !mapoi_target_is_last && poi.name == mapoi_target_wp_name) {
+          mapoi_waypoint_radius_arrival = true;
         }
       } else if (was_inside && dist > poi.tolerance.xy * hysteresis) {
         // EXIT event
@@ -1234,6 +1414,13 @@ void MapoiNav2Bridge::tolerance_check_callback()
   // mapoi_pause_cb が直前に呼ばれて is_paused_=true になっている前提)。
   if (!paused_event_poi.empty()) {
     schedule_auto_resume_(paused_event_poi);
+  }
+
+  // mapoi 主導モード (#243): 現 waypoint の tolerance.xy 到達で次 waypoint へ進む。
+  // pause トリガの後に置く: pause waypoint の場合は上で is_paused_ が立ち、
+  // on_waypoint_reached_ は pause 判定で進めず resume を待つ (= 二重に進めない)。
+  if (mapoi_waypoint_radius_arrival) {
+    on_waypoint_reached_();
   }
 }
 

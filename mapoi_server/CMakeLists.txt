@@ -117,6 +117,11 @@ if(BUILD_TESTING)
     test/test_poi_event_route_integration.py
     TIMEOUT 180
   )
+  # mapoi 主導 waypoint 到達モード (#243) は NavigateToPose mock 前提で別ファイルに分離。
+  add_launch_test(
+    test/test_poi_event_route_mapoi_arrival.py
+    TIMEOUT 120
+  )
   add_launch_test(
     test/test_reload_clears_initialpose.py
   )
