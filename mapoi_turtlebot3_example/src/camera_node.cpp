@@ -57,7 +57,7 @@ CameraNode::CameraNode(const rclcpp::NodeOptions & options)
 
 double CameraNode::sanitize_capture_duration_sec(double v)
 {
-  if (!std::isfinite(v) || v <= 0.0 || v > kCaptureDurationMaxSec) {
+  if (!std::isfinite(v) || v < kCaptureDurationMinSec || v > kCaptureDurationMaxSec) {
     return kCaptureDurationDefaultSec;
   }
   return v;
@@ -102,9 +102,10 @@ void CameraNode::do_capture(const std::string & poi_name, const std::string & de
     // demo 時に「思ったより短い / 長い」原因を追えなくなるので必ず log を残す
     // (mapoi_webui_node.py の robot_radius と同じ defense-in-depth 方針、#248)。
     RCLCPP_WARN(this->get_logger(),
-      "[CAMERA] capture_duration_sec=%.6f は不正値です (NaN/inf/<=0/>%.1fs)。"
+      "[CAMERA] capture_duration_sec=%.6f は不正値です (NaN/inf/<%.3fs/>%.1fs)。"
       "default %.3fs を使います。",
-      raw_duration, kCaptureDurationMaxSec, kCaptureDurationDefaultSec);
+      raw_duration, kCaptureDurationMinSec, kCaptureDurationMaxSec,
+      kCaptureDurationDefaultSec);
   }
   const auto duration_ms =
     std::chrono::milliseconds(static_cast<int64_t>(duration_sec * 1000.0));

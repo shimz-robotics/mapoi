@@ -121,6 +121,18 @@ TEST_F(CameraNodeTestFixture, SanitizeCaptureDurationAcceptsPositive)
   EXPECT_DOUBLE_EQ(CameraNode::sanitize_capture_duration_sec(60.0), 60.0);
 }
 
+TEST_F(CameraNodeTestFixture, SanitizeCaptureDurationAcceptsBoundary)
+{
+  // min / max は inclusive。境界値が retain されることを pin する
+  // (boundary off-by-one regression 防止)。
+  EXPECT_DOUBLE_EQ(
+    CameraNode::sanitize_capture_duration_sec(CameraNode::kCaptureDurationMinSec),
+    CameraNode::kCaptureDurationMinSec);
+  EXPECT_DOUBLE_EQ(
+    CameraNode::sanitize_capture_duration_sec(CameraNode::kCaptureDurationMaxSec),
+    CameraNode::kCaptureDurationMaxSec);
+}
+
 TEST_F(CameraNodeTestFixture, SanitizeCaptureDurationRejectsZero)
 {
   EXPECT_DOUBLE_EQ(
@@ -135,6 +147,23 @@ TEST_F(CameraNodeTestFixture, SanitizeCaptureDurationRejectsNegative)
     CameraNode::kCaptureDurationDefaultSec);
   EXPECT_DOUBLE_EQ(
     CameraNode::sanitize_capture_duration_sec(-0.001),
+    CameraNode::kCaptureDurationDefaultSec);
+}
+
+TEST_F(CameraNodeTestFixture, SanitizeCaptureDurationRejectsSubMillisecond)
+{
+  // 極小正値 (< 1ms) は static_cast<int64_t>(v * 1000.0) で 0ms タイマー化されて
+  // create_wall_timer(0ms) 相当の即時発火になるため、撮影 mock として意味が無い。
+  // μs と s の単位ミス typo (例: 0.0001) も同じ経路で弾く。
+  EXPECT_DOUBLE_EQ(
+    CameraNode::sanitize_capture_duration_sec(0.0001),
+    CameraNode::kCaptureDurationDefaultSec);
+  EXPECT_DOUBLE_EQ(
+    CameraNode::sanitize_capture_duration_sec(std::numeric_limits<double>::denorm_min()),
+    CameraNode::kCaptureDurationDefaultSec);
+  // 0.001 直下 (0.0009) も拒否されることを確認 (inclusive minimum の確認)
+  EXPECT_DOUBLE_EQ(
+    CameraNode::sanitize_capture_duration_sec(0.0009),
     CameraNode::kCaptureDurationDefaultSec);
 }
 

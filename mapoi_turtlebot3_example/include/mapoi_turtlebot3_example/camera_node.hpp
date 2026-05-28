@@ -22,17 +22,22 @@ class CameraNode : public rclcpp::Node
 {
 public:
   // capture_duration_sec の安全範囲。
-  //   - 下限 0 は "撮影しないで即 resume" になるため弾く。実機 capture も常に正値。
-  //   - 上限 600s は demo / 試験で想定されるカメラ露光の最大値。これを超える値は
+  //   - 下限 1ms (0.001s): 0 以下は "撮影しないで即 resume" になるため当然弾くが、
+  //     極小正値 (0.0001s 等) も static_cast<int64_t>(v * 1000.0) = 0ms タイマー化
+  //     して create_wall_timer(0ms) 相当の即時発火になり、撮影 mock として意味を
+  //     成さない。`μs と s の単位ミス` typo も同じく弾く。
+  //   - 上限 600s: demo / 試験で想定されるカメラ露光の最大値。これを超える値は
   //     大抵 typo (秒/ミリ秒の単位ミス) なので WARN して default に落とす。
   static constexpr double kCaptureDurationDefaultSec = 1.5;
+  static constexpr double kCaptureDurationMinSec = 0.001;
   static constexpr double kCaptureDurationMaxSec = 600.0;
 
   explicit CameraNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
   // capture_duration_sec の入力値を安全な範囲に正規化する純関数。
-  //   - NaN / inf / 0 以下 / kCaptureDurationMaxSec 超 → kCaptureDurationDefaultSec
-  //   - それ以外はそのまま返す
+  //   - NaN / inf / kCaptureDurationMinSec 未満 / kCaptureDurationMaxSec 超
+  //     → kCaptureDurationDefaultSec
+  //   - それ以外はそのまま返す (min / max は inclusive)
   // 純関数として切り出しているのは unit test で境界条件を pin するため。
   static double sanitize_capture_duration_sec(double v);
 
@@ -51,8 +56,10 @@ private:
 #ifdef UNIT_TEST
   friend class CameraNodeTestFixture;
   FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationAcceptsPositive);
+  FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationAcceptsBoundary);
   FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationRejectsZero);
   FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationRejectsNegative);
+  FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationRejectsSubMillisecond);
   FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationRejectsNaN);
   FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationRejectsInfinity);
   FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationRejectsTooLarge);
