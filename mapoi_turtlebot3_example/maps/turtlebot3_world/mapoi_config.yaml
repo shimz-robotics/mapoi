@@ -6,12 +6,21 @@
 # (#230 follow-up #238)。subscriber を立ち上げない場合は ros2 topic echo /mapoi/events で
 # 動作確認、立ち上げる場合は audio 発話 / camera 撮影 mock が走る。
 #
-# POI 座標調整時の制約:
-# - tolerance.xy は Nav2 controller の xy_goal_tolerance (0.25) より大きく取る。Nav2 が POI
-#   tolerance.xy 内に入る前にゴール判定で停止し radius event が発火しないため、最小 0.30
-#   (5cm 余裕)。
+# POI 座標調整時の制約 (本 demo は既定の waypoint_arrival_mode=nav2 を前提に調整済):
+# - waypoint の tolerance.xy は Nav2 controller の xy_goal_tolerance (0.25) より大きく取る。
+#   Nav2 が POI tolerance.xy 内に入る前にゴール判定で停止し radius event が発火しないため、
+#   最小 0.30 (5cm 余裕)。
+#   ※ waypoint_arrival_mode=mapoi (#243) では mapoi が tolerance.xy 到達で進行を主導するため
+#     この制約は逆転し、tolerance.xy < xy_goal_tolerance が可能 (POI を小さくできる)。その際は
+#     Nav2 を tight 半径まで寄せるため param/<distro>/burger.yaml の goal_checker
+#     xy_goal_tolerance も併せて下げる (詳細は mapoi_server/README.md「waypoint 到達モード」節)。
+# - landmark の tolerance.xy は waypoint ではなく「ENTER (音声等) トリガ半径」なので、上記の
+#   waypoint 縮小とは独立。経路 (waypoint 直線) が radius に掛かる程度の広さを保てばよく、mapoi
+#   モードでも狭める必要はない (audio_landmark は広いまま)。
 # - tolerance.yaw は >= 0.001 (rad) を指定 (msg spec #138 で 0 / 負値は禁止)。yaw を問わない
-#   通過点は π (≒ 180°) 近辺。yaw 厳密化したい POI は小さい値 (例: goal は 0.10)。
+#   通過点は π (≒ 180°) 近辺。yaw 厳密化したい POI は小さい値 (例: goal は 0.10)。なお mapoi
+#   モードでも最終 goal の yaw は Nav2 完走で決まるため、厳密 yaw を効かせるには Nav2 の
+#   yaw_goal_tolerance も下げる必要がある。
 # - tag 排他: landmark × pause / landmark × waypoint は #143 validation で reject される。
 custom_tags:
 - {name: audio_info, description: Audio guide trigger (POI 進入で音声再生 mock)}
