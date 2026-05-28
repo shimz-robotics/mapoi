@@ -15,7 +15,7 @@ launch:
 
 # camera_node の撮影 mock 所要時間 (s)。撮影完了 → /mapoi/nav/resume publish までの
 # ウェイト。demo 時に launch arg で調整できるよう露出する (#248 項目 6)。
-# 不正値 (負/0/NaN/極大) は camera_node 側で default 1.5s に sanitize される。
+# 不正値は camera_node 側で default に sanitize される (条件は camera_node.hpp 参照)。
 - arg:
     name: capture_duration_sec
     default: "1.5"

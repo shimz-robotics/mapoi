@@ -10,8 +10,7 @@ namespace mapoi_turtlebot3_example
 
 // PoiEvent.poi.tags に target tag が含まれるかを判定する共通ユーティリティ。
 // camera_node / audio_guide_node が同型の実装を重複保持していたのを集約した
-// (#248 項目 8)。3 つ目以降の PoiEvent 駆動 subscriber を足す時もこれを使う。
-// header-only inline: 純粋関数 1 つのためだけに lib target を切らない。
+// (#248 項目 8)。PoiEvent 駆動 subscriber 全般で再利用する。
 inline bool has_tag(const std::vector<std::string> & tags, const std::string & target)
 {
   return std::find(tags.begin(), tags.end(), target) != tags.end();
