@@ -56,6 +56,70 @@ TEST_F(Nav2BridgeTestFixture, DistanceCalculationZero)
   EXPECT_DOUBLE_EQ(dist, 0.0);
 }
 
+// --- yaw_from_quaternion / angle_diff_abs (#261) ---
+
+namespace
+{
+geometry_msgs::msg::Quaternion quat_from_yaw(double yaw)
+{
+  geometry_msgs::msg::Quaternion q;
+  q.x = 0.0;
+  q.y = 0.0;
+  q.z = std::sin(yaw / 2.0);
+  q.w = std::cos(yaw / 2.0);
+  return q;
+}
+}  // namespace
+
+TEST_F(Nav2BridgeTestFixture, YawFromQuaternionIdentity)
+{
+  geometry_msgs::msg::Quaternion q;
+  q.w = 1.0;  // x=y=z=0
+  EXPECT_NEAR(MapoiNav2Bridge::yaw_from_quaternion(q), 0.0, 1e-9);
+}
+
+TEST_F(Nav2BridgeTestFixture, YawFromQuaternionHalfPi)
+{
+  EXPECT_NEAR(MapoiNav2Bridge::yaw_from_quaternion(quat_from_yaw(M_PI / 2.0)),
+              M_PI / 2.0, 1e-9);
+}
+
+TEST_F(Nav2BridgeTestFixture, YawFromQuaternionNegHalfPi)
+{
+  EXPECT_NEAR(MapoiNav2Bridge::yaw_from_quaternion(quat_from_yaw(-M_PI / 2.0)),
+              -M_PI / 2.0, 1e-9);
+}
+
+TEST_F(Nav2BridgeTestFixture, YawFromQuaternionPi)
+{
+  // ±pi は atan2 上どちらも有効。絶対値で pi に一致することを確認。
+  EXPECT_NEAR(std::abs(MapoiNav2Bridge::yaw_from_quaternion(quat_from_yaw(M_PI))),
+              M_PI, 1e-9);
+}
+
+TEST_F(Nav2BridgeTestFixture, AngleDiffAbsZero)
+{
+  EXPECT_NEAR(MapoiNav2Bridge::angle_diff_abs(1.2, 1.2), 0.0, 1e-9);
+}
+
+TEST_F(Nav2BridgeTestFixture, AngleDiffAbsHalfPi)
+{
+  EXPECT_NEAR(MapoiNav2Bridge::angle_diff_abs(M_PI / 2.0, 0.0), M_PI / 2.0, 1e-9);
+}
+
+TEST_F(Nav2BridgeTestFixture, AngleDiffAbsWrapAround)
+{
+  // 3.0 と -3.0 の素朴な差は 6.0 だが、wrap すると ~0.283 が最短角。
+  EXPECT_NEAR(MapoiNav2Bridge::angle_diff_abs(3.0, -3.0),
+              2.0 * M_PI - 6.0, 1e-9);
+}
+
+TEST_F(Nav2BridgeTestFixture, AngleDiffAbsSymmetric)
+{
+  EXPECT_NEAR(MapoiNav2Bridge::angle_diff_abs(0.3, 1.1),
+              MapoiNav2Bridge::angle_diff_abs(1.1, 0.3), 1e-9);
+}
+
 TEST_F(Nav2BridgeTestFixture, RebuildEventPoisIncludesAllPois)
 {
   {
