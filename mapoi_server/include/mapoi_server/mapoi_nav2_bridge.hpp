@@ -81,6 +81,16 @@ private:
   void on_route_received(std::string route_name,
                          rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future);
 
+  // --- mapoi 主導 waypoint 到達モードの実行ヘルパ (#243) ---
+  // current_route_pois_[current_waypoint_index_] へ NavigateToPose を送る。index が
+  // 末尾を越えていれば route succeeded として終端処理する。NavigateToPose 不在なら
+  // backend_unavailable で route を放棄。generation を増分して旧 callback を stale 化する。
+  void send_current_waypoint_goal_();
+  // 現 waypoint への到達確定時の遷移 (OR トリガ a: tolerance.xy 進入 / b: Nav2 SUCCEEDED 共通)。
+  //   - pause タグ POI: auto-pause を発火し進めない (resume で次へ)。
+  //   - それ以外: active goal を cancel (進入トリガ時) → index++ → 次 waypoint 送信。
+  void on_waypoint_reached_();
+
   void get_pois_list();
 
   // Action Callbacks (FollowWaypoints — routes)
@@ -122,6 +132,20 @@ private:
   std::vector<geometry_msgs::msg::PoseStamped> current_route_waypoints_;
   uint32_t current_waypoint_index_ = 0;
   std::vector<geometry_msgs::msg::PoseStamped> paused_waypoints_;
+
+  // mapoi 主導 waypoint 到達モード (#243)。route 実行を Nav2 FollowWaypoints 任せ
+  // ("nav2", 既定) にするか、mapoi が tolerance.xy 到達判定で 1 waypoint ずつ
+  // NavigateToPose を送って進める ("mapoi") かを切り替える。constructor で resolve。
+  //   - "nav2":  従来挙動。Nav2 が xy_goal_tolerance で waypoint 進行、mapoi は radius observer。
+  //   - "mapoi": mapoi が「tolerance.xy 進入 ∨ NavigateToPose SUCCEEDED」(OR) で次 waypoint へ。
+  //              最終 goal だけは Nav2 完走 (yaw 厳密着地) を待つ。tolerance.xy < xy_goal_tolerance
+  //              が可能になる (POI を小さくできる)。
+  std::string waypoint_arrival_mode_ {"nav2"};
+  // mapoi モードで進行中の route waypoint POI 列 (順序保持、landmarks は含まない)。
+  // current_waypoint_index_ が指す POI へ NavigateToPose を送る。
+  std::vector<mapoi_interfaces::msg::PointOfInterest> current_route_pois_;
+  // mapoi モードの現 route 名 (status publish / resume の再送 target に使う)。
+  std::string current_route_name_;
 
   // active route の POI 名 set (waypoints + landmarks 両方を含む) (#143)。
   // route 受信 (on_route_received) で set、route 終端 / cancel / GOAL 切替で clear。
