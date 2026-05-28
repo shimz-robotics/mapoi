@@ -11,7 +11,8 @@ MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
   // POI tolerance visualization (#136 / #179) を表示するか。
   // 描画 layer (false で全 POI 抑制):
   //   - xy 判定円 outline (細い実線、薄め): tolerance.xy = ロボット進入判定の境界
-  //   - yaw 制約扇形 (塗り or 中抜き): 0 < tolerance.yaw < π の時のみ重ね描き
+  //   - yaw 制約: 0 < tolerance.yaw < π は扇形 (wedge)、>= π (yaw 不問 = 全方位) は
+  //     塗りつぶし円 (disc) で重ね描き (#267)
   //   - pause overlay (点線 dot): pause tag POI の xy 円沿いに dot pattern
   // Editor 中心の使い方や RViz が情報過多な時に false にする想定。default true。
   this->declare_parameter<bool>("show_tolerance_sector", true);
@@ -426,6 +427,51 @@ void MapoiRviz2Publisher::timer_callback(){
     return n_added;
   };
 
+  // yaw 不問 (tolerance.yaw >= π = 全方位) を塗りつぶし円 (disc) で描画する helper (#267)。
+  // add_sector は yaw 不問を return 0 でスキップするため、その場合に円 outline だけだと
+  // 「描画されていない?」と誤認される (WebUI と同じ feedback)。扇形 (wedge) が広がりきって
+  // 円になったもの、という連続的な見た目で「全方位 OK」を明示する。TRIANGLE_LIST で全周を塗る。
+  auto add_filled_disc = [&](const geometry_msgs::msg::Pose & pose, double radius,
+                             float r, float g, float b, float fill_alpha,
+                             int marker_id,
+                             const std::string & marker_ns,
+                             visualization_msgs::msg::MarkerArray & target) {
+    if (radius <= 0.0 || fill_alpha <= 0.0f) return;
+    constexpr int N_SEG = 36;
+    visualization_msgs::msg::Marker m;
+    m.header.frame_id = "map";
+    m.header.stamp = rclcpp::Clock().now();
+    m.action = visualization_msgs::msg::Marker::ADD;
+    m.type = visualization_msgs::msg::Marker::TRIANGLE_LIST;
+    m.id = marker_id;
+    m.ns = marker_ns;
+    m.pose.orientation.w = 1.0;
+    m.scale.x = m.scale.y = m.scale.z = 1.0;
+    m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = fill_alpha;
+    m.lifetime.sec = 2;
+    geometry_msgs::msg::Point center;
+    center.x = pose.position.x;
+    center.y = pose.position.y;
+    center.z = SECTOR_Z;
+    m.points.reserve(static_cast<size_t>(N_SEG) * 3);
+    for (int i = 0; i < N_SEG; ++i) {
+      const double a0 = 2.0 * M_PI * i / N_SEG;
+      const double a1 = 2.0 * M_PI * (i + 1) / N_SEG;
+      geometry_msgs::msg::Point p0;
+      p0.x = pose.position.x + radius * std::cos(a0);
+      p0.y = pose.position.y + radius * std::sin(a0);
+      p0.z = SECTOR_Z;
+      geometry_msgs::msg::Point p1;
+      p1.x = pose.position.x + radius * std::cos(a1);
+      p1.y = pose.position.y + radius * std::sin(a1);
+      p1.z = SECTOR_Z;
+      m.points.push_back(center);
+      m.points.push_back(p0);
+      m.points.push_back(p1);
+    }
+    target.markers.push_back(m);
+  };
+
   // pause overlay を xy 円沿いに点線 (dot 形式) で重ね描き (#179)。
   // LINE_LIST で短い segment + 長い gap で dot 表現:
   //   旧 add_dashed_outline (#136) は segment 長 0.05m + 1:1 比率の dash で「点と感じない、
@@ -538,8 +584,9 @@ void MapoiRviz2Publisher::timer_callback(){
                         poi_marker_ns("tolerance_xy", poi.name), ma_pois);
       id += 1;
 
-      // 扇形 (yaw 制約、#136): 0 < yaw < π の時のみ重ね描き。
-      // それ以外 (yaw 不問、扇形 = 円となり情報冗長) は円 outline のみで表現。
+      // 扇形 (yaw 制約、#136): 0 < yaw < π の時は扇形 (wedge)、yaw >= π (yaw 不問 = 全方位)
+      // の時は塗りつぶし円 (disc) で重ね描きする (#267)。yaw 不問を円 outline だけにすると
+      // 「描画されていない?」と誤認されるため disc で「全方位 OK」を明示する (WebUI と整合)。
       const bool has_yaw_constraint =
         (poi.tolerance.yaw > 0.0 && poi.tolerance.yaw < M_PI);
       if (has_yaw_constraint) {
@@ -547,6 +594,10 @@ void MapoiRviz2Publisher::timer_callback(){
                          sr, sg, sb,
                          fill_a, stroke_a,
                          id, poi_marker_ns("tolerance_yaw", poi.name), ma_pois);
+      } else if (poi.tolerance.yaw >= M_PI) {
+        add_filled_disc(pose, poi.tolerance.xy, sr, sg, sb, fill_a,
+                        id, poi_marker_ns("tolerance_yaw", poi.name), ma_pois);
+        id += 1;
       }
 
       if (has_tag(poi, "pause")) {
