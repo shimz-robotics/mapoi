@@ -719,6 +719,25 @@ void MapoiNav2Bridge::on_waypoint_reached_()
   send_current_waypoint_goal_();
 }
 
+void MapoiNav2Bridge::on_goal_radius_arrival_()
+{
+  // GOAL モード (#261): 単発 Go が POI tolerance.xy + yaw に到達 (OR トリガ a)。進行中の
+  // NavigateToPose goal を cancel して succeeded で完了する。cancel に伴う CANCELED result が
+  // ntp_result_callback で "canceled" を publish して "succeeded" を上書きしないよう、先に
+  // generation を進めて cancel result を stale 化する (同 callback group で直列化されるので
+  // increment → cancel → (後で) stale result の順序が保証される)。
+  const std::string target = current_target_name_;
+  ++nav_attempt_generation_;
+  if (current_ntp_goal_handle_) {
+    nav_to_pose_client_->async_cancel_goal(current_ntp_goal_handle_);
+    current_ntp_goal_handle_.reset();
+  }
+  reset_nav_state();
+  publish_nav_status("succeeded", target);
+  RCLCPP_INFO(this->get_logger(),
+    "GOAL '%s' reached by tolerance.xy + yaw (mapoi-driven); completed.", target.c_str());
+}
+
 void MapoiNav2Bridge::goal_response_callback(std::string target, size_t nav_generation,
                                               const GoalHandleFollowWaypoints::SharedPtr & goal_handle)
 {
@@ -1283,6 +1302,8 @@ void MapoiNav2Bridge::tolerance_check_callback()
 
   double rx = transform.transform.translation.x;
   double ry = transform.transform.translation.y;
+  // GOAL 到達の yaw 一致判定用 (#261)。robot 現在 yaw を tick 先頭で 1 回取り出す。
+  double r_yaw = yaw_from_quaternion(transform.transform.rotation);
   double hysteresis = this->get_parameter("hysteresis_exit_multiplier").as_double();
   // PAUSED 判定 (#220): zero_velocity が dwell threshold 以上続いたら停止扱い。
   // 全 POI 共通の判定なので timer tick 内で 1 回計算して使い回す。
@@ -1303,6 +1324,18 @@ void MapoiNav2Bridge::tolerance_check_callback()
   // mapoi 主導モード (#243): 現 target waypoint の tolerance.xy 進入で到達したか (OR トリガ a)。
   // lock 外で on_waypoint_reached_ (cancel + 次 send) を呼ぶための flag。
   bool mapoi_waypoint_radius_arrival = false;
+
+  // GOAL モード (#261): 単発 Go (mapoi モード) の POI 個別 tolerance.xy + yaw 到達判定。
+  // active な NavigateToPose goal がある時のみ対象 (current_ntp_goal_handle_ 非 null = acceptance
+  // 済 = current_target_name_ が goal POI 名で確定済)。topic fallback (action 不在) では handle が
+  // null のままなので対象外。nav state member は default callback group で本 callback と直列化される
+  // ため lock なしで読める (data_mutex_ は pois_list_/event_pois_/poi_inside_state_ を守る用)。
+  const bool goal_mode =
+    (waypoint_arrival_mode_ == "mapoi" && nav_mode_ == NavMode::GOAL &&
+     !is_paused_ && current_ntp_goal_handle_ != nullptr);
+  const std::string goal_target_name = goal_mode ? current_target_name_ : std::string();
+  // lock 外で on_goal_radius_arrival_ (cancel + succeeded) を呼ぶための flag。
+  bool goal_radius_yaw_arrival = false;
 
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
@@ -1331,6 +1364,19 @@ void MapoiNav2Bridge::tolerance_check_callback()
 
     for (const auto & poi : event_pois_) {
       double dist = distance_2d(poi.pose, rx, ry);
+
+      // GOAL モード到達判定 (#261): 単発 Go は route lifecycle (ENTER/EXIT/PAUSED) とは独立で、
+      // 現 goal POI に対して「(tolerance.xy 進入 ∧ yaw 一致) ∨ Nav2 SUCCEEDED」で完了する。
+      // ここは OR トリガ a (radius + yaw)。姿勢が tolerance.yaw 内に収まっていれば即完了し、
+      // 収まっていなければ false のまま → Nav2 の最終姿勢合わせ (SUCCEEDED, OR トリガ b) を待つ。
+      // poi_inside_state_ 等の lifecycle state は触らない (GOAL では ENTER/EXIT を出さない)。
+      if (goal_mode && !goal_radius_yaw_arrival && poi.name == goal_target_name) {
+        const double yaw_diff =
+          angle_diff_abs(r_yaw, yaw_from_quaternion(poi.pose.orientation));
+        if (dist <= poi.tolerance.xy && yaw_diff <= poi.tolerance.yaw) {
+          goal_radius_yaw_arrival = true;
+        }
+      }
 
       // route 登録 POI かつ ROUTE mode 走行中なら event 発火対象 (#220)。
       // is_pause_eligible は同じ前提 (ROUTE mode + active route POI) + pause タグの
@@ -1422,6 +1468,12 @@ void MapoiNav2Bridge::tolerance_check_callback()
   if (mapoi_waypoint_radius_arrival) {
     on_waypoint_reached_();
   }
+
+  // GOAL モード (#261): radius + yaw 到達で単発 Go を完了する。route mode とは nav_mode_ で
+  // 排他なので mapoi_waypoint_radius_arrival とは同時に立たない。
+  if (goal_radius_yaw_arrival) {
+    on_goal_radius_arrival_();
+  }
 }
 
 void MapoiNav2Bridge::clear_current_route_poi_names_()
@@ -1435,6 +1487,23 @@ double MapoiNav2Bridge::distance_2d(const geometry_msgs::msg::Pose & poi_pose, d
   double dx = poi_pose.position.x - rx;
   double dy = poi_pose.position.y - ry;
   return std::sqrt(dx * dx + dy * dy);
+}
+
+double MapoiNav2Bridge::yaw_from_quaternion(const geometry_msgs::msg::Quaternion & q)
+{
+  // ZYX 分解の yaw 成分 (tf2::getYaw と同等)。正規化されていない quaternion でも
+  // atan2 の比なので向きは正しく出る。
+  const double siny_cosp = 2.0 * (q.w * q.z + q.x * q.y);
+  const double cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z);
+  return std::atan2(siny_cosp, cosy_cosp);
+}
+
+double MapoiNav2Bridge::angle_diff_abs(double a, double b)
+{
+  // [-pi, pi] に正規化した差の絶対値。atan2(sin(d), cos(d)) で wrap-around を吸収する
+  // (例: a=3.0, b=-3.0 の差は 6.0 ではなく ~0.283)。
+  const double d = a - b;
+  return std::abs(std::atan2(std::sin(d), std::cos(d)));
 }
 
 // --- STOPPED / RESUMED 判定 (#140) ---

@@ -18,6 +18,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/quaternion.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <geometry_msgs/msg/twist_stamped.hpp>
 #include <nav2_msgs/action/follow_waypoints.hpp>
@@ -91,6 +92,11 @@ private:
   //   - それ以外: active goal を cancel (進入トリガ時) → index++ → 次 waypoint 送信。
   void on_waypoint_reached_();
 
+  // GOAL モード (#261): 単発 Go が POI 個別 tolerance.xy + yaw に到達した時の完了処理。
+  // mapoi モードでのみ tolerance_check_callback から呼ばれる。進行中の NavigateToPose goal を
+  // cancel し、generation を進めて cancel result を stale 化したうえで "succeeded" を publish する。
+  void on_goal_radius_arrival_();
+
   void get_pois_list();
 
   // Action Callbacks (FollowWaypoints — routes)
@@ -140,6 +146,10 @@ private:
   //   - "mapoi": mapoi が「tolerance.xy 進入 ∨ NavigateToPose SUCCEEDED」(OR) で次 waypoint へ。
   //              最終 goal だけは Nav2 完走 (yaw 厳密着地) を待つ。tolerance.xy < xy_goal_tolerance
   //              が可能になる (POI を小さくできる)。
+  //              単発 Go (GOAL モード) も同 mode 下で「(tolerance.xy 進入 ∧ yaw 一致) ∨ Nav2
+  //              SUCCEEDED」で完了する (#261)。姿勢が自然に合っていれば即完了、合っていなければ
+  //              Nav2 の最終姿勢合わせ (SUCCEEDED) を待つ。"nav2" モードでは Go は従来通り Nav2
+  //              の goal_checker 任せ。
   std::string waypoint_arrival_mode_ {"nav2"};
   // mapoi モードで進行中の route waypoint POI 列 (順序保持、landmarks は含まない)。
   // current_waypoint_index_ が指す POI へ NavigateToPose を送る。
@@ -299,6 +309,13 @@ private:
   void tolerance_check_callback();
   double distance_2d(const geometry_msgs::msg::Pose & poi_pose, double rx, double ry);
 
+  // quaternion から yaw (ZYX 分解の Z 成分) を取り出す純関数 (#261)。tf2::getYaw と同等だが
+  // tf2 型変換を挟まず geometry_msgs/Quaternion を直接受ける (test も依存なしで書ける)。
+  static double yaw_from_quaternion(const geometry_msgs::msg::Quaternion & q);
+  // 2 つの角度差を [-pi, pi] に正規化した絶対値 (rad) を返す純関数 (#261)。
+  // atan2(sin(d), cos(d)) で wrap-around (例: 3.0 と -3.0 の差は 6.0 ではなく ~0.28) を吸収する。
+  static double angle_diff_abs(double a, double b);
+
   // landmark system tag を持つかを判定する純関数 (#85)。
   // landmark POI は Nav2 navigation goal / initial_pose に使えない reference 専用。
   static bool has_landmark_tag(const mapoi_interfaces::msg::PointOfInterest & poi);
@@ -325,6 +342,14 @@ private:
   friend class Nav2BridgeTestFixture;
   FRIEND_TEST(Nav2BridgeTestFixture, DistanceCalculation);
   FRIEND_TEST(Nav2BridgeTestFixture, DistanceCalculationZero);
+  FRIEND_TEST(Nav2BridgeTestFixture, YawFromQuaternionIdentity);
+  FRIEND_TEST(Nav2BridgeTestFixture, YawFromQuaternionHalfPi);
+  FRIEND_TEST(Nav2BridgeTestFixture, YawFromQuaternionNegHalfPi);
+  FRIEND_TEST(Nav2BridgeTestFixture, YawFromQuaternionPi);
+  FRIEND_TEST(Nav2BridgeTestFixture, AngleDiffAbsZero);
+  FRIEND_TEST(Nav2BridgeTestFixture, AngleDiffAbsHalfPi);
+  FRIEND_TEST(Nav2BridgeTestFixture, AngleDiffAbsWrapAround);
+  FRIEND_TEST(Nav2BridgeTestFixture, AngleDiffAbsSymmetric);
   FRIEND_TEST(Nav2BridgeTestFixture, RebuildEventPoisIncludesAllPois);
   FRIEND_TEST(Nav2BridgeTestFixture, RebuildEventPoisEmpty);
   FRIEND_TEST(Nav2BridgeTestFixture, PauseTagDetection);

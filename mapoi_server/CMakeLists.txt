@@ -122,6 +122,11 @@ if(BUILD_TESTING)
     test/test_poi_event_route_mapoi_arrival.py
     TIMEOUT 120
   )
+  # mapoi モードの単発 Go (GOAL) 到達判定 (#261) も NavigateToPose mock 前提で別ファイルに分離。
+  add_launch_test(
+    test/test_poi_event_goal_mapoi_arrival.py
+    TIMEOUT 120
+  )
   add_launch_test(
     test/test_reload_clears_initialpose.py
   )
