@@ -263,21 +263,42 @@ class MapViewer {
 
   /**
    * Enable two-click pose tool (RViz-style).
-   * Phase 'position': click sets X/Y, then enters 'yaw' phase.
-   * Phase 'yaw': mousemove shows arrow preview, click sets yaw, then enters 'position' phase.
+   * Phase 'position': click previews position (orange circle) only — does NOT commit X/Y yet
+   *   (#269: 誤クリックで POI が動くのを防ぐ)、then enters 'yaw' phase.
+   * Phase 'yaw': mousemove shows arrow preview, click commits position + yaw together, then
+   *   enters 'position' phase. Escape cancels yaw phase (discards pending position).
    * @param {object} callbacks - { onPositionSet(x,y), onYawSet(yaw) }
    * @param {L.LatLng|null} initialLatLng - if provided, start in 'yaw' phase with this position
+   *   (新規 POI: 位置は placeNewPoi が確定済なので 2 クリック目は yaw のみ確定)
    */
   enablePoseTool(callbacks, initialLatLng) {
     this.disablePoseTool();
     this._poseTool = {
       phase: initialLatLng ? 'yaw' : 'position',
       startLatLng: initialLatLng || null,
+      // この tool session 内で位置をクリック選択したか (#269)。initialLatLng 開始 (新規 POI の
+      // yaw 選択) では位置は placeNewPoi が確定済なので false。position phase でのクリックで true。
+      positionPicked: false,
       circle: null,
       line: null,
       arrowHead: null,
       callbacks,
     };
+    // Escape で yaw 選択モードを解除する (#269)。map container はクリックしないとフォーカスを
+    // 持たないので、document に listen する。tool が active かつ yaw phase の時だけ作用させ、
+    // 他の Escape ハンドラ (modal 閉じる等) を妨げないよう preventDefault しない。
+    // 入力欄 (name / x / y 等) で編集中の Escape は pose キャンセルではなく入力操作なので、
+    // editable な target からの Escape は無視する (Cursor review #270 medium 対応)。
+    this._poseTool.keydownHandler = (e) => {
+      if (e.key !== 'Escape') return;
+      const t = e.target;
+      const tag = t && t.tagName ? t.tagName.toUpperCase() : '';
+      const isEditable = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+        || (t && t.isContentEditable);
+      if (isEditable) return;
+      this._cancelPoseToolYaw();
+    };
+    document.addEventListener('keydown', this._poseTool.keydownHandler);
     if (initialLatLng) {
       this._poseTool.circle = L.circleMarker(initialLatLng, {
         radius: 6, color: '#e67e22', fillColor: '#e67e22', fillOpacity: 0.8, weight: 2,
@@ -291,6 +312,9 @@ class MapViewer {
    */
   disablePoseTool() {
     if (!this._poseTool) return;
+    if (this._poseTool.keydownHandler) {
+      document.removeEventListener('keydown', this._poseTool.keydownHandler);
+    }
     this._clearPoseToolVisuals();
     this._poseTool = null;
     this.map.getContainer().style.cursor = '';
@@ -300,29 +324,52 @@ class MapViewer {
   _handlePoseToolClick(latlng) {
     const pt = this._poseTool;
     if (pt.phase === 'position') {
+      // 1 クリック目: 位置はまだ確定しない (#269)。誤クリックで POI が動くのを防ぐため、
+      // orange circle のプレビューを出すだけで form / marker は書き換えず yaw phase へ進む。
+      // positionPicked = true で「この session でクリック選択した位置」を記録し、2 クリック目で
+      // 位置 + 姿勢をまとめて確定する。新規 POI (initialLatLng で yaw phase 開始) では false の
+      // ままで、位置は placeNewPoi が確定済なので 2 クリック目は yaw のみ確定する。
       this._clearPoseToolVisuals();
       pt.startLatLng = latlng;
-      const world = this.latLngToWorld(latlng);
+      pt.positionPicked = true;
 
       pt.circle = L.circleMarker(latlng, {
         radius: 6, color: '#e67e22', fillColor: '#e67e22', fillOpacity: 0.8, weight: 2,
       }).addTo(this.map);
 
       pt.phase = 'yaw';
-      if (pt.callbacks.onPositionSet) {
-        pt.callbacks.onPositionSet(world.x, world.y);
-      }
     } else if (pt.phase === 'yaw') {
+      // 2 クリック目: 位置 (1 クリック目で選択していれば) + 姿勢を確定する (#269)。
       const start = pt.startLatLng;
       const yaw = Math.atan2(latlng.lat - start.lat, latlng.lng - start.lng);
+      const startWorld = this.latLngToWorld(start);
 
       this._clearPoseToolVisuals();
       pt.phase = 'position';
+      const committedPosition = pt.positionPicked;
+      pt.positionPicked = false;
 
+      if (committedPosition && pt.callbacks.onPositionSet) {
+        pt.callbacks.onPositionSet(startWorld.x, startWorld.y);
+      }
       if (pt.callbacks.onYawSet) {
         pt.callbacks.onYawSet(yaw);
       }
     }
+  }
+
+  /**
+   * yaw phase を中断して position phase に戻す (#269)。保留中の位置プレビューを破棄し、
+   * form / marker は一切変更しない (= 誤クリックの取り消し)。Escape から呼ばれる。
+   * @private
+   */
+  _cancelPoseToolYaw() {
+    const pt = this._poseTool;
+    if (!pt || pt.phase !== 'yaw') return;
+    this._clearPoseToolVisuals();
+    pt.startLatLng = null;
+    pt.positionPicked = false;
+    pt.phase = 'position';
   }
 
   /** @private */
