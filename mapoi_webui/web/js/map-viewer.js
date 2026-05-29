@@ -46,6 +46,12 @@ class MapViewer {
     this.robotRadiusM = 0.15;
 
     this.map.on('click', (e) => {
+      // 地図の空白クリックは POI ダブルクリック判別シーケンスを打ち切る (#240 review)。
+      // marker クリックは stopPropagation で map click を発火させないので、ここに来るのは
+      // 純粋な背景クリックのみ。これがないと「POI クリック → 空白クリック → 同一 POI を
+      // 300ms 内に再クリック」を誤ってダブルクリックと判定してしまう。
+      this._lastPoiClickIndex = -1;
+      this._lastPoiClickTime = 0;
       if (this._poseTool) {
         this._handlePoseToolClick(e.latlng);
         return;
