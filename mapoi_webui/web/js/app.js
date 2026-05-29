@@ -297,6 +297,14 @@
     mapViewer.highlightPoi(index);
   };
 
+  // 選択中 wedge POI の扇形ハンドルで yaw を回転 (#275)。dragend で working copy の yaw を
+  // 更新 (dirty) し、扇形・矢印を新 yaw で再描画 + ハンドルを正位置へ。確定は Save クリック。
+  mapViewer.onPoiYawDragEnd = (index, yaw) => {
+    poiEditor.updateDraggedYaw(index, yaw);
+    mapViewer.showPois(poiEditor.pois, poiEditor.visiblePois);
+    mapViewer.highlightPoi(index);
+  };
+
   // POI selection in list
   poiEditor.onSelectionChange = (index) => {
     mapViewer.highlightPoi(index);

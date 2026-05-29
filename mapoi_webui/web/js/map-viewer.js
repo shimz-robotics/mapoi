@@ -23,6 +23,7 @@ class MapViewer {
     this.onPoiClick = null;      // callback(index) — single click = select only
     this.onPoiDblClick = null;   // callback(index) — double click = open edit panel (#240)
     this.onPoiDragEnd = null;    // callback(index, worldX, worldY) — 選択中 POI をドラッグ移動 (#239)
+    this.onPoiYawDragEnd = null; // callback(index, yaw) — 扇形ハンドルで yaw 回転 (#275)
     this.onRouteClick = null;    // callback(routeIndex)
     // POI marker のシングル/ダブルクリック判別状態 (#240)。native 'dblclick' は使えない:
     // highlightPoi が単発クリックで setIcon により marker の DOM 要素を差し替えるため、
@@ -38,6 +39,11 @@ class MapViewer {
     // setPoiDraggingAllowed が再適用時に「どの marker を enable するか」判断するのに使う。
     this._poiDraggingAllowed = true;
     this._highlightedPoiIndex = -1;
+    // 扇形 (wedge) ドラッグで yaw 回転 (#275)。_poiWedgeByIndex は wedge POI の
+    // { layer(回転中に setLatLngs で追従), cx, cy, r, yawTol } を index 別に保持。
+    // _yawHandle は選択中 wedge POI の弧先端に出す回転ハンドル marker (1 個だけ)。
+    this._poiWedgeByIndex = {};
+    this._yawHandle = null;
     this._poseTool = null;       // pose tool state
     this._routePolylines = [];   // { line, hitLine, arrowMarkers, labelMarkers, routeIdx, color, latlngs } for click & highlight
     this._activeRouteIdx = -1;   // 現在 active な route index (highlightRoute で更新)
@@ -239,8 +245,9 @@ class MapViewer {
       if (!poi.pose) return;
       if (visibleSet && !visibleSet.has(index)) return;
 
-      // 扇形 (sector) を arrow icon の背景に描画 (#136)
-      this._drawSectorForPoi(poi);
+      // 扇形 (sector) を arrow icon の背景に描画 (#136)。index は wedge を回転ハンドルから
+      // setLatLngs で更新するための追跡に使う (#275)。
+      this._drawSectorForPoi(poi, index);
 
       const latlng = this.worldToLatLng(poi.pose.x, poi.pose.y);
       const color = this.getPoiColor(poi);
@@ -343,6 +350,8 @@ class MapViewer {
       // 選択中 marker だけドラッグ可 (#239)
       this._applyPoiDraggable(item, isHighlighted);
     });
+    // 選択中 wedge POI に yaw 回転ハンドルを出す (#275)
+    this._refreshYawHandle();
   }
 
   /**
@@ -370,6 +379,66 @@ class MapViewer {
     this.poiMarkers.forEach((item) => {
       this._applyPoiDraggable(item, item.index === this._highlightedPoiIndex);
     });
+    // yaw 回転ハンドルも同じ許可に従う (route 編集中は出さない) (#275)
+    this._refreshYawHandle();
+  }
+
+  /**
+   * 選択中 wedge POI の yaw 回転ハンドル (弧先端の marker) を出し直す (#275)。
+   * 既存ハンドルを除去し、(選択中 && ドラッグ許可 && wedge POI) の時だけ再生成する。
+   * disc (yaw 不問) や扇形のない POI は _poiWedgeByIndex に無いのでハンドルなし。
+   * @private
+   */
+  _refreshYawHandle() {
+    this._removeYawHandle();
+    const index = this._highlightedPoiIndex;
+    if (index < 0 || !this._poiDraggingAllowed) return;
+    const wedge = this._poiWedgeByIndex[index];
+    if (!wedge) return;
+    this._addYawHandle(index, wedge);
+  }
+
+  /** @private */
+  _removeYawHandle() {
+    if (this._yawHandle) {
+      this.map.removeLayer(this._yawHandle);
+      this._yawHandle = null;
+    }
+  }
+
+  /**
+   * 弧先端 (中心から yaw 方向に r) にドラッグ可能なハンドル marker を置く (#275)。
+   * drag 中: 中心 → ハンドル位置の角度を新 yaw とし、矢印 (updatePoiMarkerYaw) と
+   *   wedge polygon (setLatLngs) を live 追従。ハンドル自体はカーソル追従 (円上に拘束しない)。
+   * dragend: 確定 yaw を onPoiYawDragEnd で通知 (→ dirty + Save、再描画でハンドルは正位置へ)。
+   * @private
+   */
+  _addYawHandle(index, wedge) {
+    const item = this.poiMarkers.find((m) => m.index === index);
+    if (!item) return;
+    const yaw = item.yaw || 0;
+    const centerLL = this.worldToLatLng(wedge.cx, wedge.cy);
+    const tipLL = this.worldToLatLng(
+      wedge.cx + wedge.r * Math.cos(yaw), wedge.cy + wedge.r * Math.sin(yaw),
+    );
+    const svg = '<svg width="18" height="18" viewBox="0 0 18 18">'
+      + '<circle cx="9" cy="9" r="6" fill="#e67e22" fill-opacity="0.9" stroke="#fff" stroke-width="2"/>'
+      + '</svg>';
+    const icon = L.divIcon({
+      className: 'poi-yaw-handle', html: svg, iconSize: [18, 18], iconAnchor: [9, 9],
+    });
+    const handle = L.marker(tipLL, { icon, draggable: true, zIndexOffset: 1500 }).addTo(this.map);
+    const yawFrom = (ll) => Math.atan2(ll.lat - centerLL.lat, ll.lng - centerLL.lng);
+    handle.on('drag', () => {
+      const newYaw = yawFrom(handle.getLatLng());
+      this.updatePoiMarkerYaw(index, newYaw);
+      wedge.layer.setLatLngs(this._wedgePoints(wedge.cx, wedge.cy, wedge.r, newYaw, wedge.yawTol));
+    });
+    handle.on('dragend', () => {
+      const newYaw = yawFrom(handle.getLatLng());
+      if (this.onPoiYawDragEnd) this.onPoiYawDragEnd(index, newYaw);
+    });
+    this._yawHandle = handle;
   }
 
   /**
@@ -559,11 +628,32 @@ class MapViewer {
     // marker を全削除したので highlight 追跡もリセット (#239)。再描画後に highlightPoi が
     // 呼ばれれば再設定される。stale index で setPoiDraggingAllowed が誤判定するのを防ぐ。
     this._highlightedPoiIndex = -1;
+    // 扇形 layer も作り直されるので wedge 追跡と回転ハンドルもリセット (#275)。
+    // 再描画後の highlightPoi (_refreshYawHandle) でハンドルは再生成される。
+    this._poiWedgeByIndex = {};
+    this._removeYawHandle();
     // POI 扇形 layer も同時に clear (#136)
     if (this.sectorLayers) {
       this.sectorLayers.forEach((l) => this.map.removeLayer(l));
     }
     this.sectorLayers = [];
+  }
+
+  /**
+   * 扇形 (wedge) の polygon 頂点列を計算する (#275)。中心 → 弧 (yawCenter±yawTol) → 中心。
+   * 初期描画 (_drawSectorForPoi) と回転ハンドルドラッグ中の setLatLngs 追従の両方で使う。
+   * @private
+   */
+  _wedgePoints(cx, cy, r, yawCenter, yawTol) {
+    const totalAngle = 2 * yawTol;
+    const N = Math.max(8, Math.ceil(totalAngle / 0.1));
+    const startAngle = yawCenter - yawTol;
+    const pts = [this.worldToLatLng(cx, cy)];  // 中心点 → 弧 → 中心 (polygon で自動閉じる)
+    for (let i = 0; i <= N; i += 1) {
+      const a = startAngle + (totalAngle * i) / N;
+      pts.push(this.worldToLatLng(cx + r * Math.cos(a), cy + r * Math.sin(a)));
+    }
+    return pts;
   }
 
   /**
@@ -583,7 +673,7 @@ class MapViewer {
    * `crs` 依存の挙動を持つ一方、扇形は world 座標を `worldToLatLng` で変換して描画するため。
    * 同じ計算式で円と扇形の弧を生成すれば視覚的整合 (両者の弧が完全一致) が保証される。
    */
-  _drawSectorForPoi(poi) {
+  _drawSectorForPoi(poi, index) {
     if (!poi.pose) return;
     if (!poi.tolerance || typeof poi.tolerance.xy !== 'number' || poi.tolerance.xy <= 0) return;
 
@@ -626,17 +716,7 @@ class MapViewer {
     // 扇形 (yaw 制約): 0 < yaw < π の時に重ね描き (#179)。
     const fillOpacity = isWaypoint ? 0.25 : 0.10;  // waypoint=塗り、landmark=薄塗り (#179 ユーザー確認 2)
     if (hasYawConstraint) {
-      const totalAngle = 2 * yawTol;
-      const N = Math.max(8, Math.ceil(totalAngle / 0.1));
-      const startAngle = yawCenter - yawTol;
-      const centerLatLng = this.worldToLatLng(poi.pose.x, poi.pose.y);
-      const sectorPoints = [centerLatLng];  // 中心点 → 弧 → 中心 (polygon で自動閉じる)
-      for (let i = 0; i <= N; i += 1) {
-        const a = startAngle + (totalAngle * i) / N;
-        const wx = poi.pose.x + r * Math.cos(a);
-        const wy = poi.pose.y + r * Math.sin(a);
-        sectorPoints.push(this.worldToLatLng(wx, wy));
-      }
+      const sectorPoints = this._wedgePoints(poi.pose.x, poi.pose.y, r, yawCenter, yawTol);
       const sector = L.polygon(sectorPoints, {
         color,
         weight: 1,
@@ -647,6 +727,13 @@ class MapViewer {
       }).addTo(this.map);
       sector.bringToBack();
       this.sectorLayers.push(sector);
+      // wedge POI は回転ハンドル対象。layer + 幾何を index 別に保持し、ドラッグ中の
+      // setLatLngs 追従と、_refreshYawHandle でのハンドル位置算出に使う (#275)。
+      if (typeof index === 'number' && index >= 0) {
+        this._poiWedgeByIndex[index] = {
+          layer: sector, cx: poi.pose.x, cy: poi.pose.y, r, yawTol,
+        };
+      }
     } else if (isYawUnconstrained) {
       // yaw 不問 (yawTol >= π = 全方位): 扇形を省略すると xy 円の outline だけになり「描画され
       // ていない?」と誤認されるため、xy 円を塗りつぶした disc で「全方位 OK」を明示する (#267)。
