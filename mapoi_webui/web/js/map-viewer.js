@@ -50,8 +50,7 @@ class MapViewer {
       // marker クリックは stopPropagation で map click を発火させないので、ここに来るのは
       // 純粋な背景クリックのみ。これがないと「POI クリック → 空白クリック → 同一 POI を
       // 300ms 内に再クリック」を誤ってダブルクリックと判定してしまう。
-      this._lastPoiClickIndex = -1;
-      this._lastPoiClickTime = 0;
+      this._resetPoiClickTracking();
       if (this._poseTool) {
         this._handlePoseToolClick(e.latlng);
         return;
@@ -263,21 +262,38 @@ class MapViewer {
   }
 
   /**
+   * POI ダブルクリック判別 state をクリア (#240 review)。連続マーカークリック以外の操作
+   * (地図空白クリック / POI 一覧選択 / route 選択 / 再描画) で呼び、間に別操作を挟んだ
+   * 同一 POI 再クリックを誤ってダブルと判定しないようにする。_handlePoiClick は判定用の
+   * prev 値を callback 実行前に capture するため、選択経由 (highlightPoi) でこれが呼ばれても
+   * 本来のダブルクリック検出は壊れない。
+   * @private
+   */
+  _resetPoiClickTracking() {
+    this._lastPoiClickIndex = -1;
+    this._lastPoiClickTime = 0;
+  }
+
+  /**
    * POI marker クリックのシングル/ダブル判別 (#240)。
    * 単発 = 選択のみ (onPoiClick)、同一 index への 2 連クリックが _poiDblClickMs 以内なら
    * ダブル = 編集パネル (onPoiDblClick)。onPoiClick は毎回即時に呼ぶので選択の即応性は保たれ、
    * ダブル時は「選択 → 編集」と自然に遷移する (selectPoi は idempotent)。
    * native 'dblclick' を使わない理由は constructor の _lastPoiClickIndex コメント参照。
+   *
+   * 判定用 prev 値はコールバック実行前に capture する。onPoiClick → selectPoi → highlightPoi
+   * 経由で _resetPoiClickTracking が走っても、ここで掴んだ prev で判定するので検出は保たれる。
+   * 新 state は onPoiClick の後に書き、その reset を上書きして次クリックの判定用に残す。
    * @private
    */
   _handlePoiClick(index) {
-    if (this.onPoiClick) this.onPoiClick(index);
+    const prevIndex = this._lastPoiClickIndex;
+    const prevTime = this._lastPoiClickTime;
     const now = Date.now();
-    const isDouble = this._lastPoiClickIndex === index
-      && (now - this._lastPoiClickTime) < this._poiDblClickMs;
+    const isDouble = prevIndex === index && (now - prevTime) < this._poiDblClickMs;
+    if (this.onPoiClick) this.onPoiClick(index);
     if (isDouble) {
-      this._lastPoiClickIndex = -1;
-      this._lastPoiClickTime = 0;
+      this._resetPoiClickTracking();
       if (this.onPoiDblClick) this.onPoiDblClick(index);
     } else {
       this._lastPoiClickIndex = index;
@@ -289,6 +305,10 @@ class MapViewer {
    * Highlight a specific POI marker.
    */
   highlightPoi(index) {
+    // POI 選択 (一覧クリック / 選択再描画 / 可視性 toggle 等) はマーカー連続クリック以外の
+    // 操作なので判別 state をクリアする (#240 review)。マーカー経由のダブルクリックは
+    // _handlePoiClick が prev を capture 済みなので、ここで reset しても検出は保たれる。
+    this._resetPoiClickTracking();
     this.poiMarkers.forEach((item) => {
       const isHighlighted = item.index === index;
       const icon = this.createArrowIcon(item.color, item.yaw, isHighlighted);
@@ -763,6 +783,8 @@ class MapViewer {
 
       hitLine.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
+        // route 選択もマーカー連続クリック以外の操作なので判別 state をクリア (#240 review)。
+        this._resetPoiClickTracking();
         if (this.onRouteClick) this.onRouteClick(routeIdx);
       });
 
