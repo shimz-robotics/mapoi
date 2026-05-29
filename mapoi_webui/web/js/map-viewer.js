@@ -121,9 +121,9 @@ class MapViewer {
    */
   worldToLatLng(x, y) {
     const m = this.metadata;
-    const lng = (x - m.origin[0]) / m.resolution;
-    const lat = (y - m.origin[1]) / m.resolution;
-    return L.latLng(lat, lng);
+    // 等方スケールの座標変換は pure helper に委譲し単体テスト対象にする (#273)。
+    const ll = MapoiPoiInteractions.worldToLatLng(x, y, m.origin, m.resolution);
+    return L.latLng(ll.lat, ll.lng);
   }
 
   /**
@@ -131,10 +131,7 @@ class MapViewer {
    */
   latLngToWorld(latlng) {
     const m = this.metadata;
-    return {
-      x: latlng.lng * m.resolution + m.origin[0],
-      y: latlng.lat * m.resolution + m.origin[1],
-    };
+    return MapoiPoiInteractions.latLngToWorld(latlng.lat, latlng.lng, m.origin, m.resolution);
   }
 
   /**
@@ -315,18 +312,16 @@ class MapViewer {
    * @private
    */
   _handlePoiClick(index) {
-    const prevIndex = this._lastPoiClickIndex;
-    const prevTime = this._lastPoiClickTime;
-    const now = Date.now();
-    const isDouble = prevIndex === index && (now - prevTime) < this._poiDblClickMs;
+    // 判別コアは pure helper (#273)。prev はコールバック前に capture して渡すので、
+    // onPoiClick → highlightPoi 経由で追跡 state が reset されても判定は保たれる。
+    const r = MapoiPoiInteractions.classifyPoiClick(
+      this._lastPoiClickIndex, this._lastPoiClickTime, index, Date.now(), this._poiDblClickMs,
+    );
     if (this.onPoiClick) this.onPoiClick(index);
-    if (isDouble) {
-      this._resetPoiClickTracking();
-      if (this.onPoiDblClick) this.onPoiDblClick(index);
-    } else {
-      this._lastPoiClickIndex = index;
-      this._lastPoiClickTime = now;
-    }
+    if (r.isDouble && this.onPoiDblClick) this.onPoiDblClick(index);
+    // 追跡 state はコールバックの後に書き、reset を上書きして次クリックの判定基準に残す。
+    this._lastPoiClickIndex = r.nextIndex;
+    this._lastPoiClickTime = r.nextTime;
   }
 
   /**
@@ -428,7 +423,9 @@ class MapViewer {
       className: 'poi-yaw-handle', html: svg, iconSize: [18, 18], iconAnchor: [9, 9],
     });
     const handle = L.marker(tipLL, { icon, draggable: true, zIndexOffset: 1500 }).addTo(this.map);
-    const yawFrom = (ll) => Math.atan2(ll.lat - centerLL.lat, ll.lng - centerLL.lng);
+    const yawFrom = (ll) => MapoiPoiInteractions.yawFromDelta(
+      ll.lat - centerLL.lat, ll.lng - centerLL.lng,
+    );
     handle.on('drag', () => {
       const newYaw = yawFrom(handle.getLatLng());
       this.updatePoiMarkerYaw(index, newYaw);
@@ -640,20 +637,15 @@ class MapViewer {
   }
 
   /**
-   * 扇形 (wedge) の polygon 頂点列を計算する (#275)。中心 → 弧 (yawCenter±yawTol) → 中心。
-   * 初期描画 (_drawSectorForPoi) と回転ハンドルドラッグ中の setLatLngs 追従の両方で使う。
+   * 扇形 (wedge) の polygon 頂点列 (latlng) を計算する (#275)。中心 → 弧 (yawCenter±yawTol) → 中心。
+   * 幾何 (頂点数 / 角度範囲) は pure helper に切り出し単体テスト対象とし (#273)、ここでは
+   * world 座標を worldToLatLng で latlng へ変換するだけ。初期描画 (_drawSectorForPoi) と
+   * 回転ハンドルドラッグ中の setLatLngs 追従の両方で使う。
    * @private
    */
   _wedgePoints(cx, cy, r, yawCenter, yawTol) {
-    const totalAngle = 2 * yawTol;
-    const N = Math.max(8, Math.ceil(totalAngle / 0.1));
-    const startAngle = yawCenter - yawTol;
-    const pts = [this.worldToLatLng(cx, cy)];  // 中心点 → 弧 → 中心 (polygon で自動閉じる)
-    for (let i = 0; i <= N; i += 1) {
-      const a = startAngle + (totalAngle * i) / N;
-      pts.push(this.worldToLatLng(cx + r * Math.cos(a), cy + r * Math.sin(a)));
-    }
-    return pts;
+    return MapoiPoiInteractions.wedgePointsWorld(cx, cy, r, yawCenter, yawTol)
+      .map((p) => this.worldToLatLng(p.x, p.y));
   }
 
   /**
