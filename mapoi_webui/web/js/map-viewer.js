@@ -318,10 +318,12 @@ class MapViewer {
       this._lastPoiClickIndex, this._lastPoiClickTime, index, Date.now(), this._poiDblClickMs,
     );
     if (this.onPoiClick) this.onPoiClick(index);
-    if (r.isDouble && this.onPoiDblClick) this.onPoiDblClick(index);
-    // 追跡 state はコールバックの後に書き、reset を上書きして次クリックの判定基準に残す。
+    // 追跡 state は onPoiClick の後・onPoiDblClick の前に書く。onPoiClick (→ highlightPoi)
+    // が走らせる reset を上書きしつつ、旧実装と同じく onPoiDblClick より前に確定させる
+    // (ダブル時は (-1,0) に reset 済みとなり、dblClick ハンドラが例外を投げても state は残らない)。
     this._lastPoiClickIndex = r.nextIndex;
     this._lastPoiClickTime = r.nextTime;
+    if (r.isDouble && this.onPoiDblClick) this.onPoiDblClick(index);
   }
 
   /**
