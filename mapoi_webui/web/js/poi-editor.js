@@ -485,6 +485,22 @@ class PoiEditor {
   }
 
   /**
+   * 扇形ハンドルで回転した POI の yaw を working copy に反映 (#275)。position / tolerance /
+   * tags は不変。値は yaml 桁数 (POSE_YAW_DIGITS) に丸めて dirty にする (確定は Save —
+   * pose tool / #241 と一貫)。当該 POI を編集フォームで開いていれば Yaw 入力欄も同期。
+   */
+  updateDraggedYaw(index, yaw) {
+    const poi = this.pois[index];
+    if (!poi || !poi.pose) return;
+    poi.pose.yaw = MapoiPoiFilter.roundTo(yaw, MapoiPoiFilter.POSE_YAW_DIGITS);
+    if (this.editingIndex === index) {
+      this.inputYaw.value = poi.pose.yaw;
+    }
+    this.setDirty(true);
+    this.renderList();
+  }
+
+  /**
    * Update form X/Y from map click (when editing).
    */
   updateFormPosition(x, y) {
