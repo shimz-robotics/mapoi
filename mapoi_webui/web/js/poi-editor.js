@@ -18,6 +18,9 @@ class PoiEditor {
     this.onSelectionChange = null; // callback(index)
     this.onPlacingModeChange = null; // callback(isPlacing)
     this.onVisibilityChange = null;  // callback(visibleSet)
+    // 編集フォームの開閉 (#240)。開いたら app.js 側で他セクションを畳んでフォームに集中
+    // させ、閉じたら元の表示状態へ戻す。showForm/hideForm で必ず発火する。
+    this.onEditFormVisibilityChange = null; // callback(isOpen)
     // 409 受信時に app.js 側で全体 reload (loadMaps → loadPois/Routes) を発火させるためのフック。
     // poi-editor 単独では route-editor の state を巻き戻せないため、解決は呼び出し側に委ねる (#241)。
     this.onConflictReload = null;  // async callback() — full reload on version_mismatch
@@ -444,10 +447,23 @@ class PoiEditor {
 
   showForm() {
     this.formEl.classList.remove('hidden');
+    if (this.onEditFormVisibilityChange) this.onEditFormVisibilityChange(true);
   }
 
   hideForm() {
     this.formEl.classList.add('hidden');
+    if (this.onEditFormVisibilityChange) this.onEditFormVisibilityChange(false);
+  }
+
+  /**
+   * 編集フォームを閉じて編集モードを抜ける (#240)。formCancel と違い onSelectionChange は
+   * 呼ばない — 呼び出し側 (app.js) が直後に selectPoi で選択遷移を制御する前提。フォームの
+   * 未確定入力は破棄される (Cancel 相当)。
+   */
+  exitEditMode() {
+    if (this.editingIndex === -1) return;
+    this.editingIndex = -1;
+    this.hideForm();
   }
 
   /**

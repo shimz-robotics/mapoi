@@ -268,8 +268,23 @@
       }
       return;
     }
+    // 既存 POI の編集中に別 POI をシングルクリックしたら、編集モードを終了して
+    // その POI を選択するだけに切り替える (#240)。フォームの未確定入力は破棄される。
+    // 同じ POI を再クリックした時や新規 POI 配置中 (editingIndex === -2) は維持する。
+    if (poiEditor.editingIndex >= 0 && poiEditor.editingIndex !== index) {
+      poiEditor.exitEditMode();
+    }
     poiEditor.selectPoi(index);
     mapViewer.highlightPoi(index);
+  };
+
+  // POI marker double-click on map — open edit panel (#240)。
+  // シングルクリック = 選択のみ、ダブルクリック = 編集モード、と操作意図を分離して
+  // 意図しない編集突入を防ぐ。route 編集中は POI クリックが waypoint 追加なので、
+  // 編集パネルは開かず無視する (route 編集の流れを邪魔しない)。
+  mapViewer.onPoiDblClick = (index) => {
+    if (routeEditor.editingIndex !== -1) return;
+    poiEditor.editPoi(index);
   };
 
   // POI selection in list
@@ -380,25 +395,36 @@
     });
   }
 
+  // setupSectionToggle は { isOpen, setOpen } を返し、編集モード時のプログラム制御
+  // (collapseSectionsForEditing) からも開閉できるようにする (#240)。
   function setupSectionToggle(toggleBtnId, bodyEl, initialOpen = true) {
     const btn = document.getElementById(toggleBtnId);
     let open = initialOpen;
-    if (!open) {
-      bodyEl.style.display = 'none';
-      btn.innerHTML = '&#9654;';
-    }
-    btn.addEventListener('click', () => {
-      open = !open;
+    const apply = () => {
       bodyEl.style.display = open ? '' : 'none';
       btn.innerHTML = open ? '&#9660;' : '&#9654;';
+    };
+    apply();
+    btn.addEventListener('click', () => {
+      open = !open;
+      apply();
       refreshResponsiveLayout();
     });
+    return {
+      isOpen: () => open,
+      setOpen: (next) => {
+        if (open === next) return;
+        open = next;
+        apply();
+        refreshResponsiveLayout();
+      },
+    };
   }
 
   const compactInitial = compactMediaQuery.matches;
-  setupSectionToggle('btn-route-toggle', document.getElementById('route-body'), !compactInitial);
+  const routeToggle = setupSectionToggle('btn-route-toggle', document.getElementById('route-body'), !compactInitial);
   setupSectionToggle('btn-poi-toggle', document.getElementById('poi-body'), !compactInitial);
-  setupSectionToggle('btn-tag-toggle', document.getElementById('tag-body'), false);
+  const tagToggle = setupSectionToggle('btn-tag-toggle', document.getElementById('tag-body'), false);
   if (typeof compactMediaQuery.addEventListener === 'function') {
     compactMediaQuery.addEventListener('change', refreshResponsiveLayout);
   }
@@ -697,8 +723,39 @@
     updateNavStatus('canceled', '');
   });
 
-  setupSectionToggle('btn-nav-toggle', document.getElementById('nav-body'));
+  const navToggle = setupSectionToggle('btn-nav-toggle', document.getElementById('nav-body'));
   startNavStatusPolling();
+
+  // --- 編集モード時のセクション折りたたみ (#240) ---
+  // POI 編集フォームを開いたら他セクション (Navigation / Tags / Routes) を畳み、POI 一覧も
+  // 隠してフォームに集中させる (狭い sidebar で「非常に見づらい」状態の解消)。Save/Discard/
+  // Add は poi-toolbar に残るので編集継続・保存は可能。閉じたら元の開閉状態へ戻す。
+  const poiListEl = document.getElementById('poi-list');
+  let savedSectionStates = null;
+  function collapseSectionsForEditing() {
+    if (savedSectionStates) return; // 既に畳み済 (編集 POI 切替の二重呼び出し等) は状態を保持
+    savedSectionStates = {
+      nav: navToggle.isOpen(),
+      tag: tagToggle.isOpen(),
+      route: routeToggle.isOpen(),
+    };
+    navToggle.setOpen(false);
+    tagToggle.setOpen(false);
+    routeToggle.setOpen(false);
+    if (poiListEl) poiListEl.style.display = 'none';
+  }
+  function restoreSectionsAfterEditing() {
+    if (poiListEl) poiListEl.style.display = '';
+    if (!savedSectionStates) return; // 畳んでいない (初期 hideForm 等) なら何もしない
+    navToggle.setOpen(savedSectionStates.nav);
+    tagToggle.setOpen(savedSectionStates.tag);
+    routeToggle.setOpen(savedSectionStates.route);
+    savedSectionStates = null;
+  }
+  poiEditor.onEditFormVisibilityChange = (isOpen) => {
+    if (isOpen) collapseSectionsForEditing();
+    else restoreSectionsAfterEditing();
+  };
 
   // --- Initialize ---
   await loadMaps();
