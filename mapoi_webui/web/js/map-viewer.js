@@ -22,6 +22,7 @@ class MapViewer {
     this.onMapClick = null;      // callback(worldX, worldY)
     this.onPoiClick = null;      // callback(index) — single click = select only
     this.onPoiDblClick = null;   // callback(index) — double click = open edit panel (#240)
+    this.onPoiDragEnd = null;    // callback(index, worldX, worldY) — 選択中 POI をドラッグ移動 (#239)
     this.onRouteClick = null;    // callback(routeIndex)
     // POI marker のシングル/ダブルクリック判別状態 (#240)。native 'dblclick' は使えない:
     // highlightPoi が単発クリックで setIcon により marker の DOM 要素を差し替えるため、
@@ -31,6 +32,12 @@ class MapViewer {
     this._lastPoiClickIndex = -1;
     this._lastPoiClickTime = 0;
     this._poiDblClickMs = 300;
+    // 選択中の POI marker だけドラッグで position 移動可 (#239)。route 編集中は
+    // setPoiDraggingAllowed(false) で一時無効化し、waypoint 追加クリックと競合させない。
+    // _highlightedPoiIndex は現在 highlight 中 (= 選択中) の POI index を保持し、
+    // setPoiDraggingAllowed が再適用時に「どの marker を enable するか」判断するのに使う。
+    this._poiDraggingAllowed = true;
+    this._highlightedPoiIndex = -1;
     this._poseTool = null;       // pose tool state
     this._routePolylines = [];   // { line, hitLine, arrowMarkers, labelMarkers, routeIdx, color, latlngs } for click & highlight
     this._activeRouteIdx = -1;   // 現在 active な route index (highlightRoute で更新)
@@ -240,7 +247,10 @@ class MapViewer {
       const yaw = poi.pose.yaw || 0;
 
       const icon = this.createArrowIcon(color, yaw, false);
-      const marker = L.marker(latlng, { icon }).addTo(this.map);
+      // draggable: true で生成して drag ハンドラを用意するが既定は disable。選択された
+      // marker だけ highlightPoi (_applyPoiDraggable) が enable する (#239)。
+      const marker = L.marker(latlng, { icon, draggable: true }).addTo(this.map);
+      if (marker.dragging) marker.dragging.disable();
 
       marker.bindTooltip(poi.name || `POI ${index}`, {
         permanent: false,
@@ -255,6 +265,17 @@ class MapViewer {
       marker.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
         this._handlePoiClick(index);
+      });
+
+      // 選択中 POI のドラッグで position を移動 (#239)。ドラッグは click を発火させない
+      // (Leaflet が抑止) ので dblclick 判定とは独立。dragstart で判別 state を切り、dragend で
+      // 世界座標を通知する。確定は dirty + Save (auto-POST しない、pose tool / #241 と一貫)。
+      marker.on('dragstart', () => {
+        this._resetPoiClickTracking();
+      });
+      marker.on('dragend', () => {
+        const world = this.latLngToWorld(marker.getLatLng());
+        if (this.onPoiDragEnd) this.onPoiDragEnd(index, world.x, world.y);
       });
 
       this.poiMarkers.push({ marker, poi, index, color, yaw });
@@ -309,6 +330,7 @@ class MapViewer {
     // 操作なので判別 state をクリアする (#240 review)。マーカー経由のダブルクリックは
     // _handlePoiClick が prev を capture 済みなので、ここで reset しても検出は保たれる。
     this._resetPoiClickTracking();
+    this._highlightedPoiIndex = index;
     this.poiMarkers.forEach((item) => {
       const isHighlighted = item.index === index;
       const icon = this.createArrowIcon(item.color, item.yaw, isHighlighted);
@@ -318,6 +340,35 @@ class MapViewer {
       } else {
         item.marker.setZIndexOffset(0);
       }
+      // 選択中 marker だけドラッグ可 (#239)
+      this._applyPoiDraggable(item, isHighlighted);
+    });
+  }
+
+  /**
+   * 選択中 (highlighted) の POI marker だけドラッグ可能にする (#239)。_poiDraggingAllowed が
+   * false (route 編集中等) のときは選択中でも無効。setIcon で DOM 要素が差し替わっても
+   * Leaflet の dragging handler は marker に紐づくので enable/disable はそのまま効く。
+   * @private
+   */
+  _applyPoiDraggable(item, isHighlighted) {
+    if (!item.marker.dragging) return;
+    if (isHighlighted && this._poiDraggingAllowed) {
+      item.marker.dragging.enable();
+    } else {
+      item.marker.dragging.disable();
+    }
+  }
+
+  /**
+   * POI ドラッグ移動の全体許可を切り替える (#239)。route 編集中は false にして、
+   * waypoint 追加クリックと POI ドラッグの競合を防ぐ。現在の選択 marker に即反映する。
+   */
+  setPoiDraggingAllowed(allowed) {
+    if (this._poiDraggingAllowed === allowed) return;
+    this._poiDraggingAllowed = allowed;
+    this.poiMarkers.forEach((item) => {
+      this._applyPoiDraggable(item, item.index === this._highlightedPoiIndex);
     });
   }
 
@@ -505,6 +556,9 @@ class MapViewer {
       this.map.removeLayer(item.marker);
     });
     this.poiMarkers = [];
+    // marker を全削除したので highlight 追跡もリセット (#239)。再描画後に highlightPoi が
+    // 呼ばれれば再設定される。stale index で setPoiDraggingAllowed が誤判定するのを防ぐ。
+    this._highlightedPoiIndex = -1;
     // POI 扇形 layer も同時に clear (#136)
     if (this.sectorLayers) {
       this.sectorLayers.forEach((l) => this.map.removeLayer(l));

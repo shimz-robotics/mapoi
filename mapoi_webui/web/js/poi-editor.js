@@ -467,6 +467,24 @@ class PoiEditor {
   }
 
   /**
+   * Drag で移動した POI の position を working copy に反映 (#239)。yaw / tolerance / tags は
+   * 変更しない。値は yaml 桁数に丸めて dirty にする (確定は Save ボタン — pose tool / #241 と一貫)。
+   * 当該 POI を編集フォームで開いていれば X/Y 入力欄も同期する。
+   */
+  updateDraggedPosition(index, x, y) {
+    const poi = this.pois[index];
+    if (!poi || !poi.pose) return;
+    poi.pose.x = MapoiPoiFilter.roundTo(x, MapoiPoiFilter.POSE_XY_DIGITS);
+    poi.pose.y = MapoiPoiFilter.roundTo(y, MapoiPoiFilter.POSE_XY_DIGITS);
+    if (this.editingIndex === index) {
+      this.inputX.value = poi.pose.x;
+      this.inputY.value = poi.pose.y;
+    }
+    this.setDirty(true);
+    this.renderList();
+  }
+
+  /**
    * Update form X/Y from map click (when editing).
    */
   updateFormPosition(x, y) {

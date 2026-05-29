@@ -287,6 +287,16 @@
     poiEditor.editPoi(index);
   };
 
+  // 選択中 POI を地図上でドラッグして position 移動 (#239)。dragend で working copy の
+  // 座標を更新 (dirty) し、marker + tolerance 扇形を新位置で再描画。確定はユーザーの
+  // Save クリック (auto-POST しない)。drag した POI = 選択中 = 再 highlight 対象なので、
+  // showPois 後に highlightPoi で再強調 + ドラッグ可を復元する。
+  mapViewer.onPoiDragEnd = (index, x, y) => {
+    poiEditor.updateDraggedPosition(index, x, y);
+    mapViewer.showPois(poiEditor.pois, poiEditor.visiblePois);
+    mapViewer.highlightPoi(index);
+  };
+
   // POI selection in list
   poiEditor.onSelectionChange = (index) => {
     mapViewer.highlightPoi(index);
@@ -344,6 +354,8 @@
 
   // Route editing state change — redraw routes with editing preview
   routeEditor.onEditingChange = () => {
+    // route 編集中は POI ドラッグを無効化し、waypoint 追加クリックと競合させない (#239)。
+    mapViewer.setPoiDraggingAllowed(routeEditor.editingIndex === -1);
     redrawRoutes();
     // editRoute / copyRoute は selectedIndex を直接変えるが onSelectionChange を
     // 発火しないため、ここで highlightRoute を再適用して MapViewer 側の
