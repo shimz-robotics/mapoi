@@ -20,8 +20,17 @@ class MapViewer {
     this.tagColors = {};  // tag_name -> color, built from definitions
     this.robotMarker = null;     // Leaflet marker for robot position
     this.onMapClick = null;      // callback(worldX, worldY)
-    this.onPoiClick = null;      // callback(index)
+    this.onPoiClick = null;      // callback(index) — single click = select only
+    this.onPoiDblClick = null;   // callback(index) — double click = open edit panel (#240)
     this.onRouteClick = null;    // callback(routeIndex)
+    // POI marker のシングル/ダブルクリック判別状態 (#240)。native 'dblclick' は使えない:
+    // highlightPoi が単発クリックで setIcon により marker の DOM 要素を差し替えるため、
+    // ブラウザの「同一要素で 2 連クリック」条件が崩れて 'dblclick' が発火しない。連続 'click'
+    // の時間差で判定する。dirty 時は選択ごとに showPois が marker を作り直すので、marker
+    // closure ではなく MapViewer インスタンス側に状態を持って再生成をまたいで保持する。
+    this._lastPoiClickIndex = -1;
+    this._lastPoiClickTime = 0;
+    this._poiDblClickMs = 300;
     this._poseTool = null;       // pose tool state
     this._routePolylines = [];   // { line, hitLine, arrowMarkers, labelMarkers, routeIdx, color, latlngs } for click & highlight
     this._activeRouteIdx = -1;   // 現在 active な route index (highlightRoute で更新)
@@ -234,15 +243,40 @@ class MapViewer {
         offset: [0, -14],
       });
 
+      // シングルクリック = 選択のみ、ダブルクリック = 編集パネル (#240)。判別は
+      // _handlePoiClick で連続 click の時間差から行う (native 'dblclick' を使わない理由は
+      // constructor の _lastPoiClickIndex 周りのコメント参照)。map の onMapClick /
+      // doubleClickZoom に伝播しないよう stopPropagation する。
       marker.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
-        if (this.onPoiClick) {
-          this.onPoiClick(index);
-        }
+        this._handlePoiClick(index);
       });
 
       this.poiMarkers.push({ marker, poi, index, color, yaw });
     });
+  }
+
+  /**
+   * POI marker クリックのシングル/ダブル判別 (#240)。
+   * 単発 = 選択のみ (onPoiClick)、同一 index への 2 連クリックが _poiDblClickMs 以内なら
+   * ダブル = 編集パネル (onPoiDblClick)。onPoiClick は毎回即時に呼ぶので選択の即応性は保たれ、
+   * ダブル時は「選択 → 編集」と自然に遷移する (selectPoi は idempotent)。
+   * native 'dblclick' を使わない理由は constructor の _lastPoiClickIndex コメント参照。
+   * @private
+   */
+  _handlePoiClick(index) {
+    if (this.onPoiClick) this.onPoiClick(index);
+    const now = Date.now();
+    const isDouble = this._lastPoiClickIndex === index
+      && (now - this._lastPoiClickTime) < this._poiDblClickMs;
+    if (isDouble) {
+      this._lastPoiClickIndex = -1;
+      this._lastPoiClickTime = 0;
+      if (this.onPoiDblClick) this.onPoiDblClick(index);
+    } else {
+      this._lastPoiClickIndex = index;
+      this._lastPoiClickTime = now;
+    }
   }
 
   /**
