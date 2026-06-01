@@ -43,6 +43,19 @@ if(BUILD_TESTING)
     test/test_api_save_pois_version_conflict.py
     TIMEOUT 10
   )
+  # `get_navigation_capabilities` の subscriber 数→availability 統合契約 (#199)。
+  # resolver 単体 (test_resolve_backend_status_for_ui) と endpoint test の中間にある
+  # 「legacy fallback vs backend_status 上書き / localization 独立」を pin。
+  ament_add_pytest_test(test_get_navigation_capabilities
+    test/test_get_navigation_capabilities.py
+    TIMEOUT 10
+  )
+  # navigation API endpoint 契約 (#199): /api/nav/switch-map validation (400/404)、
+  # /api/mode・/api/nav/status の payload shape を Flask test_client で固定。
+  ament_add_pytest_test(test_api_nav_endpoints
+    test/test_api_nav_endpoints.py
+    TIMEOUT 10
+  )
 endif()
 
 ament_package()
