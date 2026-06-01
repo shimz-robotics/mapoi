@@ -143,3 +143,10 @@ const MapoiApi = {
     return res.json();
   },
 };
+
+// Browser は <script> の global として `MapoiApi` を参照する。
+// Node (vitest) からは `module.exports` 経由で require し、fetch 契約を検証する
+// (#199 / geometry.js・poi-interactions.js と同じ #129 dual export パターン)。
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = MapoiApi;
+}
