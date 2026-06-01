@@ -359,7 +359,7 @@ class MapViewer {
    */
   _applyPoiDraggable(item, isHighlighted) {
     if (!item.marker.dragging) return;
-    if (isHighlighted && this._poiDraggingAllowed) {
+    if (MapoiPoiInteractions.shouldEnablePoiDrag(isHighlighted, this._poiDraggingAllowed)) {
       item.marker.dragging.enable();
     } else {
       item.marker.dragging.disable();
@@ -389,9 +389,8 @@ class MapViewer {
   _refreshYawHandle() {
     this._removeYawHandle();
     const index = this._highlightedPoiIndex;
-    if (index < 0 || !this._poiDraggingAllowed) return;
     const wedge = this._poiWedgeByIndex[index];
-    if (!wedge) return;
+    if (!MapoiPoiInteractions.shouldShowYawHandle(index, this._poiDraggingAllowed, !!wedge)) return;
     this._addYawHandle(index, wedge);
   }
 
@@ -681,9 +680,10 @@ class MapViewer {
     const yawCenter = poi.pose.yaw || 0;
     const yawTol = (typeof poi.tolerance.yaw === 'number') ? poi.tolerance.yaw : 0;
     // 到達判定の角度差は [0, π] なので yawTol >= π は「yaw 不問 (全方位)」。0 < yawTol < π は
-    // 扇形 (wedge)、>= π は塗りつぶし円 (disc) で表す (#267)。
-    const hasYawConstraint = yawTol > 0 && yawTol < Math.PI;
-    const isYawUnconstrained = yawTol >= Math.PI;
+    // 扇形 (wedge)、>= π は塗りつぶし円 (disc) で表す (#267)。分類は pure helper に委譲 (#273)。
+    const yawKind = MapoiPoiInteractions.classifyYawTolerance(yawTol);
+    const hasYawConstraint = yawKind === 'wedge';
+    const isYawUnconstrained = yawKind === 'disc';
 
     const color = this.getPoiColor(poi);
 

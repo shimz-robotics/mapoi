@@ -133,6 +133,53 @@
     return Math.atan2(latDelta, lngDelta);
   }
 
+  /**
+   * POI marker をドラッグ可能にするかの判定 (#239)。選択中 (highlighted) かつ全体の
+   * ドラッグ許可 (route 編集中は false) の時だけ true。map-viewer.js の `_applyPoiDraggable`
+   * がこれに従って `marker.dragging.enable()/disable()` を呼ぶ。route 編集中は選択中でも
+   * 無効になり、waypoint 追加クリックと POI ドラッグの競合を防ぐ。
+   *
+   * @param {boolean} isHighlighted この marker が現在選択中か
+   * @param {boolean} draggingAllowed POI ドラッグの全体許可 (route 編集中は false)
+   * @returns {boolean}
+   */
+  function shouldEnablePoiDrag(isHighlighted, draggingAllowed) {
+    return Boolean(isHighlighted) && Boolean(draggingAllowed);
+  }
+
+  /**
+   * tolerance.yaw が表す到達角度制約の種別 (#267 / #275)。到達判定の角度差は [0, π] なので:
+   * - `0 < yawTol < π` → 'wedge' (扇形を描き、yaw 回転ハンドルの対象になる)
+   * - `yawTol >= π`    → 'disc'  (yaw 不問 = 全方位。塗りつぶし円で示し、ハンドルは出さない)
+   * - それ以外 (`yawTol <= 0` / NaN) → 'none' (xy 円 outline のみ、扇形なし)
+   *
+   * map-viewer.js の `_drawSectorForPoi` がこの分類で扇形 / disc / なしを描き分け、wedge の時だけ
+   * `_poiWedgeByIndex` に登録する (= `shouldShowYawHandle` の `hasWedge`)。
+   *
+   * @param {number} yawTol 片側 yaw tolerance (rad)
+   * @returns {'wedge' | 'disc' | 'none'}
+   */
+  function classifyYawTolerance(yawTol) {
+    if (yawTol > 0 && yawTol < Math.PI) return 'wedge';
+    if (yawTol >= Math.PI) return 'disc';
+    return 'none';
+  }
+
+  /**
+   * 選択中 POI に yaw 回転ハンドルを出すかの判定 (#275)。選択中 (index >= 0) かつ
+   * ドラッグ許可中かつ wedge POI (`classifyYawTolerance === 'wedge'` で `_poiWedgeByIndex` に
+   * 登録済) の 3 条件を満たす時だけ true。disc (yaw 不問) / 扇形なし / 未選択 / route 編集中は
+   * ハンドルを出さない。map-viewer.js の `_refreshYawHandle` がこれに従う。
+   *
+   * @param {number} highlightedIndex 選択中 POI の index (未選択は -1)
+   * @param {boolean} draggingAllowed POI ドラッグの全体許可 (route 編集中は false)
+   * @param {boolean} hasWedge 当該 POI に wedge (扇形) が登録されているか
+   * @returns {boolean}
+   */
+  function shouldShowYawHandle(highlightedIndex, draggingAllowed, hasWedge) {
+    return highlightedIndex >= 0 && Boolean(draggingAllowed) && Boolean(hasWedge);
+  }
+
   const api = {
     classifyPoiClick,
     wedgeVertexCount,
@@ -140,6 +187,9 @@
     worldToLatLng,
     latLngToWorld,
     yawFromDelta,
+    shouldEnablePoiDrag,
+    classifyYawTolerance,
+    shouldShowYawHandle,
   };
 
   if (typeof window !== 'undefined') {
