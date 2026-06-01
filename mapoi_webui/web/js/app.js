@@ -708,6 +708,48 @@
     navPollingTimer = setInterval(pollNavStatus, 1000);
   }
 
+  // Navigation プルダウン選択 → map 上で選択状態にする (#262)。
+  // プルダウンで POI / route を選んだら editor 選択経路 (selectPoi / selectRoute) に
+  // 流し込み、既存の onSelectionChange (→ highlightPoi/highlightRoute + syncNav*) に
+  // map ハイライトと dropdown 逆同期を委ねる。これで list / map / dropdown の選択 state を
+  // 単一ソース (poiEditor.selectedIndex / routeEditor.selectedIndex) で揃える。
+  // 空 ("-- Select --") は選択解除ではなく no-op とし現在の選択を維持する
+  // (Run/Go ボタンの `if (!name) return;` と同じく「未選択 = 操作しない」)。
+  function highlightPoiFromNav(name) {
+    if (!name) return;
+    const index = poiEditor.pois.findIndex((p) => p.name === name);
+    if (index < 0) return;
+    // 既に選択中なら再 render を避け、map ハイライトだけ確実に反映する。
+    if (index === poiEditor.selectedIndex) {
+      mapViewer.highlightPoi(index);
+      return;
+    }
+    poiEditor.selectPoi(index);
+  }
+
+  // goal POI / initial pose POI どちらの dropdown も同じ POI 選択経路を共有する
+  // (#111 の goal 欄 auto-fill もこの選択経由でそのまま効く)。
+  navGoalSelect.addEventListener('change', () => {
+    highlightPoiFromNav(navGoalSelect.value);
+  });
+  navInitialPoseSelect.addEventListener('change', () => {
+    highlightPoiFromNav(navInitialPoseSelect.value);
+  });
+
+  navRouteSelect.addEventListener('change', () => {
+    const name = navRouteSelect.value;
+    if (!name) return;
+    const index = routeEditor.routes.findIndex((r) => r.name === name);
+    if (index < 0) return;
+    // routeEditor.selectRoute は toggle (同 index 再選択で -1 解除)。dropdown 経由で
+    // 既選択 route を選び直した時に誤って解除しないよう、選択中なら highlight のみ。
+    if (index === routeEditor.selectedIndex) {
+      mapViewer.highlightRoute(index);
+      return;
+    }
+    routeEditor.selectRoute(index);
+  });
+
   document.getElementById('btn-nav-go').addEventListener('click', async () => {
     const name = navGoalSelect.value;
     if (!name) return;
