@@ -126,6 +126,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
         self.end_headers()
+        if self.command == "HEAD":
+            return  # HEAD は header のみ。stream loop に入らない (無限ループ回避)。
         try:
             self.wfile.write(b": connected\n\n")
             self.wfile.flush()

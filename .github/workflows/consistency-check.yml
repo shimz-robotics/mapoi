@@ -54,6 +54,7 @@ jobs:
     # jsdom 不可の Leaflet 直結部 + 全 js 200 配信を headless chromium で smoke (#284)。
     # 配信は ROS 非依存の Python モックサーバ (e2e/server/mock_server.py)。GL/GPU 不要。
     runs-on: ubuntu-latest
+    timeout-minutes: 15  # SSE 常時接続 / install のハング保険
     steps:
       - uses: actions/checkout@v4
 
@@ -80,7 +81,7 @@ jobs:
         working-directory: mapoi_webui/tests/web
 
       - name: Upload Playwright report
-        if: ${{ !cancelled() }}
+        if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report

@@ -10,9 +10,11 @@ async function loadApp(page) {
 }
 
 // POI 名の完全一致で card を返す。'poi_wedge' が 'poi_wedge2' に部分一致しないよう anchored regex。
+// 名前に regex メタ文字が来ても壊れないようエスケープする。
 function poiCard(page, name) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return page.locator('.poi-card').filter({
-    has: page.locator('.poi-card-name', { hasText: new RegExp(`^${name}$`) }),
+    has: page.locator('.poi-card-name', { hasText: new RegExp(`^${escaped}$`) }),
   });
 }
 
