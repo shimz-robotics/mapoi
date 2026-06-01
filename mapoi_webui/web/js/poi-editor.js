@@ -602,3 +602,12 @@ class PoiEditor {
     if (this.onVisibilityChange) this.onVisibilityChange(this.visiblePois);
   }
 }
+
+// Browser からは top-level の `PoiEditor` グローバルとして使い (app.js が `new PoiEditor()`)、
+// Node (vitest) からは `module.exports` 経由で import して jsdom 上で実体テストする (#273)。
+// ドラッグ反映 (updateDraggedPosition / updateDraggedYaw) や編集フォーム開閉
+// (showForm / hideForm / exitEditMode) は DOM / インスタンス依存で pure-helper に切り出せないため、
+// クラスごと export して最小 DOM harness 上で検証する。browser では module 未定義で no-op。
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = PoiEditor;
+}
