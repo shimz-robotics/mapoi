@@ -1,1 +1,7 @@
 node_modules/
+
+# Playwright e2e (#284) の生成物
+test-results/
+playwright-report/
+blob-report/
+.last-run.json
