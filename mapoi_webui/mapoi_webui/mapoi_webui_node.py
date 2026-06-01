@@ -661,9 +661,13 @@ class MapoiWebNode(Node):
         @app.route('/api/nav/switch-map', methods=['POST'])
         def api_nav_switch_map():
             data = request.get_json()
-            if not isinstance(data, dict) or 'map_name' not in data:
+            # map_name は文字列必須。非文字列 (null / 数値 / list 等) を str() で
+            # coerce すると `null` が literal 'None' になり、maps_path 未設定時の
+            # membership skip 経路でそのまま publish される潜在バグになる。別 client
+            # からの POST 保険として、型不正は coerce せず 400 で弾く (#199 follow-up)。
+            if not isinstance(data, dict) or not isinstance(data.get('map_name'), str):
                 return jsonify({'error': 'map_name required'}), 400
-            map_name = str(data['map_name']).strip()
+            map_name = data['map_name'].strip()
             if not map_name:
                 return jsonify({'error': 'map_name required'}), 400
             maps = node.get_maps_list()

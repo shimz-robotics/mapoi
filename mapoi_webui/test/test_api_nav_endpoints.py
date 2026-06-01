@@ -92,7 +92,24 @@ class TestApiNavSwitchMap(unittest.TestCase):
         node = _FakeNode(maps=['mapA'])
         resp = _client(node).post('/api/nav/switch-map', json={'map_name': '   '})
         self.assertEqual(resp.status_code, 400, resp.get_data(as_text=True))
+        self.assertIn('map_name', resp.get_json().get('error', ''))
         self.assertEqual(node.published, [])
+
+    def test_non_string_map_name_returns_400(self):
+        """非文字列 map_name は coerce せず 400 で弾く (#199 follow-up)。
+
+        旧実装は `str(data['map_name']).strip()` で coerce していたため、
+        `null` が literal 'None'、数値が '123' になり、maps_path 未設定時の
+        membership skip 経路でそのまま publish される潜在バグがあった。
+        """
+        for bad in (None, 123, 1.5, True, False, ['mapA'], {'name': 'mapA'}):
+            node = _FakeNode(maps=[])  # membership skip 経路でも publish させない
+            resp = _client(node).post('/api/nav/switch-map', json={'map_name': bad})
+            self.assertEqual(
+                resp.status_code, 400,
+                f'map_name={bad!r}: {resp.get_data(as_text=True)}')
+            self.assertIn('map_name', resp.get_json().get('error', ''))
+            self.assertEqual(node.published, [], f'map_name={bad!r} を publish した')
 
     def test_unknown_map_returns_404(self):
         node = _FakeNode(maps=['mapA', 'mapB'])
