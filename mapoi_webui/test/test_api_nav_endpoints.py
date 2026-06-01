@@ -102,7 +102,7 @@ class TestApiNavSwitchMap(unittest.TestCase):
         `null` が literal 'None'、数値が '123' になり、maps_path 未設定時の
         membership skip 経路でそのまま publish される潜在バグがあった。
         """
-        for bad in (None, 123, 1.5, True, ['mapA'], {'name': 'mapA'}):
+        for bad in (None, 123, 1.5, True, False, ['mapA'], {'name': 'mapA'}):
             node = _FakeNode(maps=[])  # membership skip 経路でも publish させない
             resp = _client(node).post('/api/nav/switch-map', json={'map_name': bad})
             self.assertEqual(
