@@ -14,10 +14,7 @@
   const navInitialPoseSelect = document.getElementById('nav-initialpose-select');
   const navStatusDot = document.getElementById('nav-status-dot');
   const navStatusText = document.getElementById('nav-status-text');
-  const navigationAvailability = document.getElementById('navigation-availability');
-  const navigationAvailabilityText = document.getElementById('navigation-availability-text');
-  const localizationAvailability = document.getElementById('localization-availability');
-  const localizationAvailabilityText = document.getElementById('localization-availability-text');
+  // navigation/localization availability 表示は nav-controls.js が id 解決して適用する (#199)。
   const navigationWarning = document.getElementById('navigation-warning');
   const compactMediaQuery = window.matchMedia('(max-width: 768px)');
   let currentMap = '';
@@ -442,9 +439,11 @@
   }
 
   const compactInitial = compactMediaQuery.matches;
-  const routeToggle = setupSectionToggle('btn-route-toggle', document.getElementById('route-body'), !compactInitial);
-  setupSectionToggle('btn-poi-toggle', document.getElementById('poi-body'), !compactInitial);
-  const tagToggle = setupSectionToggle('btn-tag-toggle', document.getElementById('tag-body'), false);
+  // compact viewport 初期表示で開く section は nav-controls.js に集約 (#199)。
+  const initialSections = MapoiNavControls.initialSectionOpenStates(compactInitial);
+  const routeToggle = setupSectionToggle('btn-route-toggle', document.getElementById('route-body'), initialSections.route);
+  setupSectionToggle('btn-poi-toggle', document.getElementById('poi-body'), initialSections.poi);
+  const tagToggle = setupSectionToggle('btn-tag-toggle', document.getElementById('tag-body'), initialSections.tag);
   if (typeof compactMediaQuery.addEventListener === 'function') {
     compactMediaQuery.addEventListener('change', refreshResponsiveLayout);
   }
@@ -538,96 +537,14 @@
   }
 
   function updateNavControlsAvailability(navigation) {
-    currentNavigationCapabilities = navigation || currentNavigationCapabilities;
-    const capabilities = currentNavigationCapabilities || {};
-    const backendStatus = capabilities.backend_status || null;
-    const localizationStatus = capabilities.localization_status || null;
-    const commandAvailable = !!capabilities.command_available;
-    const navigationAvailable = !!capabilities.navigation_available;
-    // backend_status が届いている場合 (#198) は backend_ready をそのまま操作 enable に使う。
-    // Minimal contract (#205 review) なので per-capability gate は持たず、navigation 操作 UI 全体を
-    // 一括 gate する。後方互換: backend_status 不在は subscriber 数 (command_available) で代用。
-    const navOperationsEnabled = backendStatus
-      ? !!backendStatus.backend_ready
-      : commandAvailable;
-    // localization_status は #209 で追加された別契約。Set Initial Pose UI は localization
-    // bridge の backend_ready で gate する。topic 不在 (= bridge 未起動 / editor 構成) は
-    // 安全側に disable し、operator が「ready 表示なし」と判断できるようにする。
-    const localizationAvailable = !!(localizationStatus && localizationStatus.backend_ready);
-    const navBody = document.getElementById('nav-body');
-    if (navBody) {
-      navBody.classList.toggle('navigation-unavailable-state', !navigationAvailable);
-    }
-
-    if (navigationAvailability && navigationAvailabilityText) {
-      navigationAvailability.className = 'navigation-availability '
-        + (navigationAvailable ? 'navigation-available' : 'navigation-unavailable');
-      navigationAvailabilityText.textContent = navigationAvailable
-        ? 'Navigation connected'
-        : 'Navigation unavailable';
-      const tooltipLines = [];
-      if (backendStatus) {
-        tooltipLines.push(`backend_type: ${backendStatus.backend_type || 'unknown'}`);
-        tooltipLines.push(`backend_ready: ${backendStatus.backend_ready}`);
-        if (backendStatus.reason) {
-          tooltipLines.push(`reason: ${backendStatus.reason}`);
-        }
-      } else {
-        const topics = capabilities.topics || {};
-        Object.values(topics).forEach((topic) => {
-          tooltipLines.push(`${topic.topic}: ${topic.subscribers}`);
-        });
-      }
-      navigationAvailability.title = tooltipLines.join('\n');
-    }
-
-    if (localizationAvailability && localizationAvailabilityText) {
-      // navigation 用の class 名 (.navigation-available/.navigation-unavailable) をそのまま流用して
-      // dot color の CSS を共有する。状態としては「localization bridge ready / unavailable / unknown」。
-      let cls = 'navigation-availability ';
-      let label;
-      if (!localizationStatus) {
-        cls += 'navigation-unknown';
-        label = 'Localization unknown';
-      } else if (localizationStatus.backend_ready) {
-        cls += 'navigation-available';
-        label = 'Localization connected';
-      } else {
-        cls += 'navigation-unavailable';
-        label = 'Localization unavailable';
-      }
-      localizationAvailability.className = cls;
-      localizationAvailabilityText.textContent = label;
-      const tooltipLines = [];
-      if (localizationStatus) {
-        tooltipLines.push(`backend_type: ${localizationStatus.backend_type || 'unknown'}`);
-        tooltipLines.push(`backend_ready: ${localizationStatus.backend_ready}`);
-        if (localizationStatus.reason) {
-          tooltipLines.push(`reason: ${localizationStatus.reason}`);
-        }
-      } else {
-        tooltipLines.push('mapoi/localization/backend_status not received yet');
-      }
-      localizationAvailability.title = tooltipLines.join('\n');
-    }
-
-    [
-      document.getElementById('btn-nav-go'),
-      document.getElementById('btn-nav-run'),
-      document.getElementById('btn-nav-pause'),
-      document.getElementById('btn-nav-resume'),
-      document.getElementById('btn-nav-stop'),
-    ].forEach((btn) => {
-      if (btn) btn.disabled = !navOperationsEnabled;
-    });
-    // Set Initial Pose は localization 側 (#209)。Initial Pose POI 選択も同 gate。
-    const initialPoseBtn = document.getElementById('btn-nav-setpose');
-    if (initialPoseBtn) initialPoseBtn.disabled = !localizationAvailable;
-    if (navInitialPoseSelect) navInitialPoseSelect.disabled = !localizationAvailable;
-
-    // Operator map switch も bridge を経由するため backend_ready で gate する。
-    // Editor 側の map dropdown (header の Map:) は `/api/maps/select` で bridge 不問。
-    if (navigationMapSelect) navigationMapSelect.disabled = !navOperationsEnabled;
+    // 状態派生・DOM 適用は nav-controls.js に切り出し済 (#199)。ここは closure state
+    // (currentNavigationCapabilities) の維持と responsive 再計算だけを担う。
+    currentNavigationCapabilities = MapoiNavControls.resolveCapabilities(
+      navigation,
+      currentNavigationCapabilities,
+    );
+    const state = MapoiNavControls.deriveNavControlsState(currentNavigationCapabilities);
+    MapoiNavControls.applyNavControlsState(state, document);
     refreshResponsiveLayout();
   }
 
@@ -646,16 +563,19 @@
     try {
       setNavigationWarning('');
       const result = await MapoiApi.navSwitchMap(mapName);
-      if (result.error) {
-        throw new Error(result.error);
-      }
-      if (result.warning) {
-        setNavigationWarning(result.warning);
+      // error / warning / switching の分岐は nav-controls.js の純関数に集約 (#199)。
+      const outcome = MapoiNavControls.decideMapSwitchOutcome(result);
+      if (outcome.kind !== 'switching') {
+        setNavigationWarning(outcome.message);
         if (navigationMapSelect) navigationMapSelect.value = currentMap;
+        // error は header の Map: も巻き戻す (両 select)。warning は navigation 側のみ。
+        if (outcome.revert === 'both' && mapSelect) mapSelect.value = currentMap;
         return;
       }
       updateNavStatus('map_switching', mapName);
     } catch (e) {
+      // fetch 自体の失敗 (network 等)。result.error 由来のメッセージ整形は
+      // decideMapSwitchOutcome 側と揃えてある。
       setNavigationWarning('Map switch failed: ' + e.message);
       if (navigationMapSelect) navigationMapSelect.value = currentMap;
       if (mapSelect) mapSelect.value = currentMap;
@@ -785,7 +705,7 @@
     updateNavStatus('canceled', '');
   });
 
-  const navToggle = setupSectionToggle('btn-nav-toggle', document.getElementById('nav-body'));
+  const navToggle = setupSectionToggle('btn-nav-toggle', document.getElementById('nav-body'), initialSections.nav);
   startNavStatusPolling();
 
   // --- 編集モード時のセクション折りたたみ (#240) ---

@@ -237,6 +237,9 @@
   <script src="/js/poi-editor.js"></script>
   <script src="/js/route-editor.js"></script>
   <script src="/js/sidebar-resizer.js"></script>
+  <!-- nav-controls.js は MapoiNavControls を window に attach する pure/DOM helper 群 (#199)。
+       app.js より前に読み込む (updateNavControlsAvailability / map switch / 初期 section で参照)。 -->
+  <script src="/js/nav-controls.js"></script>
   <script src="/js/app.js"></script>
 </body>
 </html>
