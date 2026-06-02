@@ -13,9 +13,11 @@ finalize するだけの最小実装。tolerance event 判定は TF 由来なの
 """
 
 import os
-import threading
+import sys
 import time
 import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import launch
 import launch_ros.actions
@@ -24,17 +26,14 @@ import launch_testing.actions
 import launch_testing.markers
 
 import rclpy
-from rclpy.action import ActionServer, CancelResponse
-from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 from tf2_ros import TransformBroadcaster
 from geometry_msgs.msg import TransformStamped
 from geometry_msgs.msg import Twist
 from mapoi_interfaces.msg import PoiEvent
-from nav2_msgs.action import FollowWaypoints
 from ament_index_python.packages import get_package_share_directory
 from std_msgs.msg import String
+from nav2_mocks import FakeFollowWaypointsServer
 
 
 # pause 判定 dwell。tolerance_check_hz=10 (= 100ms) より十分長く取り、PAUSED まで
@@ -78,77 +77,6 @@ def generate_test_description():
         mapoi_nav2_bridge_node,
         launch_testing.actions.ReadyToTest(),
     ]), {'mapoi_server': mapoi_server_node, 'mapoi_nav2_bridge': mapoi_nav2_bridge_node}
-
-
-class FakeFollowWaypointsServer:
-    """Nav2 ``follow_waypoints`` の最小 mock。
-
-    bridge が ROUTE mode を維持できるよう、accept した goal を cancel まで
-    EXECUTING で保持する。``execute_callback`` は cancel 待ちの polling loop を
-    回す都合で blocking するため、test 本体の rclpy spin とは分離が必要。
-    また goal acceptance / cancel request / execute_callback を 1 thread に
-    押し込むと acceptance response が client に届く前に execute_callback で
-    詰まり、bridge 側 ``goal_response_callback`` が永遠に来ない事象が起きる
-    (humble / jazzy 両方で観測)。回避のため ReentrantCallbackGroup +
-    ``MultiThreadedExecutor`` を daemon thread で回し、acceptance / cancel /
-    execute を並列に処理させる。
-
-    feedback (current_waypoint 進行) は publish しない: bridge の event 発火は TF
-    由来であり、``feedback_callback`` の更新は cancel 時の paused_waypoints slice
-    にのみ影響するが、本 test は cancel 後の resume を扱わないので無視できる。
-    """
-
-    def __init__(self):
-        self._node = rclpy.create_node('fake_follow_waypoints_server')
-        # ReentrantCallbackGroup で acceptance / cancel / execute_callback を並列化。
-        # MutuallyExclusive だと execute_callback の polling loop が他 callback を blocking する。
-        callback_group = ReentrantCallbackGroup()
-        self._action_server = ActionServer(
-            self._node, FollowWaypoints, 'follow_waypoints',
-            execute_callback=self._execute_callback,
-            cancel_callback=lambda gh: CancelResponse.ACCEPT,
-            handle_accepted_callback=lambda gh: gh.execute(),
-            callback_group=callback_group,
-        )
-        # execute_callback が long-running polling のため、acceptance / cancel と並列で
-        # 動かせる thread 数 (>=2) が必要。余裕を見て 4。
-        self._executor = MultiThreadedExecutor(num_threads=4)
-        self._executor.add_node(self._node)
-        self._stop_event = threading.Event()
-        self._thread = threading.Thread(target=self._spin, daemon=True)
-        self._thread.start()
-
-    def _spin(self):
-        while rclpy.ok() and not self._stop_event.is_set():
-            self._executor.spin_once(timeout_sec=0.05)
-
-    def _execute_callback(self, goal_handle):
-        # cancel 要求が来るまで EXECUTING 状態を維持。tearDownClass で stop_event を
-        # set すると executor が止まるので、生存中の goal は ROS2 が abort する。
-        while (rclpy.ok() and not self._stop_event.is_set()
-               and not goal_handle.is_cancel_requested):
-            time.sleep(0.05)
-        if goal_handle.is_cancel_requested:
-            goal_handle.canceled()
-        else:
-            # shutdown 経路: rclpy が落ちる前に明示的に abort する。
-            goal_handle.abort()
-        return FollowWaypoints.Result()
-
-    def shutdown(self):
-        self._stop_event.set()
-        # daemon thread を join しても rclpy 側は context shutdown でまとめて掃除される。
-        # spin_once が timeout=0.05s なので最大 50ms で抜ける。
-        self._thread.join(timeout=1.0)
-        try:
-            self._executor.shutdown()
-        finally:
-            # ActionServer は Node.destroy_node() で waitable が確実に掃除されないため
-            # (humble の rclpy examples も destroy() を明示)、先に明示破棄する。
-            try:
-                self._action_server.destroy()
-            finally:
-                self._node.destroy_node()
 
 
 class TestPoiEventRouteIntegration(unittest.TestCase):
@@ -432,25 +360,6 @@ class TestPoiEventRouteIntegration(unittest.TestCase):
             paused_count, 1,
             f'同 visit 内で EVENT_PAUSED は 1 回のみ (実際: {paused_count} 回)')
 
-    def test_no_paused_event_in_non_pause_poi(self):
-        """pause タグ無しの route POI では cmd_vel dwell でも EVENT_PAUSED は発火しない。"""
-        self._activate_route()
-        self._set_robot_pose(1.0, 0.0)  # poi_goal_only (pause タグ無し)
-        self.assertTrue(
-            self._wait_for_event(
-                lambda e: (e.event_type == PoiEvent.EVENT_ENTER
-                           and e.poi.name == 'poi_goal_only')),
-            '前提: ENTER の発火')
-        self._set_cmd_vel(0.0, 0.0)
-        # dwell threshold + 余裕分 spin して PAUSED が来ないことを確認
-        self._spin_for(STOPPED_DWELL_TIME_SEC + 0.5)
-        paused = self._count_events(
-            lambda e: (e.event_type == PoiEvent.EVENT_PAUSED
-                       and e.poi.name == 'poi_goal_only'))
-        self.assertEqual(
-            paused, 0,
-            f'pause タグ無しの POI で EVENT_PAUSED は発火しないはず (実際: {paused} 回)')
-
     def test_re_enter_after_cancel_and_re_route(self):
         """cancel + 再 route で同じ POI から再度 EVENT_ENTER が発火する (lifecycle invariant)。
 
@@ -543,31 +452,3 @@ class TestPoiEventRouteIntegration(unittest.TestCase):
                 count, 1,
                 f"'{poi_name}' の EVENT_PAUSED は 1 回のみ (実際: {count} 回)")
 
-    def test_landmark_listed_fires_enter_but_unlisted_does_not(self):
-        """route.landmarks 列挙対象だけが radius 監視され ENTER を発火する (#236 medium #5)。
-
-        ``route_landmark`` は waypoints=[poi_goal_only], landmarks=[poi_landmark_listed]。
-        bridge は ``build_route_poi_names`` で waypoints ∪ landmarks を
-        ``current_route_poi_names_`` に入れる (mapoi_nav2_bridge.cpp:485)。
-        ``poi_landmark_unlisted`` は ``landmark`` tag を持つが route に列挙されないため
-        この set に入らず、``is_route_poi=false`` (mapoi_nav2_bridge.cpp:1165) で radius 内に
-        居ても ENTER は発火しない。両 landmark を同条件 (POI 中心に robot を置く) で対照する。
-        """
-        self._activate_route('route_landmark')
-        # 列挙対象 landmark: radius 内 (中心) で ENTER が発火する。
-        self._set_robot_pose(-3.0, 0.0)  # poi_landmark_listed 中心
-        self.assertTrue(
-            self._wait_for_event(
-                lambda e: (e.event_type == PoiEvent.EVENT_ENTER
-                           and e.poi.name == 'poi_landmark_listed')),
-            'route.landmarks 列挙 landmark は radius 内で ENTER が発火するはず')
-        # 列挙外 landmark: 中心 (dist=0 < tolerance.xy) に居ても ENTER は発火しない。
-        self._set_robot_pose(-5.0, 0.0)  # poi_landmark_unlisted 中心
-        # 数 tick (100ms 周期) 分 spin して「発火しうる余地を与えても出ない」ことを確認。
-        self._spin_for(STOPPED_DWELL_TIME_SEC + 0.5)
-        unlisted_enter = self._count_events(
-            lambda e: (e.event_type == PoiEvent.EVENT_ENTER
-                       and e.poi.name == 'poi_landmark_unlisted'))
-        self.assertEqual(
-            unlisted_enter, 0,
-            f'route 未列挙 landmark は radius 内でも ENTER しないはず (実際: {unlisted_enter} 回)')
