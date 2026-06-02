@@ -408,6 +408,8 @@ private:
   FRIEND_TEST(Nav2BridgeTestFixture, ClassifyRadiusTransitionExitWithHysteresis);
   FRIEND_TEST(Nav2BridgeTestFixture, ClassifyRadiusTransitionStaysInsideHysteresisBand);
   FRIEND_TEST(Nav2BridgeTestFixture, ClassifyRadiusTransitionStaysOutside);
+  FRIEND_TEST(Nav2BridgeTestFixture, ClassifyRadiusTransitionEnterAtBoundary);
+  FRIEND_TEST(Nav2BridgeTestFixture, ClassifyRadiusTransitionExitAtBoundary);
 #endif
 };
 

@@ -180,6 +180,21 @@ TEST_F(Nav2BridgeTestFixture, ClassifyRadiusTransitionStaysOutside)
             MapoiNav2Bridge::RadiusTransition::NONE);
 }
 
+TEST_F(Nav2BridgeTestFixture, ClassifyRadiusTransitionEnterAtBoundary)
+{
+  // dist == tolerance.xy は ENTER (ENTER 条件は <=)。到達判定の境界 (<=) と対称。
+  EXPECT_EQ(MapoiNav2Bridge::classify_radius_transition(false, 0.5, 0.5, 1.15),
+            MapoiNav2Bridge::RadiusTransition::ENTER);
+}
+
+TEST_F(Nav2BridgeTestFixture, ClassifyRadiusTransitionExitAtBoundary)
+{
+  // dist == tolerance.xy * hysteresis (0.575) は EXIT ではなく NONE (EXIT 条件は厳密 >)。
+  // 閾値ちょうどは内側維持 = ばたつき防止のヒステリシス境界を pin する。
+  EXPECT_EQ(MapoiNav2Bridge::classify_radius_transition(true, 0.5 * 1.15, 0.5, 1.15),
+            MapoiNav2Bridge::RadiusTransition::NONE);
+}
+
 TEST_F(Nav2BridgeTestFixture, RebuildEventPoisIncludesAllPois)
 {
   {
