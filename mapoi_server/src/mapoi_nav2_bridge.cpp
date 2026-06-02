@@ -1384,7 +1384,7 @@ void MapoiNav2Bridge::tolerance_check_callback()
       if (goal_mode && !goal_radius_yaw_arrival && poi.name == goal_target_name) {
         const double yaw_diff =
           angle_diff_abs(r_yaw, yaw_from_quaternion(poi.pose.orientation));
-        if (dist <= poi.tolerance.xy && yaw_diff <= poi.tolerance.yaw) {
+        if (is_within_arrival_tolerance(dist, yaw_diff, poi.tolerance.xy, poi.tolerance.yaw)) {
           goal_radius_yaw_arrival = true;
         }
       }
@@ -1392,7 +1392,7 @@ void MapoiNav2Bridge::tolerance_check_callback()
       if (mapoi_mode && !route_waypoint_arrival && poi.name == mapoi_target_wp_name) {
         const double yaw_diff =
           angle_diff_abs(r_yaw, yaw_from_quaternion(poi.pose.orientation));
-        if (dist <= poi.tolerance.xy && yaw_diff <= poi.tolerance.yaw) {
+        if (is_within_arrival_tolerance(dist, yaw_diff, poi.tolerance.xy, poi.tolerance.yaw)) {
           route_waypoint_arrival = true;
         }
       }
@@ -1412,8 +1412,10 @@ void MapoiNav2Bridge::tolerance_check_callback()
       }
 
       bool was_inside = poi_inside_state_[poi.name];
+      const RadiusTransition transition =
+        classify_radius_transition(was_inside, dist, poi.tolerance.xy, hysteresis);
 
-      if (!was_inside && dist <= poi.tolerance.xy) {
+      if (transition == RadiusTransition::ENTER) {
         // ENTER event
         poi_inside_state_[poi.name] = true;
         mapoi_interfaces::msg::PoiEvent event;
@@ -1431,7 +1433,7 @@ void MapoiNav2Bridge::tolerance_check_callback()
         if (is_pause_poi && waypoint_arrival_mode_ != "mapoi") {
           pause_triggered_poi = poi.name;
         }
-      } else if (was_inside && dist > poi.tolerance.xy * hysteresis) {
+      } else if (transition == RadiusTransition::EXIT) {
         // EXIT event
         poi_inside_state_[poi.name] = false;
         // PAUSED 発火済 flag も EXIT で reset (#220 lifecycle: ENTER → [PAUSED] → EXIT)
@@ -1524,6 +1526,28 @@ double MapoiNav2Bridge::angle_diff_abs(double a, double b)
   // (例: a=3.0, b=-3.0 の差は 6.0 ではなく ~0.283)。
   const double d = a - b;
   return std::abs(std::atan2(std::sin(d), std::cos(d)));
+}
+
+bool MapoiNav2Bridge::is_within_arrival_tolerance(
+  double dist, double yaw_diff, double tolerance_xy, double tolerance_yaw)
+{
+  // 統一到達判定 (#265 OR トリガ a): 距離が tolerance.xy 内、かつ yaw 差が tolerance.yaw 内。
+  // route 中間 waypoint / 最終 goal / 単発 Go すべて同一式 (#265 で末尾特別扱いを廃止)。
+  return dist <= tolerance_xy && yaw_diff <= tolerance_yaw;
+}
+
+MapoiNav2Bridge::RadiusTransition MapoiNav2Bridge::classify_radius_transition(
+  bool was_inside, double dist, double tolerance_xy, double hysteresis_multiplier)
+{
+  // ENTER: 外→radius 進入。EXIT: 内→radius を hysteresis 倍超で離脱 (ばたつき防止)。
+  // hysteresis band (tolerance.xy < dist <= tolerance.xy * hysteresis) では内側維持 = NONE。
+  if (!was_inside && dist <= tolerance_xy) {
+    return RadiusTransition::ENTER;
+  }
+  if (was_inside && dist > tolerance_xy * hysteresis_multiplier) {
+    return RadiusTransition::EXIT;
+  }
+  return RadiusTransition::NONE;
 }
 
 // --- STOPPED / RESUMED 判定 (#140) ---

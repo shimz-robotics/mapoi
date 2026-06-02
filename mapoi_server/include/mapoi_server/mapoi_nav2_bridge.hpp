@@ -48,6 +48,9 @@ public:
 
   enum class NavMode { IDLE, GOAL, ROUTE };
 
+// POI radius のヒステリシス遷移 (#220)。classify_radius_transition の戻り値。
+enum class RadiusTransition { NONE, ENTER, EXIT };
+
   explicit MapoiNav2Bridge(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
 private:
@@ -339,6 +342,18 @@ private:
     NavMode nav_mode,
     const std::unordered_set<std::string> & active_route_poi_names);
 
+  // 統一到達判定 (#265 OR トリガ a) を pure 化した純関数。route 中間 waypoint /
+  // 最終 goal / 単発 Go すべてこの 1 式 (dist <= tolerance.xy ∧ yaw_diff <= tolerance.yaw)
+  // で判定する。dist は distance_2d、yaw_diff は angle_diff_abs(r_yaw, poi_yaw) の結果を渡す。
+  static bool is_within_arrival_tolerance(
+    double dist, double yaw_diff, double tolerance_xy, double tolerance_yaw);
+
+  // POI radius の ENTER/EXIT ヒステリシス遷移を pure 判定する純関数 (#220)。
+  // ENTER: !was_inside ∧ dist <= tolerance.xy / EXIT: was_inside ∧ dist > tolerance.xy * hysteresis。
+  // どちらでもなければ NONE。発火 (state 書換・publish) は呼び出し側に残す。
+  static RadiusTransition classify_radius_transition(
+    bool was_inside, double dist, double tolerance_xy, double hysteresis_multiplier);
+
 #ifdef UNIT_TEST
   friend class Nav2BridgeTestFixture;
   FRIEND_TEST(Nav2BridgeTestFixture, DistanceCalculation);
@@ -384,6 +399,15 @@ private:
   FRIEND_TEST(Nav2BridgeTestFixture, ConstructorAutoParamJazzyCreatesStampedSub);
   FRIEND_TEST(Nav2BridgeTestFixture, ConstructorAutoParamHumbleCreatesTwistSub);
   FRIEND_TEST(Nav2BridgeTestFixture, ConstructorAutoParamUnsetDistroCreatesStampedSub);
+  FRIEND_TEST(Nav2BridgeTestFixture, IsWithinArrivalToleranceXyAndYawInside);
+  FRIEND_TEST(Nav2BridgeTestFixture, IsWithinArrivalToleranceYawOff);
+  FRIEND_TEST(Nav2BridgeTestFixture, IsWithinArrivalToleranceXyOff);
+  FRIEND_TEST(Nav2BridgeTestFixture, IsWithinArrivalToleranceBoundaryXy);
+  FRIEND_TEST(Nav2BridgeTestFixture, IsWithinArrivalToleranceBoundaryYaw);
+  FRIEND_TEST(Nav2BridgeTestFixture, ClassifyRadiusTransitionEnter);
+  FRIEND_TEST(Nav2BridgeTestFixture, ClassifyRadiusTransitionExitWithHysteresis);
+  FRIEND_TEST(Nav2BridgeTestFixture, ClassifyRadiusTransitionStaysInsideHysteresisBand);
+  FRIEND_TEST(Nav2BridgeTestFixture, ClassifyRadiusTransitionStaysOutside);
 #endif
 };
 

@@ -120,6 +120,66 @@ TEST_F(Nav2BridgeTestFixture, AngleDiffAbsSymmetric)
               MapoiNav2Bridge::angle_diff_abs(1.1, 0.3), 1e-9);
 }
 
+// --- is_within_arrival_tolerance (#265 統一到達判定の pure 化、launch_test 降格分) ---
+// route 中間 waypoint / 最終 goal / 単発 Go の到達判定 (OR トリガ a) をここで直接検証する。
+// 旧 launch_test (route_mapoi / goal_mapoi の radius+yaw 判定) の核をこの unit が代替する。
+TEST_F(Nav2BridgeTestFixture, IsWithinArrivalToleranceXyAndYawInside)
+{
+  EXPECT_TRUE(MapoiNav2Bridge::is_within_arrival_tolerance(0.3, 0.1, 0.5, 0.785));
+}
+
+TEST_F(Nav2BridgeTestFixture, IsWithinArrivalToleranceYawOff)
+{
+  // xy 内だが yaw 外 → 未到達 (Nav2 SUCCEEDED = OR トリガ b を待つ)。
+  EXPECT_FALSE(MapoiNav2Bridge::is_within_arrival_tolerance(0.3, M_PI, 0.5, 0.785));
+}
+
+TEST_F(Nav2BridgeTestFixture, IsWithinArrivalToleranceXyOff)
+{
+  // yaw 内だが xy 外 → 未到達。
+  EXPECT_FALSE(MapoiNav2Bridge::is_within_arrival_tolerance(2.0, 0.0, 0.5, 0.785));
+}
+
+TEST_F(Nav2BridgeTestFixture, IsWithinArrivalToleranceBoundaryXy)
+{
+  // dist == tolerance.xy は到達 (<=)。
+  EXPECT_TRUE(MapoiNav2Bridge::is_within_arrival_tolerance(0.5, 0.0, 0.5, 0.785));
+}
+
+TEST_F(Nav2BridgeTestFixture, IsWithinArrivalToleranceBoundaryYaw)
+{
+  // yaw_diff == tolerance.yaw は到達 (<=)。
+  EXPECT_TRUE(MapoiNav2Bridge::is_within_arrival_tolerance(0.3, 0.785, 0.5, 0.785));
+}
+
+// --- classify_radius_transition (#220 ENTER/EXIT ヒステリシスの pure 化) ---
+// 旧 launch_test (route_integration の ENTER/EXIT) の判定核をこの unit が代替する。
+TEST_F(Nav2BridgeTestFixture, ClassifyRadiusTransitionEnter)
+{
+  EXPECT_EQ(MapoiNav2Bridge::classify_radius_transition(false, 0.3, 0.5, 1.15),
+            MapoiNav2Bridge::RadiusTransition::ENTER);
+}
+
+TEST_F(Nav2BridgeTestFixture, ClassifyRadiusTransitionExitWithHysteresis)
+{
+  // 内→hysteresis 倍 (0.5*1.15=0.575) を超えて離脱 → EXIT。
+  EXPECT_EQ(MapoiNav2Bridge::classify_radius_transition(true, 0.6, 0.5, 1.15),
+            MapoiNav2Bridge::RadiusTransition::EXIT);
+}
+
+TEST_F(Nav2BridgeTestFixture, ClassifyRadiusTransitionStaysInsideHysteresisBand)
+{
+  // 内かつ tolerance.xy < dist <= tolerance.xy*hysteresis (0.5 < 0.55 <= 0.575) → NONE (ばたつき防止)。
+  EXPECT_EQ(MapoiNav2Bridge::classify_radius_transition(true, 0.55, 0.5, 1.15),
+            MapoiNav2Bridge::RadiusTransition::NONE);
+}
+
+TEST_F(Nav2BridgeTestFixture, ClassifyRadiusTransitionStaysOutside)
+{
+  EXPECT_EQ(MapoiNav2Bridge::classify_radius_transition(false, 1.0, 0.5, 1.15),
+            MapoiNav2Bridge::RadiusTransition::NONE);
+}
+
 TEST_F(Nav2BridgeTestFixture, RebuildEventPoisIncludesAllPois)
 {
   {

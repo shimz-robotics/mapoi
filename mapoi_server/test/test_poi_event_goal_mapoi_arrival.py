@@ -17,9 +17,11 @@ mock は `navigate_to_pose` action server。受理した goal を cancel まで 
 
 import math
 import os
-import threading
+import sys
 import time
 import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import launch
 import launch_ros.actions
@@ -28,15 +30,12 @@ import launch_testing.actions
 import launch_testing.markers
 
 import rclpy
-from rclpy.action import ActionServer, CancelResponse
-from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 from tf2_ros import TransformBroadcaster
 from geometry_msgs.msg import TransformStamped
-from nav2_msgs.action import NavigateToPose
 from ament_index_python.packages import get_package_share_directory
 from std_msgs.msg import String
+from nav2_mocks import FakeNavigateToPoseServer
 
 
 @launch_testing.markers.keep_alive
@@ -76,77 +75,6 @@ def generate_test_description():
     ]), {'mapoi_server': mapoi_server_node, 'mapoi_nav2_bridge': mapoi_nav2_bridge_node}
 
 
-class FakeNavigateToPoseServer:
-    """`navigate_to_pose` の最小 mock (route mapoi arrival test と同方針)。
-
-    受理 goal の (x, y) を順に記録し、cancel まで EXECUTING で保持する。
-    `succeed_current_goal()` で実行中の goal を SUCCEEDED finalize する (OR トリガ b 用途)。
-    """
-
-    def __init__(self):
-        self._node = rclpy.create_node('fake_navigate_to_pose_server_goal')
-        callback_group = ReentrantCallbackGroup()
-        self._action_server = ActionServer(
-            self._node, NavigateToPose, 'navigate_to_pose',
-            execute_callback=self._execute_callback,
-            cancel_callback=lambda gh: CancelResponse.ACCEPT,
-            handle_accepted_callback=lambda gh: gh.execute(),
-            callback_group=callback_group,
-        )
-        self._executor = MultiThreadedExecutor(num_threads=4)
-        self._executor.add_node(self._node)
-        self._stop_event = threading.Event()
-        self._succeed_event = threading.Event()
-        self._lock = threading.Lock()
-        self._goals_xy = []
-        self._thread = threading.Thread(target=self._spin, daemon=True)
-        self._thread.start()
-
-    def _spin(self):
-        while rclpy.ok() and not self._stop_event.is_set():
-            self._executor.spin_once(timeout_sec=0.05)
-
-    def _execute_callback(self, goal_handle):
-        p = goal_handle.request.pose.pose.position
-        with self._lock:
-            self._goals_xy.append((p.x, p.y))
-        while (rclpy.ok() and not self._stop_event.is_set()
-               and not goal_handle.is_cancel_requested
-               and not self._succeed_event.is_set()):
-            time.sleep(0.05)
-        if goal_handle.is_cancel_requested:
-            goal_handle.canceled()
-        elif self._succeed_event.is_set():
-            self._succeed_event.clear()
-            goal_handle.succeed()
-        else:
-            goal_handle.abort()
-        return NavigateToPose.Result()
-
-    def succeed_current_goal(self):
-        self._succeed_event.set()
-
-    def goals_xy(self):
-        with self._lock:
-            return list(self._goals_xy)
-
-    def reset(self):
-        self._succeed_event.clear()
-        with self._lock:
-            self._goals_xy.clear()
-
-    def shutdown(self):
-        self._stop_event.set()
-        self._thread.join(timeout=1.0)
-        try:
-            self._executor.shutdown()
-        finally:
-            try:
-                self._action_server.destroy()
-            finally:
-                self._node.destroy_node()
-
-
 class TestPoiEventGoalMapoiArrival(unittest.TestCase):
     """mapoi モードでの単発 Go 到達判定 (#261) を pin する。"""
 
@@ -183,7 +111,7 @@ class TestPoiEventGoalMapoiArrival(unittest.TestCase):
         cls._tf_timer = cls.node.create_timer(
             cls.TF_PUBLISH_INTERVAL, cls._tf_publish_callback)
 
-        cls.fake_server = FakeNavigateToPoseServer()
+        cls.fake_server = FakeNavigateToPoseServer(node_name='fake_navigate_to_pose_server_goal')
 
     @classmethod
     def tearDownClass(cls):
@@ -298,28 +226,3 @@ class TestPoiEventGoalMapoiArrival(unittest.TestCase):
             self._wait_for_nav_status('succeeded'),
             'radius + yaw 一致で Nav2 SUCCEEDED を待たず succeeded になるはず')
 
-    def test_goal_not_completed_on_radius_with_wrong_yaw(self):
-        """tolerance.xy 内でも姿勢が tolerance.yaw 超なら radius では完了せず Nav2 SUCCEEDED を待つ。"""
-        # 位置は一致だが yaw を π (≒180°、tolerance.yaw=0.785 を大きく超える) にする。
-        self._set_robot_pose(*self.GOAL_XY, math.pi)
-        self._activate_goal(self.GOAL_POI)
-        self.assertFalse(
-            self._wait_for_nav_status('succeeded', timeout_sec=0.8),
-            'yaw 不一致では radius だけで succeeded にならないはず (Nav2 完走待ち)')
-        # mock が SUCCEEDED にすると完了 (OR トリガ b)。
-        self.fake_server.succeed_current_goal()
-        self.assertTrue(
-            self._wait_for_nav_status('succeeded'),
-            'Nav2 SUCCEEDED で Go が succeeded になるはず')
-
-    def test_goal_completes_on_nav2_succeeded_when_far(self):
-        """OR トリガ b: robot が tolerance.xy 外なら radius では完了せず Nav2 SUCCEEDED で完了する。"""
-        self._set_robot_pose(*self.FAR_AWAY_XY, self.GOAL_YAW)
-        self._activate_goal(self.GOAL_POI)
-        self.assertFalse(
-            self._wait_for_nav_status('succeeded', timeout_sec=0.8),
-            'xy 範囲外では radius だけで succeeded にならないはず')
-        self.fake_server.succeed_current_goal()
-        self.assertTrue(
-            self._wait_for_nav_status('succeeded'),
-            'Nav2 SUCCEEDED で Go が succeeded になるはず')
