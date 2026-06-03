@@ -43,6 +43,13 @@ if(BUILD_TESTING)
     test/test_api_nav_endpoints.py
     TIMEOUT 10
   )
+  # SSE / config publish 経路 (#135 (B), #173): config_path_callback の map 名抽出 +
+  # broadcast 判定、_broadcast_sse_event の fanout / 形状、/api/events の header +
+  # client 登録・配信・切断 discard lifecycle を pin (#193 残課題のカバレッジ穴埋め)。
+  ament_add_pytest_test(test_api_sse_config_events
+    test/test_api_sse_config_events.py
+    TIMEOUT 15
+  )
 endif()
 
 ament_package()
