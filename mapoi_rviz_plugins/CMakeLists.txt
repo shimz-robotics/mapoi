@@ -34,6 +34,11 @@ if(BUILD_TESTING)
   ament_auto_add_gtest(test_poi_editor_helpers
     test/test_poi_editor_helpers.cpp
   )
+  # config_path_update_policy.hpp の ConfigPathCallback 分岐判定 (Reinit/Refresh/Noop) の
+  # unit test (#169)。Panel callback はこの判定を UI 更新へ写像するだけ。header は Qt/ROS 非依存。
+  ament_auto_add_gtest(test_config_path_update_policy
+    test/test_config_path_update_policy.cpp
+  )
 endif()
 
 # 将来のROS 2（Kilted Kaiju以降）と互換性を持たせるため
