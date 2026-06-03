@@ -1,0 +1,96 @@
+name: ROS critical-core build & test
+
+# C++/colcon の critical-core test を PR ゲート化する (#193 PR3)。
+# 既存 CI は docker-build.yml (main push / tag で image build・push のみ) と
+# consistency-check.yml (Python drift + WebUI vitest/playwright) だけで、
+# colcon test はどこでも走っていなかった。本 workflow が humble/jazzy 両 distro の
+# colcon build + test を PR・main push で gate する。
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    # Dockerfile と同じ osrf/ros base image 内で実行し、ローカルの Docker 検証
+    # (docker compose run dev) と同じ依存・toolchain で test を回す。
+    container: osrf/ros:${{ matrix.distro }}-desktop-full
+    strategy:
+      fail-fast: false  # 片 distro が落ちても他方の結果を残す (docker-build.yml に倣う)
+      matrix:
+        distro: [humble, jazzy]
+    # launch_test は除外する (下記) が、clean build + rosdep install のハング保険として確保。
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src/mapoi  # colcon ws レイアウト (<ws>/src/mapoi) に直接 checkout
+
+      # osrf/ros base には colcon / rosdep が含まれないため明示 install (Dockerfile base と同じ)。
+      # rosdep で package.xml から依存解決:
+      #   - humble は gazebo_msgs、jazzy は ros_gz_interfaces の distro 条件依存
+      #     (mapoi_gazebo_bridge / mapoi_gz_bridge の build 用) を入れる → 両 distro の
+      #     条件付き bridge も build 検証される。
+      #   - webui pytest 用の python3-flask / python3-pil もここで入る。
+      # skip-keys: いずれも demo/example の runtime 専用依存で build にも選択 test (gtest+pytest)
+      #   にも不要 (example pkg は turtlebot3 を find_package せず exec_depend のみ)。
+      #   - turtlebot3* は desktop-full に無く、turtlebot3_gazebo が Gazebo 本体を引き込むため
+      #     skip しないと CI が大幅に遅延する (実害のある skip)。
+      #   - ros_gz_sim / ros_gz_bridge は jazzy desktop-full に既に同梱なので skip は実質 no-op
+      #     だが、base image 変更時の取りこぼし保険として明示しておく
+      #     (mapoi_gz_bridge の build に必要なのは ros_gz_interfaces のみで、これは skip しない)。
+      - name: Install colcon / rosdep deps
+        shell: bash
+        run: |
+          set -euxo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            python3-colcon-common-extensions \
+            python3-rosdep
+          rosdep init 2>/dev/null || true
+          rosdep update --rosdistro "${{ matrix.distro }}"
+          rosdep install --from-paths src --ignore-src -r -y \
+            --rosdistro "${{ matrix.distro }}" \
+            --skip-keys "turtlebot3 turtlebot3_gazebo turtlebot3_navigation2 ros_gz_sim ros_gz_bridge"
+
+      - name: colcon build
+        shell: bash
+        # ROS の setup.bash は nounset 非互換 (AMENT_TRACE_SETUP_FILES 等を未設定で参照)
+        # なので source する step では set -u を付けない。
+        run: |
+          set -eo pipefail
+          source "/opt/ros/${{ matrix.distro }}/setup.bash"
+          colcon build --symlink-install --cmake-args -DBUILD_TESTING=ON
+
+      # critical-core = #193 PR1/PR2 で prune した後に残る gtest (unit/contract) + pytest。
+      #   gtest(4): mapoi_server test_nav2_bridge_unit / test_initial_pose_resolver /
+      #             test_system_tags_contract, mapoi_rviz_plugins test_poi_editor_helpers
+      #   pytest(5): mapoi_webui yaml/api contract 4 + mapoi_turtlebot3_example config 1
+      # 遅い launch_test (mapoi_server の統合 test 3 本, LABELS "launch_test", 120-180s) は
+      # ctest label exclude で外す。test-result が落ちれば job も fail。
+      - name: colcon test (gtest + pytest, launch_test を除外)
+        shell: bash
+        # setup.bash の nounset 非互換のため set -u は付けない (colcon build step と同様)。
+        run: |
+          set -eo pipefail
+          source "/opt/ros/${{ matrix.distro }}/setup.bash"
+          source install/setup.bash
+          colcon test --ctest-args -LE launch_test \
+            --event-handlers console_direct+
+          colcon test-result --verbose
+
+      # 失敗時のみ test 成果物を残す (consistency-check.yml の playwright-report に倣う)
+      - name: Upload test results
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: colcon-test-results-${{ matrix.distro }}
+          path: |
+            build/*/test_results/
+            log/latest_test/
+          retention-days: 7
