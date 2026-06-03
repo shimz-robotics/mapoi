@@ -92,12 +92,12 @@ jobs:
           # 「テスト 0 件でも colcon が green」を塞ぐ hardening (#193)。
           # gtest binary の build 漏れ / BUILD_TESTING off / ctest label 全除外などで test
           # target が静かに消えても colcon test 自体は exit 0 になる。実際に結果を出した test
-          # target 数 (gtest 4 + pytest 5 = 9; humble/jazzy 両 distro で実測) を数え、下限を割れば
-          # fail。個々の case 数 (~130) ではなく target 数を不変量にして case 増減での誤検知を避ける。
+          # target 数 (gtest 4 + pytest 6 = 10; humble/jazzy 両 distro で実測) を数え、下限を割れば
+          # fail。個々の case 数 (~140) ではなく target 数を不変量にして case 増減での誤検知を避ける。
           # target を意図的に増減した時は EXPECTED_TARGETS も更新する (silent drop を強制的に可視化)。
           # NOTE: package を絞らず全 package を test 対象にしておくことで、新規 package の test が
-          # 静かに除外される穴を避ける (PR #289 review high-1)。下限 9 は build 漏れ等の損失を捕える。
-          EXPECTED_TARGETS=9
+          # 静かに除外される穴を避ける (PR #289 review high-1)。下限 10 は build 漏れ等の損失を捕える。
+          EXPECTED_TARGETS=10
           ran=$(find build -path '*test_results*' -name '*.xml' | wc -l)
           echo "ran ${ran} test target result file(s); expected >= ${EXPECTED_TARGETS}"
           if [ "${ran}" -lt "${EXPECTED_TARGETS}" ]; then
