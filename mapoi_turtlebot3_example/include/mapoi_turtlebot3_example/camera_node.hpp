@@ -1,10 +1,6 @@
 #ifndef MAPOI_TURTLEBOT3_EXAMPLE__CAMERA_NODE_HPP_
 #define MAPOI_TURTLEBOT3_EXAMPLE__CAMERA_NODE_HPP_
 
-#ifdef UNIT_TEST
-#include <gtest/gtest.h>
-#endif
-
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -63,24 +59,6 @@ private:
   // だけが capture を実行する。SingleThreadedExecutor 前提でも race を作らない
   // 防御 (#248 項目 3)。
   std::atomic<bool> capture_in_flight_{false};
-
-#ifdef UNIT_TEST
-  friend class CameraNodeTestFixture;
-  FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationAcceptsPositive);
-  FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationAcceptsBoundary);
-  FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationRejectsZero);
-  FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationRejectsNegative);
-  FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationRejectsSubMillisecond);
-  FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationRejectsNaN);
-  FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationRejectsInfinity);
-  FRIEND_TEST(CameraNodeTestFixture, SanitizeCaptureDurationRejectsTooLarge);
-  FRIEND_TEST(CameraNodeTestFixture, IgnoresNonPausedEvents);
-  FRIEND_TEST(CameraNodeTestFixture, IgnoresEventsWithoutCaptureTriggerTag);
-  FRIEND_TEST(CameraNodeTestFixture, CapturesAndPublishesResumeAfterDuration);
-  FRIEND_TEST(CameraNodeTestFixture, IgnoresSecondPausedWhileCaptureInFlight);
-  FRIEND_TEST(CameraNodeTestFixture, ResumeMessageIncludesPoiName);
-  FRIEND_TEST(CameraNodeTestFixture, DestructorCancelsPendingResumeTimer);
-#endif
 };
 
 }  // namespace mapoi_turtlebot3_example

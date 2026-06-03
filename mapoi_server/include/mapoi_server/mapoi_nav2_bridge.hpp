@@ -342,6 +342,17 @@ private:
     NavMode nav_mode,
     const std::unordered_set<std::string> & active_route_poi_names);
 
+  // route 追従中の event 発火対象 (active route POI) かを判定する純関数 (#193)。
+  // ROUTE 走行中 + active route POI の 2 条件で、is_pause_eligible から pause タグ条件を
+  // 除いた superset。ENTER/EXIT/PAUSED の発火 gate に使い、非 ROUTE mode (IDLE/GOAL) では
+  // route 登録 POI に進入しても常に false を返す。invariant: is_pause_eligible ⟹ is_active_route_poi。
+  // **lock 契約**: is_pause_eligible と同じ (`current_route_poi_names_` を渡す場合は
+  // `data_mutex_` 保持中に呼ぶ)。
+  static bool is_active_route_poi(
+    const mapoi_interfaces::msg::PointOfInterest & poi,
+    NavMode nav_mode,
+    const std::unordered_set<std::string> & active_route_poi_names);
+
   // 統一到達判定 (#265 OR トリガ a) を pure 化した純関数。route 中間 waypoint /
   // 最終 goal / 単発 Go すべてこの 1 式 (dist <= tolerance.xy ∧ yaw_diff <= tolerance.yaw)
   // で判定する。dist は distance_2d、yaw_diff は angle_diff_abs(r_yaw, poi_yaw) の結果を渡す。
@@ -380,6 +391,10 @@ private:
   FRIEND_TEST(Nav2BridgeTestFixture, IsPauseEligibleRouteModeNonActivePoi);
   FRIEND_TEST(Nav2BridgeTestFixture, IsPauseEligibleGoalMode);
   FRIEND_TEST(Nav2BridgeTestFixture, IsPauseEligibleIdleMode);
+  FRIEND_TEST(Nav2BridgeTestFixture, IsActiveRoutePoiFalseInIdleMode);
+  FRIEND_TEST(Nav2BridgeTestFixture, IsActiveRoutePoiFalseInGoalMode);
+  FRIEND_TEST(Nav2BridgeTestFixture, IsActiveRoutePoiTrueInRouteModeListedPoi);
+  FRIEND_TEST(Nav2BridgeTestFixture, IsActiveRoutePoiFalseInRouteModeUnlistedPoi);
   FRIEND_TEST(Nav2BridgeTestFixture, ResetNavStateClearsRouteContext);
   FRIEND_TEST(Nav2BridgeTestFixture, AutoResumeTimeoutDefaultDisabled);
   FRIEND_TEST(Nav2BridgeTestFixture, AutoResumeTimeoutNegativeClampedToZero);

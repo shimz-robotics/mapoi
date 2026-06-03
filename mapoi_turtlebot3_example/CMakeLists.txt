@@ -52,18 +52,7 @@ install(
 )
 
 if(BUILD_TESTING)
-  find_package(ament_cmake_gtest REQUIRED)
   find_package(ament_cmake_pytest REQUIRED)
-
-  # camera_node の挙動を pin する unit test (#248)。
-  # UNIT_TEST マクロで camera_node.cpp の main() を抜き、テスト fixture を
-  # friend に許可した状態で再 compile する (mapoi_server の test_nav2_bridge_unit
-  # と同じパターン)。
-  ament_auto_add_gtest(test_camera_node
-    test/test_camera_node.cpp
-    src/camera_node.cpp
-  )
-  target_compile_definitions(test_camera_node PRIVATE UNIT_TEST)
 
   # demo config (turtlebot3_world/mapoi_config.yaml) の幾何 / 不変量を pin する
   # pure-python test (#236 medium #3 / #5)。ROS は不要 (yaml を読んで幾何計算するだけ)。

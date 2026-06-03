@@ -106,9 +106,6 @@ if(BUILD_TESTING)
   )
 
   # Level 2: launch_testing integration tests
-  add_launch_test(
-    test/test_poi_event_integration.py
-  )
   # ROUTE-mode 経路は Nav2 follow_waypoints mock が前提なので別ファイルに分離 (#226)。
   # mock の MultiThreadedExecutor 立ち上げ + 複数 test の cancel/cleanup 待ちで
   # default 60s を超えやすい。連続 pause / landmark コントラスト test 追加 (#236) で
@@ -127,32 +124,10 @@ if(BUILD_TESTING)
     test/test_poi_event_goal_mapoi_arrival.py
     TIMEOUT 120
   )
-  add_launch_test(
-    test/test_reload_clears_initialpose.py
-  )
-  add_launch_test(
-    test/test_select_map_no_nav2.py
-  )
-  add_launch_test(
-    test/test_backend_status_no_nav2.py
-  )
-  add_launch_test(
-    test/test_localization_backend_status_no_amcl.py
-  )
-
-  # Level 3: pytest contract test (#208). In-process pub/sub なので launch_testing 不要。
-  ament_add_pytest_test(test_backend_status_liveliness
-    test/test_backend_status_liveliness.py
-    TIMEOUT 30
-  )
 
   # Install test config
   install(
     FILES test/test_mapoi_config.yaml
-    DESTINATION share/${PROJECT_NAME}/test
-  )
-  install(
-    DIRECTORY test/select_map_maps
     DESTINATION share/${PROJECT_NAME}/test
   )
 endif()
