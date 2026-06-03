@@ -533,6 +533,17 @@ bool MapoiNav2Bridge::is_pause_eligible(
   return false;
 }
 
+bool MapoiNav2Bridge::is_active_route_poi(
+  const mapoi_interfaces::msg::PointOfInterest & poi,
+  NavMode nav_mode,
+  const std::unordered_set<std::string> & active_route_poi_names)
+{
+  if (nav_mode != NavMode::ROUTE) {
+    return false;
+  }
+  return active_route_poi_names.count(poi.name) != 0;
+}
+
 void MapoiNav2Bridge::on_route_received(
   std::string route_name,
   rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedFuture future)
@@ -1399,11 +1410,10 @@ void MapoiNav2Bridge::tolerance_check_callback()
 
       // route 登録 POI かつ ROUTE mode 走行中なら event 発火対象 (#220)。
       // is_pause_eligible は同じ前提 (ROUTE mode + active route POI) + pause タグの
-      // 3 条件、is_route_poi はそこから tag check を除いた superset。
+      // 3 条件、is_active_route_poi はそこから tag check を除いた superset (#193 で pure 化)。
       // invariant: !is_route_poi → !is_pause_poi (is_pause_poi は is_route_poi の subset)。
       const bool is_pause_poi = is_pause_eligible(poi, nav_mode_, current_route_poi_names_);
-      const bool is_route_poi = (nav_mode_ == NavMode::ROUTE) &&
-        current_route_poi_names_.find(poi.name) != current_route_poi_names_.end();
+      const bool is_route_poi = is_active_route_poi(poi, nav_mode_, current_route_poi_names_);
 
       if (!is_route_poi) {
         // route 外 POI / route 走行外 mode では state を書き換えない (lifecycle 保護)。

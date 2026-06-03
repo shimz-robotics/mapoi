@@ -340,6 +340,48 @@ TEST_F(Nav2BridgeTestFixture, IsPauseEligibleIdleMode)
     poi, MapoiNav2Bridge::NavMode::IDLE, active));
 }
 
+// --- is_active_route_poi (#193, test_poi_event_integration の降格先) ---
+// 非 ROUTE mode (IDLE/GOAL) では route 登録 POI に進入しても ENTER/EXIT/PAUSED の
+// 発火対象にならない、という gate を pure 化して pin する。is_pause_eligible とは別述語
+// (pause タグ条件を含まない superset) なので、ここで独立に検証する。pause タグの無い
+// POI を使うことで「is_pause_eligible なら必ず false」のケースと区別できる。
+
+TEST_F(Nav2BridgeTestFixture, IsActiveRoutePoiFalseInIdleMode)
+{
+  // IDLE では active route POI のど真ん中でも event 発火対象にならない。
+  auto poi = make_poi("p1", 0.0, 0.0, 0.5, {"waypoint"});
+  std::unordered_set<std::string> active = {"p1"};
+  EXPECT_FALSE(MapoiNav2Bridge::is_active_route_poi(
+    poi, MapoiNav2Bridge::NavMode::IDLE, active));
+}
+
+TEST_F(Nav2BridgeTestFixture, IsActiveRoutePoiFalseInGoalMode)
+{
+  // GOAL (単発 Go) でも route POI の event gate は開かない。
+  auto poi = make_poi("p1", 0.0, 0.0, 0.5, {"waypoint"});
+  std::unordered_set<std::string> active = {"p1"};
+  EXPECT_FALSE(MapoiNav2Bridge::is_active_route_poi(
+    poi, MapoiNav2Bridge::NavMode::GOAL, active));
+}
+
+TEST_F(Nav2BridgeTestFixture, IsActiveRoutePoiTrueInRouteModeListedPoi)
+{
+  // ROUTE 走行中 + active set に含まれる POI のみ発火対象 (pause タグは不要)。
+  auto poi = make_poi("p1", 0.0, 0.0, 0.5, {"waypoint"});
+  std::unordered_set<std::string> active = {"p1"};
+  EXPECT_TRUE(MapoiNav2Bridge::is_active_route_poi(
+    poi, MapoiNav2Bridge::NavMode::ROUTE, active));
+}
+
+TEST_F(Nav2BridgeTestFixture, IsActiveRoutePoiFalseInRouteModeUnlistedPoi)
+{
+  // ROUTE 走行中でも active set 外の POI (別 route の POI 等) は発火対象外。
+  auto poi = make_poi("p1", 0.0, 0.0, 0.5, {"waypoint"});
+  std::unordered_set<std::string> active = {"p2"};
+  EXPECT_FALSE(MapoiNav2Bridge::is_active_route_poi(
+    poi, MapoiNav2Bridge::NavMode::ROUTE, active));
+}
+
 // --- reset_nav_state (#143 / #148) ---
 
 TEST_F(Nav2BridgeTestFixture, ResetNavStateClearsRouteContext)
