@@ -30,10 +30,13 @@ Samples
     / ``goal`` / ``audio_landmark``. The old office-tour POIs
     (``elevator_hall``, ``corridor_a`` / ``corridor_b``,
     ``conference_room``, ``model_exhibit`` and the landmark variants)
-    were removed.
+    were removed. This is **not a 1:1 rename**: the demo was rebuilt
+    around the feature-catalog layout, so old POIs have no direct
+    new-name counterpart.
   - **Routes** (new): ``tutorial_01_basic`` / ``tutorial_02_landmark``
-    / ``tutorial_03_pause`` / ``tour_full``. The previous ``tour_full``
-    / ``tour_short`` pair was replaced; ``tour_short`` is gone.
+    / ``tutorial_03_pause`` / ``tour_full``. ``tour_full`` keeps its
+    name but its waypoints / landmarks were rebuilt for the new POI set;
+    the old ``tour_short`` was removed.
   - Consecutive-``pause`` coverage (old ``corridor_a`` + ``corridor_b``)
     moved into the ``test_poi_event_route_integration`` launch_test
     (#236) instead of the demo config.
