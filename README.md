@@ -68,6 +68,7 @@ ros2 topic pub -1 /mapoi/nav/goal_pose_poi std_msgs/msg/String "{data: goal}"
 
 ```sh
 xhost +local:docker
+docker pull ghcr.io/shimz-robotics/mapoi:jazzy   # jazzy/latest は main 追従のローリングタグ。再訪時も pull で最新化
 docker run --rm -it --network host --ipc host \
   -e DISPLAY=$DISPLAY \
   -e QT_X11_NO_MITSHM=1 \
@@ -75,7 +76,7 @@ docker run --rm -it --network host --ipc host \
   ghcr.io/shimz-robotics/mapoi:jazzy
 ```
 
-ブラウザで http://localhost:8765 にアクセス。Nav2 lifecycle 立ち上げに 30〜60 秒かかるので少し待ってから。
+ブラウザで http://localhost:8765 にアクセス。Nav2 lifecycle 立ち上げに 30〜60 秒かかるので少し待ってから。WebUI が「Navigation unavailable」のままになる場合は [docs/docker.md](./docs/docker.md) のトラブルシューティングを参照してください。
 
 Humble 版 / GPU 加速 / ソースビルド / 開発用 bind mount / UID 調整等の詳細は [docs/docker.md](./docs/docker.md) を参照してください。
 
