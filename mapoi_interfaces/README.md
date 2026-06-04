@@ -130,6 +130,17 @@ QoS contract (TRANSIENT_LOCAL / RELIABLE / MANUAL_BY_TOPIC publisher / AUTOMATIC
 | Response | `nav2_node_names` | `string[]` | Nav2 map server node 名 |
 | Response | `nav2_map_urls` | `string[]` | 対応する map YAML path |
 
+### RequestInitialPose.srv
+
+`mapoi/initialpose_poi` (唯一の writer = `mapoi_server`) への publish を依頼するサービスです (#211)。従来は `mapoi_server` / `mapoi_nav2_bridge` / WebUI / RViz panel の 4 つが直接 publish していましたが、`transient_local` の latched cache は writer ごとに保持されるためクロス writer の stale 競合がありました。全 publish を本 service 経由で `mapoi_server` 1 つに集約することで latched cache を単一化し、clear が真の last-write-wins で効くようにします。
+
+| 方向 | フィールド | 型 | 説明 |
+| --- | --- | --- | --- |
+| Request | `map_name` | `string` | 対象の地図名 (informational, `InitialPoseRequest.msg` の `map_name` をミラー) |
+| Request | `poi_name` | `string` | 採用する POI 名。空文字は clear (skip sample を publish、subscriber は無視) |
+| Response | `success` | `bool` | publish に成功したら true |
+| Response | `error_message` | `string` | 失敗時の理由 (非空) |
+
 ### GetMapsInfo.srv
 
 利用可能な地図の一覧と現在の地図名を取得するサービスです。
