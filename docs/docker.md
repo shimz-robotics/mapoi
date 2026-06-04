@@ -66,7 +66,7 @@ WebUI の Navigation バッジは nav バックエンド (Nav2 action server + m
 
 1. **起動直後は待つ**: Nav2 lifecycle の activate に 30〜60 秒かかります。その間 unavailable 表示は正常で、揃うと「Navigation connected」に変わります。
 2. **イメージを最新化する**: `jazzy` / `latest` は main 追従のローリングタグで、`docker run` は手元のキャッシュを黙って使います。以前 pull した古いイメージを掴んでいないか `docker pull ghcr.io/shimz-robotics/mapoi:jazzy` で更新してください。再現性が要る検証では release tag (`vX.Y.Z`) の利用も検討してください。
-3. **GUI (display) 不調は nav を止めません**: `docker logs <container>` に `could not connect to display` / `qt.qpa.xcb` が出ていれば、X へ接続できず RViz / Gazebo の GUI が起動できていません。現行イメージでは GUI が起動できなくても nav バックエンドと WebUI は動作します。RViz / Gazebo ウィンドウも表示したい場合は、起動前に `xhost +local:docker` を実行してください (詳細は上の「ビルド済みイメージから試す」節)。
+3. **GUI (display) 不調は nav を止めません**: `docker logs <container>` に `could not connect to display` / `qt.qpa.xcb` が出ていれば、X へ接続できず RViz / Gazebo の GUI が起動できていません。GUI が起動できなくても nav バックエンドと WebUI は動作します (この挙動は本修正を含むイメージが前提。古いキャッシュのままだと GUI crash で launch 全体が停止する旧挙動のため、手順 2 の `docker pull` で更新してください)。RViz / Gazebo ウィンドウも表示したい場合は、起動前に `xhost +local:docker` を実行してください (詳細は上の「ビルド済みイメージから試す」節)。
 4. **WebUI だけ使う (GUI 不要)**: GUI を起動せず WebUI / nav だけ動かすには headless で起動します。
 
    ```sh
