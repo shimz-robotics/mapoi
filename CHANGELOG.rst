@@ -225,7 +225,7 @@ Documentation
 
 * Docker + Intel/AMD 内蔵 GPU で RViz / Gazebo の **片方だけ** GUI を
   出す組合せ (例 ``gazebo_gui:=false``) のとき RViz が GL 初期化失敗で
-  crash する問題 (#229) の回避手段を整備。``docker-compose.dri.yml``
+  crash する問題 (#229, PR #296) の回避手段を整備。``docker-compose.dri.yml``
   (Intel/AMD iGPU 向け ``/dev/dri`` 共有 + ``group_add: [video, render]``
   の override) を新設し、``docs/docker.md`` に DRI override の使い方・
   GID 不一致時の対処・GPU 共有できない環境向けの software 経路
