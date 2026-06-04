@@ -19,9 +19,10 @@ except ImportError:  # Humble fallback
     from rclpy.qos_event import SubscriptionEventCallbacks
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
-from mapoi_interfaces.srv import GetMapsInfo, GetTagDefinitions, SelectMap
+from mapoi_interfaces.srv import (
+    GetMapsInfo, GetTagDefinitions, RequestInitialPose, SelectMap)
 from mapoi_interfaces.msg import (
-    InitialPoseRequest, LocalizationBackendStatus, NavigationBackendStatus)
+    LocalizationBackendStatus, NavigationBackendStatus)
 import tf2_ros
 
 from flask import Flask, jsonify, request, send_from_directory, Response
@@ -157,6 +158,10 @@ class MapoiWebNode(Node):
         self.get_maps_client_ = self.create_client(GetMapsInfo, 'get_maps_info')
         self.tag_defs_client_ = self.create_client(GetTagDefinitions, 'get_tag_definitions')
         self.select_map_client_ = self.create_client(SelectMap, 'select_map')
+        # #211: initialpose POI は直接 publish せず mapoi_server (唯一の writer) へ
+        # request_initial_pose service 経由で依頼する。
+        self.request_initial_pose_client_ = self.create_client(
+            RequestInitialPose, 'request_initial_pose')
 
         # Navigation publishers
         self.goal_poi_pub_ = self.create_publisher(String, 'mapoi/nav/goal_pose_poi', 10)
@@ -165,11 +170,6 @@ class MapoiWebNode(Node):
         self.pause_pub_  = self.create_publisher(String, 'mapoi/nav/pause',  10)
         self.resume_pub_ = self.create_publisher(String, 'mapoi/nav/resume', 10)
         self.switch_map_pub_ = self.create_publisher(String, 'mapoi/nav/switch_map', 1)
-        # mapoi/initialpose_poi は #149 round 8 で {map_name, poi_name} 型に変更。
-        # transient_local QoS で後起動 subscriber (bridge / mapoi_nav2_bridge) も latched 値を拾える。
-        initialpose_poi_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
-        self.initialpose_poi_pub_ = self.create_publisher(
-            InitialPoseRequest, 'mapoi/initialpose_poi', initialpose_poi_qos)
 
         # TF for robot pose
         self.tf_buffer_ = tf2_ros.Buffer()
@@ -460,7 +460,6 @@ class MapoiWebNode(Node):
             'cancel': (self.cancel_pub_, 'mapoi/nav/cancel'),
             'pause': (self.pause_pub_, 'mapoi/nav/pause'),
             'resume': (self.resume_pub_, 'mapoi/nav/resume'),
-            'initialpose': (self.initialpose_poi_pub_, 'mapoi/initialpose_poi'),
         }
         topics = {}
         for key, (pub, topic_name) in publishers.items():
@@ -470,6 +469,15 @@ class MapoiWebNode(Node):
                 'subscribers': count,
                 'available': count > 0,
             }
+        # #211: initialpose_poi の publish は mapoi_server に集約したため WebUI は publisher を
+        # 持たない。subscriber 数 (localization bridge / sim が listening しているか) は node 経由で
+        # 数える。なお下の通り initialpose は navigation backend 可用性の根拠には使わない。
+        initialpose_subs = self.count_subscribers('mapoi/initialpose_poi')
+        topics['initialpose'] = {
+            'topic': 'mapoi/initialpose_poi',
+            'subscribers': initialpose_subs,
+            'available': initialpose_subs > 0,
+        }
         # `mapoi/initialpose_poi` may still have simulator / localization bridge
         # subscribers after mapoi_nav2_bridge stops. Treat only navigation command
         # topics as evidence that a navigation backend is available.
@@ -892,13 +900,21 @@ class MapoiWebNode(Node):
             data = request.get_json()
             if not data or 'poi_name' not in data:
                 return jsonify({'error': 'poi_name required'}), 400
-            msg = InitialPoseRequest()
-            msg.map_name = node.map_name_
-            msg.poi_name = data['poi_name']
-            _, warning = node.publish_with_subscriber_check(
-                node.initialpose_poi_pub_, msg, 'mapoi/initialpose_poi')
+            # #211: initialpose_poi を直接 publish せず、唯一の writer である mapoi_server に
+            # request_initial_pose service 経由で publish を依頼する。
+            req = RequestInitialPose.Request()
+            req.map_name = node.map_name_
+            req.poi_name = data['poi_name']
+            response = node._call_service_sync(
+                node.request_initial_pose_client_, req, 'request_initial_pose', timeout_sec=3.0)
+            if response is None:
+                return jsonify(
+                    {'error': 'request_initial_pose service unavailable or timed out'}), 503
+            if not response.success:
+                return jsonify(
+                    {'error': response.error_message or 'request_initial_pose failed'}), 400
             node.get_logger().info(f'Initial pose: {data["poi_name"]}')
-            return jsonify({'success': True, 'warning': warning} if warning else {'success': True})
+            return jsonify({'success': True})
 
         @app.route('/api/events')
         def api_events():

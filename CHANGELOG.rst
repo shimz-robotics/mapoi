@@ -16,6 +16,35 @@ For releases prior to v0.2.0, see the
 Unreleased
 ==========
 
+Added
+-----
+
+* New service ``request_initial_pose``
+  (``mapoi_interfaces/srv/RequestInitialPose``,
+  ``{map_name, poi_name} -> {success, error_message}``) on ``mapoi_server``
+  (#211). Requesters ask ``mapoi_server`` — the sole writer of
+  ``mapoi/initialpose_poi`` — to publish an initial-pose POI request; an
+  empty ``poi_name`` publishes a clear (skip) sample.
+
+Fixed
+-----
+
+* **mapoi/initialpose_poi multi-writer race (#211).** The topic had four
+  direct publishers (``mapoi_server``, ``mapoi_nav2_bridge``, WebUI, RViz
+  panel). Because a ``transient_local`` cache is held *per writer*, a
+  late-joining subscriber received each writer's last latched sample in
+  undefined order, so ``mapoi_server``'s clear could not erase a stale POI
+  still latched in another writer's cache. Publishing is now consolidated
+  into ``mapoi_server`` as the **sole writer**: ``mapoi_nav2_bridge`` /
+  WebUI / RViz panel request a publish via the new ``request_initial_pose``
+  service instead of publishing directly, so the latched cache is unified
+  and a clear is decisively last-write-wins. The timing gate that defers the
+  operator-switch POI until after Nav2 ``LoadMap`` succeeds stays in
+  ``mapoi_nav2_bridge``. The topic ``mapoi/initialpose_poi`` and its
+  subscriber contract (``InitialPoseRequest``, ``transient_local``, empty
+  ``poi_name`` = ignore) are unchanged, so custom localization bridges and
+  direct external publishers keep working.
+
 Samples
 -------
 

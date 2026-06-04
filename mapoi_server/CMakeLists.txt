@@ -124,6 +124,12 @@ if(BUILD_TESTING)
     test/test_poi_event_goal_mapoi_arrival.py
     TIMEOUT 120
   )
+  # #211: mapoi/initialpose_poi の単一 writer 不変条件 + 新 service の publish/clear 検証。
+  # mapoi_server + mapoi_nav2_bridge を起動するだけ (Nav2 mock 不要) で軽量。
+  add_launch_test(
+    test/test_multiwriter_initialpose_no_stale.py
+    TIMEOUT 120
+  )
 
   # Install test config
   install(

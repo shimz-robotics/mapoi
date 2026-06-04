@@ -18,6 +18,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/NavigationBackendStatus.msg"
   "msg/LocalizationBackendStatus.msg"
   "srv/SelectMap.srv"
+  "srv/RequestInitialPose.srv"
   "srv/GetMapsInfo.srv"
   "srv/GetPoisInfo.srv"
   "srv/GetRoutePois.srv"

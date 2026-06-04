@@ -35,7 +35,7 @@
 #include "mapoi_interfaces/srv/get_tag_definitions.hpp"
 #include "mapoi_interfaces/msg/point_of_interest.hpp"
 #include "mapoi_interfaces/msg/poi_event.hpp"
-#include "mapoi_interfaces/msg/initial_pose_request.hpp"
+#include "mapoi_interfaces/srv/request_initial_pose.hpp"
 #include "mapoi_interfaces/msg/navigation_backend_status.hpp"
 
 class MapoiNav2Bridge : public rclcpp::Node
@@ -201,7 +201,10 @@ private:
   // subscriber 側 (mapoi_panel / mapoi_webui_node) は : split で target を復元する。
   void publish_nav_status(const std::string & status, const std::string & target = "");
   bool send_load_map_request(const std::string & server_name, const std::string & map_file);
-  void publish_initial_poi_request(const std::string & map_name, const std::string & poi_name);
+  // #211: LoadMap 成功後に mapoi_server (唯一の writer) へ request_initial_pose service 経由で
+  // initial pose POI の publish を依頼する。LoadMap 完了の timing gate は nav2_bridge が引き続き
+  // 所有し、wire-publish のみ mapoi_server に移す。
+  void request_initial_pose(const std::string & map_name, const std::string & poi_name);
 
   // 現在 nav の target POI 名 / route 名。Acceptance 時 (goal_response_callback /
   // ntp_goal_response_callback) に更新され、pause / resume が active nav の target
@@ -241,11 +244,12 @@ private:
   std::unordered_map<std::string, bool> poi_paused_published_;  // key: poi.name
   std::vector<mapoi_interfaces::msg::PointOfInterest> event_pois_;
 
-  // initial pose POI 名の publisher (Nav2 LoadMap 完了後 trigger 用、#209)。
-  // 配信先は mapoi_amcl_localization_bridge / mapoi_gz_bridge / WebUI 等が subscribe する
-  // `mapoi/initialpose_poi` (transient_local)。実際の `/initialpose` 配信は localization
-  // bridge が担当する (#209 で mapoi_nav2_bridge から分離)。
-  rclcpp::Publisher<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr mapoi_initialpose_poi_pub_;
+  // initial pose POI 要求 client (Nav2 LoadMap 完了後 trigger 用、#209 → #211 で service 化)。
+  // 従来は本ノードが `mapoi/initialpose_poi` を直接 publish していたが、transient_local の
+  // per-writer latched cache がクロス writer 競合を生むため (#211)、publish は mapoi_server に
+  // 集約し、本ノードは request_initial_pose service で依頼するのみ。実際の `/initialpose` 配信は
+  // localization bridge が担当する (#209 で mapoi_nav2_bridge から分離)。
+  rclcpp::Client<mapoi_interfaces::srv::RequestInitialPose>::SharedPtr request_initial_pose_client_;
 
   // --- EVENT_PAUSED trigger 用 cmd_vel dwell 検知 (#220) ---
   // cmd_vel subscriber: pause タグ POI 内で navigation 停止を検知する source。

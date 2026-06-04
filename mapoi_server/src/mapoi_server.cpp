@@ -90,6 +90,14 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   select_map_service_ = this->create_service<mapoi_interfaces::srv::SelectMap>("select_map",
     std::bind(&MapoiServer::select_map_service, this, std::placeholders::_1, std::placeholders::_2));
 
+  // #211: mapoi/initialpose_poi の publish を mapoi_server 1 writer に集約するための service。
+  // 外部 requester (mapoi_nav2_bridge / WebUI / RViz panel) はこの service 経由で publish を依頼し、
+  // mapoi_server が唯一の writer として initialpose_poi_publisher_ から publish する。
+  // initialpose_poi_publisher_ は上で構築済みなので、callback 実行時 (spin 開始後) は必ず存在する。
+  request_initial_pose_service_ = this->create_service<mapoi_interfaces::srv::RequestInitialPose>(
+    "request_initial_pose",
+    std::bind(&MapoiServer::request_initial_pose_service, this, std::placeholders::_1, std::placeholders::_2));
+
   reload_map_info_service_ = this->create_service<std_srvs::srv::Trigger>("reload_map_info",
     std::bind(&MapoiServer::reload_map_info_service, this, std::placeholders::_1, std::placeholders::_2));
 
@@ -396,6 +404,31 @@ void MapoiServer::select_map_service(const std::shared_ptr<mapoi_interfaces::srv
   response->success = true;
 }
 
+void MapoiServer::request_initial_pose_service(
+    const std::shared_ptr<mapoi_interfaces::srv::RequestInitialPose::Request> request,
+    std::shared_ptr<mapoi_interfaces::srv::RequestInitialPose::Response> response)
+{
+  // #211: 外部 requester の依頼を受けて mapoi/initialpose_poi に publish する。mapoi_server が
+  // 唯一の writer になることで transient_local の latched cache が単一化され、clear (poi_name 空)
+  // が後起動 subscriber に対しても真に last-write-wins で効く (= クロス writer の stale 競合が
+  // 構造的に消える)。本 callback は publish に徹し、POI resolve / landmark 排他は従来どおり
+  // subscriber (mapoi_amcl_localization_bridge) 側で処理する (#149 round 10 の map 非検証も維持)。
+  // map_name は requester が渡す値をそのまま透過 (informational、subscriber は検証しない)。
+  auto msg = mapoi_interfaces::msg::InitialPoseRequest();
+  msg.map_name = request->map_name;
+  msg.poi_name = request->poi_name;
+  initialpose_poi_publisher_->publish(msg);
+  if (request->poi_name.empty()) {
+    RCLCPP_INFO(this->get_logger(),
+      "request_initial_pose: cleared latched mapoi/initialpose_poi for map '%s' (#211).",
+      request->map_name.c_str());
+  } else {
+    RCLCPP_INFO(this->get_logger(),
+      "request_initial_pose: published initial pose POI '%s' for map '%s' (#211).",
+      request->poi_name.c_str(), request->map_name.c_str());
+  }
+  response->success = true;
+}
 
 void MapoiServer::reload_map_info_service(
     const std::shared_ptr<std_srvs::srv::Trigger::Request> request,

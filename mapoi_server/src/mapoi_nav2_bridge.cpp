@@ -15,11 +15,12 @@ MapoiNav2Bridge::MapoiNav2Bridge(const rclcpp::NodeOptions & options)
 {
   this->get_logger().set_level(rclcpp::Logger::Level::Info);
 
-  // initialpose POI 名の publisher (Nav2 LoadMap 完了後 trigger 用、#209)。
-  // AMCL adapter は mapoi_amcl_localization_bridge に分離済み。本 publisher は
-  // `mapoi_switch_map_cb` で LoadMap 成功後に新 map の `initial_poi_name` を流すための 1 用途のみ。
-  mapoi_initialpose_poi_pub_ = this->create_publisher<mapoi_interfaces::msg::InitialPoseRequest>(
-    "mapoi/initialpose_poi", rclcpp::QoS(1).transient_local());
+  // #211: initialpose POI を直接 publish せず、唯一の writer である mapoi_server へ
+  // request_initial_pose service 経由で依頼する。LoadMap 成功後 (on_select_map_received) という
+  // timing gate は本ノードが所有し続け、wire-publish のみ mapoi_server に移す。これにより
+  // transient_local の per-writer latched cache が単一化され stale POI を構造的に排除する。
+  request_initial_pose_client_ = this->create_client<mapoi_interfaces::srv::RequestInitialPose>(
+    "request_initial_pose");
 
   // goal_pose subscriber and publisher
   mapoi_goal_pose_poi_sub_ = this->create_subscription<std_msgs::msg::String>(
@@ -414,7 +415,7 @@ void MapoiNav2Bridge::on_select_map_received(
       map_url.c_str(), node_name.c_str());
   }
 
-  publish_initial_poi_request(map_name, result->initial_poi_name);
+  request_initial_pose(map_name, result->initial_poi_name);
   publish_nav_status("map_switch_succeeded", map_name);
   RCLCPP_INFO(this->get_logger(), "Map switch completed: %s", map_name.c_str());
 }
@@ -445,21 +446,46 @@ bool MapoiNav2Bridge::send_load_map_request(const std::string & server_name, con
   return true;
 }
 
-void MapoiNav2Bridge::publish_initial_poi_request(const std::string & map_name, const std::string & poi_name)
+void MapoiNav2Bridge::request_initial_pose(const std::string & map_name, const std::string & poi_name)
 {
+  // #211: 直接 publish せず、唯一の writer である mapoi_server に request_initial_pose service で
+  // publish を依頼する。空 poi_name は従来どおり skip (clear は select_map/reload 経路で
+  // mapoi_server が担うため、本 trigger では送らない)。
   if (poi_name.empty()) {
     RCLCPP_WARN(this->get_logger(),
-      "No initial pose POI resolved for map '%s'; skipping mapoi/initialpose_poi publish.",
+      "No initial pose POI resolved for map '%s'; skipping request_initial_pose.",
       map_name.c_str());
     return;
   }
-  auto msg = mapoi_interfaces::msg::InitialPoseRequest();
-  msg.map_name = map_name;
-  msg.poi_name = poi_name;
-  mapoi_initialpose_poi_pub_->publish(msg);
-  RCLCPP_INFO(this->get_logger(),
-    "Published initial pose POI '%s' for switched map '%s'.",
-    poi_name.c_str(), map_name.c_str());
+  // mapoi_server へは直前の select_map で応答を受け取った直後なので、通常 service は ready。
+  // 未 ready の場合は publish できず initial pose が設定されないため、明示的に ERROR ログを出す
+  // (今日の「subscriber 不在で latched されない」と同等の degrade、silent swallow はしない)。
+  if (!request_initial_pose_client_->service_is_ready()) {
+    RCLCPP_ERROR(this->get_logger(),
+      "request_initial_pose service not available; initial pose for map '%s' was NOT set "
+      "(mapoi_server unreachable?).", map_name.c_str());
+    return;
+  }
+  auto request = std::make_shared<mapoi_interfaces::srv::RequestInitialPose::Request>();
+  request->map_name = map_name;
+  request->poi_name = poi_name;
+  // on_select_map_received (default callback group) 内から呼ばれるため、blocking せず async で
+  // 投げて応答は callback でログするだけ。LoadMap は既に成功しているので publish 順序は保たれる。
+  request_initial_pose_client_->async_send_request(
+    request,
+    [this, map_name, poi_name](
+      rclcpp::Client<mapoi_interfaces::srv::RequestInitialPose>::SharedFuture future) {
+      auto result = future.get();
+      if (!result || !result->success) {
+        RCLCPP_ERROR(this->get_logger(),
+          "request_initial_pose failed for POI '%s' (map '%s').",
+          poi_name.c_str(), map_name.c_str());
+        return;
+      }
+      RCLCPP_INFO(this->get_logger(),
+        "Requested initial pose POI '%s' for switched map '%s' (#211).",
+        poi_name.c_str(), map_name.c_str());
+    });
 }
 
 void MapoiNav2Bridge::on_pois_info_received(rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedFuture future)
