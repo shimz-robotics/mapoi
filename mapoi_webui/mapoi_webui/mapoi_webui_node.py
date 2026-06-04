@@ -914,6 +914,16 @@ class MapoiWebNode(Node):
                 return jsonify(
                     {'error': response.error_message or 'request_initial_pose failed'}), 400
             node.get_logger().info(f'Initial pose: {data["poi_name"]}')
+            # #211 review fix: 旧 publish_with_subscriber_check 相当の「無人 publish」警告を復元。
+            # service は mapoi_server に届くが、その先の mapoi/initialpose_poi に subscriber
+            # (localization bridge) が居なければ initial pose はどこにも配信されない。operator が
+            # localization 未接続のまま set した場合に検知できるよう warning を返す。
+            if node.count_subscribers('mapoi/initialpose_poi') == 0:
+                return jsonify({
+                    'success': True,
+                    'warning': 'mapoi/initialpose_poi に subscriber がいません '
+                               '(localization bridge 未起動?)。initial pose は配信されません。',
+                })
             return jsonify({'success': True})
 
         @app.route('/api/events')
