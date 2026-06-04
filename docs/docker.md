@@ -208,12 +208,23 @@ NVIDIA discrete GPU ではなく Intel / AMD の内蔵 GPU を使う場合は、
 
 ```sh
 xhost +local:docker
+
+# お試し/デモ (demo service)
 docker compose -f docker-compose.yml -f docker-compose.dri.yml up demo
+
+# 開発用 (dev service。override は dev にも付くので bind mount 開発でも同様に重ねる)
+docker compose -f docker-compose.yml -f docker-compose.dri.yml run --rm dev
 ```
 
 これは `/dev/dri` の共有と `group_add: [video, render]` を dev / demo に足すだけの override です。これがないと、後述の「RViz / Gazebo の片方だけ GUI を出すと GL 初期化に失敗する」問題 (#229) が起きます。
 
+前提として host 側に `/dev/dri/{card*, renderD*}` が存在すること (`ls -l /dev/dri` で確認)。**GPU device の無い host (SSH-only / CI 等) でこの override を重ねると `/dev/dri` バインド失敗で container が起動できない**ため、その環境では override を重ねず `docker-compose.yml` 単体 (software 経路) を使ってください。
+
+> **container image 側の group**: 本 image のベース (`osrf/ros:<distro>-desktop-full`, Ubuntu 24.04) は `video` / `render` group を持つため `group_add` は名前解決できます。独自ベース image に差し替えてこれらの group が無いと compose が `group_add` でエラーになるので、その場合は numeric GID 指定 (下記) に切替えてください。
+
 > **GID 不一致の注意**: hardware GL は render node (`/dev/dri/renderD128`, host の `render` group 所有) 経由で動きます。container 側 `render` / `video` group の GID が host と一致しないと、device は見えても permission denied で software (llvmpipe) に落ちます。その場合は `ls -l /dev/dri/renderD128` で host 側の GID を確認し、override の `group_add` に numeric GID (`group_add: ["<その GID>"]`) を足してください。それでも不調なら GPU 共有を諦め、次節の software 経路を使ってください。
+
+> **HW GL が効いているかの確認**: override を重ねて起動したら、`docker compose ... exec dev glxinfo | grep "OpenGL renderer"` (要 `mesa-utils`) で renderer 名を見ます。Intel/AMD の GPU 名 (例 `Mesa Intel(R) ...`) が出れば hardware GL、`llvmpipe` なら software に落ちています (GID 不一致を疑う)。手早くは RViz 起動ログに `failed to load driver: iris` / `glx: failed to create dri3 screen` が出ていないかでも判別できます。
 
 ## RViz / Gazebo の片方だけ GUI を出すと GL 初期化に失敗する (Docker / Intel iGPU)
 
@@ -233,6 +244,8 @@ docker compose -f docker-compose.yml -f docker-compose.dri.yml up demo
 software 経路の例 (gz-sim は server only、RViz だけ表示):
 
 ```sh
+# 重要: LIBGL_ALWAYS_SOFTWARE=1 は必ず gazebo_gui:=false (gz-sim を headless) とセットで使う。
+# gazebo_gui を default (true) のままにすると現象 2 (gz-sim GUI が出ない) を踏む。
 docker run --rm -it --network host --ipc host \
   -e DISPLAY=$DISPLAY -e LIBGL_ALWAYS_SOFTWARE=1 \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
