@@ -76,10 +76,11 @@ amcl:
 
 ```yaml
 poi:
-  - name: elevator_hall   # この POI が default 初期位置になる (POI list 先頭)
+  # POI 名は構造を示す汎用例 (turtlebot3 demo の実 POI 名とは独立)
+  - name: entrance        # この POI が default 初期位置になる (POI list 先頭)
     pose: {x: -2.0, y: -0.5, yaw: 0.0}
     tags: [waypoint]
-  - name: meeting_room_a
+  - name: room_a
     pose: {x: 1.0, y: 0.5, yaw: 1.57}
     tags: [waypoint]
 ```

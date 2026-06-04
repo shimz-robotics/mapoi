@@ -354,11 +354,12 @@ map:
   localization: map_file_name
 
 poi:
-  - name: elevator_hall
+  # POI 名は構造を示す汎用例 (turtlebot3 demo の実 POI 名とは独立)
+  - name: entrance
     pose: {x: -2.0, y: -0.5, yaw: 0.0}
     tolerance: {xy: 0.5, yaw: 0.785}
     tags: [waypoint]                # POI list 先頭が default initial pose に採用される (#144)
-    description: エレベーターホール
+    description: エントランス
   - name: checkpoint_a
     pose: {x: 0.5, y: 0.5, yaw: 0.0}
     tolerance: {xy: 0.5, yaw: 0.785}
@@ -372,7 +373,7 @@ poi:
 
 route:
   - name: route_1
-    waypoints: [elevator_hall, info_point_a]
+    waypoints: [entrance, info_point_a]
 ```
 
 ### フィールド説明
