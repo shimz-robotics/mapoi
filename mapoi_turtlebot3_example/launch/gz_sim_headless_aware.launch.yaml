@@ -32,11 +32,15 @@ launch:
       - {name: on_exit_shutdown, value: "true"}
 
 # gz GUI (-g GUI only). gazebo_gui:=false で headless
+# server と違い on_exit_shutdown=false にする (#294): GUI は描画環境 (X 接続 / GL) 依存で
+# 落ちうる。そこで launch 全体を道連れ停止させると、display 不調なだけで Nav2 / mapoi /
+# WebUI まで死に「Navigation unavailable」になる。GUI はベストエフォート扱いとし、GUI が
+# 落ちても nav バックエンドと WebUI は生存させる。物理サーバ (上の -s) 側は true 維持。
 - include:
     file: "$(find-pkg-share ros_gz_sim)/launch/gz_sim.launch.py"
     arg:
       - {name: gz_args, value: "-g -v2"}
-      - {name: on_exit_shutdown, value: "true"}
+      - {name: on_exit_shutdown, value: "false"}
     if: $(var gazebo_gui)
 
 # robot_state_publisher
