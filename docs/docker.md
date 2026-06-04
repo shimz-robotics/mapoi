@@ -202,6 +202,60 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up demo
 
 GPU を使わない通常起動は `docker-compose.yml` 単体、`--gpus all` 無しの `docker run` を使ってください（既存手順そのまま）。
 
+## Intel / AMD 内蔵 GPU (DRI) で加速する
+
+NVIDIA discrete GPU ではなく Intel / AMD の内蔵 GPU を使う場合は、container に host の DRM device (`/dev/dri`) を共有して hardware GL を使わせます。`docker-compose.dri.yml` を override で重ねてください:
+
+```sh
+xhost +local:docker
+
+# お試し/デモ (demo service)
+docker compose -f docker-compose.yml -f docker-compose.dri.yml up demo
+
+# 開発用 (dev service。override は dev にも付くので bind mount 開発でも同様に重ねる)
+docker compose -f docker-compose.yml -f docker-compose.dri.yml run --rm dev
+```
+
+これは `/dev/dri` の共有と `group_add: [video, render]` を dev / demo に足すだけの override です。これがないと、後述の「RViz / Gazebo の片方だけ GUI を出すと GL 初期化に失敗する」問題 (#229) が起きます。
+
+前提として host 側に `/dev/dri/{card*, renderD*}` が存在すること (`ls -l /dev/dri` で確認)。**GPU device の無い host (SSH-only / CI 等) でこの override を重ねると `/dev/dri` バインド失敗で container が起動できない**ため、その環境では override を重ねず `docker-compose.yml` 単体 (software 経路) を使ってください。
+
+> **container image 側の group**: 本 image のベース (`osrf/ros:<distro>-desktop-full`, Ubuntu 24.04) は `video` / `render` group を持つため `group_add` は名前解決できます。独自ベース image に差し替えてこれらの group が無いと compose が `group_add` でエラーになるので、その場合は numeric GID 指定 (下記) に切替えてください。
+
+> **GID 不一致の注意**: hardware GL は render node (`/dev/dri/renderD128`, host の `render` group 所有) 経由で動きます。container 側 `render` / `video` group の GID が host と一致しないと、device は見えても permission denied で software (llvmpipe) に落ちます。その場合は `ls -l /dev/dri/renderD128` で host 側の GID を確認し、override の `group_add` に numeric GID (`group_add: ["<その GID>"]`) を足してください。それでも不調なら GPU 共有を諦め、次節の software 経路を使ってください。
+
+> **HW GL が効いているかの確認**: override を重ねて起動したら、`docker compose ... exec dev glxinfo | grep "OpenGL renderer"` (要 `mesa-utils`) で renderer 名を見ます。Intel/AMD の GPU 名 (例 `Mesa Intel(R) ...`) が出れば hardware GL、`llvmpipe` なら software に落ちています (GID 不一致を疑う)。手早くは RViz 起動ログに `failed to load driver: iris` / `glx: failed to create dri3 screen` が出ていないかでも判別できます。
+
+## RViz / Gazebo の片方だけ GUI を出すと GL 初期化に失敗する (Docker / Intel iGPU)
+
+`docker-compose.dri.yml` を使わず、かつ `rviz` / `gazebo_gui` の **片方だけ** を `false` にすると、Docker + Intel iGPU 環境で GUI が起動できないことがあります (#229)。原因は RViz (OGRE classic) と Gazebo gz-sim (OGRE2) で GL フォールバックの挙動が異なるためです。
+
+- **`gazebo_gui:=false` (RViz だけ GUI)**: container が `/dev/dri` にアクセスできないと RViz の Mesa iris driver ロードが失敗します。RViz は software (llvmpipe) へ自動フォールバックしないため crash します (gz-sim GUI は自動フォールバックを持つので default の両 GUI 起動では露見しません)。
+- **`LIBGL_ALWAYS_SOFTWARE=1` を shell 全体に export**: RViz は software で起動しますが、gz-sim GUI まで llvmpipe に巻き込まれて起動が極端に遅延 / silently 失敗します。env を一律設定すると片方が壊れます。
+
+解決経路は次の 3 つです。
+
+| 状況 | 推奨 |
+|---|---|
+| host に使える GPU がある | `docker-compose.dri.yml` (Intel/AMD) または `docker-compose.gpu.yml` (NVIDIA) を重ねて hardware GL を共有 |
+| GPU 共有できない / SSH-only / CI | `gazebo_gui:=false` で gz-sim を headless にした上で `LIBGL_ALWAYS_SOFTWARE=1` を設定 (gz-sim GUI が無いので現象 2 を踏まず、RViz だけ software で起動) |
+| GUI が一切不要 | `gazebo_gui:=false rviz:=false` で fully headless 起動 (WebUI / nav は動く) |
+
+software 経路の例 (gz-sim は server only、RViz だけ表示):
+
+```sh
+# 重要: LIBGL_ALWAYS_SOFTWARE=1 は必ず gazebo_gui:=false (gz-sim を headless) とセットで使う。
+# gazebo_gui を default (true) のままにすると現象 2 (gz-sim GUI が出ない) を踏む。
+docker run --rm -it --network host --ipc host \
+  -e DISPLAY=$DISPLAY -e LIBGL_ALWAYS_SOFTWARE=1 \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  ghcr.io/shimz-robotics/mapoi:jazzy \
+  bash -lc "source /opt/ros/\${ROS_DISTRO}/setup.bash && source /ros2_ws/install/setup.bash && \
+    ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml gazebo_gui:=false"
+```
+
+> `LIBGL_ALWAYS_SOFTWARE=1` を gz-sim GUI と同居させると現象 2 (gz-sim GUI が出ない) を踏むため、software 経路では必ず `gazebo_gui:=false` (gz-sim を headless) と組合せてください。両 GUI を hardware で出したい場合は上の DRI / NVIDIA override を使います。
+
 ## Humble で compose から試す
 
 `docker compose` の default は `jazzy` (primary distro) ですが、`ARG ROS_DISTRO` で Humble (Gazebo Classic) に切り替え可能です:
