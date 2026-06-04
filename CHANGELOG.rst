@@ -16,6 +16,28 @@ For releases prior to v0.2.0, see the
 Unreleased
 ==========
 
+Samples
+-------
+
+* The ``turtlebot3_world`` demo was redesigned into a **feature-catalog**
+  layout (#230, PR #235): POI count 9 -> 5, with routes restructured
+  into one-feature-per-route tutorials plus an all-in-one ``tour_full``.
+  This renames/removes the sample POI and route names, so launch files,
+  clients, tutorials, or scripts that pin the old ``turtlebot3_world``
+  names must migrate.
+
+  - **POIs** (new): ``start`` / ``basic_waypoint`` / ``pause_waypoint``
+    / ``goal`` / ``audio_landmark``. The old office-tour POIs
+    (``elevator_hall``, ``corridor_a`` / ``corridor_b``,
+    ``conference_room``, ``model_exhibit`` and the landmark variants)
+    were removed.
+  - **Routes** (new): ``tutorial_01_basic`` / ``tutorial_02_landmark``
+    / ``tutorial_03_pause`` / ``tour_full``. The previous ``tour_full``
+    / ``tour_short`` pair was replaced; ``tour_short`` is gone.
+  - Consecutive-``pause`` coverage (old ``corridor_a`` + ``corridor_b``)
+    moved into the ``test_poi_event_route_integration`` launch_test
+    (#236) instead of the demo config.
+
 
 0.4.0 (2026-05-08)
 ==================
