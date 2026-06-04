@@ -45,6 +45,15 @@ Fixed
   ``poi_name`` = ignore) are unchanged, so custom localization bridges and
   direct external publishers keep working.
 
+  Scope: this removes the cross-writer latched-cache race specifically. It
+  does NOT make POI-name-to-pose resolution map-consistent — the localization
+  bridge resolves a latched POI *name* against ``mapoi_server``'s *current*
+  map (``map_name`` is intentionally unverified, #149 r10), so a stale or
+  concurrently-interleaved name can still resolve to a wrong pose right after
+  a map switch. That residual (generation / map verification) remains future
+  work (#155), as does the crash/restart startup re-latch (#297). In short,
+  this is not a complete fix for "wrong initial pose after a map switch".
+
 Samples
 -------
 
