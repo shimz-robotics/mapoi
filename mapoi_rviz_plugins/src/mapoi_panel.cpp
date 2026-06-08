@@ -29,6 +29,9 @@ void MapoiPanel::onInitialize()
   get_maps_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetMapsInfo>("get_maps_info");
   get_routes_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetRoutesInfo>("get_routes_info");
   get_route_pois_client_ = service_node_->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
+  // #211: initialpose POI は直接 publish せず mapoi_server へ service 経由で依頼する。
+  request_initial_pose_client_ =
+    service_node_->create_client<mapoi_interfaces::srv::RequestInitialPose>("request_initial_pose");
 
   connect(ui_->MapComboBox, SIGNAL(activated(int)), this, SLOT(MapComboBox()));
   connect(ui_->Nav2GoalComboBox, SIGNAL(activated(int)), this, SLOT(Nav2GoalComboBox()));
@@ -64,11 +67,6 @@ void MapoiPanel::onInitialize()
   }
 
   // Buttons
-  // LocalizationButton は `/initialpose` を直接叩かず、`mapoi/initialpose_poi` 経由で bridge に
-  // POI 名を渡す (#209)。bridge 側で POI 名 → pose resolve / retry / `initial_pose_topic` parameter
-  // による別 topic 対応を一元化するため、panel と WebUI で同じ flow に揃える。
-  mapoi_initialpose_poi_pub_ = node_->create_publisher<mapoi_interfaces::msg::InitialPoseRequest>(
-    "mapoi/initialpose_poi", rclcpp::QoS(1).transient_local());
   // RunGoalButton は Nav2 native `goal_pose` を直接叩かず、`mapoi/nav/goal_pose_poi` 経由で
   // navigation bridge に POI 名を渡す (#209 review #3)。bridge 側で POI resolve / Nav2 action
   // / `mapoi/nav/status` 配信を一元化することで、custom navigation bridge / pause / cancel /
@@ -216,16 +214,24 @@ void MapoiPanel::LocalizationButton()
     RCLCPP_WARN(LOGGER, "No POI selected for initial pose; pick one in the goal ComboBox first.");
     return;
   }
-  // /initialpose は叩かず、`mapoi/initialpose_poi` 経由で bridge に POI 名を渡す (#209 review fix)。
-  // bridge が POI を resolve して `/initialpose` (または `initial_pose_topic` で指定された topic) に
-  // 配信する。これにより landmark 排他 / subscriber 後起動 retry / custom localization bridge への
-  // 切替が WebUI と同一 flow で行われる。
-  mapoi_interfaces::msg::InitialPoseRequest msg;
-  msg.map_name = current_map_;
-  msg.poi_name = pois_[goal_combobox_ind_].name;
-  mapoi_initialpose_poi_pub_->publish(msg);
-  RCLCPP_INFO(LOGGER, "Published initial pose request: %s (map: %s).",
-              msg.poi_name.c_str(), msg.map_name.c_str());
+  // #211: `/initialpose` も `mapoi/initialpose_poi` も直接叩かず、唯一の writer である mapoi_server に
+  // request_initial_pose service 経由で publish を依頼する。これにより transient_local の
+  // per-writer latched cache が単一化され stale POI を構造的に排除する。bridge が POI resolve /
+  // landmark 排他 / `/initialpose` 配信 / retry を一元処理する点は不変 (#209)。
+  if (!request_initial_pose_client_->wait_for_service(3s)) {
+    RCLCPP_ERROR(LOGGER, "request_initial_pose service not available after 3s timeout.");
+    return;
+  }
+  auto request = std::make_shared<mapoi_interfaces::srv::RequestInitialPose::Request>();
+  request->map_name = current_map_;
+  request->poi_name = pois_[goal_combobox_ind_].name;
+  auto result = request_initial_pose_client_->async_send_request(request);
+  if (rclcpp::spin_until_future_complete(service_node_, result, 5s) == rclcpp::FutureReturnCode::SUCCESS) {
+    RCLCPP_INFO(LOGGER, "Requested initial pose: %s (map: %s).",
+                request->poi_name.c_str(), current_map_.c_str());
+  } else {
+    RCLCPP_ERROR(LOGGER, "request_initial_pose call failed or timed out.");
+  }
 }
 
 void MapoiPanel::RunGoalButton()

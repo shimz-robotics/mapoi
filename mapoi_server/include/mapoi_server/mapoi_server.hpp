@@ -19,6 +19,7 @@
 #include "mapoi_interfaces/srv/get_maps_info.hpp"
 #include "mapoi_interfaces/srv/get_routes_info.hpp"
 #include "mapoi_interfaces/srv/select_map.hpp"
+#include "mapoi_interfaces/srv/request_initial_pose.hpp"
 #include "mapoi_interfaces/srv/get_tag_definitions.hpp"
 #include "mapoi_interfaces/msg/tag_definition.hpp"
 
@@ -74,6 +75,9 @@ private:
   rclcpp::Service<mapoi_interfaces::srv::GetMapsInfo>::SharedPtr get_maps_info_service_;
   rclcpp::Service<mapoi_interfaces::srv::GetRoutesInfo>::SharedPtr get_routes_info_service_;
   rclcpp::Service<mapoi_interfaces::srv::SelectMap>::SharedPtr select_map_service_;
+  // #211: mapoi/initialpose_poi の唯一の writer として、外部 requester
+  // (mapoi_nav2_bridge / WebUI / RViz panel) の publish 依頼を受ける service。
+  rclcpp::Service<mapoi_interfaces::srv::RequestInitialPose>::SharedPtr request_initial_pose_service_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reload_map_info_service_;
   rclcpp::Service<mapoi_interfaces::srv::GetTagDefinitions>::SharedPtr get_tag_definitions_srv_;
 
@@ -93,6 +97,11 @@ private:
   void select_map_service(
     const std::shared_ptr<mapoi_interfaces::srv::SelectMap::Request> request,
     std::shared_ptr<mapoi_interfaces::srv::SelectMap::Response> response);
+  // #211: 外部 requester からの依頼を受けて mapoi/initialpose_poi に publish する。
+  // poi_name 空は clear (skip message) として publish する。
+  void request_initial_pose_service(
+    const std::shared_ptr<mapoi_interfaces::srv::RequestInitialPose::Request> request,
+    std::shared_ptr<mapoi_interfaces::srv::RequestInitialPose::Response> response);
   void reload_map_info_service(
     const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
     std::shared_ptr<std_srvs::srv::Trigger::Response> response);

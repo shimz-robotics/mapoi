@@ -11,7 +11,7 @@
 #include <std_msgs/msg/int8.hpp>
 #include <std_msgs/msg/string.hpp>
 #include "mapoi_interfaces/msg/point_of_interest.hpp"
-#include "mapoi_interfaces/msg/initial_pose_request.hpp"
+#include "mapoi_interfaces/srv/request_initial_pose.hpp"
 #include "mapoi_interfaces/msg/navigation_backend_status.hpp"
 #include "mapoi_interfaces/msg/localization_backend_status.hpp"
 #include "mapoi_interfaces/srv/get_pois_info.hpp"
@@ -65,10 +65,11 @@ protected:
   rclcpp::Client<mapoi_interfaces::srv::GetRoutesInfo>::SharedPtr get_routes_info_client_;
   rclcpp::Client<mapoi_interfaces::srv::GetRoutePois>::SharedPtr get_route_pois_client_;
 
-  // mapoi/initialpose_poi (transient_local) publisher: LocalizationButton クリック時に
-  // {map_name, poi_name} を publish し、`mapoi_amcl_localization_bridge` (or 自作 bridge) が
-  // POI resolve / `/initialpose` 配信 / retry を担当する (#209)。直接 `/initialpose` には publish しない。
-  rclcpp::Publisher<mapoi_interfaces::msg::InitialPoseRequest>::SharedPtr mapoi_initialpose_poi_pub_;
+  // #211: LocalizationButton クリック時に直接 publish せず、唯一の writer である mapoi_server へ
+  // request_initial_pose service 経由で {map_name, poi_name} の publish を依頼する。bridge が
+  // POI resolve / `/initialpose` 配信 / retry を担当する点は不変 (#209)。直接 `/initialpose` には
+  // publish しない。client は他の service client と同じく service_node_ 上に作る。
+  rclcpp::Client<mapoi_interfaces::srv::RequestInitialPose>::SharedPtr request_initial_pose_client_;
   // mapoi/nav/goal_pose_poi (std_msgs/String) publisher: RunGoalButton クリック時に POI 名を
   // publish し、navigation bridge (mapoi_nav2_bridge / 自作 bridge) が POI resolve / Nav2 action
   // 起動 / status 配信を担当する (#209 review #3)。直接 `goal_pose` には publish しない。
