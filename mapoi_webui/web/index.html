@@ -139,6 +139,8 @@
             <button id="btn-add-poi" title="Add POI">+ Add POI</button>
             <button id="btn-save" title="Save changes" disabled>Save</button>
             <button id="btn-discard" title="Discard changes" disabled>Discard</button>
+            <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>Undo</button>
+            <button id="btn-redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
             <span id="dirty-indicator"></span>
           </div>
         </div>
@@ -233,6 +235,9 @@
   <!-- poi-interactions.js は MapoiPoiInteractions を window に attach する pure helper 群 (#273)。
        map-viewer.js より前に読み込む (クリック判別 / wedge 幾何 / 座標変換で参照される)。 -->
   <script src="/js/poi-interactions.js"></script>
+  <!-- poi-history.js は MapoiPoiHistory を window に attach する pure helper 群 (#300)。
+       poi-editor.js より前に読み込む (Undo/Redo の stack 操作で参照される)。 -->
+  <script src="/js/poi-history.js"></script>
   <script src="/js/map-viewer.js"></script>
   <script src="/js/poi-editor.js"></script>
   <script src="/js/route-editor.js"></script>

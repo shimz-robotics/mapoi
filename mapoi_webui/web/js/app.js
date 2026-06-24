@@ -773,4 +773,25 @@
     // EventSource は readyState=CONNECTING に戻って自動 reconnect する
     console.warn('SSE connection error, browser will auto-reconnect:', err);
   };
+
+  // --- Keyboard shortcuts (#300) ---
+  // POI editor の Undo/Redo を document レベルで拾う。入力欄 (name / x / y / tags 等) の
+  // 編集中はブラウザ標準の text undo を優先するため無視する (pose tool の Escape ガード
+  // map-viewer.js #270 と同方針)。owned key のみ preventDefault し、他ハンドラを妨げない。
+  document.addEventListener('keydown', (e) => {
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'
+        || t.tagName === 'SELECT' || t.isContentEditable)) {
+      return;
+    }
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const key = e.key.toLowerCase();
+    if (key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      poiEditor.undo();
+    } else if ((key === 'z' && e.shiftKey) || key === 'y') {
+      e.preventDefault();
+      poiEditor.redo();
+    }
+  });
 })();
