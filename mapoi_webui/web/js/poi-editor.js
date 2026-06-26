@@ -13,6 +13,13 @@ class PoiEditor {
     // 楽観的競合検出用 yaml ハッシュ (#241)。GET 時に backend から受け取り、Save 時に送り返す。
     this.configVersion = null;
 
+    // Undo/Redo: capture-before-mutate スナップショットの stack (#300)。
+    // 変異メソッド先頭で _pushUndo() し、redo は新編集で無効化される (poi-history.js)。
+    // undo/redo 後の dirty は履歴深さではなく、保存済み POI との内容比較で導出する。
+    this.undoStack = [];
+    this.redoStack = [];
+    this.HISTORY_CAP = 50;
+
     this.tagDefinitions = [];  // [{name, description, is_system}, ...]
     this.onDirtyChange = null;     // callback(isDirty)
     this.onSelectionChange = null; // callback(index)
@@ -33,6 +40,8 @@ class PoiEditor {
     this.btnDiscard = document.getElementById('btn-discard');
     this.btnAddPoi = document.getElementById('btn-add-poi');
     this.dirtyIndicator = document.getElementById('dirty-indicator');
+    this.btnUndo = document.getElementById('btn-undo');
+    this.btnRedo = document.getElementById('btn-redo');
 
     // Form inputs
     this.inputName = document.getElementById('poi-name');
@@ -50,6 +59,9 @@ class PoiEditor {
     this.btnAddPoi.addEventListener('click', () => this.startAddPoi());
     this.btnSave.addEventListener('click', () => this.save());
     this.btnDiscard.addEventListener('click', () => this.discard());
+    // Undo/Redo ボタンは無くても (DOM harness 等) インスタンス化できるよう null guard (#300)。
+    if (this.btnUndo) this.btnUndo.addEventListener('click', () => this.undo());
+    if (this.btnRedo) this.btnRedo.addEventListener('click', () => this.redo());
   }
 
   /**
@@ -63,6 +75,11 @@ class PoiEditor {
     this.visiblePois = new Set(pois.map((_, i) => i));
     // 楽観的競合検出 token (#241)。後続の save() で backend に送り返す。
     this.configVersion = configVersion || null;
+    // loadPois は全 reload (初期 load / map 切替 / 409 onConflictReload / SSE config_changed) の
+    // 単一 funnel。ここで履歴を捨て、別 map や conflict 前バージョンの POI を undo で
+    // 復元させない (#300 安全要件)。
+    this.undoStack = [];
+    this.redoStack = [];
     this.setDirty(false);
     this.hideForm();
     this.renderList();
@@ -182,6 +199,7 @@ class PoiEditor {
    * Delete a POI.
    */
   deletePoi(index) {
+    this._pushUndo();
     this.pois.splice(index, 1);
     if (this.selectedIndex === index) this.selectedIndex = -1;
     if (this.selectedIndex > index) this.selectedIndex--;
@@ -204,6 +222,7 @@ class PoiEditor {
    * Copy a POI (deep clone with "_copy" suffix, open in edit form).
    */
   copyPoi(index) {
+    this._pushUndo();
     const original = this.pois[index];
     const copy = JSON.parse(JSON.stringify(original));
     copy.name = original.name + '_copy';
@@ -416,6 +435,9 @@ class PoiEditor {
       alert(tagValidation.error);
       return;
     }
+    // validation を全て通過し実際に変異する直前で履歴に積む。alert で早期 return した
+    // 経路 (変異なし) では積まない (#300)。
+    this._pushUndo();
     if (this.editingIndex === -2) {
       // New POI
       this.pois.push(poi);
@@ -474,6 +496,7 @@ class PoiEditor {
   updateDraggedPosition(index, x, y) {
     const poi = this.pois[index];
     if (!poi || !poi.pose) return;
+    this._pushUndo();
     poi.pose.x = MapoiPoiFilter.roundTo(x, MapoiPoiFilter.POSE_XY_DIGITS);
     poi.pose.y = MapoiPoiFilter.roundTo(y, MapoiPoiFilter.POSE_XY_DIGITS);
     if (this.editingIndex === index) {
@@ -492,6 +515,7 @@ class PoiEditor {
   updateDraggedYaw(index, yaw) {
     const poi = this.pois[index];
     if (!poi || !poi.pose) return;
+    this._pushUndo();
     poi.pose.yaw = MapoiPoiFilter.roundTo(yaw, MapoiPoiFilter.POSE_YAW_DIGITS);
     if (this.editingIndex === index) {
       this.inputYaw.value = poi.pose.yaw;
@@ -522,9 +546,85 @@ class PoiEditor {
     this.btnSave.disabled = !isDirty;
     this.btnDiscard.disabled = !isDirty;
     this.dirtyIndicator.textContent = isDirty ? 'Unsaved changes' : '';
+    this._updateUndoButtons();
     if (this.onDirtyChange) {
       this.onDirtyChange(isDirty);
     }
+  }
+
+  /**
+   * Undo/Redo ボタンの有効/無効を stack 長に同期する (#300)。setDirty が全変異 /
+   * undo / redo / load / save / discard で必ず呼ばれるので、ここを単一同期点にする。
+   */
+  _updateUndoButtons() {
+    if (this.btnUndo) this.btnUndo.disabled = this.undoStack.length === 0;
+    if (this.btnRedo) this.btnRedo.disabled = this.redoStack.length === 0;
+  }
+
+  /**
+   * 変異直前に現在状態の snapshot を undo stack へ積む (#300)。redo の無効化は
+   * poi-history.recordChange 内で行われる。各変異メソッドの「変異が確定する直前」で呼ぶ。
+   */
+  _pushUndo() {
+    MapoiPoiHistory.recordChange(
+      this.undoStack,
+      this.redoStack,
+      this._snapshot(),
+      this.HISTORY_CAP,
+    );
+  }
+
+  /**
+   * undo/redo で積む・復元する state の deep clone。pois 本体に加え、delete の index
+   * shift を replay 無しで巻き戻せるよう selectedIndex / visiblePois も含める (#300)。
+   */
+  _snapshot() {
+    return {
+      pois: JSON.parse(JSON.stringify(this.pois)),
+      selectedIndex: this.selectedIndex,
+      visiblePois: Array.from(this.visiblePois),
+    };
+  }
+
+  _isPoiContentDirty() {
+    return JSON.stringify(this.pois) !== JSON.stringify(this.originalPois);
+  }
+
+  /**
+   * snapshot を working copy へ復元し、map / list を再描画する (#300)。
+   * 開いている編集フォームは閉じる (stale な入力値が残るのを避ける MVP 方針)。
+   * dirty は保存済み POI との内容差で導出し、history cap で stack 深さが変化しても
+   * Save ボタン状態が実データとずれないようにする。onSelectionChange / onVisibilityChange
+   * を発火して app.js 側に Leaflet marker の再描画 (showPois / highlightPoi) を委ねる。
+   */
+  _applySnapshot(snap) {
+    this.pois = JSON.parse(JSON.stringify(snap.pois));
+    this.selectedIndex = snap.selectedIndex;
+    this.visiblePois = new Set(snap.visiblePois);
+    this.editingIndex = -1;
+    this.hideForm();
+    this.renderList();
+    this.setDirty(this._isPoiContentDirty());
+    if (this.onSelectionChange) this.onSelectionChange(this.selectedIndex);
+    if (this.onVisibilityChange) this.onVisibilityChange(this.visiblePois);
+  }
+
+  /**
+   * 1 手戻す。戻せる履歴が無ければ no-op (#300)。
+   */
+  undo() {
+    const snap = MapoiPoiHistory.stepUndo(this.undoStack, this.redoStack, this._snapshot());
+    if (!snap) return;
+    this._applySnapshot(snap);
+  }
+
+  /**
+   * 1 手やり直す。やり直せる履歴が無ければ no-op (#300)。
+   */
+  redo() {
+    const snap = MapoiPoiHistory.stepRedo(this.undoStack, this.redoStack, this._snapshot());
+    if (!snap) return;
+    this._applySnapshot(snap);
   }
 
   /**
@@ -553,6 +653,8 @@ class PoiEditor {
       }
       if (result.ok && result.success) {
         this.originalPois = JSON.parse(JSON.stringify(this.pois));
+        // save 後も undo 履歴は残す。undo/redo 後の dirty 判定は originalPois との
+        // 内容比較で行うため、履歴上限で古い stack entry が drop されても clean/dirty がずれない。
         // backend が再計算した最新 version を frontend に反映 (#241)。
         if (result.config_version) this.configVersion = result.config_version;
         this.setDirty(false);
@@ -576,6 +678,9 @@ class PoiEditor {
     this.pois = JSON.parse(JSON.stringify(this.originalPois));
     this.selectedIndex = -1;
     this.editingIndex = -1;
+    // クリーン基準へ戻すので履歴も捨てる (discard を跨いで undo させない) (#300)。
+    this.undoStack = [];
+    this.redoStack = [];
     this.setDirty(false);
     this.hideForm();
     this.renderList();
