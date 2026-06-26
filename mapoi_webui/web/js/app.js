@@ -374,6 +374,15 @@
     syncNavRouteSelect();
   };
 
+  // Waypoint candidate/row focus during route editing highlights the matching POI marker.
+  // This is preview-only UI feedback: it must not mutate route / POI dirty state (#305).
+  routeEditor.onWaypointFocus = (name) => {
+    if (!name) return;
+    const index = poiEditor.pois.findIndex((p) => p.name === name);
+    if (index < 0) return;
+    mapViewer.highlightPoi(index);
+  };
+
   // Route visibility toggle
   routeEditor.onVisibilityChange = () => {
     redrawRoutes();
@@ -442,7 +451,7 @@
   // compact viewport 初期表示で開く section は nav-controls.js に集約 (#199)。
   const initialSections = MapoiNavControls.initialSectionOpenStates(compactInitial);
   const routeToggle = setupSectionToggle('btn-route-toggle', document.getElementById('route-body'), initialSections.route);
-  setupSectionToggle('btn-poi-toggle', document.getElementById('poi-body'), initialSections.poi);
+  const poiToggle = setupSectionToggle('btn-poi-toggle', document.getElementById('poi-body'), initialSections.poi);
   const tagToggle = setupSectionToggle('btn-tag-toggle', document.getElementById('tag-body'), initialSections.tag);
   if (typeof compactMediaQuery.addEventListener === 'function') {
     compactMediaQuery.addEventListener('change', refreshResponsiveLayout);
@@ -708,35 +717,55 @@
   const navToggle = setupSectionToggle('btn-nav-toggle', document.getElementById('nav-body'), initialSections.nav);
   startNavStatusPolling();
 
-  // --- 編集モード時のセクション折りたたみ (#240) ---
-  // POI 編集フォームを開いたら他セクション (Navigation / Tags / Routes) を畳み、POI 一覧も
-  // 隠してフォームに集中させる (狭い sidebar で「非常に見づらい」状態の解消)。Save/Discard/
-  // Add は poi-toolbar に残るので編集継続・保存は可能。閉じたら元の開閉状態へ戻す。
+  // --- 編集モード時の sidebar focus (#240 / #302) ---
+  // POI / Route の edit form を開いたら他セクションを畳み、対象 list も隠して form +
+  // compact toolbar に集中させる。閉じたら元の開閉状態と list 表示へ戻す。
   const poiListEl = document.getElementById('poi-list');
-  let savedSectionStates = null;
-  function collapseSectionsForEditing() {
-    if (savedSectionStates) return; // 既に畳み済 (編集 POI 切替の二重呼び出し等) は状態を保持
-    savedSectionStates = {
+  const routeListEl = document.getElementById('route-list');
+  let savedSidebarFocus = null;
+  let activeSidebarFocus = null;
+  function activateSidebarFocus(editor) {
+    if (activeSidebarFocus === editor) return;
+    if (activeSidebarFocus) restoreSidebarFocus(activeSidebarFocus);
+    savedSidebarFocus = {
       nav: navToggle.isOpen(),
+      poi: poiToggle.isOpen(),
       tag: tagToggle.isOpen(),
       route: routeToggle.isOpen(),
+      poiListDisplay: poiListEl ? poiListEl.style.display : '',
+      routeListDisplay: routeListEl ? routeListEl.style.display : '',
     };
+    activeSidebarFocus = editor;
     navToggle.setOpen(false);
     tagToggle.setOpen(false);
-    routeToggle.setOpen(false);
-    if (poiListEl) poiListEl.style.display = 'none';
+    if (editor === 'poi') {
+      poiToggle.setOpen(true);
+      routeToggle.setOpen(false);
+      if (poiListEl) poiListEl.style.display = 'none';
+    } else if (editor === 'route') {
+      poiToggle.setOpen(false);
+      routeToggle.setOpen(true);
+      if (routeListEl) routeListEl.style.display = 'none';
+    }
   }
-  function restoreSectionsAfterEditing() {
-    if (poiListEl) poiListEl.style.display = '';
-    if (!savedSectionStates) return; // 畳んでいない (初期 hideForm 等) なら何もしない
-    navToggle.setOpen(savedSectionStates.nav);
-    tagToggle.setOpen(savedSectionStates.tag);
-    routeToggle.setOpen(savedSectionStates.route);
-    savedSectionStates = null;
+  function restoreSidebarFocus(editor) {
+    if (activeSidebarFocus !== editor || !savedSidebarFocus) return;
+    if (poiListEl) poiListEl.style.display = savedSidebarFocus.poiListDisplay;
+    if (routeListEl) routeListEl.style.display = savedSidebarFocus.routeListDisplay;
+    navToggle.setOpen(savedSidebarFocus.nav);
+    poiToggle.setOpen(savedSidebarFocus.poi);
+    tagToggle.setOpen(savedSidebarFocus.tag);
+    routeToggle.setOpen(savedSidebarFocus.route);
+    savedSidebarFocus = null;
+    activeSidebarFocus = null;
   }
   poiEditor.onEditFormVisibilityChange = (isOpen) => {
-    if (isOpen) collapseSectionsForEditing();
-    else restoreSectionsAfterEditing();
+    if (isOpen) activateSidebarFocus('poi');
+    else restoreSidebarFocus('poi');
+  };
+  routeEditor.onEditFormVisibilityChange = (isOpen) => {
+    if (isOpen) activateSidebarFocus('route');
+    else restoreSidebarFocus('route');
   };
 
   // --- Initialize ---
@@ -774,8 +803,8 @@
     console.warn('SSE connection error, browser will auto-reconnect:', err);
   };
 
-  // --- Keyboard shortcuts (#300) ---
-  // POI editor の Undo/Redo を document レベルで拾う。入力欄 (name / x / y / tags 等) の
+  // --- Keyboard shortcuts (#300 / #303) ---
+  // active editor の Undo/Redo を document レベルで拾う。入力欄 (name / x / y / tags 等) の
   // 編集中はブラウザ標準の text undo を優先するため無視する (pose tool の Escape ガード
   // map-viewer.js #270 と同方針)。owned key のみ preventDefault し、他ハンドラを妨げない。
   document.addEventListener('keydown', (e) => {
@@ -788,10 +817,12 @@
     const key = e.key.toLowerCase();
     if (key === 'z' && !e.shiftKey) {
       e.preventDefault();
-      poiEditor.undo();
+      if (routeEditor.editingIndex !== -1) routeEditor.undo();
+      else poiEditor.undo();
     } else if ((key === 'z' && e.shiftKey) || key === 'y') {
       e.preventDefault();
-      poiEditor.redo();
+      if (routeEditor.editingIndex !== -1) routeEditor.redo();
+      else poiEditor.redo();
     }
   });
 })();
