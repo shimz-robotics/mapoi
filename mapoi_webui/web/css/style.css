@@ -106,25 +106,54 @@ main {
   border-left: 1px solid #ddd;
 }
 
-#poi-toolbar {
+.editor-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
+  gap: 6px;
+  padding: 6px 12px;
   flex-wrap: wrap;
   border-top: 1px solid #ddd;
   background: #f5f5f5;
   flex-shrink: 0;
 }
 
-#poi-toolbar button {
-  padding: 8px 16px;
+.toolbar-command-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.editor-toolbar button {
+  padding: 6px 10px;
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 0.9rem;
-  min-height: 44px;
-  min-width: 44px;
+  font-size: 0.82rem;
+  min-height: 34px;
+  min-width: 34px;
+}
+
+.editor-toolbar button:disabled {
+  background: #bbb;
+  cursor: default;
+}
+
+.btn-icon-command {
+  width: 34px;
+  padding: 4px 0;
+  border: 1px solid #ccd1d1;
+  background: #ecf0f1;
+  color: #2c3e50;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.btn-icon-command:hover:not(:disabled) {
+  background: #dfe6e9;
+}
+
+.btn-icon-command:disabled {
+  color: #888;
 }
 
 #btn-add-poi {
@@ -610,8 +639,34 @@ main {
   font-size: 0.85rem;
 }
 
+.wp-item:focus {
+  outline: 2px solid #3498db;
+  outline-offset: -2px;
+  background: #eef5fc;
+}
+
+.wp-item.wp-drop-target {
+  background: #e8f6f3;
+  box-shadow: inset 3px 0 0 #16a085;
+}
+
 .wp-item:last-child {
   border-bottom: none;
+}
+
+.wp-drag-handle {
+  width: 18px;
+  color: #7f8c8d;
+  cursor: grab;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  line-height: 1;
+  text-align: center;
+  user-select: none;
+}
+
+.wp-drag-handle:active {
+  cursor: grabbing;
 }
 
 .wp-num {
@@ -725,23 +780,7 @@ main {
   background: #219a52;
 }
 
-/* Route toolbar */
-#route-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 16px;
-  flex-wrap: wrap;
-}
-
-#route-toolbar button {
-  padding: 6px 12px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.8rem;
-  min-height: 36px;
-}
+/* Route toolbar shares .editor-toolbar */
 
 #btn-add-route {
   background: #8e44ad;

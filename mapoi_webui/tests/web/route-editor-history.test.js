@@ -1,0 +1,127 @@
+// @vitest-environment jsdom
+//
+// RouteEditor waypoint UX regression tests (#303/#304/#305).
+//
+// RouteEditor is DOM-heavy, so most tests use a thin Object.create harness and
+// pin the state transitions that are easy to regress: edit-form history,
+// arbitrary waypoint reordering, and waypoint focus callbacks.
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as history from '../../web/js/poi-history.js';
+import RouteEditor from '../../web/js/route-editor.js';
+
+function makeEditor() {
+  const editor = Object.create(RouteEditor.prototype);
+  editor.editingIndex = 0;
+  editor.inputRouteName = { value: 'route-a' };
+  editor.editingWaypoints = ['A', 'B', 'C'];
+  editor.editingLandmarks = ['L1'];
+  editor.undoStack = [];
+  editor.redoStack = [];
+  editor.HISTORY_CAP = 50;
+  editor.dragWaypointIndex = -1;
+  editor.btnUndo = { disabled: true };
+  editor.btnRedo = { disabled: true };
+  editor.waypointListEl = { querySelectorAll: () => [] };
+  editor.renderWaypointList = vi.fn();
+  editor.renderLandmarkList = vi.fn();
+  editor.onEditingChange = vi.fn();
+  return editor;
+}
+
+beforeEach(() => {
+  globalThis.MapoiPoiHistory = history;
+});
+
+describe('RouteEditor edit-form history', () => {
+  it('undoes and redoes arbitrary waypoint reordering', () => {
+    const editor = makeEditor();
+
+    editor.moveWaypointTo(0, 2);
+
+    expect(editor.editingWaypoints).toEqual(['B', 'C', 'A']);
+    expect(editor.btnUndo.disabled).toBe(false);
+    expect(editor.btnRedo.disabled).toBe(true);
+
+    editor.undo();
+    expect(editor.editingWaypoints).toEqual(['A', 'B', 'C']);
+    expect(editor.btnUndo.disabled).toBe(true);
+    expect(editor.btnRedo.disabled).toBe(false);
+
+    editor.redo();
+    expect(editor.editingWaypoints).toEqual(['B', 'C', 'A']);
+    expect(editor.btnUndo.disabled).toBe(false);
+    expect(editor.btnRedo.disabled).toBe(true);
+  });
+
+  it('clears the redo future when a new waypoint edit happens after undo', () => {
+    const editor = makeEditor();
+    editor.onWaypointFocus = vi.fn();
+
+    editor.removeWaypoint(1);
+    editor.undo();
+    expect(editor.redoStack).toHaveLength(1);
+
+    editor.addWaypointByName('D');
+
+    expect(editor.editingWaypoints).toEqual(['A', 'B', 'C', 'D']);
+    expect(editor.onWaypointFocus).toHaveBeenCalledWith('D');
+    expect(editor.redoStack).toEqual([]);
+    expect(editor.btnRedo.disabled).toBe(true);
+  });
+
+  it('includes landmark add/remove in the same edit-form history', () => {
+    const editor = makeEditor();
+
+    editor.removeLandmark(0);
+    expect(editor.editingLandmarks).toEqual([]);
+
+    editor.undo();
+    expect(editor.editingLandmarks).toEqual(['L1']);
+
+    editor.redo();
+    expect(editor.editingLandmarks).toEqual([]);
+  });
+
+  it('does not mutate history or redraw for invalid/no-op reorders', () => {
+    const editor = makeEditor();
+
+    editor.moveWaypointTo(1, 1);
+    editor.moveWaypointTo(-1, 1);
+    editor.moveWaypointTo(1, 99);
+
+    expect(editor.editingWaypoints).toEqual(['A', 'B', 'C']);
+    expect(editor.undoStack).toEqual([]);
+    expect(editor.renderWaypointList).not.toHaveBeenCalled();
+  });
+});
+
+describe('RouteEditor waypoint focus UI', () => {
+  it('fires waypoint focus from rendered rows without marking data dirty', () => {
+    document.body.innerHTML = '<div id="waypoints"></div>';
+    const editor = Object.create(RouteEditor.prototype);
+    editor.waypointListEl = document.getElementById('waypoints');
+    editor.editingWaypoints = ['A'];
+    editor.poiNames = ['A'];
+    editor.onWaypointFocus = vi.fn();
+    editor.setDirty = vi.fn();
+
+    editor.renderWaypointList();
+    const row = editor.waypointListEl.querySelector('.wp-item');
+
+    row.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    row.dispatchEvent(new Event('focus'));
+
+    expect(editor.onWaypointFocus).toHaveBeenCalledWith('A');
+    expect(editor.setDirty).not.toHaveBeenCalled();
+  });
+
+  it('moves a dragged waypoint to the drop target index', () => {
+    const editor = makeEditor();
+    editor.dragWaypointIndex = 0;
+
+    editor._onWaypointDrop({ preventDefault: vi.fn() }, 2);
+
+    expect(editor.editingWaypoints).toEqual(['B', 'C', 'A']);
+    expect(editor.dragWaypointIndex).toBe(-1);
+  });
+});

@@ -135,12 +135,16 @@
               <button id="btn-form-cancel">Cancel</button>
             </div>
           </div>
-          <div id="poi-toolbar">
-            <button id="btn-add-poi" title="Add POI">+ Add POI</button>
-            <button id="btn-save" title="Save changes" disabled>Save</button>
-            <button id="btn-discard" title="Discard changes" disabled>Discard</button>
-            <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>Undo</button>
-            <button id="btn-redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
+          <div id="poi-toolbar" class="editor-toolbar">
+            <button id="btn-add-poi" class="toolbar-primary" title="Add POI">+ Add POI</button>
+            <span class="toolbar-command-group">
+              <button id="btn-save" title="Save changes" disabled>Save</button>
+              <button id="btn-discard" title="Discard changes" disabled>Discard</button>
+            </span>
+            <span class="toolbar-command-group toolbar-history-group" aria-label="POI history">
+              <button id="btn-undo" class="btn-icon-command" title="Undo (Ctrl+Z)" aria-label="Undo POI edit" disabled>&#8630;</button>
+              <button id="btn-redo" class="btn-icon-command" title="Redo (Ctrl+Shift+Z)" aria-label="Redo POI edit" disabled>&#8631;</button>
+            </span>
             <span id="dirty-indicator"></span>
           </div>
         </div>
@@ -213,10 +217,16 @@
               <button id="btn-route-form-cancel">Cancel</button>
             </div>
           </div>
-          <div id="route-toolbar">
-            <button id="btn-add-route" title="Add Route">+ Add Route</button>
-            <button id="btn-save-routes" title="Save route changes" disabled>Save</button>
-            <button id="btn-discard-routes" title="Discard route changes" disabled>Discard</button>
+          <div id="route-toolbar" class="editor-toolbar">
+            <button id="btn-add-route" class="toolbar-primary" title="Add Route">+ Add Route</button>
+            <span class="toolbar-command-group">
+              <button id="btn-save-routes" title="Save route changes" disabled>Save</button>
+              <button id="btn-discard-routes" title="Discard route changes" disabled>Discard</button>
+            </span>
+            <span class="toolbar-command-group toolbar-history-group" aria-label="Route history">
+              <button id="btn-route-undo" class="btn-icon-command" title="Undo route edit (Ctrl+Z)" aria-label="Undo route edit" disabled>&#8630;</button>
+              <button id="btn-route-redo" class="btn-icon-command" title="Redo route edit (Ctrl+Shift+Z)" aria-label="Redo route edit" disabled>&#8631;</button>
+            </span>
             <span id="route-dirty-indicator"></span>
           </div>
         </div>

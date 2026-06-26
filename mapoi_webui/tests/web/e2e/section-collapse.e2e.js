@@ -40,4 +40,39 @@ test.describe('D. section 折りたたみの app.js 実適用', () => {
     expect(await displayOf(page, '#tag-body')).toBe('none');        // 元の閉のまま (全開ではない)
     expect(await displayOf(page, '#poi-list')).not.toBe('none');    // 一覧復活
   });
+
+  test('Route 編集フォーム開で他 section と route-list が畳まれ、閉じると元の開閉に戻る', async ({ page }) => {
+    await loadApp(page);
+
+    await setSectionOpen(page, '#btn-nav-toggle', '#nav-body', true);
+    await setSectionOpen(page, '#btn-poi-toggle', '#poi-body', true);
+    await setSectionOpen(page, '#btn-tag-toggle', '#tag-body', false);
+    await setSectionOpen(page, '#btn-route-toggle', '#route-body', true);
+
+    const navBefore = await displayOf(page, '#nav-body');
+    const poiBefore = await displayOf(page, '#poi-body');
+    const routeBefore = await displayOf(page, '#route-body');
+    expect(navBefore).not.toBe('none');
+    expect(poiBefore).not.toBe('none');
+    expect(routeBefore).not.toBe('none');
+    expect(await displayOf(page, '#tag-body')).toBe('none');
+
+    const routeItem = page.locator('.route-item').filter({ hasText: 'test_route' });
+    await routeItem.locator('.btn-edit').click();
+    await expect(page.locator('#route-edit-form')).not.toHaveClass(/(^|\s)hidden(\s|$)/);
+
+    expect(await displayOf(page, '#nav-body')).toBe('none');
+    expect(await displayOf(page, '#poi-body')).toBe('none');
+    expect(await displayOf(page, '#tag-body')).toBe('none');
+    expect(await displayOf(page, '#route-body')).not.toBe('none');
+    expect(await displayOf(page, '#route-list')).toBe('none');
+
+    await page.locator('#btn-route-form-cancel').click();
+    await expect(page.locator('#route-edit-form')).toHaveClass(/(^|\s)hidden(\s|$)/);
+    expect(await displayOf(page, '#nav-body')).toBe(navBefore);
+    expect(await displayOf(page, '#poi-body')).toBe(poiBefore);
+    expect(await displayOf(page, '#tag-body')).toBe('none');
+    expect(await displayOf(page, '#route-body')).toBe(routeBefore);
+    expect(await displayOf(page, '#route-list')).not.toBe('none');
+  });
 });
