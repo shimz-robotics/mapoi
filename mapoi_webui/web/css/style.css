@@ -839,6 +839,10 @@ main {
   border-left: 3px solid transparent;
 }
 
+.tag-item.tag-desc-expanded {
+  align-items: flex-start;
+}
+
 .tag-item-system {
   border-left-color: #3498db;
 }
@@ -862,9 +866,45 @@ main {
   min-width: 0;
   font-size: 0.8rem;
   color: #888;
+  background: transparent;
+  border: none;
+  text-align: left;
+  padding: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tag-item-desc.has-description {
+  cursor: pointer;
+}
+
+.tag-item-desc.has-description::after {
+  content: '\25BE';
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 0.65rem;
+  color: #95a5a6;
+}
+
+.tag-item-desc.expanded {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.tag-item-desc.expanded::after {
+  transform: rotate(180deg);
+}
+
+.tag-item-desc:focus-visible {
+  outline: 2px solid #3498db;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.tag-item-desc:disabled {
+  cursor: default;
 }
 
 .tag-type-label {
