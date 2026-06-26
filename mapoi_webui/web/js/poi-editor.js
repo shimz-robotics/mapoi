@@ -15,11 +15,9 @@ class PoiEditor {
 
     // Undo/Redo: capture-before-mutate スナップショットの stack (#300)。
     // 変異メソッド先頭で _pushUndo() し、redo は新編集で無効化される (poi-history.js)。
-    // savedBaselineDepth = 直近 load/save 時の undoStack 長。undo/redo 後の dirty は
-    // この深さとの差で導出する (履歴は線形なので深さ一致 = saved baseline と同一状態)。
+    // undo/redo 後の dirty は履歴深さではなく、保存済み POI との内容比較で導出する。
     this.undoStack = [];
     this.redoStack = [];
-    this.savedBaselineDepth = 0;
     this.HISTORY_CAP = 50;
 
     this.tagDefinitions = [];  // [{name, description, is_system}, ...]
@@ -82,7 +80,6 @@ class PoiEditor {
     // 復元させない (#300 安全要件)。
     this.undoStack = [];
     this.redoStack = [];
-    this.savedBaselineDepth = 0;
     this.setDirty(false);
     this.hideForm();
     this.renderList();
@@ -589,11 +586,16 @@ class PoiEditor {
     };
   }
 
+  _isPoiContentDirty() {
+    return JSON.stringify(this.pois) !== JSON.stringify(this.originalPois);
+  }
+
   /**
    * snapshot を working copy へ復元し、map / list を再描画する (#300)。
-   * 開いている編集フォームは閉じる (stale な入力値が残るのを避ける MVP 方針)。dirty は
-   * saved baseline からの stack 深さ差で導出。onSelectionChange / onVisibilityChange を
-   * 発火して app.js 側に Leaflet marker の再描画 (showPois / highlightPoi) を委ねる。
+   * 開いている編集フォームは閉じる (stale な入力値が残るのを避ける MVP 方針)。
+   * dirty は保存済み POI との内容差で導出し、history cap で stack 深さが変化しても
+   * Save ボタン状態が実データとずれないようにする。onSelectionChange / onVisibilityChange
+   * を発火して app.js 側に Leaflet marker の再描画 (showPois / highlightPoi) を委ねる。
    */
   _applySnapshot(snap) {
     this.pois = JSON.parse(JSON.stringify(snap.pois));
@@ -602,7 +604,7 @@ class PoiEditor {
     this.editingIndex = -1;
     this.hideForm();
     this.renderList();
-    this.setDirty(this.undoStack.length !== this.savedBaselineDepth);
+    this.setDirty(this._isPoiContentDirty());
     if (this.onSelectionChange) this.onSelectionChange(this.selectedIndex);
     if (this.onVisibilityChange) this.onVisibilityChange(this.visiblePois);
   }
@@ -651,9 +653,8 @@ class PoiEditor {
       }
       if (result.ok && result.success) {
         this.originalPois = JSON.parse(JSON.stringify(this.pois));
-        // save 後も undo 履歴は残す。現在の stack 深さを新 baseline とし、undo/redo 後の
-        // dirty 判定はこの深さとの差で行う (save 直後は一致するので clean) (#300)。
-        this.savedBaselineDepth = this.undoStack.length;
+        // save 後も undo 履歴は残す。undo/redo 後の dirty 判定は originalPois との
+        // 内容比較で行うため、履歴上限で古い stack entry が drop されても clean/dirty がずれない。
         // backend が再計算した最新 version を frontend に反映 (#241)。
         if (result.config_version) this.configVersion = result.config_version;
         this.setDirty(false);
@@ -680,7 +681,6 @@ class PoiEditor {
     // クリーン基準へ戻すので履歴も捨てる (discard を跨いで undo させない) (#300)。
     this.undoStack = [];
     this.redoStack = [];
-    this.savedBaselineDepth = 0;
     this.setDirty(false);
     this.hideForm();
     this.renderList();
