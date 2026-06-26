@@ -756,11 +756,27 @@ main {
 
 .route-wp-select {
   flex: 1;
+  min-width: 0;
   padding: 4px 8px;
   border: 1px solid #ccc;
   border-radius: 4px;
   font-size: 0.85rem;
   min-height: 32px;
+}
+
+.route-click-add-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 0.82rem;
+  color: #4d5f6f;
+  cursor: pointer;
+  user-select: none;
+}
+
+.route-click-add-toggle input {
+  margin: 0;
 }
 
 .btn-add-wp {

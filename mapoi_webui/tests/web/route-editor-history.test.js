@@ -197,4 +197,16 @@ describe('RouteEditor waypoint focus UI', () => {
 
     expect(editor.selectPoiCandidate('missing')).toBe('');
   });
+
+  it('keeps click-to-add disabled by default for each edit session', () => {
+    const editor = Object.create(RouteEditor.prototype);
+    editor.formEl = document.createElement('div');
+    editor.clickAddMode = true;
+    editor.clickAddToggle = { checked: true };
+
+    editor.showForm();
+
+    expect(editor.isClickAddModeEnabled()).toBe(false);
+    expect(editor.clickAddToggle.checked).toBe(false);
+  });
 });

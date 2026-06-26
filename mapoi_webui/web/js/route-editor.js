@@ -18,6 +18,7 @@ class RouteEditor {
     this.redoStack = [];
     this.HISTORY_CAP = 50;
     this.dragWaypointIndex = -1;
+    this.clickAddMode = false;
 
     this.onDirtyChange = null;
     this.onVisibilityChange = null;
@@ -44,6 +45,7 @@ class RouteEditor {
     this.waypointListEl = document.getElementById('route-waypoint-list');
     this.waypointSelect = document.getElementById('route-wp-select');
     this.btnAddWaypoint = document.getElementById('btn-add-waypoint');
+    this.clickAddToggle = document.getElementById('route-click-add-toggle');
 
     // Form inputs - landmarks (#143)
     this.landmarkListEl = document.getElementById('route-landmark-list');
@@ -57,6 +59,11 @@ class RouteEditor {
     this.btnSaveRoutes.addEventListener('click', () => this.save());
     this.btnDiscardRoutes.addEventListener('click', () => this.discard());
     this.btnAddWaypoint.addEventListener('click', () => this.addWaypointFromSelect());
+    if (this.clickAddToggle) {
+      this.clickAddToggle.addEventListener('change', () => {
+        this.clickAddMode = this.clickAddToggle.checked;
+      });
+    }
     this.waypointSelect.addEventListener('change', () => this.focusWaypointName(this.waypointSelect.value));
     this.waypointSelect.addEventListener('focus', () => this.focusWaypointName(this.waypointSelect.value));
     if (this.landmarkSelect) {
@@ -97,6 +104,10 @@ class RouteEditor {
    */
   setPoiNames(names) {
     this.poiNames = names || [];
+  }
+
+  isClickAddModeEnabled() {
+    return !!this.clickAddMode;
   }
 
   /**
@@ -601,11 +612,15 @@ class RouteEditor {
 
   showForm() {
     this.formEl.classList.remove('hidden');
+    this.clickAddMode = false;
+    if (this.clickAddToggle) this.clickAddToggle.checked = false;
     if (this.onEditFormVisibilityChange) this.onEditFormVisibilityChange(true);
   }
 
   hideForm() {
     this.formEl.classList.add('hidden');
+    this.clickAddMode = false;
+    if (this.clickAddToggle) this.clickAddToggle.checked = false;
     if (this.onEditFormVisibilityChange) this.onEditFormVisibilityChange(false);
   }
 
