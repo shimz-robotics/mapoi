@@ -17,6 +17,16 @@ async function maxMarkerZ(page, selector) {
     Math.max(...els.map((el) => Number.parseInt(getComputedStyle(el).zIndex || '0', 10) || 0)));
 }
 
+async function markerCenter(page, index) {
+  const box = await page.locator('.poi-arrow-icon').nth(index).boundingBox();
+  expect(box).not.toBeNull();
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+function distance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
 test.describe('Map edit polish', () => {
   test('sidebar sections are ordered Navigation, Tags, POIs, Routes', async ({ page }) => {
     await loadApp(page);
@@ -47,6 +57,74 @@ test.describe('Map edit polish', () => {
     await expect(page.locator('#nav-initialpose-select')).toHaveValue('');
     await expect(page.locator('#poi-edit-form')).toHaveClass(/(^|\s)hidden(\s|$)/);
     await expect(page.locator('#route-edit-form')).toHaveClass(/(^|\s)hidden(\s|$)/);
+  });
+
+  test('Escape cancels active POI and Route editing modes', async ({ page }) => {
+    await loadApp(page);
+    await setSectionOpen(page, '#btn-poi-toggle', '#poi-body', true);
+
+    await poiCard(page, 'poi_wedge').locator('.btn-edit').click();
+    await expect(page.locator('#poi-edit-form')).not.toHaveClass(/(^|\s)hidden(\s|$)/);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#poi-edit-form')).toHaveClass(/(^|\s)hidden(\s|$)/);
+    await expect(poiCard(page, 'poi_wedge')).toHaveClass(/(^|\s)selected(\s|$)/);
+
+    await setSectionOpen(page, '#btn-route-toggle', '#route-body', true);
+    await routeItem(page, 'test_route').locator('.btn-edit').click();
+    await expect(page.locator('#route-edit-form')).not.toHaveClass(/(^|\s)hidden(\s|$)/);
+    await page.locator('#route-name').focus();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#route-edit-form')).toHaveClass(/(^|\s)hidden(\s|$)/);
+    await expect(routeItem(page, 'test_route')).toHaveClass(/(^|\s)selected(\s|$)/);
+  });
+
+  test('Escape clears pending POI pose point before canceling POI edit', async ({ page }) => {
+    await loadApp(page);
+    await setSectionOpen(page, '#btn-poi-toggle', '#poi-body', true);
+
+    await poiCard(page, 'poi_wedge').locator('.btn-edit').click();
+    await expect(page.locator('#poi-edit-form')).not.toHaveClass(/(^|\s)hidden(\s|$)/);
+
+    await page.locator('#map').click({ position: { x: 260, y: 180 } });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#poi-edit-form')).not.toHaveClass(/(^|\s)hidden(\s|$)/);
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#poi-edit-form')).toHaveClass(/(^|\s)hidden(\s|$)/);
+  });
+
+  test('POI edit cancel restores marker preview position', async ({ page }) => {
+    await loadApp(page);
+    await setSectionOpen(page, '#btn-poi-toggle', '#poi-body', true);
+
+    const original = await markerCenter(page, 0);
+    await poiCard(page, 'poi_wedge').locator('.btn-edit').click();
+    await expect(page.locator('#poi-edit-form')).not.toHaveClass(/(^|\s)hidden(\s|$)/);
+
+    await page.locator('#map').click({ position: { x: 320, y: 180 } });
+    await page.locator('#map').click({ position: { x: 360, y: 180 } });
+    const preview = await markerCenter(page, 0);
+    expect(distance(preview, original)).toBeGreaterThan(8);
+
+    await page.locator('#btn-form-cancel').click();
+    await expect(page.locator('#poi-edit-form')).toHaveClass(/(^|\s)hidden(\s|$)/);
+    const restored = await markerCenter(page, 0);
+    expect(distance(restored, original)).toBeLessThan(2);
+  });
+
+  test('Escape cancels POI placing mode before map click', async ({ page }) => {
+    await loadApp(page);
+    await setSectionOpen(page, '#btn-poi-toggle', '#poi-body', true);
+
+    await page.locator('#btn-add-poi').click();
+    await expect(page.locator('#btn-add-poi')).toContainText('Click map...');
+    await expect(page.locator('#btn-add-poi')).toHaveClass(/(^|\s)placing(\s|$)/);
+
+    await page.keyboard.press('Escape');
+
+    await expect(page.locator('#btn-add-poi')).toContainText('+ Add POI');
+    await expect(page.locator('#btn-add-poi')).not.toHaveClass(/(^|\s)placing(\s|$)/);
+    await expect(page.locator('#poi-edit-form')).toHaveClass(/(^|\s)hidden(\s|$)/);
   });
 
   test('POI edit and Route edit are mutually exclusive from sidebar actions', async ({ page }) => {

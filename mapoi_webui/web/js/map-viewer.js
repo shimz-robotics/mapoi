@@ -215,6 +215,13 @@ class MapViewer {
     return !!this._poseTool;
   }
 
+  cancelPoseToolPendingPosition() {
+    const pt = this._poseTool;
+    if (!pt || pt.phase !== 'yaw' || !pt.positionPicked) return false;
+    this._cancelPoseToolYaw();
+    return true;
+  }
+
   _zIndex(kind) {
     const byMode = {
       default: {

@@ -296,6 +296,14 @@
     return routeEditor.selectPoiCandidate(poi.name);
   }
 
+  function restorePoiEditPreview(index) {
+    if (index < 0) return;
+    mapViewer.showPois(poiEditor.pois, poiEditor.visiblePois);
+    if (poiEditor.selectedIndex >= 0) {
+      mapViewer.highlightPoi(poiEditor.selectedIndex);
+    }
+  }
+
   poiEditor.onBeforeEditStart = () => {
     if (!isRouteEditingActive()) return true;
     alert('Finish or cancel route editing before editing POIs.');
@@ -306,6 +314,10 @@
     if (!isPoiEditingActive()) return true;
     alert('Finish or cancel POI editing before editing routes.');
     return false;
+  };
+
+  poiEditor.onEditCancel = (previousEditingIndex) => {
+    restorePoiEditPreview(previousEditingIndex);
   };
 
   // Helper: enable pose tool for the currently editing POI
@@ -916,22 +928,43 @@
     console.warn('SSE connection error, browser will auto-reconnect:', err);
   };
 
-  // --- Keyboard shortcuts (#300 / #303) ---
-  // active editor の Escape / Undo/Redo を document レベルで拾う。入力欄 (name / x / y / tags 等) の
-  // 編集中はブラウザ標準の text undo を優先するため無視する (pose tool の Escape ガード
-  // map-viewer.js #270 と同方針)。owned key のみ preventDefault し、他ハンドラを妨げない。
+  // --- Keyboard shortcuts (#300 / #303 / #321) ---
+  // active editor の Escape / Undo/Redo を document レベルで拾う。
+  // Escape はフォームの Cancel 相当として編集モードを抜ける。Undo/Redo は入力欄
+  // (name / x / y / tags 等) の編集中はブラウザ標準の text undo を優先するため無視する。
+  // owned key のみ preventDefault し、他ハンドラを妨げない。
   document.addEventListener('keydown', (e) => {
     const t = e.target;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'
-        || t.tagName === 'SELECT' || t.isContentEditable)) {
-      return;
-    }
+    const isEditableTarget = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'
+        || t.tagName === 'SELECT' || t.isContentEditable);
     if (e.key === 'Escape') {
-      if (mapViewer.isPoseToolActive() || isPoiEditingActive() || isRouteEditingActive()) return;
+      if (e.isComposing) return;
+      if (routeEditor.editingIndex !== -1) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        routeEditor.formCancel();
+        return;
+      }
+      if (poiEditor.editingIndex !== -1) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (mapViewer.cancelPoseToolPendingPosition()) return;
+        poiEditor.formCancel();
+        return;
+      }
+      if (poiEditor.placingMode) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        poiEditor.cancelPlacing();
+        return;
+      }
+      if (mapViewer.isPoseToolActive()) return;
+      if (isEditableTarget) return;
       const hadSelection = poiEditor.selectedIndex >= 0 || routeEditor.selectedIndex >= 0
         || navGoalSelect.value || navRouteSelect.value || navInitialPoseSelect.value;
       if (!hadSelection) return;
       e.preventDefault();
+      e.stopImmediatePropagation();
       poiEditor.clearSelection();
       routeEditor.clearSelection();
       navGoalSelect.value = '';
@@ -939,6 +972,7 @@
       navInitialPoseSelect.value = '';
       return;
     }
+    if (isEditableTarget) return;
     if (!(e.ctrlKey || e.metaKey)) return;
     const key = e.key.toLowerCase();
     if (key === 'z' && !e.shiftKey) {
