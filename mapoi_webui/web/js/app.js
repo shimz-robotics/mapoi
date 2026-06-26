@@ -346,16 +346,17 @@
 
   // POI marker click on map
   mapViewer.onPoiClick = (index) => {
-    // If route editing is active, add the clicked POI as a waypoint
+    // Route editing uses map clicks for candidate selection by default.
+    // Optional click-to-add keeps fast waypoint entry available without making
+    // accidental route mutations the default interaction.
     if (routeEditor.editingIndex !== -1) {
       const poi = poiEditor.pois[index];
       if (poi && poi.name) {
         const candidateKind = syncRouteEditPoiCandidate(index);
-        if (candidateKind === 'landmark') return;
-        // landmark POI は waypoint dropdown と整合させ、map click でも waypoint には
-        // 入れない (Codex review #147 medium)。route.landmarks への追加は dropdown UI で行う。
-        if (MapoiPoiFilter.hasLandmarkTag(poi)) return;
-        routeEditor.addWaypointByName(poi.name);
+        if (candidateKind !== 'waypoint') return;
+        if (routeEditor.isMapInsertModeEnabled()) {
+          routeEditor.insertWaypointAfterSelected(poi.name);
+        }
       }
       return;
     }

@@ -29,7 +29,7 @@ test.describe('Route edit POI candidate sync', () => {
     await expect(page.locator('#route-lm-select')).toHaveValue('poi_landmark');
   });
 
-  test('route edit map clicks sync selects while preserving add semantics', async ({ page }) => {
+  test('route edit map clicks sync selects without auto-add by default', async ({ page }) => {
     await openRouteEdit(page);
 
     await page.locator('.poi-arrow-icon').nth(4).click();
@@ -40,6 +40,32 @@ test.describe('Route edit POI candidate sync', () => {
     await page.locator('.poi-arrow-icon').nth(1).click();
     await expect(page.locator('#route-wp-select')).toHaveValue('poi_wedge2');
     await expect(page.locator('#route-lm-select')).toHaveValue('');
+    await expect(page.locator('#route-waypoint-list .wp-item')).toHaveCount(3);
+  });
+
+  test('route edit map insert toggle inserts after the selected waypoint', async ({ page }) => {
+    await openRouteEdit(page);
+
+    await expect(page.locator('#route-waypoint-list .wp-item')).toHaveCount(3);
+    await page.locator('#route-waypoint-list .wp-item').nth(0).click();
+    await expect(page.locator('#route-waypoint-list .wp-item').nth(0)).toHaveClass(/(^|\s)selected(\s|$)/);
+
+    await page.locator('#route-map-insert-toggle').check();
+    await page.locator('.poi-arrow-icon').nth(4).click();
+    await expect(page.locator('#route-lm-select')).toHaveValue('poi_landmark');
+    await expect(page.locator('#route-wp-select')).toHaveValue('');
+    await expect(page.locator('#route-waypoint-list .wp-item')).toHaveCount(3);
+
+    await page.locator('.poi-arrow-icon').nth(1).click();
+    await expect(page.locator('#route-wp-select')).toHaveValue('poi_wedge2');
+    await expect(page.locator('#route-lm-select')).toHaveValue('');
     await expect(page.locator('#route-waypoint-list .wp-item')).toHaveCount(4);
+    await expect(page.locator('#route-waypoint-list .wp-name')).toHaveText([
+      'poi_wedge',
+      'poi_wedge2',
+      'poi_disc',
+      'poi_pause',
+    ]);
+    await expect(page.locator('#route-waypoint-list .wp-item').nth(1)).toHaveClass(/(^|\s)selected(\s|$)/);
   });
 });
