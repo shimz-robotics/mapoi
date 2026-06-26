@@ -1034,6 +1034,36 @@ main {
   justify-content: center;
 }
 
+.route-landmark-marker {
+  background: transparent !important;
+  border: none !important;
+  pointer-events: none;
+}
+
+.route-landmark-radius-ring {
+  filter: drop-shadow(0 0 3px rgba(255,255,255,0.95));
+}
+
+.route-landmark-badge {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  border: 1px solid #fff;
+  color: #fff;
+  font-size: 0.58rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.28);
+}
+
 /* Navigation panel */
 .nav-body {
   padding: 8px 16px 12px;

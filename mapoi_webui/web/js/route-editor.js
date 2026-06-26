@@ -24,7 +24,9 @@ class RouteEditor {
     this.onEditingChange = null; // callback(isEditing) - fired when editing starts/stops
     this.onSelectionChange = null; // callback(index) - fired when selection changes
     this.onWaypointFocus = null; // callback(poiName) - fired when waypoint UI previews a POI
+    this.onLandmarkFocus = null; // callback(poiName) - fired when landmark UI previews a POI
     this.onEditFormVisibilityChange = null; // callback(isOpen)
+    this.onBeforeEditStart = null; // callback(action) -> false blocks route edit/add/copy/delete
 
     // DOM references
     this.listEl = document.getElementById('route-list');
@@ -57,6 +59,10 @@ class RouteEditor {
     this.btnAddWaypoint.addEventListener('click', () => this.addWaypointFromSelect());
     this.waypointSelect.addEventListener('change', () => this.focusWaypointName(this.waypointSelect.value));
     this.waypointSelect.addEventListener('focus', () => this.focusWaypointName(this.waypointSelect.value));
+    if (this.landmarkSelect) {
+      this.landmarkSelect.addEventListener('change', () => this.focusLandmarkName(this.landmarkSelect.value));
+      this.landmarkSelect.addEventListener('focus', () => this.focusLandmarkName(this.landmarkSelect.value));
+    }
     if (this.btnUndo) this.btnUndo.addEventListener('click', () => this.undo());
     if (this.btnRedo) this.btnRedo.addEventListener('click', () => this.redo());
     if (this.btnAddLandmark) {
@@ -198,6 +204,7 @@ class RouteEditor {
    * Open edit form for a route.
    */
   editRoute(index) {
+    if (!this._canStartEdit('edit')) return;
     this.editingIndex = index;
     this.selectedIndex = index;
     const route = this.routes[index];
@@ -213,6 +220,7 @@ class RouteEditor {
    * Delete a route.
    */
   deleteRoute(index) {
+    if (!this._canStartEdit('delete')) return;
     const name = this.routes[index].name;
     this.routes.splice(index, 1);
     this.visibleRoutes.delete(name);
@@ -228,6 +236,7 @@ class RouteEditor {
    * Copy a route (deep clone with "_copy" suffix, open in edit form).
    */
   copyRoute(index) {
+    if (!this._canStartEdit('copy')) return;
     const original = this.routes[index];
     const copy = JSON.parse(JSON.stringify(original));
     copy.name = original.name + '_copy';
@@ -249,6 +258,7 @@ class RouteEditor {
    * Start adding a new route.
    */
   startAddRoute() {
+    if (!this._canStartEdit('add')) return;
     this.editingIndex = -2;
     this.formTitle.textContent = 'New Route';
     this.fillForm({ name: '', waypoints: [] });
@@ -440,6 +450,11 @@ class RouteEditor {
     this.editingLandmarks.forEach((lm, i) => {
       const row = document.createElement('div');
       row.className = 'wp-item';
+      row.tabIndex = 0;
+      row.dataset.poiName = lm;
+      row.addEventListener('click', () => this.focusLandmarkName(lm));
+      row.addEventListener('focus', () => this.focusLandmarkName(lm));
+      row.addEventListener('mouseenter', () => this.focusLandmarkName(lm));
 
       const num = document.createElement('span');
       num.className = 'wp-num';
@@ -484,6 +499,7 @@ class RouteEditor {
     this.editingLandmarks.push(val);
     this.landmarkSelect.value = '';
     this.renderLandmarkList();
+    this.focusLandmarkName(val);
     this._fireEditingChange();
   }
 
@@ -587,6 +603,10 @@ class RouteEditor {
 
   focusWaypointName(name) {
     if (this.onWaypointFocus) this.onWaypointFocus(name || '');
+  }
+
+  focusLandmarkName(name) {
+    if (this.onLandmarkFocus) this.onLandmarkFocus(name || '');
   }
 
   _onWaypointDragStart(e, index) {
@@ -747,6 +767,13 @@ class RouteEditor {
     if (this.onSelectionChange) this.onSelectionChange(this.selectedIndex);
   }
 
+  clearSelection() {
+    if (this.selectedIndex === -1) return;
+    this.selectedIndex = -1;
+    this.renderList();
+    if (this.onSelectionChange) this.onSelectionChange(-1);
+  }
+
   /**
    * Returns the editing route color, or null if not editing an existing route.
    */
@@ -759,6 +786,11 @@ class RouteEditor {
   /** @private */
   _fireEditingChange() {
     if (this.onEditingChange) this.onEditingChange(this.editingIndex !== -1);
+  }
+
+  _canStartEdit(action) {
+    if (!this.onBeforeEditStart) return true;
+    return this.onBeforeEditStart(action) !== false;
   }
 }
 

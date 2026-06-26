@@ -115,6 +115,25 @@ describe('RouteEditor waypoint focus UI', () => {
     expect(editor.setDirty).not.toHaveBeenCalled();
   });
 
+  it('fires landmark focus from rendered rows without marking data dirty', () => {
+    document.body.innerHTML = '<div id="landmarks"></div>';
+    const editor = Object.create(RouteEditor.prototype);
+    editor.landmarkListEl = document.getElementById('landmarks');
+    editor.editingLandmarks = ['L1'];
+    editor.landmarkNames = ['L1'];
+    editor.onLandmarkFocus = vi.fn();
+    editor.setDirty = vi.fn();
+
+    editor.renderLandmarkList();
+    const row = editor.landmarkListEl.querySelector('.wp-item');
+
+    row.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    row.dispatchEvent(new Event('focus'));
+
+    expect(editor.onLandmarkFocus).toHaveBeenCalledWith('L1');
+    expect(editor.setDirty).not.toHaveBeenCalled();
+  });
+
   it('moves a dragged waypoint to the drop target index', () => {
     const editor = makeEditor();
     editor.dragWaypointIndex = 0;

@@ -50,6 +50,10 @@ class MapViewer {
     this._lastRobotPose = null;  // 最新 pose (updateRobotMarker で更新)
     this._robotConnectorLayers = []; // 現在のロボット位置 → active route 先頭 POI への connector
     this._reachedRouteSignatures = new Set(); // 到達済み route の "name|firstWaypoint" signature 集合 (page 内 sticky)
+    this._routeLandmarkLayers = []; // selected/editing route に紐づく landmark POI の badge/ring
+    this._cachedPois = null; // showPois の POI array。landmark overlay の再描画に使う
+    this._cachedPoiVisibility = null; // showPois の visibleSet snapshot。landmark overlay の可視性判定に使う
+    this._layerPriorityMode = 'default'; // default | editing | navigation
 
     // ロボットの実寸 (m)。connector 到達閾値とロボットマーカーサイズの両方に
     // 使う (#116)。default は TurtleBot3 burger (~0.105m) に余裕を持たせた値。
@@ -199,6 +203,96 @@ class MapViewer {
     });
   }
 
+  setLayerPriorityMode(mode) {
+    const next = ['default', 'editing', 'navigation'].includes(mode) ? mode : 'default';
+    if (this._layerPriorityMode === next) return;
+    this._layerPriorityMode = next;
+    this._applyLayerPriority();
+    this._updateRobotConnector();
+  }
+
+  isPoseToolActive() {
+    return !!this._poseTool;
+  }
+
+  _zIndex(kind) {
+    const byMode = {
+      default: {
+        poi: 0,
+        poiHighlight: 1000,
+        routeMarker: 800,
+        landmark: 1100,
+        yawHandle: 1500,
+        robotConnector: 1200,
+        robot: 2000,
+      },
+      editing: {
+        poi: 2400,
+        poiHighlight: 2800,
+        routeMarker: 2600,
+        landmark: 2700,
+        yawHandle: 3000,
+        robotConnector: 250,
+        robot: 300,
+      },
+      navigation: {
+        poi: 0,
+        poiHighlight: 1000,
+        routeMarker: 1200,
+        landmark: 1100,
+        yawHandle: 1500,
+        robotConnector: 3100,
+        robot: 3200,
+      },
+    };
+    return (byMode[this._layerPriorityMode] || byMode.default)[kind] || 0;
+  }
+
+  _poiZIndex(isHighlighted) {
+    return this._zIndex(isHighlighted ? 'poiHighlight' : 'poi');
+  }
+
+  _applyLayerPriority() {
+    this.poiMarkers.forEach((item) => {
+      item.marker.setZIndexOffset(this._poiZIndex(item.index === this._highlightedPoiIndex));
+    });
+    if (this._yawHandle) this._yawHandle.setZIndexOffset(this._zIndex('yawHandle'));
+    if (this.robotMarker) this.robotMarker.setZIndexOffset(this._zIndex('robot'));
+    this._routePolylines.forEach((item) => {
+      this._applyRouteLinePriority(item.line);
+      this._applyRouteLinePriority(item.hitLine);
+      [...(item.arrowMarkers || []), ...(item.labelMarkers || [])].forEach((marker) => {
+        marker.setZIndexOffset(this._zIndex('routeMarker'));
+      });
+    });
+    (this._editingPreviewLayers || []).forEach((layer) => {
+      if (typeof layer.setZIndexOffset === 'function') {
+        layer.setZIndexOffset(this._zIndex('routeMarker'));
+      } else {
+        this._applyRouteLinePriority(layer);
+      }
+    });
+    this._routeLandmarkLayers.forEach((layer) => {
+      if (typeof layer.setZIndexOffset === 'function') {
+        layer.setZIndexOffset(this._zIndex('landmark'));
+      }
+      if (this._layerPriorityMode === 'navigation' && typeof layer.bringToBack === 'function') {
+        layer.bringToBack();
+      } else if (typeof layer.bringToFront === 'function') {
+        layer.bringToFront();
+      }
+    });
+  }
+
+  _applyRouteLinePriority(line) {
+    if (!line || typeof line.bringToBack !== 'function') return;
+    if (this._layerPriorityMode === 'editing' && typeof line.bringToFront === 'function') {
+      line.bringToFront();
+    } else {
+      line.bringToBack();
+    }
+  }
+
   /**
    * Tag-based color for POI markers.
    */
@@ -238,6 +332,8 @@ class MapViewer {
    */
   showPois(pois, visibleSet) {
     this.clearPois();
+    this._cachedPois = pois;
+    this._cachedPoiVisibility = visibleSet ? new Set(visibleSet) : null;
     pois.forEach((poi, index) => {
       if (!poi.pose) return;
       if (visibleSet && !visibleSet.has(index)) return;
@@ -253,7 +349,11 @@ class MapViewer {
       const icon = this.createArrowIcon(color, yaw, false);
       // draggable: true で生成して drag ハンドラを用意するが既定は disable。選択された
       // marker だけ highlightPoi (_applyPoiDraggable) が enable する (#239)。
-      const marker = L.marker(latlng, { icon, draggable: true }).addTo(this.map);
+      const marker = L.marker(latlng, {
+        icon,
+        draggable: true,
+        zIndexOffset: this._poiZIndex(false),
+      }).addTo(this.map);
       if (marker.dragging) marker.dragging.disable();
 
       marker.bindTooltip(poi.name || `POI ${index}`, {
@@ -284,6 +384,8 @@ class MapViewer {
 
       this.poiMarkers.push({ marker, poi, index, color, yaw });
     });
+    this._applyLayerPriority();
+    this._refreshActiveRouteLandmarks();
   }
 
   /**
@@ -340,9 +442,9 @@ class MapViewer {
       const icon = this.createArrowIcon(item.color, item.yaw, isHighlighted);
       item.marker.setIcon(icon);
       if (isHighlighted) {
-        item.marker.setZIndexOffset(1000);
+        item.marker.setZIndexOffset(this._poiZIndex(true));
       } else {
-        item.marker.setZIndexOffset(0);
+        item.marker.setZIndexOffset(this._poiZIndex(false));
       }
       // 選択中 marker だけドラッグ可 (#239)
       this._applyPoiDraggable(item, isHighlighted);
@@ -423,7 +525,11 @@ class MapViewer {
     const icon = L.divIcon({
       className: 'poi-yaw-handle', html: svg, iconSize: [18, 18], iconAnchor: [9, 9],
     });
-    const handle = L.marker(tipLL, { icon, draggable: true, zIndexOffset: 1500 }).addTo(this.map);
+    const handle = L.marker(tipLL, {
+      icon,
+      draggable: true,
+      zIndexOffset: this._zIndex('yawHandle'),
+    }).addTo(this.map);
     const yawFrom = (ll) => MapoiPoiInteractions.yawFromDelta(
       ll.lat - centerLL.lat, ll.lng - centerLL.lng,
     );
@@ -613,6 +719,7 @@ class MapViewer {
     item.yaw = yaw;
     const icon = this.createArrowIcon(item.color, yaw, true);
     item.marker.setIcon(icon);
+    item.marker.setZIndexOffset(this._poiZIndex(true));
   }
 
   /**
@@ -635,6 +742,73 @@ class MapViewer {
       this.sectorLayers.forEach((l) => this.map.removeLayer(l));
     }
     this.sectorLayers = [];
+    this.clearRouteLandmarkHighlights();
+  }
+
+  clearRouteLandmarkHighlights() {
+    if (!this._routeLandmarkLayers) return;
+    this._routeLandmarkLayers.forEach((layer) => {
+      this.map.removeLayer(layer);
+    });
+    this._routeLandmarkLayers = [];
+  }
+
+  showRouteLandmarkHighlights(landmarkNames, pois, color) {
+    this.clearRouteLandmarkHighlights();
+    if (!this.metadata || !landmarkNames || !pois) return;
+    const poiByName = new Map();
+    pois.forEach((poi, index) => {
+      if (poi && poi.name) poiByName.set(poi.name, { poi, index });
+    });
+    [...new Set(landmarkNames)].forEach((name) => {
+      const entry = poiByName.get(name);
+      if (!entry || !entry.poi.pose) return;
+      if (this._cachedPoiVisibility && !this._cachedPoiVisibility.has(entry.index)) return;
+      const { pose } = entry.poi;
+      const radius = entry.poi.tolerance && entry.poi.tolerance.xy;
+      if (typeof radius === 'number' && Number.isFinite(radius) && radius > 0) {
+        const ring = L.polyline(this._circlePoints(pose.x, pose.y, radius), {
+          color: color || '#8e44ad',
+          weight: 3,
+          opacity: 0.95,
+          interactive: false,
+          className: 'route-landmark-radius-ring',
+        }).addTo(this.map);
+        ring.bringToFront();
+        this._routeLandmarkLayers.push(ring);
+      }
+      const marker = L.marker(this.worldToLatLng(pose.x, pose.y), {
+        icon: this._createRouteLandmarkIcon(color || '#8e44ad'),
+        interactive: false,
+        zIndexOffset: this._zIndex('landmark'),
+      }).addTo(this.map);
+      marker.bindTooltip(`Landmark: ${name}`, {
+        permanent: false,
+        direction: 'top',
+        offset: [0, -22],
+      });
+      this._routeLandmarkLayers.push(marker);
+    });
+    this._applyLayerPriority();
+  }
+
+  _createRouteLandmarkIcon(color) {
+    return L.divIcon({
+      className: 'route-landmark-marker',
+      html: `<span class="route-landmark-badge" style="background: ${color};">LM</span>`,
+      iconSize: [28, 20],
+      iconAnchor: [14, 24],
+    });
+  }
+
+  _refreshActiveRouteLandmarks() {
+    const item = this._routePolylines.find((it) => it.routeIdx === this._activeRouteIdx);
+    if (!item) {
+      this.clearRouteLandmarkHighlights();
+      return;
+    }
+    const pois = this._cachedPois || (this._cachedRoutesArgs && this._cachedRoutesArgs.pois);
+    this.showRouteLandmarkHighlights(item.landmarks, pois, item.color);
   }
 
   /**
@@ -647,6 +821,16 @@ class MapViewer {
   _wedgePoints(cx, cy, r, yawCenter, yawTol) {
     return MapoiPoiInteractions.wedgePointsWorld(cx, cy, r, yawCenter, yawTol)
       .map((p) => this.worldToLatLng(p.x, p.y));
+  }
+
+  _circlePoints(cx, cy, r) {
+    const N_CIRCLE = 36;
+    const points = [];
+    for (let i = 0; i <= N_CIRCLE; i += 1) {
+      const a = (2 * Math.PI * i) / N_CIRCLE;
+      points.push(this.worldToLatLng(cx + r * Math.cos(a), cy + r * Math.sin(a)));
+    }
+    return points;
   }
 
   /**
@@ -687,15 +871,8 @@ class MapViewer {
 
     const color = this.getPoiColor(poi);
 
-    // 円の頂点列 (36 角形 = 10 度刻み)。i = N_CIRCLE で起点に戻り polyline が自然に閉じる。
-    const N_CIRCLE = 36;
-    const circlePoints = [];
-    for (let i = 0; i <= N_CIRCLE; i += 1) {
-      const a = (2 * Math.PI * i) / N_CIRCLE;
-      const wx = poi.pose.x + r * Math.cos(a);
-      const wy = poi.pose.y + r * Math.sin(a);
-      circlePoints.push(this.worldToLatLng(wx, wy));
-    }
+    // 円の頂点列 (36 角形 = 10 度刻み)。最後に起点へ戻り polyline が自然に閉じる。
+    const circlePoints = this._circlePoints(poi.pose.x, poi.pose.y, r);
 
     // xy 判定領域 (円 outline): 控えめな細実線で常時表示 (#179)
     const circle = L.polyline(circlePoints, {
@@ -905,7 +1082,7 @@ class MapViewer {
         offset: [0, -8],
       });
 
-      line.bringToBack();
+      this._applyRouteLinePriority(line);
       this.routeLayers.push(line);
 
       // Invisible wider hit area for easier clicking
@@ -923,7 +1100,7 @@ class MapViewer {
         if (this.onRouteClick) this.onRouteClick(routeIdx);
       });
 
-      hitLine.bringToBack();
+      this._applyRouteLinePriority(hitLine);
       this.routeLayers.push(hitLine);
 
       const arrowMarkers = [];
@@ -946,6 +1123,7 @@ class MapViewer {
         const arrowMarker = L.marker([midLat, midLng], {
           icon: arrowIcon,
           interactive: false,
+          zIndexOffset: this._zIndex('routeMarker'),
         }).addTo(this.map);
         this.routeLayers.push(arrowMarker);
         arrowMarkers.push(arrowMarker);
@@ -965,6 +1143,7 @@ class MapViewer {
         const labelMarker = L.marker(latlng, {
           icon: icon,
           interactive: false,
+          zIndexOffset: this._zIndex('routeMarker'),
         }).addTo(this.map);
         this.routeLayers.push(labelMarker);
         labelMarkers.push(labelMarker);
@@ -973,6 +1152,7 @@ class MapViewer {
       this._routePolylines.push({
         line, hitLine, arrowMarkers, labelMarkers,
         routeIdx, routeName: route.name || '', firstWaypointName,
+        landmarks: route.landmarks || [],
         color,
         // latlngs: raw (POI 物理座標)。robot connector の到達判定など物理距離を
         //   評価する用途で使う
@@ -981,6 +1161,7 @@ class MapViewer {
         latlngs: rawLatlngs, displayLatlngs,
       });
     });
+    this._applyLayerPriority();
   }
 
   /**
@@ -999,6 +1180,7 @@ class MapViewer {
     // _cachedRoutesArgs が再設定されるので race にはならない。
     this._cachedRoutesArgs = null;
     this.clearEditingRoutePreview();
+    this.clearRouteLandmarkHighlights();
     this._clearRobotConnector();
     // 到達履歴 (_reachedRouteSignatures) は clearRoutes では reset しない。
     // clearRoutes は visibility toggle / 編集 preview 出入り等の表示再描画でも
@@ -1039,6 +1221,7 @@ class MapViewer {
       }
     });
     this._activeRouteIdx = routeIdx;
+    this._refreshActiveRouteLandmarks();
     this._updateRobotConnector();
     // route 切替で marker 色も追従させる (pose 未受信時は updateRobotMarker が
     // early return するので safe)。
@@ -1061,9 +1244,11 @@ class MapViewer {
    * @param {Array} waypoints - waypoint name array (editingWaypoints)
    * @param {Array} pois - POI array to resolve names
    * @param {string} color - route color
+   * @param {Array} landmarks - landmark POI names linked to this route
    */
-  showEditingRoutePreview(waypoints, pois, color) {
+  showEditingRoutePreview(waypoints, pois, color, landmarks) {
     this.clearEditingRoutePreview();
+    this.clearRouteLandmarkHighlights();
     if (!this.metadata || !waypoints || !pois) return;
 
     const poiByName = {};
@@ -1089,7 +1274,7 @@ class MapViewer {
         weight: 5,
         opacity: 0.9,
       }).addTo(this.map);
-      line.bringToBack();
+      this._applyRouteLinePriority(line);
       this._editingPreviewLayers.push(line);
 
       // Directional teardrop markers
@@ -1108,6 +1293,7 @@ class MapViewer {
         const arrowMarker = L.marker([midLat, midLng], {
           icon: arrowIcon,
           interactive: false,
+          zIndexOffset: this._zIndex('routeMarker'),
         }).addTo(this.map);
         this._editingPreviewLayers.push(arrowMarker);
       }
@@ -1124,9 +1310,12 @@ class MapViewer {
       const labelMarker = L.marker(latlng, {
         icon: icon,
         interactive: false,
+        zIndexOffset: this._zIndex('routeMarker'),
       }).addTo(this.map);
       this._editingPreviewLayers.push(labelMarker);
     });
+    this.showRouteLandmarkHighlights(landmarks || [], pois, color);
+    this._applyLayerPriority();
   }
 
   /**
@@ -1255,11 +1444,12 @@ class MapViewer {
     if (this.robotMarker) {
       this.robotMarker.setLatLng(latlng);
       this.robotMarker.setIcon(icon);
+      this.robotMarker.setZIndexOffset(this._zIndex('robot'));
     } else {
       this.robotMarker = L.marker(latlng, {
         icon,
         interactive: false,
-        zIndexOffset: 2000,
+        zIndexOffset: this._zIndex('robot'),
       }).addTo(this.map);
     }
     this._updateRobotConnector();
@@ -1329,7 +1519,8 @@ class MapViewer {
       dashArray: '4, 6',
       interactive: false,
     }).addTo(this.map);
-    line.bringToBack();
+    if (this._layerPriorityMode === 'navigation') line.bringToFront();
+    else line.bringToBack();
     this._robotConnectorLayers.push(line);
 
     const midLat = (robotLatLng.lat + firstLatLngVisual.lat) / 2;
@@ -1344,6 +1535,7 @@ class MapViewer {
     const arrowMarker = L.marker([midLat, midLng], {
       icon: arrowIcon,
       interactive: false,
+      zIndexOffset: this._zIndex('robotConnector'),
     }).addTo(this.map);
     this._robotConnectorLayers.push(arrowMarker);
   }

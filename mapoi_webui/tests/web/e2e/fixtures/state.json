@@ -37,6 +37,13 @@
       "tolerance": { "xy": 0.4, "yaw": 1.5708 },
       "tags": ["waypoint", "pause"],
       "description": "Pause POI (dot pattern overlay)"
+    },
+    {
+      "name": "poi_landmark",
+      "pose": { "x": 1.5, "y": -1.5, "yaw": -0.4 },
+      "tolerance": { "xy": 0.35, "yaw": 0.7854 },
+      "tags": ["landmark"],
+      "description": "Landmark POI linked from test_route"
     }
   ],
   "tags": [
@@ -48,7 +55,7 @@
     {
       "name": "test_route",
       "waypoints": ["poi_wedge", "poi_disc", "poi_pause"],
-      "landmarks": []
+      "landmarks": ["poi_landmark"]
     }
   ],
   "nav_status": {
