@@ -313,7 +313,6 @@ class RouteEditor {
       row.dataset.poiName = wp;
       row.addEventListener('click', () => this.focusWaypointName(wp));
       row.addEventListener('focus', () => this.focusWaypointName(wp));
-      row.addEventListener('mouseenter', () => this.focusWaypointName(wp));
       row.addEventListener('dragover', (e) => this._onWaypointDragOver(e, row));
       row.addEventListener('dragleave', () => row.classList.remove('wp-drop-target'));
       row.addEventListener('drop', (e) => this._onWaypointDrop(e, i));
@@ -394,9 +393,28 @@ class RouteEditor {
     if (this.editingIndex === -1) return;
     this._pushEditUndo();
     this.editingWaypoints.push(name);
+    if (this.waypointSelect) this.waypointSelect.value = name;
+    if (this.landmarkSelect) this.landmarkSelect.value = '';
     this.renderWaypointList();
     this.focusWaypointName(name);
     this._fireEditingChange();
+  }
+
+  selectPoiCandidate(name) {
+    if (!name) return '';
+    if (this.poiNames.includes(name)) {
+      if (this.waypointSelect) this.waypointSelect.value = name;
+      if (this.landmarkSelect) this.landmarkSelect.value = '';
+      this.focusWaypointName(name);
+      return 'waypoint';
+    }
+    if (this.landmarkNames.includes(name)) {
+      if (this.landmarkSelect) this.landmarkSelect.value = name;
+      if (this.waypointSelect) this.waypointSelect.value = '';
+      this.focusLandmarkName(name);
+      return 'landmark';
+    }
+    return '';
   }
 
   moveWaypoint(index, dir) {
@@ -454,7 +472,6 @@ class RouteEditor {
       row.dataset.poiName = lm;
       row.addEventListener('click', () => this.focusLandmarkName(lm));
       row.addEventListener('focus', () => this.focusLandmarkName(lm));
-      row.addEventListener('mouseenter', () => this.focusLandmarkName(lm));
 
       const num = document.createElement('span');
       num.className = 'wp-num';

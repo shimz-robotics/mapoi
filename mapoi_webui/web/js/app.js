@@ -237,6 +237,13 @@
     }
   }
 
+  function syncRouteEditPoiCandidate(index) {
+    if (routeEditor.editingIndex === -1 || index < 0) return '';
+    const poi = poiEditor.pois[index];
+    if (!poi || !poi.name) return '';
+    return routeEditor.selectPoiCandidate(poi.name);
+  }
+
   poiEditor.onBeforeEditStart = () => {
     if (!isRouteEditingActive()) return true;
     alert('Finish or cancel route editing before editing POIs.');
@@ -291,11 +298,11 @@
     if (routeEditor.editingIndex !== -1) {
       const poi = poiEditor.pois[index];
       if (poi && poi.name) {
+        const candidateKind = syncRouteEditPoiCandidate(index);
+        if (candidateKind === 'landmark') return;
         // landmark POI は waypoint dropdown と整合させ、map click でも waypoint には
         // 入れない (Codex review #147 medium)。route.landmarks への追加は dropdown UI で行う。
-        if (MapoiPoiFilter.hasLandmarkTag(poi)) {
-          return;
-        }
+        if (MapoiPoiFilter.hasLandmarkTag(poi)) return;
         routeEditor.addWaypointByName(poi.name);
       }
       return;
@@ -340,6 +347,7 @@
   // POI selection in list
   poiEditor.onSelectionChange = (index) => {
     mapViewer.highlightPoi(index);
+    syncRouteEditPoiCandidate(index);
     // Refresh markers when dirty (POIs changed)
     if (poiEditor.dirty) {
       mapViewer.showPois(poiEditor.pois, poiEditor.visiblePois);
