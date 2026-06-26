@@ -49,6 +49,41 @@ test.describe('Map edit polish', () => {
     await expect(page.locator('#route-edit-form')).toHaveClass(/(^|\s)hidden(\s|$)/);
   });
 
+  test('Escape cancels active POI and Route editing modes', async ({ page }) => {
+    await loadApp(page);
+    await setSectionOpen(page, '#btn-poi-toggle', '#poi-body', true);
+
+    await poiCard(page, 'poi_wedge').locator('.btn-edit').click();
+    await expect(page.locator('#poi-edit-form')).not.toHaveClass(/(^|\s)hidden(\s|$)/);
+    await page.locator('#poi-name').focus();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#poi-edit-form')).toHaveClass(/(^|\s)hidden(\s|$)/);
+    await expect(poiCard(page, 'poi_wedge')).toHaveClass(/(^|\s)selected(\s|$)/);
+
+    await setSectionOpen(page, '#btn-route-toggle', '#route-body', true);
+    await routeItem(page, 'test_route').locator('.btn-edit').click();
+    await expect(page.locator('#route-edit-form')).not.toHaveClass(/(^|\s)hidden(\s|$)/);
+    await page.locator('#route-name').focus();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#route-edit-form')).toHaveClass(/(^|\s)hidden(\s|$)/);
+    await expect(routeItem(page, 'test_route')).toHaveClass(/(^|\s)selected(\s|$)/);
+  });
+
+  test('Escape cancels POI placing mode before map click', async ({ page }) => {
+    await loadApp(page);
+    await setSectionOpen(page, '#btn-poi-toggle', '#poi-body', true);
+
+    await page.locator('#btn-add-poi').click();
+    await expect(page.locator('#btn-add-poi')).toContainText('Click map...');
+    await expect(page.locator('#btn-add-poi')).toHaveClass(/(^|\s)placing(\s|$)/);
+
+    await page.keyboard.press('Escape');
+
+    await expect(page.locator('#btn-add-poi')).toContainText('+ Add POI');
+    await expect(page.locator('#btn-add-poi')).not.toHaveClass(/(^|\s)placing(\s|$)/);
+    await expect(page.locator('#poi-edit-form')).toHaveClass(/(^|\s)hidden(\s|$)/);
+  });
+
   test('POI edit and Route edit are mutually exclusive from sidebar actions', async ({ page }) => {
     await loadApp(page);
     await setSectionOpen(page, '#btn-route-toggle', '#route-body', true);
