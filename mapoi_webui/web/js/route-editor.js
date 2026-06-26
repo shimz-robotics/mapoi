@@ -514,7 +514,7 @@ class RouteEditor {
       name.textContent = lm;
       if (this.landmarkNames.length > 0 && !this.landmarkNames.includes(lm)) {
         name.classList.add('wp-missing');
-        name.title = 'Landmark POI not found (existing landmark POI と紐付かない名前)';
+        name.title = 'Landmark POI not found. This name is not linked to an existing landmark POI.';
       }
 
       const btns = document.createElement('span');

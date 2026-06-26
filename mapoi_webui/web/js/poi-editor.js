@@ -655,10 +655,10 @@ class PoiEditor {
       if (result.conflict) {
         this.btnSave.textContent = 'Save';
         const shouldReload = window.confirm(
-          'YAML ファイルが外部で変更されています (例: 手動編集 + git pull / 他端末からの保存)。'
-          + '\n上書き保存すると最新の変更が失われます。'
-          + '\n\n[OK] 最新を再 load する (未保存の編集は破棄されます)'
-          + '\n[キャンセル] そのまま編集を続ける (再度 Save 時に同じ警告)'
+          'The YAML file was changed outside this page.'
+          + '\nSaving now may overwrite newer changes.'
+          + '\n\n[OK] Reload the latest file. Unsaved edits will be lost.'
+          + '\n[Cancel] Keep editing. You will see this warning again on Save.'
         );
         if (shouldReload && this.onConflictReload) {
           await this.onConflictReload();
