@@ -296,6 +296,14 @@
     return routeEditor.selectPoiCandidate(poi.name);
   }
 
+  function restorePoiEditPreview(index) {
+    if (index < 0) return;
+    mapViewer.showPois(poiEditor.pois, poiEditor.visiblePois);
+    if (poiEditor.selectedIndex >= 0) {
+      mapViewer.highlightPoi(poiEditor.selectedIndex);
+    }
+  }
+
   poiEditor.onBeforeEditStart = () => {
     if (!isRouteEditingActive()) return true;
     alert('Finish or cancel route editing before editing POIs.');
@@ -306,6 +314,10 @@
     if (!isPoiEditingActive()) return true;
     alert('Finish or cancel POI editing before editing routes.');
     return false;
+  };
+
+  poiEditor.onEditCancel = (previousEditingIndex) => {
+    restorePoiEditPreview(previousEditingIndex);
   };
 
   // Helper: enable pose tool for the currently editing POI
@@ -936,6 +948,7 @@
       if (poiEditor.editingIndex !== -1) {
         e.preventDefault();
         e.stopImmediatePropagation();
+        if (mapViewer.cancelPoseToolPendingPosition()) return;
         poiEditor.formCancel();
         return;
       }

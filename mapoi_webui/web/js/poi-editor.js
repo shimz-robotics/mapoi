@@ -26,6 +26,7 @@ class PoiEditor {
     this.onPlacingModeChange = null; // callback(isPlacing)
     this.onVisibilityChange = null;  // callback(visibleSet)
     this.onBeforeEditStart = null; // callback(action) -> false blocks POI edit/add/copy/delete
+    this.onEditCancel = null; // callback(previousEditingIndex) after discarding form-only edits
     // 編集フォームの開閉 (#240)。開いたら app.js 側で他セクションを畳んでフォームに集中
     // させ、閉じたら元の表示状態へ戻す。showForm/hideForm で必ず発火する。
     this.onEditFormVisibilityChange = null; // callback(isOpen)
@@ -474,10 +475,14 @@ class PoiEditor {
    * Cancel form edits.
    */
   formCancel() {
+    const previousEditingIndex = this.editingIndex;
     this.editingIndex = -1;
     this.hideForm();
     if (this.onSelectionChange) {
       this.onSelectionChange(this.selectedIndex);
+    }
+    if (this.onEditCancel) {
+      this.onEditCancel(previousEditingIndex);
     }
   }
 
@@ -498,8 +503,12 @@ class PoiEditor {
    */
   exitEditMode() {
     if (this.editingIndex === -1) return;
+    const previousEditingIndex = this.editingIndex;
     this.editingIndex = -1;
     this.hideForm();
+    if (this.onEditCancel) {
+      this.onEditCancel(previousEditingIndex);
+    }
   }
 
   /**
