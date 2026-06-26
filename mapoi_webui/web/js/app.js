@@ -24,6 +24,7 @@
   // --- Tag editor state ---
   let tagDirty = false;
   let editingTags = []; // working copy of tags (both system + custom)
+  const expandedTagDescriptions = new Set();
   const tagList = document.getElementById('tag-list');
   const tagAddName = document.getElementById('tag-add-name');
   const tagAddDesc = document.getElementById('tag-add-desc');
@@ -37,12 +38,63 @@
     editingTags.forEach((tag, i) => {
       const div = document.createElement('div');
       div.className = 'tag-item ' + (tag.is_system ? 'tag-item-system' : 'tag-item-custom');
-      const icon = tag.is_system ? '<span class="tag-lock">&#128274;</span>' : '';
-      const typeLabel = tag.is_system ? '<span class="tag-type-label tag-type-system">system</span>' : '<span class="tag-type-label tag-type-custom">custom</span>';
-      const deleteBtn = tag.is_system
-        ? '<button class="tag-delete-btn" disabled title="System tags cannot be deleted">&#10005;</button>'
-        : `<button class="tag-delete-btn" data-index="${i}" title="Delete tag">&#10005;</button>`;
-      div.innerHTML = `${icon}<span class="tag-item-name">${tag.name}</span><span class="tag-item-desc">${tag.description || ''}</span>${typeLabel}${deleteBtn}`;
+      const tagKey = tag.name || String(i);
+      const description = tag.description || '';
+      const isExpanded = expandedTagDescriptions.has(tagKey);
+      if (isExpanded) div.classList.add('tag-desc-expanded');
+
+      if (tag.is_system) {
+        const icon = document.createElement('span');
+        icon.className = 'tag-lock';
+        icon.textContent = '\u{1F512}';
+        div.appendChild(icon);
+      }
+
+      const name = document.createElement('span');
+      name.className = 'tag-item-name';
+      name.textContent = tag.name;
+      name.title = tag.name;
+      div.appendChild(name);
+
+      const desc = document.createElement('button');
+      desc.type = 'button';
+      desc.className = 'tag-item-desc';
+      desc.textContent = description;
+      desc.title = description;
+      desc.disabled = !description;
+      desc.setAttribute('aria-label', description ? `Tag description: ${description}` : 'No tag description');
+      desc.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+      if (description) desc.classList.add('has-description');
+      if (isExpanded) desc.classList.add('expanded');
+      desc.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!description) return;
+        if (expandedTagDescriptions.has(tagKey)) {
+          expandedTagDescriptions.delete(tagKey);
+        } else {
+          expandedTagDescriptions.add(tagKey);
+        }
+        renderTagList();
+      });
+      div.appendChild(desc);
+
+      const typeLabel = document.createElement('span');
+      typeLabel.className = tag.is_system
+        ? 'tag-type-label tag-type-system'
+        : 'tag-type-label tag-type-custom';
+      typeLabel.textContent = tag.is_system ? 'system' : 'custom';
+      div.appendChild(typeLabel);
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'tag-delete-btn';
+      deleteBtn.title = tag.is_system ? 'System tags cannot be deleted' : 'Delete tag';
+      deleteBtn.innerHTML = '&#10005;';
+      if (tag.is_system) {
+        deleteBtn.disabled = true;
+      } else {
+        deleteBtn.dataset.index = String(i);
+      }
+      div.appendChild(deleteBtn);
       tagList.appendChild(div);
     });
     // Attach delete handlers

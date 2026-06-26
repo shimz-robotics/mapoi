@@ -48,7 +48,7 @@
   ],
   "tags": [
     { "name": "waypoint", "description": "Navigation waypoint", "is_system": true },
-    { "name": "landmark", "description": "Reference POI (not a navigation target)", "is_system": true },
+    { "name": "landmark", "description": "Reference POI used for route context and radius monitoring; not sent to Nav2 as a navigation target", "is_system": true },
     { "name": "pause", "description": "Robot pauses at this POI", "is_system": true }
   ],
   "routes": [
