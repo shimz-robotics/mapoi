@@ -19,6 +19,7 @@
   const compactMediaQuery = window.matchMedia('(max-width: 768px)');
   let currentMap = '';
   let currentNavigationCapabilities = null;
+  let currentNavStatus = 'idle';
 
   // --- Tag editor state ---
   let tagDirty = false;
@@ -185,7 +186,7 @@
       mapViewer.clearRoutes();
       const color = routeEditor.getEditingRouteColor() || '#2980b9';
       mapViewer.showEditingRoutePreview(
-        routeEditor.editingWaypoints, poiEditor.pois, color
+        routeEditor.editingWaypoints, poiEditor.pois, color, routeEditor.editingLandmarks
       );
     } else {
       mapViewer.showRoutes(routeEditor.routes, poiEditor.pois, routeEditor.visibleRoutes);
@@ -213,6 +214,40 @@
   }
 
   // --- Wire callbacks ---
+
+  function isRouteEditingActive() {
+    return routeEditor.editingIndex !== -1;
+  }
+
+  function isPoiEditingActive() {
+    return poiEditor.editingIndex !== -1 || poiEditor.placingMode;
+  }
+
+  function isNavigationActive() {
+    return ['navigating', 'paused', 'map_switching'].includes(currentNavStatus);
+  }
+
+  function updateMapLayerPriority() {
+    if (isNavigationActive()) {
+      mapViewer.setLayerPriorityMode('navigation');
+    } else if (isPoiEditingActive() || isRouteEditingActive()) {
+      mapViewer.setLayerPriorityMode('editing');
+    } else {
+      mapViewer.setLayerPriorityMode('default');
+    }
+  }
+
+  poiEditor.onBeforeEditStart = () => {
+    if (!isRouteEditingActive()) return true;
+    alert('Finish or cancel route editing before editing POIs.');
+    return false;
+  };
+
+  routeEditor.onBeforeEditStart = () => {
+    if (!isPoiEditingActive()) return true;
+    alert('Finish or cancel POI editing before editing routes.');
+    return false;
+  };
 
   // Helper: enable pose tool for the currently editing POI
   function enablePoseToolForEditing() {
@@ -316,7 +351,12 @@
     } else {
       mapViewer.disablePoseTool();
     }
+    updateMapLayerPriority();
     syncNavGoalSelect();
+  };
+
+  poiEditor.onPlacingModeChange = () => {
+    updateMapLayerPriority();
   };
 
   // POI visibility toggle
@@ -368,9 +408,10 @@
     // Cancel」で sidebar は B selected でも _activeRouteIdx は A のままになり、
     // robot connector が古い route の先頭 POI を指し続ける (PR #107 Codex round
     // 2/3 medium 残課題)。
-    if (routeEditor.selectedIndex >= 0) {
+    if (routeEditor.editingIndex === -1 && routeEditor.selectedIndex >= 0) {
       mapViewer.highlightRoute(routeEditor.selectedIndex);
     }
+    updateMapLayerPriority();
     syncNavRouteSelect();
   };
 
@@ -383,10 +424,17 @@
     mapViewer.highlightPoi(index);
   };
 
+  routeEditor.onLandmarkFocus = (name) => {
+    if (!name) return;
+    const index = poiEditor.pois.findIndex((p) => p.name === name);
+    if (index < 0) return;
+    mapViewer.highlightPoi(index);
+  };
+
   // Route visibility toggle
   routeEditor.onVisibilityChange = () => {
     redrawRoutes();
-    if (routeEditor.selectedIndex >= 0) {
+    if (routeEditor.editingIndex === -1 && routeEditor.selectedIndex >= 0) {
       mapViewer.highlightRoute(routeEditor.selectedIndex);
     }
   };
@@ -394,7 +442,7 @@
   // Route dirty state change — refresh routes on map and nav select after save/discard
   routeEditor.onDirtyChange = (isDirty) => {
     redrawRoutes();
-    if (routeEditor.selectedIndex >= 0) {
+    if (routeEditor.editingIndex === -1 && routeEditor.selectedIndex >= 0) {
       mapViewer.highlightRoute(routeEditor.selectedIndex);
     }
     if (!isDirty) {
@@ -606,12 +654,14 @@
 
   function updateNavStatus(status, target) {
     const s = status || 'idle';
+    currentNavStatus = s;
     navStatusDot.className = 'nav-status-dot nav-status-' + s;
     let label = statusLabels[s] || s;
     if (target && s !== 'idle') {
       label += ': ' + target;
     }
     navStatusText.textContent = label;
+    updateMapLayerPriority();
   }
 
   let navPollingTimer = null;
@@ -762,10 +812,12 @@
   poiEditor.onEditFormVisibilityChange = (isOpen) => {
     if (isOpen) activateSidebarFocus('poi');
     else restoreSidebarFocus('poi');
+    updateMapLayerPriority();
   };
   routeEditor.onEditFormVisibilityChange = (isOpen) => {
     if (isOpen) activateSidebarFocus('route');
     else restoreSidebarFocus('route');
+    updateMapLayerPriority();
   };
 
   // --- Initialize ---
@@ -804,13 +856,26 @@
   };
 
   // --- Keyboard shortcuts (#300 / #303) ---
-  // active editor の Undo/Redo を document レベルで拾う。入力欄 (name / x / y / tags 等) の
+  // active editor の Escape / Undo/Redo を document レベルで拾う。入力欄 (name / x / y / tags 等) の
   // 編集中はブラウザ標準の text undo を優先するため無視する (pose tool の Escape ガード
   // map-viewer.js #270 と同方針)。owned key のみ preventDefault し、他ハンドラを妨げない。
   document.addEventListener('keydown', (e) => {
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'
         || t.tagName === 'SELECT' || t.isContentEditable)) {
+      return;
+    }
+    if (e.key === 'Escape') {
+      if (mapViewer.isPoseToolActive() || isPoiEditingActive() || isRouteEditingActive()) return;
+      const hadSelection = poiEditor.selectedIndex >= 0 || routeEditor.selectedIndex >= 0
+        || navGoalSelect.value || navRouteSelect.value || navInitialPoseSelect.value;
+      if (!hadSelection) return;
+      e.preventDefault();
+      poiEditor.clearSelection();
+      routeEditor.clearSelection();
+      navGoalSelect.value = '';
+      navRouteSelect.value = '';
+      navInitialPoseSelect.value = '';
       return;
     }
     if (!(e.ctrlKey || e.metaKey)) return;

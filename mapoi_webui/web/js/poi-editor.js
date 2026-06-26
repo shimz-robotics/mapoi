@@ -25,6 +25,7 @@ class PoiEditor {
     this.onSelectionChange = null; // callback(index)
     this.onPlacingModeChange = null; // callback(isPlacing)
     this.onVisibilityChange = null;  // callback(visibleSet)
+    this.onBeforeEditStart = null; // callback(action) -> false blocks POI edit/add/copy/delete
     // 編集フォームの開閉 (#240)。開いたら app.js 側で他セクションを畳んでフォームに集中
     // させ、閉じたら元の表示状態へ戻す。showForm/hideForm で必ず発火する。
     this.onEditFormVisibilityChange = null; // callback(isOpen)
@@ -183,10 +184,20 @@ class PoiEditor {
     }
   }
 
+  clearSelection() {
+    if (this.selectedIndex === -1) return;
+    this.selectedIndex = -1;
+    this.renderList();
+    if (this.onSelectionChange) {
+      this.onSelectionChange(-1);
+    }
+  }
+
   /**
    * Open edit form for a POI.
    */
   editPoi(index) {
+    if (!this._canStartEdit('edit')) return;
     this.editingIndex = index;
     const poi = this.pois[index];
     this.formTitle.textContent = 'Edit POI';
@@ -199,6 +210,7 @@ class PoiEditor {
    * Delete a POI.
    */
   deletePoi(index) {
+    if (!this._canStartEdit('delete')) return;
     this._pushUndo();
     this.pois.splice(index, 1);
     if (this.selectedIndex === index) this.selectedIndex = -1;
@@ -222,6 +234,7 @@ class PoiEditor {
    * Copy a POI (deep clone with "_copy" suffix, open in edit form).
    */
   copyPoi(index) {
+    if (!this._canStartEdit('copy')) return;
     this._pushUndo();
     const original = this.pois[index];
     const copy = JSON.parse(JSON.stringify(original));
@@ -245,6 +258,7 @@ class PoiEditor {
       this.cancelPlacing();
       return;
     }
+    if (!this._canStartEdit('add')) return;
     this.placingMode = true;
     this.btnAddPoi.textContent = 'Click map...';
     this.btnAddPoi.classList.add('placing');
@@ -705,6 +719,11 @@ class PoiEditor {
     this.visiblePois = new Set();
     this.renderList();
     if (this.onVisibilityChange) this.onVisibilityChange(this.visiblePois);
+  }
+
+  _canStartEdit(action) {
+    if (!this.onBeforeEditStart) return true;
+    return this.onBeforeEditStart(action) !== false;
   }
 }
 

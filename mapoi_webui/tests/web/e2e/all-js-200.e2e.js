@@ -39,7 +39,7 @@ test.describe('A. 全 js 200 smoke', () => {
     const indexResp = await page.goto('/');
     expect(indexResp.status()).toBe(200);
     // 初期化 (loadMaps→…→showPois) 完了の合図として POI marker 描画を待つ。
-    await expect(page.locator('.poi-arrow-icon')).toHaveCount(4);
+    await expect(page.locator('.poi-arrow-icon')).toHaveCount(5);
 
     // --- HTML が列挙する /js/*.js を抽出し各々 200 ---
     const htmlJs = await page.$$eval('script[src^="/js/"]', (els) =>

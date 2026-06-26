@@ -6,7 +6,7 @@ const { expect } = require('@playwright/test');
 async function loadApp(page) {
   const resp = await page.goto('/');
   expect(resp.status()).toBe(200);
-  await expect(page.locator('.poi-arrow-icon')).toHaveCount(4);
+  await expect(page.locator('.poi-arrow-icon')).toHaveCount(5);
 }
 
 // POI 名の完全一致で card を返す。'poi_wedge' が 'poi_wedge2' に部分一致しないよう anchored regex。
