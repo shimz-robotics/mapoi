@@ -115,6 +115,22 @@ describe('RouteEditor waypoint focus UI', () => {
     expect(editor.setDirty).not.toHaveBeenCalled();
   });
 
+  it('does not fire waypoint focus from row hover', () => {
+    document.body.innerHTML = '<div id="waypoints"></div>';
+    const editor = Object.create(RouteEditor.prototype);
+    editor.waypointListEl = document.getElementById('waypoints');
+    editor.editingWaypoints = ['A'];
+    editor.poiNames = ['A'];
+    editor.onWaypointFocus = vi.fn();
+
+    editor.renderWaypointList();
+    const row = editor.waypointListEl.querySelector('.wp-item');
+
+    row.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+
+    expect(editor.onWaypointFocus).not.toHaveBeenCalled();
+  });
+
   it('fires landmark focus from rendered rows without marking data dirty', () => {
     document.body.innerHTML = '<div id="landmarks"></div>';
     const editor = Object.create(RouteEditor.prototype);
@@ -134,6 +150,22 @@ describe('RouteEditor waypoint focus UI', () => {
     expect(editor.setDirty).not.toHaveBeenCalled();
   });
 
+  it('does not fire landmark focus from row hover', () => {
+    document.body.innerHTML = '<div id="landmarks"></div>';
+    const editor = Object.create(RouteEditor.prototype);
+    editor.landmarkListEl = document.getElementById('landmarks');
+    editor.editingLandmarks = ['L1'];
+    editor.landmarkNames = ['L1'];
+    editor.onLandmarkFocus = vi.fn();
+
+    editor.renderLandmarkList();
+    const row = editor.landmarkListEl.querySelector('.wp-item');
+
+    row.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+
+    expect(editor.onLandmarkFocus).not.toHaveBeenCalled();
+  });
+
   it('moves a dragged waypoint to the drop target index', () => {
     const editor = makeEditor();
     editor.dragWaypointIndex = 0;
@@ -142,5 +174,27 @@ describe('RouteEditor waypoint focus UI', () => {
 
     expect(editor.editingWaypoints).toEqual(['B', 'C', 'A']);
     expect(editor.dragWaypointIndex).toBe(-1);
+  });
+
+  it('syncs waypoint and landmark selects from a POI candidate name', () => {
+    const editor = Object.create(RouteEditor.prototype);
+    editor.poiNames = ['A'];
+    editor.landmarkNames = ['L1'];
+    editor.waypointSelect = { value: '' };
+    editor.landmarkSelect = { value: '' };
+    editor.onWaypointFocus = vi.fn();
+    editor.onLandmarkFocus = vi.fn();
+
+    expect(editor.selectPoiCandidate('A')).toBe('waypoint');
+    expect(editor.waypointSelect.value).toBe('A');
+    expect(editor.landmarkSelect.value).toBe('');
+    expect(editor.onWaypointFocus).toHaveBeenCalledWith('A');
+
+    expect(editor.selectPoiCandidate('L1')).toBe('landmark');
+    expect(editor.waypointSelect.value).toBe('');
+    expect(editor.landmarkSelect.value).toBe('L1');
+    expect(editor.onLandmarkFocus).toHaveBeenCalledWith('L1');
+
+    expect(editor.selectPoiCandidate('missing')).toBe('');
   });
 });
