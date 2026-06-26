@@ -134,14 +134,14 @@
     if (has(SYSTEM_TAGS.WAYPOINT) && has(SYSTEM_TAGS.LANDMARK)) {
       return {
         ok: false,
-        error: '"waypoint" と "landmark" は併用できません (landmark は Nav2 navigation 不可な reference 専用)。',
+        error: '"waypoint" and "landmark" cannot be used together. A landmark is only a reference POI and is not sent to Nav2.',
       };
     }
     // landmark × pause 排他 (#143): landmark は到達不可なので pause 動作が成立しない。
     if (has(SYSTEM_TAGS.PAUSE) && has(SYSTEM_TAGS.LANDMARK)) {
       return {
         ok: false,
-        error: '"pause" と "landmark" は併用できません (landmark は到達不可な reference のため pause 動作が成立しません)。',
+        error: '"pause" and "landmark" cannot be used together. A landmark is not a navigation target, so the robot cannot pause there.',
       };
     }
     // (initial_pose × landmark 排他は #144 で initial_pose system tag を廃止したため不要に。)

@@ -78,11 +78,11 @@ def _validate_pois_tag_exclusivity(pois):
         has_pause = 'pause' in tags
         name = (poi.get('name', '?') if isinstance(poi, dict) else '?')
         if has_waypoint and has_landmark:
-            return (f'POI #{i} ({name}): "waypoint" と "landmark" は併用できません '
-                    '(landmark は Nav2 navigation 不可な reference 専用)')
+            return (f'POI #{i} ({name}): "waypoint" and "landmark" cannot be used together. '
+                    'A landmark is only a reference POI and is not sent to Nav2.')
         if has_pause and has_landmark:
-            return (f'POI #{i} ({name}): "pause" と "landmark" は併用できません '
-                    '(landmark は到達不可な reference のため pause 動作が成立しません)')
+            return (f'POI #{i} ({name}): "pause" and "landmark" cannot be used together. '
+                    'A landmark is not a navigation target, so the robot cannot pause there.')
         # (initial_pose × landmark 排他は #144 で initial_pose system tag を廃止したため不要に。)
     return None
 
@@ -147,8 +147,8 @@ class MapoiWebNode(Node):
             self.get_parameter('robot_radius').get_parameter_value().double_value)
         if not math.isfinite(raw_radius) or raw_radius <= 0.0:
             self.get_logger().warn(
-                f'robot_radius={raw_radius!r} は不正値です。default 0.15m を使います。'
-                ' (連動する Nav2 robot_radius と一致するように launch param を見直してください)')
+                f'robot_radius={raw_radius!r} is invalid. Using the default 0.15 m. '
+                'Please check the launch parameter so it matches the Nav2 robot_radius.')
             self.robot_radius_ = 0.15
         else:
             self.robot_radius_ = raw_radius
@@ -433,8 +433,8 @@ class MapoiWebNode(Node):
         sub_count = pub.get_subscription_count()
         pub.publish(msg)
         if sub_count == 0:
-            warning = (f"{topic_name} に subscriber が見つかりません "
-                       "(mapoi_nav2_bridge などの listener が起動していない可能性)")
+            warning = (f'No subscribers found for {topic_name}. '
+                       'The listener, such as mapoi_nav2_bridge, may not be running.')
             self.get_logger().warn(warning)
             return True, warning
         return True, None
@@ -751,8 +751,8 @@ class MapoiWebNode(Node):
                     return jsonify({
                         'success': True,
                         'config_version': new_version,
-                        'warning': 'YAML は保存しましたが、mapoi_server の reload_map_info '
-                                   'service が応答しなかったか失敗しました。詳細はログを確認してください'
+                        'warning': 'The YAML file was saved, but mapoi_server reload_map_info '
+                                   'did not respond or failed. Check the logs for details.'
                     })
                 return jsonify({'success': True, 'config_version': new_version})
             except Exception as e:
@@ -785,8 +785,8 @@ class MapoiWebNode(Node):
                 if not reloaded:
                     return jsonify({
                         'success': True,
-                        'warning': 'YAML は保存しましたが、mapoi_server の reload_map_info '
-                                   'service が応答しなかったか失敗しました。詳細はログを確認してください'
+                        'warning': 'The YAML file was saved, but mapoi_server reload_map_info '
+                                   'did not respond or failed. Check the logs for details.'
                     })
                 return jsonify({'success': True})
             except Exception as e:
@@ -818,8 +818,8 @@ class MapoiWebNode(Node):
                 if not reloaded:
                     return jsonify({
                         'success': True,
-                        'warning': 'YAML は保存しましたが、mapoi_server の reload_map_info '
-                                   'service が応答しなかったか失敗しました。詳細はログを確認してください'
+                        'warning': 'The YAML file was saved, but mapoi_server reload_map_info '
+                                   'did not respond or failed. Check the logs for details.'
                     })
                 return jsonify({'success': True})
             except Exception as e:
@@ -921,8 +921,8 @@ class MapoiWebNode(Node):
             if node.count_subscribers('mapoi/initialpose_poi') == 0:
                 return jsonify({
                     'success': True,
-                    'warning': 'mapoi/initialpose_poi に subscriber がいません '
-                               '(localization bridge 未起動?)。initial pose は配信されません。',
+                    'warning': 'No subscribers found for mapoi/initialpose_poi. '
+                               'The localization bridge may not be running, so the initial pose was not sent.',
                 })
             return jsonify({'success': True})
 
