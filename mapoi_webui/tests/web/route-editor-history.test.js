@@ -19,6 +19,7 @@ function makeEditor() {
   editor.redoStack = [];
   editor.HISTORY_CAP = 50;
   editor.dragWaypointIndex = -1;
+  editor.selectedWaypointIndex = -1;
   editor.btnUndo = { disabled: true };
   editor.btnRedo = { disabled: true };
   editor.waypointListEl = { querySelectorAll: () => [] };
@@ -64,9 +65,22 @@ describe('RouteEditor edit-form history', () => {
     editor.addWaypointByName('D');
 
     expect(editor.editingWaypoints).toEqual(['A', 'B', 'C', 'D']);
+    expect(editor.selectedWaypointIndex).toBe(3);
     expect(editor.onWaypointFocus).toHaveBeenCalledWith('D');
     expect(editor.redoStack).toEqual([]);
     expect(editor.btnRedo.disabled).toBe(true);
+  });
+
+  it('inserts a waypoint after the selected waypoint', () => {
+    const editor = makeEditor();
+    editor.selectedWaypointIndex = 0;
+    editor.onWaypointFocus = vi.fn();
+
+    editor.insertWaypointAfterSelected('D');
+
+    expect(editor.editingWaypoints).toEqual(['A', 'D', 'B', 'C']);
+    expect(editor.selectedWaypointIndex).toBe(1);
+    expect(editor.onWaypointFocus).toHaveBeenCalledWith('D');
   });
 
   it('includes landmark add/remove in the same edit-form history', () => {
@@ -93,6 +107,26 @@ describe('RouteEditor edit-form history', () => {
     expect(editor.undoStack).toEqual([]);
     expect(editor.renderWaypointList).not.toHaveBeenCalled();
   });
+
+  it('keeps the selected waypoint attached to the moved item', () => {
+    const editor = makeEditor();
+    editor.selectedWaypointIndex = 1;
+
+    editor.moveWaypointTo(1, 0);
+
+    expect(editor.editingWaypoints).toEqual(['B', 'A', 'C']);
+    expect(editor.selectedWaypointIndex).toBe(0);
+  });
+
+  it('keeps waypoint selection on a nearby item after removal', () => {
+    const editor = makeEditor();
+    editor.selectedWaypointIndex = 1;
+
+    editor.removeWaypoint(1);
+
+    expect(editor.editingWaypoints).toEqual(['A', 'C']);
+    expect(editor.selectedWaypointIndex).toBe(1);
+  });
 });
 
 describe('RouteEditor waypoint focus UI', () => {
@@ -102,6 +136,7 @@ describe('RouteEditor waypoint focus UI', () => {
     editor.waypointListEl = document.getElementById('waypoints');
     editor.editingWaypoints = ['A'];
     editor.poiNames = ['A'];
+    editor.selectedWaypointIndex = -1;
     editor.onWaypointFocus = vi.fn();
     editor.setDirty = vi.fn();
 
@@ -112,6 +147,8 @@ describe('RouteEditor waypoint focus UI', () => {
     row.dispatchEvent(new Event('focus'));
 
     expect(editor.onWaypointFocus).toHaveBeenCalledWith('A');
+    expect(editor.selectedWaypointIndex).toBe(0);
+    expect(row.classList.contains('selected')).toBe(true);
     expect(editor.setDirty).not.toHaveBeenCalled();
   });
 
@@ -121,6 +158,7 @@ describe('RouteEditor waypoint focus UI', () => {
     editor.waypointListEl = document.getElementById('waypoints');
     editor.editingWaypoints = ['A'];
     editor.poiNames = ['A'];
+    editor.selectedWaypointIndex = -1;
     editor.onWaypointFocus = vi.fn();
 
     editor.renderWaypointList();
@@ -198,15 +236,15 @@ describe('RouteEditor waypoint focus UI', () => {
     expect(editor.selectPoiCandidate('missing')).toBe('');
   });
 
-  it('keeps click-to-add disabled by default for each edit session', () => {
+  it('keeps map insertion disabled by default for each edit session', () => {
     const editor = Object.create(RouteEditor.prototype);
     editor.formEl = document.createElement('div');
-    editor.clickAddMode = true;
-    editor.clickAddToggle = { checked: true };
+    editor.mapInsertMode = true;
+    editor.mapInsertToggle = { checked: true };
 
     editor.showForm();
 
-    expect(editor.isClickAddModeEnabled()).toBe(false);
-    expect(editor.clickAddToggle.checked).toBe(false);
+    expect(editor.isMapInsertModeEnabled()).toBe(false);
+    expect(editor.mapInsertToggle.checked).toBe(false);
   });
 });

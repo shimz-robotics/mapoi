@@ -354,8 +354,8 @@
       if (poi && poi.name) {
         const candidateKind = syncRouteEditPoiCandidate(index);
         if (candidateKind !== 'waypoint') return;
-        if (routeEditor.isClickAddModeEnabled()) {
-          routeEditor.addWaypointByName(poi.name);
+        if (routeEditor.isMapInsertModeEnabled()) {
+          routeEditor.insertWaypointAfterSelected(poi.name);
         }
       }
       return;

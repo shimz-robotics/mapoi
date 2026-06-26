@@ -198,9 +198,13 @@
                 </select>
                 <button type="button" id="btn-add-waypoint" class="btn-add-wp">+</button>
               </div>
-              <label class="route-click-add-toggle">
-                <input type="checkbox" id="route-click-add-toggle" />
-                <span>Click to add</span>
+              <label class="route-map-insert-toggle" title="Map clicks insert after the selected waypoint">
+                <input
+                  type="checkbox"
+                  id="route-map-insert-toggle"
+                  aria-label="Insert map-clicked POIs after the selected waypoint"
+                />
+                <span>Map click inserts after selected</span>
               </label>
             </div>
             <!-- route.landmarks (#143): この route 走行中に意識する補助 POI 群 (Nav2 へは送らず radius 監視のみ) -->

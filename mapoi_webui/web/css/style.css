@@ -645,6 +645,15 @@ main {
   background: #eef5fc;
 }
 
+.wp-item.selected {
+  background: #e8f6f3;
+  box-shadow: inset 3px 0 0 #16a085;
+}
+
+.wp-item.selected:focus {
+  background: #ddf1ed;
+}
+
 .wp-item.wp-drop-target {
   background: #e8f6f3;
   box-shadow: inset 3px 0 0 #16a085;
@@ -764,7 +773,7 @@ main {
   min-height: 32px;
 }
 
-.route-click-add-toggle {
+.route-map-insert-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -775,7 +784,7 @@ main {
   user-select: none;
 }
 
-.route-click-add-toggle input {
+.route-map-insert-toggle input {
   margin: 0;
 }
 

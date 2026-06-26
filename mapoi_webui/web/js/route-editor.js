@@ -18,7 +18,8 @@ class RouteEditor {
     this.redoStack = [];
     this.HISTORY_CAP = 50;
     this.dragWaypointIndex = -1;
-    this.clickAddMode = false;
+    this.selectedWaypointIndex = -1;
+    this.mapInsertMode = false;
 
     this.onDirtyChange = null;
     this.onVisibilityChange = null;
@@ -45,7 +46,7 @@ class RouteEditor {
     this.waypointListEl = document.getElementById('route-waypoint-list');
     this.waypointSelect = document.getElementById('route-wp-select');
     this.btnAddWaypoint = document.getElementById('btn-add-waypoint');
-    this.clickAddToggle = document.getElementById('route-click-add-toggle');
+    this.mapInsertToggle = document.getElementById('route-map-insert-toggle');
 
     // Form inputs - landmarks (#143)
     this.landmarkListEl = document.getElementById('route-landmark-list');
@@ -59,9 +60,9 @@ class RouteEditor {
     this.btnSaveRoutes.addEventListener('click', () => this.save());
     this.btnDiscardRoutes.addEventListener('click', () => this.discard());
     this.btnAddWaypoint.addEventListener('click', () => this.addWaypointFromSelect());
-    if (this.clickAddToggle) {
-      this.clickAddToggle.addEventListener('change', () => {
-        this.clickAddMode = this.clickAddToggle.checked;
+    if (this.mapInsertToggle) {
+      this.mapInsertToggle.addEventListener('change', () => {
+        this.mapInsertMode = this.mapInsertToggle.checked;
       });
     }
     this.waypointSelect.addEventListener('change', () => this.focusWaypointName(this.waypointSelect.value));
@@ -106,8 +107,8 @@ class RouteEditor {
     this.poiNames = names || [];
   }
 
-  isClickAddModeEnabled() {
-    return !!this.clickAddMode;
+  isMapInsertModeEnabled() {
+    return !!this.mapInsertMode;
   }
 
   /**
@@ -285,6 +286,7 @@ class RouteEditor {
   fillForm(route) {
     this.inputRouteName.value = route.name || '';
     this.editingWaypoints = [...(route.waypoints || [])];
+    this.selectedWaypointIndex = this.editingWaypoints.length > 0 ? this.editingWaypoints.length - 1 : -1;
     this.editingLandmarks = [...(route.landmarks || [])];   // #143
     this.renderWaypointList();
     this.populateWaypointSelect();
@@ -310,6 +312,7 @@ class RouteEditor {
    */
   renderWaypointList() {
     this.waypointListEl.innerHTML = '';
+    this._normalizeSelectedWaypointIndex();
     if (this.editingWaypoints.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'wp-empty';
@@ -319,11 +322,12 @@ class RouteEditor {
     }
     this.editingWaypoints.forEach((wp, i) => {
       const row = document.createElement('div');
-      row.className = 'wp-item';
+      row.className = 'wp-item' + (i === this.selectedWaypointIndex ? ' selected' : '');
       row.tabIndex = 0;
       row.dataset.poiName = wp;
-      row.addEventListener('click', () => this.focusWaypointName(wp));
-      row.addEventListener('focus', () => this.focusWaypointName(wp));
+      row.setAttribute('aria-selected', i === this.selectedWaypointIndex ? 'true' : 'false');
+      row.addEventListener('click', () => this.selectWaypoint(i));
+      row.addEventListener('focus', () => this.selectWaypoint(i));
       row.addEventListener('dragover', (e) => this._onWaypointDragOver(e, row));
       row.addEventListener('dragleave', () => row.classList.remove('wp-drop-target'));
       row.addEventListener('drop', (e) => this._onWaypointDrop(e, i));
@@ -358,21 +362,30 @@ class RouteEditor {
       upBtn.textContent = '\u25B2';
       upBtn.title = 'Move up';
       upBtn.disabled = i === 0;
-      upBtn.addEventListener('click', () => this.moveWaypoint(i, -1));
+      upBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.moveWaypoint(i, -1);
+      });
 
       const downBtn = document.createElement('button');
       downBtn.type = 'button';
       downBtn.textContent = '\u25BC';
       downBtn.title = 'Move down';
       downBtn.disabled = i === this.editingWaypoints.length - 1;
-      downBtn.addEventListener('click', () => this.moveWaypoint(i, 1));
+      downBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.moveWaypoint(i, 1);
+      });
 
       const removeBtn = document.createElement('button');
       removeBtn.type = 'button';
       removeBtn.textContent = '\u00D7';
       removeBtn.title = 'Remove';
       removeBtn.className = 'wp-remove';
-      removeBtn.addEventListener('click', () => this.removeWaypoint(i));
+      removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.removeWaypoint(i);
+      });
 
       btns.appendChild(upBtn);
       btns.appendChild(downBtn);
@@ -389,21 +402,23 @@ class RouteEditor {
   addWaypointFromSelect() {
     const val = this.waypointSelect.value;
     if (!val) return;
-    this._pushEditUndo();
-    this.editingWaypoints.push(val);
+    this.insertWaypointAfterSelected(val);
     this.waypointSelect.value = '';
-    this.renderWaypointList();
-    this.focusWaypointName(val);
-    this._fireEditingChange();
   }
 
   /**
    * Add a waypoint by POI name (e.g. from map click).
    */
   addWaypointByName(name) {
+    this.insertWaypointAfterSelected(name);
+  }
+
+  insertWaypointAfterSelected(name) {
     if (this.editingIndex === -1) return;
     this._pushEditUndo();
-    this.editingWaypoints.push(name);
+    const insertIndex = this._waypointInsertIndex();
+    this.editingWaypoints.splice(insertIndex, 0, name);
+    this.selectedWaypointIndex = insertIndex;
     if (this.waypointSelect) this.waypointSelect.value = name;
     if (this.landmarkSelect) this.landmarkSelect.value = '';
     this.renderWaypointList();
@@ -439,6 +454,7 @@ class RouteEditor {
     this._pushEditUndo();
     const [wp] = this.editingWaypoints.splice(index, 1);
     this.editingWaypoints.splice(newIndex, 0, wp);
+    this._moveSelectedWaypointIndex(index, newIndex);
     this.renderWaypointList();
     this._fireEditingChange();
   }
@@ -447,6 +463,11 @@ class RouteEditor {
     if (index < 0 || index >= this.editingWaypoints.length) return;
     this._pushEditUndo();
     this.editingWaypoints.splice(index, 1);
+    if (this.selectedWaypointIndex > index) {
+      this.selectedWaypointIndex -= 1;
+    } else if (this.selectedWaypointIndex === index) {
+      this.selectedWaypointIndex = Math.min(index, this.editingWaypoints.length - 1);
+    }
     this.renderWaypointList();
     this._fireEditingChange();
   }
@@ -612,15 +633,16 @@ class RouteEditor {
 
   showForm() {
     this.formEl.classList.remove('hidden');
-    this.clickAddMode = false;
-    if (this.clickAddToggle) this.clickAddToggle.checked = false;
+    this.mapInsertMode = false;
+    if (this.mapInsertToggle) this.mapInsertToggle.checked = false;
     if (this.onEditFormVisibilityChange) this.onEditFormVisibilityChange(true);
   }
 
   hideForm() {
     this.formEl.classList.add('hidden');
-    this.clickAddMode = false;
-    if (this.clickAddToggle) this.clickAddToggle.checked = false;
+    this.mapInsertMode = false;
+    this.selectedWaypointIndex = -1;
+    if (this.mapInsertToggle) this.mapInsertToggle.checked = false;
     if (this.onEditFormVisibilityChange) this.onEditFormVisibilityChange(false);
   }
 
@@ -635,6 +657,13 @@ class RouteEditor {
 
   focusWaypointName(name) {
     if (this.onWaypointFocus) this.onWaypointFocus(name || '');
+  }
+
+  selectWaypoint(index) {
+    if (index < 0 || index >= this.editingWaypoints.length) return;
+    this.selectedWaypointIndex = index;
+    this._updateWaypointSelectionClasses();
+    this.focusWaypointName(this.editingWaypoints[index]);
   }
 
   focusLandmarkName(name) {
@@ -677,6 +706,51 @@ class RouteEditor {
     });
   }
 
+  _normalizeSelectedWaypointIndex() {
+    if (!this.editingWaypoints || this.editingWaypoints.length === 0) {
+      this.selectedWaypointIndex = -1;
+      return;
+    }
+    if (!Number.isInteger(this.selectedWaypointIndex)
+        || this.selectedWaypointIndex < 0
+        || this.selectedWaypointIndex >= this.editingWaypoints.length) {
+      this.selectedWaypointIndex = this.editingWaypoints.length - 1;
+    }
+  }
+
+  _updateWaypointSelectionClasses() {
+    if (!this.waypointListEl) return;
+    this.waypointListEl.querySelectorAll('.wp-item').forEach((row, index) => {
+      const selected = index === this.selectedWaypointIndex;
+      row.classList.toggle('selected', selected);
+      row.setAttribute('aria-selected', selected ? 'true' : 'false');
+    });
+  }
+
+  _waypointInsertIndex() {
+    this._normalizeSelectedWaypointIndex();
+    if (this.selectedWaypointIndex < 0) return this.editingWaypoints.length;
+    return this.selectedWaypointIndex + 1;
+  }
+
+  _moveSelectedWaypointIndex(fromIndex, toIndex) {
+    if (this.selectedWaypointIndex === fromIndex) {
+      this.selectedWaypointIndex = toIndex;
+      return;
+    }
+    if (fromIndex < toIndex
+        && this.selectedWaypointIndex > fromIndex
+        && this.selectedWaypointIndex <= toIndex) {
+      this.selectedWaypointIndex -= 1;
+      return;
+    }
+    if (fromIndex > toIndex
+        && this.selectedWaypointIndex >= toIndex
+        && this.selectedWaypointIndex < fromIndex) {
+      this.selectedWaypointIndex += 1;
+    }
+  }
+
   _resetEditHistory() {
     this.undoStack = [];
     this.redoStack = [];
@@ -705,6 +779,7 @@ class RouteEditor {
       routeName: this.inputRouteName.value,
       editingWaypoints: [...this.editingWaypoints],
       editingLandmarks: [...this.editingLandmarks],
+      selectedWaypointIndex: this.selectedWaypointIndex,
     };
   }
 
@@ -712,6 +787,9 @@ class RouteEditor {
     this.inputRouteName.value = snap.routeName || '';
     this.editingWaypoints = [...(snap.editingWaypoints || [])];
     this.editingLandmarks = [...(snap.editingLandmarks || [])];
+    this.selectedWaypointIndex = Number.isInteger(snap.selectedWaypointIndex)
+      ? snap.selectedWaypointIndex
+      : -1;
     this.renderWaypointList();
     this.renderLandmarkList();
     this._updateUndoButtons();
