@@ -55,7 +55,6 @@ test.describe('Map edit polish', () => {
 
     await poiCard(page, 'poi_wedge').locator('.btn-edit').click();
     await expect(page.locator('#poi-edit-form')).not.toHaveClass(/(^|\s)hidden(\s|$)/);
-    await page.locator('#poi-name').focus();
     await page.keyboard.press('Escape');
     await expect(page.locator('#poi-edit-form')).toHaveClass(/(^|\s)hidden(\s|$)/);
     await expect(poiCard(page, 'poi_wedge')).toHaveClass(/(^|\s)selected(\s|$)/);

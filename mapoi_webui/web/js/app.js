@@ -927,27 +927,31 @@
         || t.tagName === 'SELECT' || t.isContentEditable);
     if (e.key === 'Escape') {
       if (e.isComposing) return;
-      if (mapViewer.isPoseToolActive() && !isEditableTarget) return;
       if (routeEditor.editingIndex !== -1) {
         e.preventDefault();
+        e.stopImmediatePropagation();
         routeEditor.formCancel();
         return;
       }
       if (poiEditor.editingIndex !== -1) {
         e.preventDefault();
+        e.stopImmediatePropagation();
         poiEditor.formCancel();
         return;
       }
       if (poiEditor.placingMode) {
         e.preventDefault();
+        e.stopImmediatePropagation();
         poiEditor.cancelPlacing();
         return;
       }
+      if (mapViewer.isPoseToolActive()) return;
       if (isEditableTarget) return;
       const hadSelection = poiEditor.selectedIndex >= 0 || routeEditor.selectedIndex >= 0
         || navGoalSelect.value || navRouteSelect.value || navInitialPoseSelect.value;
       if (!hadSelection) return;
       e.preventDefault();
+      e.stopImmediatePropagation();
       poiEditor.clearSelection();
       routeEditor.clearSelection();
       navGoalSelect.value = '';
