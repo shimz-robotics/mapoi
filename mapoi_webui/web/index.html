@@ -20,6 +20,35 @@
     <div id="map-container">
       <div id="map"></div>
       <div id="map-status"></div>
+
+      <!-- 地図上にフロートする表示コントロール (#323 半透明化 / #324 UI トグル)。
+           ui-hidden 時も残るので UI を復帰できる。ui-settings.js が配線する。 -->
+      <div id="ui-controls">
+        <button id="btn-ui-toggle" type="button" class="ui-control-btn"
+                aria-pressed="false" title="UI を隠す" aria-label="UI 表示切替">
+          <span class="ui-control-icon" aria-hidden="true">&#9681;</span>
+        </button>
+        <div class="ui-settings-wrap">
+          <button id="btn-ui-settings" type="button" class="ui-control-btn"
+                  aria-haspopup="true" aria-expanded="false" title="表示設定" aria-label="表示設定">
+            <span class="ui-control-icon" aria-hidden="true">&#9881;</span>
+          </button>
+          <div id="ui-settings-popover" class="ui-settings-popover hidden" role="dialog" aria-label="表示設定">
+            <label class="ui-settings-row ui-settings-check">
+              <input type="checkbox" id="ui-overlay-toggle" />
+              <span>地図の上に重ねて表示</span>
+            </label>
+            <div class="ui-settings-row">
+              <label for="ui-alpha-slider">UI の不透明度</label>
+              <div class="ui-alpha-row">
+                <input type="range" id="ui-alpha-slider" min="30" max="100" step="5" value="100"
+                       aria-label="UI の不透明度 (%)" />
+                <span id="ui-alpha-value" class="ui-alpha-value">100%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div id="sidebar-resizer" role="separator" aria-orientation="vertical" title="Drag to resize sidebar"></div>
@@ -259,6 +288,9 @@
   <script src="/js/poi-editor.js"></script>
   <script src="/js/route-editor.js"></script>
   <script src="/js/sidebar-resizer.js"></script>
+  <!-- ui-settings.js は #ui-controls を配線し UI オン/オフトグル (#324) と
+       半透明化 (#323) を localStorage 永続で提供する pure/DOM helper。他モジュール非依存。 -->
+  <script src="/js/ui-settings.js"></script>
   <!-- nav-controls.js は MapoiNavControls を window に attach する pure/DOM helper 群 (#199)。
        app.js より前に読み込む (updateNavControlsAvailability / map switch / 初期 section で参照)。 -->
   <script src="/js/nav-controls.js"></script>

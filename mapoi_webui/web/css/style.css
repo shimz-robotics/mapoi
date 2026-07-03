@@ -6,6 +6,12 @@
   padding: 0;
 }
 
+/* UI 半透明化 (#323) の基準。既定 1 = 不透明 = 現行の見た目。
+   ui-settings.js が body の inline style で上書きする。 */
+:root {
+  --ui-panel-alpha: 1;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: #f5f5f5;
@@ -17,7 +23,7 @@ header {
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  background: #2c3e50;
+  background: rgba(44, 62, 80, var(--ui-panel-alpha));
   color: #fff;
 }
 
@@ -51,6 +57,8 @@ main {
   display: flex;
   flex-direction: row;
   height: calc(100vh - 44px);
+  /* overlay モード (#323) で #poi-panel を絶対配置する際のアンカー。 */
+  position: relative;
 }
 
 /* Map */
@@ -104,6 +112,11 @@ main {
   display: flex;
   flex-direction: column;
   border-left: 1px solid #ddd;
+  /* 半透明化 (#323): 既定 alpha=1 では body と同じ #f5f5f5 で現行と一致。
+     backdrop-filter は overlay モードで背後の地図を frosted glass にする。 */
+  background: rgba(245, 245, 245, var(--ui-panel-alpha));
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .editor-toolbar {
@@ -113,7 +126,7 @@ main {
   padding: 6px 12px;
   flex-wrap: wrap;
   border-top: 1px solid #ddd;
-  background: #f5f5f5;
+  background: rgba(245, 245, 245, var(--ui-panel-alpha));
   flex-shrink: 0;
 }
 
@@ -455,7 +468,7 @@ main {
   align-items: center;
   justify-content: space-between;
   padding: 6px 16px;
-  background: #ecf0f1;
+  background: rgba(236, 240, 241, var(--ui-panel-alpha));
   font-size: 0.9rem;
   font-weight: 600;
   color: #555;
@@ -1402,5 +1415,158 @@ main {
 
   .form-row label {
     width: auto;
+  }
+}
+
+/* ============================================================
+   表示コントロール: UI オン/オフトグル (#324) と半透明化 (#323)
+   #ui-controls は #map-container 内に絶対配置し ui-hidden でも残す。
+   ============================================================ */
+#ui-controls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.ui-control-btn {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: rgba(44, 62, 80, 0.82);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.ui-control-btn:hover {
+  background: rgba(44, 62, 80, 0.95);
+}
+
+.ui-control-btn[aria-pressed="true"] {
+  background: rgba(52, 152, 219, 0.9);
+}
+
+.ui-control-icon {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.ui-settings-wrap {
+  position: relative;
+}
+
+.ui-settings-popover {
+  position: absolute;
+  top: 48px;
+  right: 0;
+  width: 220px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #333;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 0.85rem;
+}
+
+.ui-settings-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ui-settings-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.ui-settings-check input {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.ui-alpha-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ui-alpha-row input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.ui-alpha-value {
+  min-width: 40px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #555;
+}
+
+/* --- UI オン/オフ (#324): header / resizer / panel を隠し地図を全画面に --- */
+body.ui-hidden header,
+body.ui-hidden #sidebar-resizer,
+body.ui-hidden #poi-panel {
+  display: none;
+}
+
+body.ui-hidden main {
+  height: 100vh;
+}
+
+body.ui-hidden #map-container {
+  height: 100vh;
+}
+
+/* --- overlay モード (#323): パネルを地図の上にフロートさせ半透明を活かす --- */
+body.ui-overlay #sidebar-resizer {
+  display: none;
+}
+
+body.ui-overlay #map-container {
+  height: calc(100vh - 44px);
+}
+
+body.ui-overlay #poi-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(360px, 92vw);
+  z-index: 1100;
+  border-left: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: -3px 0 16px rgba(0, 0, 0, 0.22);
+  overflow-y: auto;
+}
+
+@media (max-width: 768px) {
+  /* タップしやすいよう mobile ではボタンを拡大 (top-right 維持で Leaflet
+     attribution / zoom と衝突しない)。 */
+  .ui-control-btn {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 48px;
   }
 }
