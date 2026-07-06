@@ -98,12 +98,17 @@ class FakeMapServer:
     """Nav2 map_server の ``<node_name>/load_map`` service の最小 mock (#299 テスト残課題)。
 
     mapoi_nav2_bridge の ``send_load_map_request`` が投げる LoadMap request を
-    (map_url, monotonic 受信時刻) で記録し、``set_fail(True)`` 中は
-    RESULT_MAP_DOES_NOT_EXIST を返して LoadMap 失敗経路を再現する。
+    (map_url, monotonic 受信時刻, monotonic 応答完了時刻) で記録し、``set_fail(True)``
+    中は RESULT_MAP_DOES_NOT_EXIST を返して LoadMap 失敗経路を再現する。
     map ファイルの実在は見ない (URL の突き合わせだけが目的)。
 
-    service callback は即応 (blocking なし) なので SingleThreadedExecutor で足りる。
-    action mock 群と同じく専用 node + daemon spin thread + shutdown() の構成に揃える。
+    ``set_response_delay(sec)`` で応答を遅延させられる。「LoadMap **応答完了** より前に
+    initialpose request が出ない」timing gate (#149/#184) を pin する用途で、遅延中に
+    非同期で先行 publish する regression を応答完了時刻との比較で検出可能にする。
+    遅延は bridge 側 ``spin_until_future_complete`` の timeout (1s) 未満に抑えること。
+
+    service callback は遅延中 sleep する以外 blocking しないので SingleThreadedExecutor
+    で足りる。action mock 群と同じく専用 node + daemon spin thread + shutdown() の構成。
     """
 
     def __init__(self, service_name='/map_server/load_map',
@@ -112,6 +117,7 @@ class FakeMapServer:
         self._lock = threading.Lock()
         self._requests = []
         self._fail = False
+        self._response_delay_sec = 0.0
         self._service = self._node.create_service(
             LoadMap, service_name, self._handle_load_map)
         self._executor = SingleThreadedExecutor()
@@ -125,21 +131,30 @@ class FakeMapServer:
             self._executor.spin_once(timeout_sec=0.05)
 
     def _handle_load_map(self, request, response):
+        t_received = time.monotonic()
         with self._lock:
-            self._requests.append((request.map_url, time.monotonic()))
             fail = self._fail
+            delay = self._response_delay_sec
+        if delay > 0.0:
+            time.sleep(delay)
         if fail:
             response.result = LoadMap.Response.RESULT_MAP_DOES_NOT_EXIST
         else:
             response.result = LoadMap.Response.RESULT_SUCCESS
+        with self._lock:
+            self._requests.append((request.map_url, t_received, time.monotonic()))
         return response
 
     def set_fail(self, fail):
         with self._lock:
             self._fail = fail
 
+    def set_response_delay(self, seconds):
+        with self._lock:
+            self._response_delay_sec = seconds
+
     def requests(self):
-        """(map_url, monotonic 受信時刻) のリストを返す。"""
+        """(map_url, monotonic 受信時刻, monotonic 応答完了時刻) のリストを返す。"""
         with self._lock:
             return list(self._requests)
 
@@ -147,6 +162,7 @@ class FakeMapServer:
         with self._lock:
             self._requests.clear()
             self._fail = False
+            self._response_delay_sec = 0.0
 
     def shutdown(self):
         self._stop_event.set()
