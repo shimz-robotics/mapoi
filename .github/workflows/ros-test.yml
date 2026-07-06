@@ -29,7 +29,7 @@ jobs:
       matrix:
         distro: [humble, jazzy]
     # PR では launch_test を除外 (下記 step) するが、main push / 週次 schedule / 手動 dispatch
-    # では同 job 内で launch_test 3 本 (各 120-180s) も実行するため余裕を持たせる。
+    # では同 job 内で launch_test 6 本 (各 timeout 120-180s) も実行するため余裕を持たせる。
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -76,8 +76,8 @@ jobs:
       #   gtest(4): mapoi_server test_nav2_bridge_unit / test_initial_pose_resolver /
       #             test_system_tags_contract, mapoi_rviz_plugins test_poi_editor_helpers
       #   pytest(5): mapoi_webui yaml/api contract 4 + mapoi_turtlebot3_example config 1
-      # 遅い launch_test (mapoi_server の統合 test 3 本, LABELS "launch_test", 120-180s) は
-      # ctest label exclude で外す。test-result が落ちれば job も fail。
+      # 遅い launch_test (mapoi_server の統合 test 6 本, LABELS "launch_test", timeout 120-180s)
+      # は ctest label exclude で外す。test-result が落ちれば job も fail。
       - name: colcon test (gtest + pytest, launch_test を除外)
         shell: bash
         # setup.bash の nounset 非互換のため set -u は付けない (colcon build step と同様)。
@@ -105,7 +105,7 @@ jobs:
             exit 1
           fi
 
-      # 統合 launch_test (mapoi_server の Nav2 mock 駆動 3 本, 各 120-180s) は遅く、実プロセス +
+      # 統合 launch_test (mapoi_server の 6 本, 各 timeout 120-180s) は遅く、実プロセス +
       # MultiThreadedExecutor のタイミング依存で CPU 逼迫時に flake する (特に
       # test_poi_event_route_integration)。よって PR gate からは外す (上 step で -LE launch_test
       # で除外済)。代わりに main push / 週次 schedule / 手動 dispatch でのみ、同一 build を再利用して

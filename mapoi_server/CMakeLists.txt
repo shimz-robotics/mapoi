@@ -130,10 +130,27 @@ if(BUILD_TESTING)
     test/test_multiwriter_initialpose_no_stale.py
     TIMEOUT 120
   )
+  # #299 テスト残課題: operator map switch の LoadMap 成功 → request_initial_pose E2E。
+  # 「POI 要求は LoadMap 成功後のみ」(#149/#184) を FakeMapServer (load_map mock) で pin する。
+  add_launch_test(
+    test/test_switch_map_loadmap_initialpose.py
+    TIMEOUT 120
+  )
+  # #297 再現 (characterization): mapoi_server 再起動が稼働中 subscriber へ起動 map の
+  # initial pose を active push する現状挙動を pin する。#297 修正時は assert を反転させる。
+  add_launch_test(
+    test/test_server_restart_initialpose_relatch.py
+    TIMEOUT 120
+  )
 
   # Install test config
   install(
     FILES test/test_mapoi_config.yaml
+    DESTINATION share/${PROJECT_NAME}/test
+  )
+  # switch_map E2E / #297 再現 test 用の 2-map fixture (test/maps/test_map_{a,b})
+  install(
+    DIRECTORY test/maps
     DESTINATION share/${PROJECT_NAME}/test
   )
 endif()
