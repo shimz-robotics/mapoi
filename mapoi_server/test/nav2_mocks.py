@@ -10,9 +10,10 @@ import time
 import rclpy
 from rclpy.action import ActionServer, CancelResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import MultiThreadedExecutor, SingleThreadedExecutor
 from nav2_msgs.action import NavigateToPose
 from nav2_msgs.action import FollowWaypoints
+from nav2_msgs.srv import LoadMap
 
 
 class FakeNavigateToPoseServer:
@@ -89,6 +90,72 @@ class FakeNavigateToPoseServer:
         finally:
             try:
                 self._action_server.destroy()
+            finally:
+                self._node.destroy_node()
+
+
+class FakeMapServer:
+    """Nav2 map_server の ``<node_name>/load_map`` service の最小 mock (#299 テスト残課題)。
+
+    mapoi_nav2_bridge の ``send_load_map_request`` が投げる LoadMap request を
+    (map_url, monotonic 受信時刻) で記録し、``set_fail(True)`` 中は
+    RESULT_MAP_DOES_NOT_EXIST を返して LoadMap 失敗経路を再現する。
+    map ファイルの実在は見ない (URL の突き合わせだけが目的)。
+
+    service callback は即応 (blocking なし) なので SingleThreadedExecutor で足りる。
+    action mock 群と同じく専用 node + daemon spin thread + shutdown() の構成に揃える。
+    """
+
+    def __init__(self, service_name='/map_server/load_map',
+                 node_name='fake_map_server'):
+        self._node = rclpy.create_node(node_name)
+        self._lock = threading.Lock()
+        self._requests = []
+        self._fail = False
+        self._service = self._node.create_service(
+            LoadMap, service_name, self._handle_load_map)
+        self._executor = SingleThreadedExecutor()
+        self._executor.add_node(self._node)
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+
+    def _spin(self):
+        while rclpy.ok() and not self._stop_event.is_set():
+            self._executor.spin_once(timeout_sec=0.05)
+
+    def _handle_load_map(self, request, response):
+        with self._lock:
+            self._requests.append((request.map_url, time.monotonic()))
+            fail = self._fail
+        if fail:
+            response.result = LoadMap.Response.RESULT_MAP_DOES_NOT_EXIST
+        else:
+            response.result = LoadMap.Response.RESULT_SUCCESS
+        return response
+
+    def set_fail(self, fail):
+        with self._lock:
+            self._fail = fail
+
+    def requests(self):
+        """(map_url, monotonic 受信時刻) のリストを返す。"""
+        with self._lock:
+            return list(self._requests)
+
+    def reset(self):
+        with self._lock:
+            self._requests.clear()
+            self._fail = False
+
+    def shutdown(self):
+        self._stop_event.set()
+        self._thread.join(timeout=1.0)
+        try:
+            self._executor.shutdown()
+        finally:
+            try:
+                self._node.destroy_service(self._service)
             finally:
                 self._node.destroy_node()
 
