@@ -20,6 +20,31 @@
     <div id="map-container">
       <div id="map"></div>
       <div id="map-status"></div>
+
+      <!-- 地図上にフロートする UI 一括表示/非表示トグル (#324)。ui-hidden 時も残る
+           ので UI を復帰できる。アイコンは action-based の eye SVG (表示中 = eye-off
+           「隠す」、非表示中 = eye「戻す」)。◑/⚙ グリフはダークモード/アプリ設定と
+           誤読されるため不採用。overlay / 不透明度の設定はパネル内 Display section
+           (#323)。配線は ui-settings.js。 -->
+      <div id="ui-controls">
+        <button id="btn-ui-toggle" type="button" class="ui-control-btn"
+                aria-pressed="false" title="Hide UI" aria-label="Toggle UI visibility">
+          <svg id="ui-toggle-icon-hide" class="ui-control-icon-svg" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+               stroke-linejoin="round" aria-hidden="true">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+            <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+            <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/>
+            <line x1="1" y1="1" x2="23" y2="23"/>
+          </svg>
+          <svg id="ui-toggle-icon-show" class="ui-control-icon-svg hidden" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+               stroke-linejoin="round" aria-hidden="true">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </div>
     </div>
 
     <div id="sidebar-resizer" role="separator" aria-orientation="vertical" title="Drag to resize sidebar"></div>
@@ -238,6 +263,32 @@
           </div>
         </div>
       </div>
+
+      <!-- Display section (#323 / #324): overlay / 不透明度の表示設定。UI が見えている
+           時にしか意味がないため地図上のフローティングでなくパネル内に置く。既定折畳。
+           開閉・配線は ui-settings.js (app.js setupSectionToggle とは独立、glyph は同じ)。 -->
+      <div id="display-section" class="panel-section">
+        <div class="section-header">
+          <span>Display</span>
+          <div class="section-header-actions">
+            <button id="btn-display-toggle" class="btn-section-toggle" title="Toggle">&#9654;</button>
+          </div>
+        </div>
+        <div id="display-body" class="display-body" style="display: none;">
+          <label class="display-check">
+            <input type="checkbox" id="ui-overlay-toggle" />
+            <span>Overlay on map</span>
+          </label>
+          <div class="display-row">
+            <label for="ui-alpha-slider">UI opacity</label>
+            <div class="ui-alpha-row">
+              <input type="range" id="ui-alpha-slider" min="30" max="100" step="5" value="100"
+                     aria-label="UI opacity (%)" />
+              <span id="ui-alpha-value" class="ui-alpha-value">100%</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </main>
 
@@ -259,6 +310,9 @@
   <script src="/js/poi-editor.js"></script>
   <script src="/js/route-editor.js"></script>
   <script src="/js/sidebar-resizer.js"></script>
+  <!-- ui-settings.js は #ui-controls を配線し UI オン/オフトグル (#324) と
+       半透明化 (#323) を localStorage 永続で提供する pure/DOM helper。他モジュール非依存。 -->
+  <script src="/js/ui-settings.js"></script>
   <!-- nav-controls.js は MapoiNavControls を window に attach する pure/DOM helper 群 (#199)。
        app.js より前に読み込む (updateNavControlsAvailability / map switch / 初期 section で参照)。 -->
   <script src="/js/nav-controls.js"></script>
