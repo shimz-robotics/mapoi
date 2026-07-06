@@ -147,10 +147,12 @@ class TestSwitchMapLoadMapInitialPose(unittest.TestCase):
             '起動時 latched initialpose が受信できない')
         self.assertEqual(self.initialpose_samples[0][:2], ('test_map_a', 'map_a_start'))
 
-        # LoadMap 応答を 0.5s 遅延させる (bridge の spin_until_future_complete timeout 1s
-        # 未満)。「応答完了前に initialpose を publish する」regression が入った場合、
-        # t_poi が応答完了時刻より ~0.5s 早くなり下の assertLess で確実に検出できる。
-        self.map_server.set_response_delay(0.5)
+        # LoadMap 応答を 0.2s 遅延させる。「応答完了前に initialpose を publish する」
+        # regression が入った場合、t_poi が応答完了時刻より ~0.2s 早くなり下の assertLess で
+        # 確実に検出できる (scheduling noise より 2 桁大きい)。bridge 側
+        # spin_until_future_complete の hard timeout 1s に対し 0.8s の余白を残し、
+        # 高負荷 CI での LoadMap timeout flake を避ける (Codex review round 2 low)。
+        self.map_server.set_response_delay(0.2)
         self._switch_map('test_map_b')
 
         # 切替完了: 非空 poi_name の test_map_b sample が届くまで spin。
@@ -178,7 +180,7 @@ class TestSwitchMapLoadMapInitialPose(unittest.TestCase):
 
         # 順序契約 (2): LoadMap 応答完了時刻 < 先頭 POI 受信時刻 (「POI 要求は LoadMap 成功後
         # のみ」#149/#184 不変条件)。受信時刻でなく応答完了時刻と比較することで、応答 pending
-        # 中に非同期で先行 publish する regression も検出する (0.5s 遅延注入とセット)。
+        # 中に非同期で先行 publish する regression も検出する (0.2s 遅延注入とセット)。
         # 全て同一ホストの monotonic clock なので直接比較できる。
         t_load_done = load_reqs[0][2]
         t_poi = next(t for m, p, t in self.initialpose_samples
