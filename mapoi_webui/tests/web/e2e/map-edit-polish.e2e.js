@@ -28,13 +28,13 @@ function distance(a, b) {
 }
 
 test.describe('Map edit polish', () => {
-  test('sidebar sections are ordered Navigation, Tags, POIs, Routes', async ({ page }) => {
+  test('sidebar sections are ordered Navigation, Tags, POIs, Routes, Display', async ({ page }) => {
     await loadApp(page);
 
     const ids = await page.locator('#poi-panel > .panel-section').evaluateAll((els) =>
       els.map((el) => el.id));
 
-    expect(ids).toEqual(['nav-section', 'tag-section', 'poi-section', 'route-section']);
+    expect(ids).toEqual(['nav-section', 'tag-section', 'poi-section', 'route-section', 'display-section']);
   });
 
   test('Escape clears POI and route selection without opening edit forms', async ({ page }) => {

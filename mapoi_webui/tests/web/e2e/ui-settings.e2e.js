@@ -30,17 +30,22 @@ async function setAlphaPercent(page, percent) {
 }
 
 test.describe('UI 表示コントロール (#323 / #324)', () => {
-  test('トグルで header/panel を隠し、再クリックで戻す。#ui-controls は残す', async ({ page }) => {
+  test('トグルで header/panel を隠し、再クリックで戻す。#ui-controls は残り icon が swap する', async ({ page }) => {
     await loadApp(page);
     expect(await displayOf(page, 'header')).not.toBe('none');
     expect(await displayOf(page, '#poi-panel')).not.toBe('none');
+    // 表示中は「隠す」action の eye-off icon
+    expect(await displayOf(page, '#ui-toggle-icon-hide')).not.toBe('none');
+    expect(await displayOf(page, '#ui-toggle-icon-show')).toBe('none');
 
     await page.locator('#btn-ui-toggle').click();
     expect(await bodyHasClass(page, 'ui-hidden')).toBe(true);
     expect(await displayOf(page, 'header')).toBe('none');
     expect(await displayOf(page, '#poi-panel')).toBe('none');
-    // UI を復帰できるようコントロール自身は残す。
+    // UI を復帰できるようコントロール自身は残し、icon は「戻す」action の eye に swap
     expect(await displayOf(page, '#ui-controls')).not.toBe('none');
+    expect(await displayOf(page, '#ui-toggle-icon-hide')).toBe('none');
+    expect(await displayOf(page, '#ui-toggle-icon-show')).not.toBe('none');
 
     await page.locator('#btn-ui-toggle').click();
     expect(await bodyHasClass(page, 'ui-hidden')).toBe(false);
@@ -48,11 +53,14 @@ test.describe('UI 表示コントロール (#323 / #324)', () => {
     expect(await displayOf(page, '#poi-panel')).not.toBe('none');
   });
 
-  test('overlay チェックで panel が地図上に絶対配置される', async ({ page }) => {
+  test('Display section は既定折畳で、開くと overlay チェックで panel が地図上に絶対配置される', async ({ page }) => {
     await loadApp(page);
     expect(await positionOf(page, '#poi-panel')).not.toBe('absolute');
+    // 既定は折畳 (地図上でなくパネル内に置いた表示設定)
+    expect(await displayOf(page, '#display-body')).toBe('none');
 
-    await page.locator('#btn-ui-settings').click();
+    await page.locator('#btn-display-toggle').click();
+    expect(await displayOf(page, '#display-body')).not.toBe('none');
     await page.locator('#ui-overlay-toggle').check();
 
     expect(await bodyHasClass(page, 'ui-overlay')).toBe(true);
@@ -63,7 +71,7 @@ test.describe('UI 表示コントロール (#323 / #324)', () => {
     await loadApp(page);
     expect(await cssVar(page, '--ui-panel-alpha')).toBe('1');
 
-    await page.locator('#btn-ui-settings').click();
+    await page.locator('#btn-display-toggle').click();
     await setAlphaPercent(page, 50);
 
     expect(await cssVar(page, '--ui-panel-alpha')).toBe('0.5');
@@ -72,9 +80,9 @@ test.describe('UI 表示コントロール (#323 / #324)', () => {
 
   test('設定が reload をまたいで localStorage に永続化される', async ({ page }) => {
     await loadApp(page);
-    await page.locator('#btn-ui-toggle').click(); // hidden = true
-    await page.locator('#btn-ui-settings').click();
+    await page.locator('#btn-display-toggle').click();
     await setAlphaPercent(page, 40);
+    await page.locator('#btn-ui-toggle').click(); // hidden = true
     expect(await bodyHasClass(page, 'ui-hidden')).toBe(true);
 
     await loadApp(page); // reload (同一 context で localStorage は保持)

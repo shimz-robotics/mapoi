@@ -10,6 +10,11 @@
  *  - alpha  : パネル/ヘッダ背景の不透明度 (0.3〜1.0)。frosted glass
  *             (backdrop-filter) と組み合わせる。既定 1.0 = 不透明 = 現行。
  *
+ * UI 配置 (PR #325 レビューで再設計): 地図上のフローティングは UI トグル
+ * (eye SVG) 1 個のみ。overlay / alpha の設定はパネル内 Display section に置く
+ * (UI が見えている時にしか意味がない設定のため)。◑/⚙ グリフはダークモード/
+ * アプリ設定と誤読されるため不採用。
+ *
  * Browser からは `MapoiUiSettings.*` のグローバルとして使い、Node (vitest)
  * からは `module.exports` 経由で import する dual export 形式。pure helper
  * (clampAlpha / read/write/applySettings 等) は DOM/window 非依存。DOM 配線
@@ -138,8 +143,10 @@
 
     const body = doc.body;
     const toggleBtn = doc.getElementById('btn-ui-toggle');
-    const gearBtn = doc.getElementById('btn-ui-settings');
-    const popover = doc.getElementById('ui-settings-popover');
+    const iconHide = doc.getElementById('ui-toggle-icon-hide');
+    const iconShow = doc.getElementById('ui-toggle-icon-show');
+    const displayToggleBtn = doc.getElementById('btn-display-toggle');
+    const displayBody = doc.getElementById('display-body');
     const overlayChk = doc.getElementById('ui-overlay-toggle');
     const alphaSlider = doc.getElementById('ui-alpha-slider');
     const alphaValue = doc.getElementById('ui-alpha-value');
@@ -166,10 +173,13 @@
       }
     }
 
+    // action-based icon: 表示中は eye-off (「隠す」)、非表示中は eye (「戻す」)。
     function syncToggleBtn() {
       if (!toggleBtn) return;
       toggleBtn.setAttribute('aria-pressed', settings.hidden ? 'true' : 'false');
-      toggleBtn.title = settings.hidden ? 'UI を表示' : 'UI を隠す';
+      toggleBtn.title = settings.hidden ? 'Show UI' : 'Hide UI';
+      if (iconHide) iconHide.classList.toggle('hidden', settings.hidden);
+      if (iconShow) iconShow.classList.toggle('hidden', !settings.hidden);
     }
 
     function syncAlphaControls() {
@@ -178,17 +188,20 @@
       if (alphaValue) alphaValue.textContent = pct + '%';
     }
 
-    function setPopoverOpen(open) {
-      if (!popover) return;
-      popover.classList.toggle('hidden', !open);
-      if (gearBtn) gearBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    // Display section の開閉 (既定折畳)。app.js setupSectionToggle と同じ
+    // display:none + ▼/▶ glyph の挙動を module 独立で再現する。開閉状態は
+    // 他 section と同様に永続しない。
+    let displayOpen = false;
+    function applyDisplayOpen() {
+      if (displayBody) displayBody.style.display = displayOpen ? '' : 'none';
+      if (displayToggleBtn) displayToggleBtn.innerHTML = displayOpen ? '▼' : '▶';
     }
 
     // 初期反映
     if (overlayChk) overlayChk.checked = settings.overlay;
     syncAlphaControls();
     syncToggleBtn();
-    setPopoverOpen(false);
+    applyDisplayOpen();
 
     if (toggleBtn) {
       toggleBtn.addEventListener('click', () => {
@@ -200,15 +213,11 @@
       });
     }
 
-    if (gearBtn && popover) {
-      gearBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        setPopoverOpen(popover.classList.contains('hidden'));
+    if (displayToggleBtn && displayBody) {
+      displayToggleBtn.addEventListener('click', () => {
+        displayOpen = !displayOpen;
+        applyDisplayOpen();
       });
-      // popover 内クリックで閉じないように
-      popover.addEventListener('click', (e) => e.stopPropagation());
-      // 外側クリックで閉じる
-      doc.addEventListener('click', () => setPopoverOpen(false));
     }
 
     if (overlayChk) {
