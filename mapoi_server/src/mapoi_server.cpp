@@ -4,6 +4,7 @@
 #include <cstdio>
 
 #include "mapoi_server/initial_pose_resolver.hpp"
+#include "mapoi_server/map_state_store.hpp"
 #include "mapoi_server/system_tags.hpp"
 
 MapoiServer::MapoiServer() : Node("mapoi_server") {
@@ -11,14 +12,23 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   this->declare_parameter<std::string>("maps_path", "");
   this->declare_parameter<std::string>("map_name", "turtlebot3_world");
   this->declare_parameter<std::string>("config_file", "mapoi_config.yaml");
+  // #297: last-selected map 永続化用 state dir。空 (default) = 永続化無効 (従来挙動)。
+  // opt-in にしている理由: default で ~/.ros 等へ暗黙に書くと、既存デプロイ・test 環境で
+  // 前回 run の state が次回起動の挙動を変える汚染 (特に launch_test 間) が起きるため。
+  this->declare_parameter<std::string>("state_path", "");
 
   // initial maps path
   maps_path_ = this->get_parameter("maps_path").as_string();
   map_name_ = this->get_parameter("map_name").as_string();
   config_file_ = this->get_parameter("config_file").as_string();
+  state_path_ = this->get_parameter("state_path").as_string();
   // 空白のみの値も REQUIRED 違反として扱う (#170 Round 4 low)。
   if (maps_path_.find_first_not_of(" \t\r\n") == std::string::npos) {
     maps_path_.clear();
+  }
+  // state_path も空白のみは未設定 (= 永続化無効) に正規化する。
+  if (state_path_.find_first_not_of(" \t\r\n") == std::string::npos) {
+    state_path_.clear();
   }
   if (maps_path_.empty()) {
     RCLCPP_FATAL(this->get_logger(),
@@ -49,8 +59,60 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
     throw std::runtime_error("maps_path is not a valid directory");
   }
 
+  // #297: state file の有無で「真の初回起動」と「運用中の crash/再起動」を判別する。
+  // 再起動時は起動パラメータ map_name ではなく last-selected map へ context を復元する
+  // (再起動で map context が起動パラメータへ巻き戻ると、initial pose だけでなく
+  // goal / route の POI 名解決も全て旧 map 基準で壊れるため)。
+  const bool restart_detected = [this]() {
+    if (state_path_.empty()) {
+      return false;
+    }
+    const auto persisted_map = mapoi::read_last_map(state_path_);
+    if (!persisted_map.has_value()) {
+      return false;  // state file 無し = 初回起動
+    }
+    // 復元先の config が実在する時だけ map_name_ を差し替える (maps_path の付け替えや
+    // map ディレクトリ削除で state が古びているケースは起動パラメータへ fallback)。
+    // どちらでも「再起動」判定自体は維持し、起動時 publish は clear にする (下記)。
+    const std::string persisted_config =
+      maps_path_ + "/" + *persisted_map + "/" + config_file_;
+    std::error_code state_ec;
+    if (!persisted_map->empty() &&
+        std::filesystem::is_regular_file(persisted_config, state_ec) && !state_ec) {
+      if (*persisted_map != map_name_) {
+        RCLCPP_INFO(this->get_logger(),
+          "Restoring last-selected map '%s' from state file (parameter map_name '%s' を "
+          "override、運用中再起動と判定、#297)。",
+          persisted_map->c_str(), map_name_.c_str());
+      }
+      map_name_ = *persisted_map;
+    } else {
+      RCLCPP_WARN(this->get_logger(),
+        "State file の last-selected map '%s' は maps_path 配下に存在しないため、"
+        "起動パラメータの map_name '%s' を使用します (#297)。",
+        persisted_map->c_str(), map_name_.c_str());
+    }
+    return true;
+  }();
+
   load_tag_definitions();
   load_mapoi_config_file();
+
+  // #297: 現在 map を state file に記録。初回起動でも書くことで、select_map 前に crash /
+  // 再起動しても次回起動を「運用中再起動」と判別できる (same-map テレポート防止)。
+  // opt-in した永続化が書けない = #297 保護が効かない構成なので、起動時の失敗は
+  // maps_path (#163) と同様 fail fast (FATAL + throw) にする。publisher 生成より前に
+  // 行い、fail する構成では DDS 副作用 (initialpose_poi の publish) を一切残さない。
+  if (!state_path_.empty()) {
+    std::string state_error;
+    if (!mapoi::write_last_map(state_path_, map_name_, state_error)) {
+      RCLCPP_FATAL(this->get_logger(),
+        "state_path '%s' に last-selected map を書き込めません: %s "
+        "(書き込み可能なディレクトリを指定するか、永続化不要なら state_path を空にしてください)。",
+        state_path_.c_str(), state_error.c_str());
+      throw std::runtime_error("state_path is not writable");
+    }
+  }
 
   // Publish config_path_ (transient_local QoS で latched、subscriber も transient_local に揃え
   // たので定期 publish は廃止、起動時 / select_map / reload_map_info で明示 publish する仕様に
@@ -73,7 +135,18 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   // 受信できる。mapoi_nav2_bridge cb 側は新たに get_pois_info を fetch して名前 lookup するので、
   // mapoi_server 内の pois_list_ 更新と mapoi_nav2_bridge 側の cb 処理は順序非依存 (#149 review 補足)。
   // 起動時は requested_name = empty で default (POI list 先頭) を採用。
-  publish_initial_poi_name("");
+  //
+  // #297: 運用中再起動 (state file あり) では POI ではなく clear を publish する。
+  // server 再起動は新 DDS publisher の出現なので、この起動時 publish は後起動 subscriber
+  // だけでなく**稼働中の localization bridge にも新規サンプルとして届き** (active push)、
+  // 非空 POI を流すと走行中ロボットの自己位置が起動 map 先頭 POI へテレポートする
+  // (map 切替なしの same-map 再起動でも同じ)。clear なら subscriber は無視する規約 (#154)
+  // なので安全に latched 値だけを上書きできる。初回起動 (state file 無し) は従来どおり。
+  if (restart_detected) {
+    publish_initialpose_clear();
+  } else {
+    publish_initial_poi_name("");
+  }
 
   get_pois_info_service_ = this->create_service<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info",
     std::bind(&MapoiServer::get_pois_info_service, this, std::placeholders::_1, std::placeholders::_2));
@@ -369,6 +442,8 @@ void MapoiServer::select_map_service(const std::shared_ptr<mapoi_interfaces::srv
 
   map_name_ = map_name_new;
   load_mapoi_config_file();
+  // #297: operator の map 選択を永続化 (crash/再起動時の context 復元用)。
+  persist_last_selected_map();
   response->config_path = config_path_;
   response->initial_poi_name = resolve_initial_poi_name(request->initial_poi_name);
 
@@ -509,6 +584,22 @@ void MapoiServer::publish_initialpose_clear()
   RCLCPP_INFO(this->get_logger(),
     "Cleared latched mapoi/initialpose_poi for map '%s' (#154 stale guard on reload).",
     map_name_.c_str());
+}
+
+void MapoiServer::persist_last_selected_map()
+{
+  if (state_path_.empty()) {
+    return;
+  }
+  std::string state_error;
+  if (!mapoi::write_last_map(state_path_, map_name_, state_error)) {
+    // 運用中は稼働継続を優先して WARN に留める (disk full 等の一過性障害で select_map を
+    // 失敗させない)。書けない期間に crash すると復元先が 1 世代古くなるが、復元時は
+    // clear publish なので自己位置テレポートは起きない (context が古いだけ)。
+    RCLCPP_WARN(this->get_logger(),
+      "Failed to persist last-selected map '%s' (#297): %s",
+      map_name_.c_str(), state_error.c_str());
+  }
 }
 
 void MapoiServer::load_tag_definitions()
