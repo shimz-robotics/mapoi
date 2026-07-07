@@ -9,6 +9,9 @@
 2. **state_path なし (= opt-out、default)**: 従来挙動のまま。再起動は稼働中 subscriber へ
    起動パラメータ map の先頭 POI を active push する。永続化を有効にしない構成では
    #297 の挙動が残ることを明示的に文書化する pin。
+3. **破損 / 改ざん state file (path traversal)**: separator 入りの map 名は restore に
+   採用せず起動パラメータ map へ fallback し、maps_path 外の config は load されない
+   (PR #327 review medium 対応)。
 
 本 test の長寿命 subscription は「一度も再起動していない稼働中の amcl bridge」の
 stand-in。server プロセスの kill / 再起動を test 本体が直接制御するため、server は
@@ -79,13 +82,14 @@ class TestServerRestartInitialposeRelatch(unittest.TestCase):
         rclpy.shutdown()
 
     @classmethod
-    def _start_server(cls, state_path=None):
-        # 起動パラメータは常に map A (= #297 の「crash/restart 後は起動パラメータの map に
+    def _start_server(cls, state_path=None, maps_path=None, map_name='test_map_a'):
+        # 起動パラメータは既定で map A (= #297 の「crash/restart 後は起動パラメータの map に
         # 巻き戻る」を成立させる条件)。state_path は #297 永続化の opt-in (None = 従来挙動)。
+        # maps_path / map_name は traversal ケース (自前 fixture) 用に上書き可能。
         args = [
             cls.server_exe, '--ros-args',
-            '-p', f'maps_path:={cls.maps_dir}',
-            '-p', 'map_name:=test_map_a',
+            '-p', f'maps_path:={maps_path if maps_path is not None else cls.maps_dir}',
+            '-p', f'map_name:={map_name}',
             '-p', 'config_file:=mapoi_config.yaml',
         ]
         if state_path is not None:
@@ -193,6 +197,55 @@ class TestServerRestartInitialposeRelatch(unittest.TestCase):
             #     restart による context 巻き戻りは goal/route 解決も壊すため独立に確認する)。
             maps_info = self._call(self.get_maps_info_client, GetMapsInfo.Request())
             self.assertEqual(maps_info.map_name, 'test_map_b')
+        finally:
+            self.node.destroy_subscription(sub)
+            self._stop_server()
+
+    def test_restart_with_traversal_state_file_falls_back_to_param_map(self):
+        # 破損 / 改ざんされた state file (path separator 入り) は restore に採用されず、
+        # 起動パラメータの map へ fallback する (PR #327 review medium: maps_path 外への
+        # path traversal 防止)。traversal 先 (`<maps_path>/../evil/`) に**実在する** decoy
+        # config を置き、名前検証なしでは load できてしまう構図で「外の config が load
+        # されない」ことまで pin する。「再起動」判定自体は維持されるので publish は clear のみ。
+        samples = []
+        sub = self.node.create_subscription(
+            InitialPoseRequest, 'mapoi/initialpose_poi',
+            lambda msg: samples.append((msg.map_name, msg.poi_name)),
+            _transient_local_qos(10))
+        root = tempfile.mkdtemp(prefix='mapoi_traversal_')
+        maps_path = os.path.join(root, 'maps')
+        poi_yaml = (
+            'poi:\n'
+            '  - name: {name}\n'
+            '    pose: {{x: 0.0, y: 0.0, yaw: 0.0}}\n'
+            '    tolerance: {{xy: 0.5, yaw: 0.785}}\n'
+            '    tags: [waypoint]\n')
+        os.makedirs(os.path.join(maps_path, 'map_x'))
+        with open(os.path.join(maps_path, 'map_x', 'mapoi_config.yaml'), 'w') as f:
+            f.write(poi_yaml.format(name='x_start'))
+        os.makedirs(os.path.join(root, 'evil'))
+        with open(os.path.join(root, 'evil', 'mapoi_config.yaml'), 'w') as f:
+            f.write(poi_yaml.format(name='evil_start'))
+        state_path = os.path.join(root, 'state')
+        os.makedirs(state_path)
+        with open(os.path.join(state_path, 'last_selected_map'), 'w') as f:
+            f.write('../evil\n')
+        try:
+            self._start_server(
+                state_path=state_path, maps_path=maps_path, map_name='map_x')
+            # fallback した map_x を map_name に載せた clear が届く (decoy 由来ではない)。
+            self.assertTrue(
+                self._spin_until(lambda: ('map_x', '') in samples),
+                '不正 state file 起動時の clear publish (fallback した map_x 由来) が'
+                '受信できない')
+            self._spin_for(self.QUIET_WINDOW)
+            bad = [s for s in samples if s[1] != '' or 'evil' in s[0]]
+            self.assertEqual(
+                bad, [],
+                f'不正 state file で非空 POI または decoy map が publish された: {bad}')
+            # map context も decoy ではなく起動パラメータの map_x であること。
+            maps_info = self._call(self.get_maps_info_client, GetMapsInfo.Request())
+            self.assertEqual(maps_info.map_name, 'map_x')
         finally:
             self.node.destroy_subscription(sub)
             self._stop_server()

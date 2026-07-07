@@ -71,13 +71,17 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
     if (!persisted_map.has_value()) {
       return false;  // state file 無し = 初回起動
     }
-    // 復元先の config が実在する時だけ map_name_ を差し替える (maps_path の付け替えや
-    // map ディレクトリ削除で state が古びているケースは起動パラメータへ fallback)。
+    // 復元先が「単一 directory 名」かつ config が実在する時だけ map_name_ を差し替える。
+    // 名前検証は path traversal 防止 (state file は破損・手動編集されうる外部入力。
+    // separator や ".." を含む値を連結すると maps_path 外の config を load できてしまう、
+    // PR #327 review medium 対応)。maps_path の付け替えや map ディレクトリ削除で state が
+    // 古びているケースは起動パラメータへ fallback。
     // どちらでも「再起動」判定自体は維持し、起動時 publish は clear にする (下記)。
+    const bool name_is_safe = mapoi::is_plain_directory_name(*persisted_map);
     const std::string persisted_config =
       maps_path_ + "/" + *persisted_map + "/" + config_file_;
     std::error_code state_ec;
-    if (!persisted_map->empty() &&
+    if (name_is_safe &&
         std::filesystem::is_regular_file(persisted_config, state_ec) && !state_ec) {
       if (*persisted_map != map_name_) {
         RCLCPP_INFO(this->get_logger(),
@@ -88,8 +92,8 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
       map_name_ = *persisted_map;
     } else {
       RCLCPP_WARN(this->get_logger(),
-        "State file の last-selected map '%s' は maps_path 配下に存在しないため、"
-        "起動パラメータの map_name '%s' を使用します (#297)。",
+        "State file の last-selected map '%s' は不正な名前 (separator/'..' 含み) か "
+        "maps_path 配下に存在しないため、起動パラメータの map_name '%s' を使用します (#297)。",
         persisted_map->c_str(), map_name_.c_str());
     }
     return true;

@@ -94,6 +94,27 @@ TEST_F(MapStateStoreTest, ReadEmptyFileReturnsEmptyValue)
   EXPECT_TRUE(value->empty());
 }
 
+TEST(IsPlainDirectoryNameTest, AcceptsPlainNames)
+{
+  EXPECT_TRUE(mapoi::is_plain_directory_name("turtlebot3_world"));
+  EXPECT_TRUE(mapoi::is_plain_directory_name("map-01.backup"));
+  EXPECT_TRUE(mapoi::is_plain_directory_name("..hidden"));  // ".." 単体でなければ可
+}
+
+TEST(IsPlainDirectoryNameTest, RejectsTraversalAndSeparators)
+{
+  // state file は破損・手動編集されうる外部入力。path segment として連結する前に
+  // maps_path 外へ抜けられる値を弾く (PR #327 review medium)。
+  EXPECT_FALSE(mapoi::is_plain_directory_name(""));
+  EXPECT_FALSE(mapoi::is_plain_directory_name("."));
+  EXPECT_FALSE(mapoi::is_plain_directory_name(".."));
+  EXPECT_FALSE(mapoi::is_plain_directory_name("../other_maps"));
+  EXPECT_FALSE(mapoi::is_plain_directory_name("a/b"));
+  EXPECT_FALSE(mapoi::is_plain_directory_name("/etc"));
+  EXPECT_FALSE(mapoi::is_plain_directory_name("..\\windows"));
+  EXPECT_FALSE(mapoi::is_plain_directory_name("trailing/"));
+}
+
 TEST_F(MapStateStoreTest, WriteFailsWhenStateDirPathIsFile)
 {
   // state_dir の位置に regular file がある誤設定: false + 理由メッセージを返す。

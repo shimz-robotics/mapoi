@@ -40,6 +40,16 @@ std::optional<std::string> read_last_map(const std::filesystem::path & state_dir
   return trim(line);
 }
 
+bool is_plain_directory_name(const std::string & name)
+{
+  if (name.empty() || name == "." || name == "..") {
+    return false;
+  }
+  // '\\' は POSIX ではファイル名に使える文字だが、Windows separator との両対応と
+  // 防御的一貫性のため一律拒否する。
+  return name.find('/') == std::string::npos && name.find('\\') == std::string::npos;
+}
+
 bool write_last_map(
   const std::filesystem::path & state_dir, const std::string & map_name,
   std::string & error_message)
