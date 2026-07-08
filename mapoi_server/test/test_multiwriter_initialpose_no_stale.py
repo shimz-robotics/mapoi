@@ -189,6 +189,20 @@ class TestMultiwriterInitialposeNoStale(unittest.TestCase):
             self.request_client.wait_for_service(timeout_sec=self.SPIN_TIMEOUT),
             "request_initial_pose service did not become available")
 
+        # 既知 sentinel を先に latch させ、reject 後の latched 値を完全一致で assert できる
+        # ようにする (直前 test の状態に依存せず、reject 経路が clear や別値を publish する
+        # 誤実装も検出できる、Codex review round 1 low 対応)。
+        sentinel = RequestInitialPose.Request()
+        sentinel.map_name = '.'
+        sentinel.poi_name = 'poi_with_pause'
+        future = self.request_client.call_async(sentinel)
+        rclpy.spin_until_future_complete(self.node, future, timeout_sec=self.SPIN_TIMEOUT)
+        result = future.result()
+        self.assertIsNotNone(result, "request_initial_pose (sentinel) did not complete")
+        self.assertTrue(result.success, "sentinel の publish に失敗")
+        msg = self._take_one_latched()
+        self.assertEqual((msg.map_name, msg.poi_name), ('.', 'poi_with_pause'))
+
         req = RequestInitialPose.Request()
         req.map_name = 'other_map'  # fixture の現在 map は '.'
         req.poi_name = 'should_not_latch'
@@ -202,8 +216,9 @@ class TestMultiwriterInitialposeNoStale(unittest.TestCase):
         self.assertNotEqual(result.error_message, '',
                             "reject 時の error_message が空")
 
-        # reject は publish を伴わない: latched 値は直前の状態 (test_b の clear) のまま。
+        # reject は publish を伴わない: latched 値は sentinel が完全一致で残る。
         msg = self._take_one_latched()
-        self.assertNotEqual(
-            msg.poi_name, 'should_not_latch',
-            "reject された要求の POI が latched publish されている (#299 regression)")
+        self.assertEqual(
+            (msg.map_name, msg.poi_name), ('.', 'poi_with_pause'),
+            "reject 経路で latched 値が変化している (#299 regression): "
+            f"({msg.map_name!r}, {msg.poi_name!r})")
