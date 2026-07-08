@@ -16,6 +16,7 @@ endif()
 ament_auto_add_executable(mapoi_server
   src/mapoi_server.cpp
   src/initial_pose_resolver.cpp
+  src/map_state_store.cpp
 )
 target_link_libraries(mapoi_server ${_mapoi_yaml_cpp_target})
 
@@ -99,6 +100,13 @@ if(BUILD_TESTING)
   # PRIVATE 化は CMake が「all-keyword or all-plain」混在を error にするため不可。
   target_link_libraries(test_initial_pose_resolver ${_mapoi_yaml_cpp_target})
 
+  # #297: last-selected map 永続化 store の unit test。initial_pose_resolver と同じく
+  # Node 非依存の純関数群なので store の cpp だけを link する (yaml-cpp も不要)。
+  ament_auto_add_gtest(test_map_state_store
+    test/test_map_state_store.cpp
+    src/map_state_store.cpp
+  )
+
   # System tag 定義は mapoi_server/system_tags.hpp を source of truth とする。
   # WebUI 側にも同 header との contract test を置き、言語横断の tag drift を検出する (#193)。
   ament_auto_add_gtest(test_system_tags_contract
@@ -136,8 +144,9 @@ if(BUILD_TESTING)
     test/test_switch_map_loadmap_initialpose.py
     TIMEOUT 120
   )
-  # #297 再現 (characterization): mapoi_server 再起動が稼働中 subscriber へ起動 map の
-  # initial pose を active push する現状挙動を pin する。#297 修正時は assert を反転させる。
+  # #297: mapoi_server 再起動 E2E。state_path あり = 修正挙動 (last-selected map 復元 +
+  # clear のみ、非空 POI の active push なし)、state_path なし = opt-out の従来挙動、を
+  # 両方 pin する (PR #326 の characterization から assert 反転済み)。
   add_launch_test(
     test/test_server_restart_initialpose_relatch.py
     TIMEOUT 120

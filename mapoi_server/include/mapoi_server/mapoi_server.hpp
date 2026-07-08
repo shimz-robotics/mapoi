@@ -35,6 +35,10 @@ private:
   std::string map_name_;
   std::string config_file_;
   std::string config_path_;
+  // #297: last-selected map を永続化する書き込み可能ディレクトリ。空 = 永続化無効
+  // (従来挙動)。非空なら <state_path_>/last_selected_map の有無で「初回起動 vs
+  // 運用中再起動」を判別し、再起動時は map context 復元 + 起動時 publish を clear 化する。
+  std::string state_path_;
 
   // publishers
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr config_path_publisher_;
@@ -58,6 +62,10 @@ private:
   // methods
   void load_mapoi_config_file();
   void load_tag_definitions();
+  // #297: 現在の map_name_ を state file に書く (state_path_ 空なら何もしない)。
+  // 起動時 + select_map 成功時に呼ぶ。運用中の書き込み失敗は WARN のみで稼働継続
+  // (起動時の書き込み可否は constructor で fail fast 検証済み)。
+  void persist_last_selected_map();
   YAML::Node pois_list_;
   YAML::Node routes_list_;
   YAML::Node nav2_map_list_;
