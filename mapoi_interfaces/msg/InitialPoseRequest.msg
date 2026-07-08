@@ -2,9 +2,11 @@
 # mapoi_server が唯一の publisher (#211)。mapoi_nav2_bridge / WebUI / RViz panel は
 # request_initial_pose service 経由で mapoi_server に publish を依頼する。
 # - map_name : 通知対象の map (= MapoiServer::map_name_)。情報用フィールド (世代識別の素材)。
-#              現状の subscriber 実装では検証に使っていない
-#              (map 名→pose 解決の map 整合性検証は別課題 #155/#297)。
-#              空文字は publisher 側では許容しない (= mapoi_server は必ず現在 map を入れる)。
+#              現状の subscriber 実装では検証に使っていない。#299 以降、非空の map_name は
+#              publish 時点の mapoi_server の現在 map と一致することが保証される
+#              (request_initial_pose service が不一致を reject。server 内部の publish も
+#              常に現在 map を入れる)。map 不明の requester が service に空 map_name を
+#              渡した場合のみ空文字がありうる。
 # - poi_name : 採用する POI 名。空文字は「採用候補なし」を意味し、subscriber は無視する
 #              (default の POI list 先頭採用は select_map response で
 #              既に解決済。空文字を送っても何も起こらない)。

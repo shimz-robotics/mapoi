@@ -227,8 +227,17 @@ void MapoiPanel::LocalizationButton()
   request->poi_name = pois_[goal_combobox_ind_].name;
   auto result = request_initial_pose_client_->async_send_request(request);
   if (rclcpp::spin_until_future_complete(service_node_, result, 5s) == rclcpp::FutureReturnCode::SUCCESS) {
-    RCLCPP_INFO(LOGGER, "Requested initial pose: %s (map: %s).",
-                request->poi_name.c_str(), current_map_.c_str());
+    // #299: server は非空 map_name が現在 map と不一致な要求を publish せず success=false で
+    // 返すようになった (panel の current_map_ が stale な窓など)。future 完了 = 成功ではない
+    // ので response を確認し、reject を operator に成功と誤認させない。
+    const auto response = result.get();
+    if (response->success) {
+      RCLCPP_INFO(LOGGER, "Requested initial pose: %s (map: %s).",
+                  request->poi_name.c_str(), current_map_.c_str());
+    } else {
+      RCLCPP_ERROR(LOGGER, "request_initial_pose rejected: %s",
+                   response->error_message.c_str());
+    }
   } else {
     RCLCPP_ERROR(LOGGER, "request_initial_pose call failed or timed out.");
   }

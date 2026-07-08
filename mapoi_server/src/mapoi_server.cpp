@@ -492,7 +492,20 @@ void MapoiServer::request_initial_pose_service(
   // が後起動 subscriber に対しても真に last-write-wins で効く (= クロス writer の stale 競合が
   // 構造的に消える)。本 callback は publish に徹し、POI resolve / landmark 排他は従来どおり
   // subscriber (mapoi_amcl_localization_bridge) 側で処理する (#149 round 10 の map 非検証も維持)。
-  // map_name は requester が渡す値をそのまま透過 (informational、subscriber は検証しない)。
+  // #299: map_name が非空かつ現在 map と不一致な要求は publish せず reject する。map switch の
+  // 過渡窓 (A→B 連打で server context は既に B、bridge は A の callback を実行中) に stale な
+  // {旧 map, POI} が latched publish されるのを入口で遮断する。server は自分の現在 map を
+  // 原子的に知っているため、#149 round 10 の制約 (bridge が config_path 未受信のせいで正当
+  // request を誤棄却する) には抵触しない。空 map_name は map 不明の requester として従来どおり透過。
+  if (!request->map_name.empty() && request->map_name != map_name_) {
+    response->success = false;
+    response->error_message = "map_name '" + request->map_name +
+      "' does not match current map '" + map_name_ + "'";
+    RCLCPP_WARN(this->get_logger(),
+      "request_initial_pose: rejected request for map '%s' (current map is '%s', #299).",
+      request->map_name.c_str(), map_name_.c_str());
+    return;
+  }
   auto msg = mapoi_interfaces::msg::InitialPoseRequest();
   msg.map_name = request->map_name;
   msg.poi_name = request->poi_name;

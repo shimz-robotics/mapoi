@@ -24,7 +24,12 @@ Added
   ``{map_name, poi_name} -> {success, error_message}``) on ``mapoi_server``
   (#211). Requesters ask ``mapoi_server`` — the sole writer of
   ``mapoi/initialpose_poi`` — to publish an initial-pose POI request; an
-  empty ``poi_name`` publishes a clear (skip) sample.
+  empty ``poi_name`` publishes a clear (skip) sample. Since #299 a
+  non-empty ``map_name`` must match the server's current map: a mismatch
+  is rejected with ``success=false`` and nothing is published, so
+  requesters must check ``response.success`` instead of treating a
+  completed call as success (an empty ``map_name`` is passed through
+  unvalidated for requesters that do not know the current map).
 
 Fixed
 -----
@@ -48,11 +53,24 @@ Fixed
   Scope: this removes the cross-writer latched-cache race specifically. It
   does NOT make POI-name-to-pose resolution map-consistent — the localization
   bridge resolves a latched POI *name* against ``mapoi_server``'s *current*
-  map (``map_name`` is intentionally unverified, #149 r10), so a stale or
-  concurrently-interleaved name can still resolve to a wrong pose right after
-  a map switch. That residual (generation / map verification) remains future
-  work (#155), as does the crash/restart startup re-latch (#297). In short,
-  this is not a complete fix for "wrong initial pose after a map switch".
+  map (``map_name`` is intentionally unverified on the bridge side, #149
+  r10), so a stale or concurrently-interleaved name could still resolve to
+  a wrong pose right after a map switch. That residual is now closed on the
+  server side by the ``request_initial_pose`` current-map validation (#299,
+  see below); the generation/pending design considered in #155 was dropped
+  as unnecessary. The crash/restart startup re-latch was fixed separately
+  via ``state_path`` persistence (#297).
+
+* **Stale initial pose during a map-switch transition window (#299).**
+  When operator map switches overlap (A→B), ``mapoi_server`` finishes both
+  ``select_map`` calls (context = B) before ``mapoi_nav2_bridge`` runs A's
+  response callback, so A's ``request_initial_pose(A, poi_A)`` used to be
+  latched-published even though it no longer matches the current map. The
+  service now rejects a non-empty ``map_name`` that does not match the
+  server's current map (``success=false``, nothing published). The
+  requesters (``mapoi_nav2_bridge`` / WebUI / RViz panel) all check
+  ``response.success`` and surface the rejection as an error instead of
+  a false success.
 
 Samples
 -------
