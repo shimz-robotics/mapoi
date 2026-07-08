@@ -435,6 +435,23 @@ void MapoiServer::select_map_service(const std::shared_ptr<mapoi_interfaces::srv
     response->error_message = "map_name is empty";
     return;
   }
+  // #328: map_name は maps_path 直下の「単一 path segment」のみ受け付ける
+  // (is_plain_directory_name の契約: separator 入り・"."・".." 単体は reject、
+  // "..hidden" のように ".." を含むだけの単一 segment は許可)。separator や ".." 単体を
+  // そのまま連結すると、maps_path 外の任意 config YAML の load (下の config_path_new) と、
+  // response->nav2_map_urls 経由で Nav2 map_server の LoadMap 先も maps_path 外を
+  // 指せてしまう (state file 側は PR #327 で対応済みの同種 path traversal。こちらは
+  // operator UI からの service 入力経路)。
+  if (!mapoi::is_plain_directory_name(map_name_new)) {
+    response->success = false;
+    response->error_message =
+      "Invalid map_name (must be a single path segment): " + map_name_new;
+    RCLCPP_WARN(this->get_logger(),
+      "select_map: rejected map_name '%s' (単一 path segment のみ受け付け: "
+      "separator 入り / '.' / '..' は不可、#328)。",
+      map_name_new.c_str());
+    return;
+  }
   const std::string config_path_new = maps_path_ + "/" + map_name_new + "/" + config_file_;
   std::error_code ec;
   if (!std::filesystem::exists(config_path_new, ec) ||

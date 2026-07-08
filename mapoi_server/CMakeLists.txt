@@ -151,6 +151,11 @@ if(BUILD_TESTING)
     test/test_server_restart_initialpose_relatch.py
     TIMEOUT 120
   )
+  # #328: select_map の map_name 入力検証 (path traversal reject)。mapoi_server 単体で軽量。
+  add_launch_test(
+    test/test_select_map_validation.py
+    TIMEOUT 60
+  )
 
   # Install test config
   install(
