@@ -28,6 +28,9 @@
   // --- Tag editor state ---
   let tagDirty = false;
   let editingTags = []; // working copy of tags (both system + custom)
+  // 楽観的競合検出用 yaml ハッシュ (#241 の展開, #343)。loadTagDefinitions() で受け取り、
+  // btnSaveTags の POST 時に送り返す。
+  let tagConfigVersion = null;
   const expandedTagDescriptions = new Set();
   const tagList = document.getElementById('tag-list');
   const tagAddName = document.getElementById('tag-add-name');
@@ -139,12 +142,31 @@
     const customTags = editingTags
       .filter((t) => !t.is_system)
       .map((t) => ({ name: t.name, description: t.description }));
-    const result = await MapoiApi.saveCustomTags(customTags);
+    const result = await MapoiApi.saveCustomTags(customTags, tagConfigVersion);
+    // 409 (version_mismatch): yaml が外部で変わった (#241 の展開, #343)。
+    // poi-editor.js / route-editor.js の save() と同じ確認ダイアログ経路。
+    if (result.conflict) {
+      const shouldReload = window.confirm(
+        'The YAML file was changed outside this page.'
+        + '\nSaving now may overwrite newer changes.'
+        + '\n\n[OK] Reload the latest file. Unsaved edits will be lost.'
+        + '\n[Cancel] Keep editing. You will see this warning again on Save.'
+      );
+      if (shouldReload) {
+        setTagDirty(false);
+        await loadTagDefinitions();
+        await loadPois();
+        await loadRoutes();
+      }
+      return;
+    }
     if (result.error) {
       alert('Failed to save tags: ' + result.error);
       return;
     }
     setTagDirty(false);
+    // loadTagDefinitions() が最新 config_version も取り直すため、tagConfigVersion を
+    // ここで個別更新する必要は無い (#343)。
     await loadTagDefinitions();
   });
 
@@ -205,6 +227,8 @@
     mapViewer.setTagDefinitions(tags);
     // Update tag editor working copy
     editingTags = tags.map((t) => ({ ...t }));
+    // 楽観的競合検出 token (#241 の展開, #343)。後続の btnSaveTags で backend に送り返す。
+    tagConfigVersion = data.config_version || null;
     renderTagList();
   }
 
@@ -231,7 +255,8 @@
   // --- Load routes ---
   async function loadRoutes() {
     const data = await MapoiApi.getRoutes();
-    routeEditor.loadRoutes(data.routes || []);
+    // config_version は楽観的競合検出 token (#241 の展開, #343): backend から受け取り、save() で送り返す。
+    routeEditor.loadRoutes(data.routes || [], data.config_version);
     redrawRoutes();
     populateNavRouteSelect(routeEditor.routes);
   }
@@ -489,6 +514,15 @@
   // 409 version_mismatch 受信時の全体 reload (#241)。POI だけ再 load しても route 側
   // の参照が壊れる可能性があるため、loadTagDefinitions → loadPois → loadRoutes を一括で。
   poiEditor.onConflictReload = async () => {
+    await loadTagDefinitions();
+    await loadPois();
+    await loadRoutes();
+  };
+
+  // 409 version_mismatch 受信時の全体 reload (#241 の展開, #343)。route save 経路でも
+  // poiEditor.onConflictReload と同じ理由 (loadTagDefinitions → loadPois → loadRoutes を
+  // 一括で行い、全 working copy の参照を揃える) で同じ順序にする。
+  routeEditor.onConflictReload = async () => {
     await loadTagDefinitions();
     await loadPois();
     await loadRoutes();

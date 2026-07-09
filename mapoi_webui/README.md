@@ -76,7 +76,9 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 | GET | `/api/pois` | POI 一覧 |
 | POST | `/api/pois` | POI の保存 |
 | GET | `/api/routes` | ルート一覧 |
+| POST | `/api/routes` | ルートの保存 |
 | GET | `/api/tag_definitions` | タグ定義一覧 |
+| POST | `/api/custom_tags` | カスタムタグの保存 |
 | GET | `/api/nav/status` | ナビゲーション状態・ロボット位置・`robot_radius` (m) |
 | POST | `/api/nav/goal` | POI へのゴール走行 |
 | POST | `/api/nav/route` | ルート走行の開始 |
@@ -89,7 +91,23 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 
 > **注意 (`POST /api/nav/*` 呼び出し側は必読)**: `mapoi/nav/*` 系 topic への publish はローカルで成功したかどうかしか分からず、navigation backend (`mapoi_nav2_bridge` 等) が実際にコマンドを受理・実行したかまでは保証できません。そのため `POST /api/nav/goal` `/route` `/pause` `/resume` `/cancel` `/initialpose` `/switch-map` は subscriber 不在等の失敗時でも HTTP `200 OK` を返し、代わりに response body の `warning` フィールドに理由を入れます (詳細は下記「REST API と server 依存」参照)。**HTTP ステータスコードだけでは失敗を検知できません** — 外部 client は必ず response body に `warning` フィールドが含まれていないか確認してください。
 
-`POST /api/pois` は楽観的競合検出 (`expected_version` フィールド) に対応 (#241)。WebUI 経由は frontend が自動でハンドリング、外部 POST (curl / 別 client) で `expected_version` 省略時は check skip のため、競合上書きを避けたい場合は呼び出し側が `GET /api/pois` の `config_version` を送り返す責任を負う。詳細仕様は実装コメント (`api_save_pois`) / test (`test_api_save_pois_version_conflict.py`) を参照。
+### エラーレスポンス
+
+4xx/5xx を返す endpoint は、人間可読な `error` フィールドに加えて機械可読な `code` フィールドを返します (#343)。`error` の文言は変更されることがあるため、client 側の分岐は `code` を使ってください（200 + `warning` はエラーではないため `code` を持ちません、上記の注意を参照）。
+
+| `code` | HTTP status | 意味 |
+| --- | --- | --- |
+| `invalid_request` | 400 | request body 不正・必須フィールド欠如・値不正 |
+| `not_found` | 404 | 指定した map / config (yaml) が存在しない |
+| `version_mismatch` | 409 | 楽観的競合検出 (`expected_version` 不一致、下記参照) |
+| `service_unavailable` | 503 | 依存する ROS 2 service が unavailable / timeout |
+| `internal_error` | 500 | サーバ側の予期しない例外 (YAML 書き込み失敗等) |
+
+### 楽観的競合検出 (`expected_version`)
+
+`POST /api/pois` `/api/routes` `/api/custom_tags` はいずれも同じ yaml (`mapoi_config.yaml`) への書き込みのため、共通の楽観的競合検出に対応しています (`expected_version` フィールド、`/api/pois` は #241、`/api/routes` `/api/custom_tags` への展開は #343)。対応する GET (`/api/pois` `/api/routes` `/api/tag_definitions`) が返す `config_version` (yaml 内容の sha256 ハッシュ) を POST 時に `expected_version` として送り返すと、backend が現在の yaml と比較し、不一致なら `409` + `code: version_mismatch` を返します。WebUI 経由は frontend が自動でハンドリング（確認ダイアログの上でリロード）、外部 POST (curl / 別 client) で `expected_version` 省略時は check skip のため、競合上書きを避けたい場合は呼び出し側が対応する GET の `config_version` を送り返す責任を負う。
+
+`config_version` は yaml ファイル全体の内容ハッシュのため、POI/Route/CustomTags のいずれかを保存すると、他 2 つの GET が返す `config_version` も変わります（同じ yaml を共有しているため意図した挙動です）。詳細仕様は実装コメント (`api_save_pois` / `api_save_routes` / `api_save_custom_tags`) / test (`test_api_save_pois_version_conflict.py`) を参照。
 
 ## 起動方法 (3 つのシナリオ)
 

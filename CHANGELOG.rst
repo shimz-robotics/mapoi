@@ -48,6 +48,23 @@ Added
   completed call as success (an empty ``map_name`` is passed through
   unvalidated for requesters that do not know the current map).
 
+* ``mapoi_webui`` REST API consistency improvements (#343, second half; first
+  half in #363): every JSON error response (4xx/5xx) now carries a
+  machine-readable ``code`` field alongside the existing human-readable
+  ``error`` message — ``invalid_request`` (400), ``not_found`` (404),
+  ``version_mismatch`` (409, unchanged from #241), ``service_unavailable``
+  (503), ``internal_error`` (500). This is purely additive; existing
+  ``error`` consumers are unaffected. Also, the optimistic-concurrency
+  ``expected_version`` check introduced for ``POST /api/pois`` (#241) is now
+  available on ``POST /api/routes`` and ``POST /api/custom_tags`` as well,
+  since all three write the same ``mapoi_config.yaml``: ``GET /api/routes``
+  and ``GET /api/tag_definitions`` now return ``config_version``, and the
+  corresponding ``POST`` endpoints accept ``expected_version`` and return
+  ``409`` + ``code: version_mismatch`` on a stale write (``expected_version``
+  omission still skips the check, matching the pre-existing ``/api/pois``
+  contract). The WebUI frontend (route editor, tag editor) handles the
+  conflict the same way the POI editor already does.
+
 Breaking changes
 ----------------
 

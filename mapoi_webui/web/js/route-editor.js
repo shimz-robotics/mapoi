@@ -7,6 +7,9 @@ class RouteEditor {
     this.routes = [];
     this.originalRoutes = [];
     this.dirty = false;
+    // 楽観的競合検出用 yaml ハッシュ (#241 の展開, #343)。GET 時に backend から受け取り、
+    // Save 時に送り返す。poi-editor.js の configVersion と同じ役割。
+    this.configVersion = null;
     this.editingIndex = -1; // -1 = closed, >=0 = editing, -2 = new route
     this.selectedIndex = -1; // -1 = none selected
     this.visibleRoutes = new Set();
@@ -29,6 +32,9 @@ class RouteEditor {
     this.onLandmarkFocus = null; // callback(poiName) - fired when landmark UI previews a POI
     this.onEditFormVisibilityChange = null; // callback(isOpen)
     this.onBeforeEditStart = null; // callback(action) -> false blocks route edit/add/copy/delete
+    // 409 受信時に app.js 側で全体 reload を発火させるためのフック (#343)。
+    // poi-editor.js の onConflictReload と同じ役割。
+    this.onConflictReload = null;  // async callback() — full reload on version_mismatch
 
     // DOM references
     this.listEl = document.getElementById('route-list');
@@ -88,12 +94,14 @@ class RouteEditor {
   /**
    * Load routes from server response and reset state.
    */
-  loadRoutes(routes) {
+  loadRoutes(routes, configVersion) {
     this.routes = JSON.parse(JSON.stringify(routes));
     this.originalRoutes = JSON.parse(JSON.stringify(routes));
     this.editingIndex = -1;
     this.selectedIndex = -1;
     this.visibleRoutes = new Set(routes.map((r) => r.name));
+    // 楽観的競合検出 token (#241 の展開, #343)。後続の save() で backend に送り返す。
+    this.configVersion = configVersion || null;
     this._resetEditHistory();
     this.setDirty(false);
     this.hideForm();
@@ -837,9 +845,25 @@ class RouteEditor {
     if (!this.dirty) return;
     this.btnSaveRoutes.textContent = 'Saving...';
     try {
-      const result = await MapoiApi.saveRoutes(this.routes);
-      if (result.success) {
+      const result = await MapoiApi.saveRoutes(this.routes, this.configVersion);
+      // 409 (version_mismatch): yaml が外部 (yaml 直編集 / 他クライアント) で変わった
+      // (#241 の展開, #343)。poi-editor.js の save() と同じ確認ダイアログ経路。
+      if (result.conflict) {
+        this.btnSaveRoutes.textContent = 'Save';
+        const shouldReload = window.confirm(
+          'The YAML file was changed outside this page.'
+          + '\nSaving now may overwrite newer changes.'
+          + '\n\n[OK] Reload the latest file. Unsaved edits will be lost.'
+          + '\n[Cancel] Keep editing. You will see this warning again on Save.'
+        );
+        if (shouldReload && this.onConflictReload) {
+          await this.onConflictReload();
+        }
+        return;
+      }
+      if (result.ok && result.success) {
         this.originalRoutes = JSON.parse(JSON.stringify(this.routes));
+        if (result.config_version) this.configVersion = result.config_version;
         this.setDirty(false);
         this.btnSaveRoutes.textContent = 'Saved!';
         setTimeout(() => { this.btnSaveRoutes.textContent = 'Save'; }, 1500);
