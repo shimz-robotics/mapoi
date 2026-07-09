@@ -121,3 +121,28 @@ describe('MapoiApi.saveCustomTags', () => {
     expect(res.code).toBe('version_mismatch');
   });
 });
+
+// #340 で rename した URL の pin (editor/nav 階層分離 + kebab-case 統一)。
+// backend 側は test_api_select_map.py の url_map 検査が旧 URL 不在まで pin する。
+// ここでは frontend の fetch 先が誤 revert しないことだけを固定する。
+describe('MapoiApi renamed URLs (#340)', () => {
+  it('selectMap は POST /api/editor/select-map を叩く', async () => {
+    const fetchMock = mockFetch({ success: true });
+    await MapoiApi.selectMap('m');
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/editor/select-map');
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+  });
+
+  it('getTagDefinitions は GET /api/tag-definitions を叩く', async () => {
+    const fetchMock = mockFetch({ tags: [], config_version: 'v1' });
+    await MapoiApi.getTagDefinitions();
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/tag-definitions');
+  });
+
+  it('navInitialPose は POST /api/nav/initial-pose を叩く', async () => {
+    const fetchMock = mockFetch({ success: true });
+    await MapoiApi.navInitialPose('p1');
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/nav/initial-pose');
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+  });
+});

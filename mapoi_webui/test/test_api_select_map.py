@@ -45,6 +45,29 @@ def _client(node):
     return app.test_client()
 
 
+class TestApiUrlRouting(unittest.TestCase):
+    """#340 の URL rename (editor/nav 階層分離 + kebab-case 統一) を routing 表で pin する。
+
+    url_map の検査は handler closure を評価しないため、最小 FakeNode で全 endpoint の
+    登録有無を一括確認できる。互換 alias なし (旧 URL は 404) が仕様の中心なので、
+    新 URL の存在だけでなく**旧 URL の不在**も assert する (alias の意図しない復活防止)。
+    """
+
+    _RENAMES = {
+        '/api/maps/select': '/api/editor/select-map',
+        '/api/tag_definitions': '/api/tag-definitions',
+        '/api/custom_tags': '/api/custom-tags',
+        '/api/nav/initialpose': '/api/nav/initial-pose',
+    }
+
+    def test_renamed_urls_registered_and_old_urls_gone(self):
+        app = MapoiWebNode.create_flask_app(_FakeNode(service_response=None))
+        rules = {r.rule for r in app.url_map.iter_rules()}
+        for old, new in self._RENAMES.items():
+            self.assertIn(new, rules, f'renamed URL {new} not registered')
+            self.assertNotIn(old, rules, f'old URL {old} still registered (#340 no-alias policy)')
+
+
 class TestApiSelectMap(unittest.TestCase):
 
     def test_success_returns_resolved_initial_poi_name_key(self):
