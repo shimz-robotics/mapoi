@@ -15,6 +15,13 @@ class MapViewer {
       zoomControl: false,
     });
 
+    // ボタン削除後もホイール/ピンチでズームできることを e2e から検証できるよう、現在
+    // zoom を DOM に反映する (#333 Codex review low 対応)。アプリの挙動には影響しない
+    // test hook。
+    this.map.on('zoom', () => {
+      this.map.getContainer().dataset.zoom = String(this.map.getZoom());
+    });
+
     this.imageOverlay = null;
     this.poiMarkers = [];  // { marker, poi, index }
     this.sectorLayers = []; // POI tolerance を扇形描画した Leaflet layer (#136)

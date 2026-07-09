@@ -49,4 +49,21 @@ test.describe('地図ズームボタン削除 (#333)', () => {
     await loadApp(page);
     await expect(page.locator('.leaflet-control-zoom')).toHaveCount(0);
   });
+
+  test('ボタンが無くてもホイールでズームできる (Codex review low 対応)', async ({ page }) => {
+    await loadApp(page);
+
+    const mapEl = page.locator('#map');
+    // 初期表示 (loadMap → fitBounds) で 'zoom' イベントが発火し zoom が反映されるのを待つ。
+    await expect(mapEl).toHaveAttribute('data-zoom', /.+/);
+    const before = await mapEl.getAttribute('data-zoom');
+
+    const box = await mapEl.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, -300); // 上スクロール = ズームイン (Leaflet 既定)
+
+    await expect
+      .poll(async () => mapEl.getAttribute('data-zoom'))
+      .not.toBe(before);
+  });
 });
