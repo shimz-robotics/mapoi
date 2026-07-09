@@ -204,6 +204,13 @@ private:
   // 進行中の navigation (nav_mode_ != IDLE) がある間は publish しない — 実際の走行状態
   // (navigating / paused / map_switching) を上書きしないため。詳細は .cpp 側の doc コメント参照。
   void publish_rejected_status(const std::string & target);
+  // Command-rejected イベント通知 publisher (#354)。`mapoi/nav/status` は latched な
+  // 状態 snapshot のため nav_mode_ != IDLE の間は "rejected" を書けない (#339) が、その
+  // 副作用で走行中の reject に操作者が気づけない課題が残っていた。本 publisher は
+  // 状態と独立したイベント軸として volatile (非 latched) QoS で持ち、
+  // publish_rejected_status の先頭で nav_mode_ に関わらず常に publish する。
+  // payload は reject 対象の target 文字列のみ (reason はログに残る従来通り)。
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr command_rejected_pub_;
   bool send_load_map_request(const std::string & server_name, const std::string & map_file);
   // #211: LoadMap 成功後に mapoi_server (唯一の writer) へ request_initial_pose service 経由で
   // initial pose POI の publish を依頼する。LoadMap 完了の timing gate は nav2_bridge が引き続き

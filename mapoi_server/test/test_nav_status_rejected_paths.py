@@ -10,6 +10,13 @@ WebUI / RViz panel には直前の status (`succeeded` / `navigating` 等) が�
 - route の waypoints が空 (存在しない route 名を含む)
 
 いずれも修正後は `"rejected:<target>"` を publish する。
+
+#354: `test_goal_poi_not_found_publishes_rejected` には、IDLE 時 (nav_mode_ ==
+IDLE) の reject でも `mapoi/nav/command_rejected` イベントが publish されることの
+assert を追加している。command_rejected は nav_mode_ に関わらず常に publish される
+(status 側の suppress ロジックとは独立) ため、IDLE / 走行中いずれでも発火する
+挙動の IDLE 側を本ファイルで、走行中側は `test_nav_status_rejected_during_navigation.py`
+で pin している。
 """
 
 import os
@@ -85,6 +92,20 @@ class TestNavStatusRejectedPaths(unittest.TestCase):
         )
         cls.nav_status_sub = cls.node.create_subscription(
             String, 'mapoi/nav/status', cls._nav_status_callback, nav_status_qos)
+
+        # #354: command_rejected は volatile (非 transient_local) QoS。bridge 側
+        # publisher (rclcpp::QoS(10), default reliable + volatile) と一致させる。
+        cls.received_command_rejected = []
+        command_rejected_qos = QoSProfile(
+            depth=10,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.VOLATILE,
+        )
+        cls.command_rejected_sub = cls.node.create_subscription(
+            String, 'mapoi/nav/command_rejected', cls._command_rejected_callback,
+            command_rejected_qos)
+
         cls.goal_pub = cls.node.create_publisher(String, 'mapoi/nav/goal_pose_poi', 1)
         cls.route_pub = cls.node.create_publisher(String, 'mapoi/nav/route', 1)
 
@@ -97,9 +118,14 @@ class TestNavStatusRejectedPaths(unittest.TestCase):
     def _nav_status_callback(cls, msg):
         cls.received_nav_status.append(msg.data)
 
+    @classmethod
+    def _command_rejected_callback(cls, msg):
+        cls.received_command_rejected.append(msg.data)
+
     def setUp(self):
         self._spin_for(0.3)
         self.received_nav_status.clear()
+        self.received_command_rejected.clear()
         self.assertTrue(self._wait_for_subscriber('mapoi/nav/goal_pose_poi'),
                         'mapoi_nav2_bridge が mapoi/nav/goal_pose_poi を subscribe していない')
         self.assertTrue(self._wait_for_subscriber('mapoi/nav/route'),
@@ -141,6 +167,16 @@ class TestNavStatusRejectedPaths(unittest.TestCase):
         msg.data = route_name
         self.route_pub.publish(msg)
 
+    def _wait_for_command_rejected(self, target, timeout_sec=None):
+        if timeout_sec is None:
+            timeout_sec = self.NAV_STATUS_WAIT_TIMEOUT
+        end = time.monotonic() + timeout_sec
+        while time.monotonic() < end:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+            if target in self.received_command_rejected:
+                return True
+        return False
+
     # --- tests ---
 
     def test_goal_poi_not_found_publishes_rejected(self):
@@ -149,6 +185,11 @@ class TestNavStatusRejectedPaths(unittest.TestCase):
         self.assertTrue(
             self._wait_for_nav_status('rejected:poi_typo_does_not_exist'),
             '存在しない goal POI 名で status が publish されない (#339 regression)')
+        # #354: IDLE 時の reject でも command_rejected イベントが publish される
+        # (nav_mode_ に関わらず常に publish する仕様の IDLE 側を pin)。
+        self.assertTrue(
+            self._wait_for_command_rejected('poi_typo_does_not_exist', timeout_sec=2.0),
+            'IDLE 時の reject で command_rejected が publish されなかった (#354 regression)')
 
     def test_landmark_goal_publishes_rejected(self):
         """landmark タグ付き POI を goal 指定した場合 (#85 reject)、"rejected:<name>" を publish する。"""

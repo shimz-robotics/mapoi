@@ -53,6 +53,13 @@ MapoiNav2Bridge::MapoiNav2Bridge(const rclcpp::NodeOptions & options)
   nav_status_pub_ = this->create_publisher<std_msgs::msg::String>(
     "mapoi/nav/status", rclcpp::QoS(1).transient_local());
 
+  // Command-rejected イベント通知 publisher (#354)。status は状態 snapshot、こちらは
+  // 「直近のコマンドが拒否された」という単発イベントなので、volatile (デフォルト、
+  // 非 transient_local) QoS で depth を少し持たせる。後起動 subscriber へのリプレイは
+  // 不要 (イベントは「今」しか意味を持たない) なので transient_local にはしない。
+  command_rejected_pub_ = this->create_publisher<std_msgs::msg::String>(
+    "mapoi/nav/command_rejected", rclcpp::QoS(10));
+
   // Navigation backend readiness publisher + 1Hz polling timer (#198)。
   // Nav2 action / service の存在は実行時に変化し得る (Nav2 を後起動 / 落とすケース) ため、
   // event-driven ではなく polling で publish する割り切り。1Hz は WebUI 表示の応答性として十分。
@@ -969,6 +976,15 @@ void MapoiNav2Bridge::publish_nav_status(const std::string & status, const std::
 
 void MapoiNav2Bridge::publish_rejected_status(const std::string & target)
 {
+  // #354: status (状態 snapshot) とは別軸のイベント通知。nav_mode_ による suppress は
+  // 下の status 側ロジックにのみ適用し、command_rejected は常に publish する — 走行中の
+  // typo goal 等でも操作者が気づけるようにするのが目的 (#339 の "rejected" status
+  // suppress の副作用で、走行中の reject に気づく手段が無かった課題への対応)。
+  // payload は reject 対象の target のみ、reason は従来通り ERROR/WARN ログに残す。
+  std_msgs::msg::String rejected_msg;
+  rejected_msg.data = target;
+  command_rejected_pub_->publish(rejected_msg);
+
   // #339: 「受理する前に無効と判定して実行しなかった」新規コマンド (存在しない POI 名、
   // landmark POI を goal 指定、get_pois_info 未 ready、route 取得失敗、空 route 等) を
   // "rejected" で通知する。ただし進行中の navigation (nav_mode_ != IDLE) がある間は publish
@@ -976,7 +992,8 @@ void MapoiNav2Bridge::publish_rejected_status(const std::string & target)
   // 影響しない (state・action は未変更のまま走行を継続する) ため、"rejected" で "navigating"
   // / "paused" / "map_switching" 等の実際の走行状態を上書きすると、ロボットは走行を継続して
   // いるのに UI が停止したかのように誤表示される (Cursor review PR #352 round 2 high 指摘)。
-  // 走行中は従来通り ERROR/WARN ログのみに留め、status は実際の走行状態を優先する。
+  // 走行中は従来通り ERROR/WARN ログのみに留め、status は実際の走行状態を優先する
+  // (command_rejected イベント通知は上で常時 publish 済み、#354)。
   if (nav_mode_ != NavMode::IDLE) {
     return;
   }

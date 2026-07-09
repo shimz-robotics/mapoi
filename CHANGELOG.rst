@@ -65,6 +65,19 @@ Added
   contract). The WebUI frontend (route editor, tag editor) handles the
   conflict the same way the POI editor already does.
 
+* New topic ``mapoi/nav/command_rejected`` (``std_msgs/String``, volatile QoS,
+  payload = target string) on ``mapoi_nav2_bridge`` (#354). ``mapoi/nav/status``
+  is a latched state snapshot, so a rejected command while navigation is
+  already in progress (``nav_mode_ != IDLE``) intentionally does not publish
+  ``"rejected"`` there (#339) to avoid clobbering the in-progress status.
+  That left operators with no way to notice a rejected command (e.g. a typo
+  goal) sent mid-navigation, short of reading the ROS logs. The new topic is
+  an independent event notification, published unconditionally every time a
+  command is rejected regardless of ``nav_mode_``. ``mapoi_webui`` forwards it
+  as an SSE ``command_rejected`` event, and the WebUI frontend shows a small
+  auto-dismissing toast (``Command rejected: <target>``). Purely additive;
+  ``mapoi/nav/status`` semantics are unchanged.
+
 Breaking changes
 ----------------
 

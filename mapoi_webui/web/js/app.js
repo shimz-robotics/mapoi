@@ -1016,6 +1016,11 @@
       const data = JSON.parse(e.data);
       if (data.type === 'config_changed') {
         scheduleConfigChangedReload();
+      } else if (data.type === 'command_rejected') {
+        // #354: mapoi/nav/command_rejected 経由の非破壊イベント通知。走行中の typo goal 等
+        // でも mapoi/nav/status (latched snapshot) を汚さず、一時的な toast だけで知らせる。
+        const target = data.payload && data.payload.target;
+        MapoiToast.showToast(document, `Command rejected: ${target || ''}`);
       }
     } catch (err) {
       console.error('Invalid SSE event:', err);
