@@ -13,6 +13,10 @@ For releases prior to v0.2.0, see the
 `GitHub Releases page <https://github.com/shimz-robotics/mapoi/releases>`_.
 
 
+Unreleased
+==========
+
+
 0.5.0 (2026-07-10)
 ==================
 
@@ -271,10 +275,13 @@ Breaking changes
   ``EVENT_ENTER`` / ``EVENT_EXIT`` are joined by a new ``EVENT_PAUSED``
   (constant value ``2``, taking the slot previously used by
   ``EVENT_STOPPED``, which shifts ``EVENT_EXIT`` from ``2`` to ``3``).
-  Events are now published only during ``ROUTE`` navigation
-  (``FollowWaypoints``) for POIs registered on the active route (waypoints
-  and landmarks); the previous behavior of firing for any tagged POI
-  regardless of navigation mode (``IDLE`` / ``GOAL`` / ``ROUTE``) is gone.
+  Events are now published only during ``ROUTE`` navigation (``nav_mode_ ==
+  ROUTE`` — whether the route is being driven via a single ``FollowWaypoints``
+  batch or, under ``waypoint_arrival_mode=mapoi``, per-waypoint
+  ``NavigateToPose`` goals does not change this) for POIs registered on the
+  active route (waypoints and landmarks); the previous behavior of firing for
+  any tagged POI regardless of navigation mode (``IDLE`` / ``GOAL`` /
+  ``ROUTE``) is gone.
   ``EVENT_PAUSED`` fires only for ``pause``-tagged POIs once navigation has
   actually stopped (``cmd_vel`` dwell, not merely Nav2 ``SUCCEEDED``); there
   is no dedicated resume event — resume timing is observable via
