@@ -1,4 +1,4 @@
-"""Flask endpoint level test for POST /api/pois `/api/routes` `/api/custom_tags` の
+"""Flask endpoint level test for POST /api/pois `/api/routes` `/api/custom-tags` の
 楽観的競合検出 (#241 / #246、routes・custom_tags への展開は #343)。
 
 `test_yaml_handler_version.py` は `compute_config_version` 単体の決定性しか pin して
@@ -11,7 +11,7 @@
 ROS 2 Node を本物で起動すると DDS / service / publisher が絡んで test 重量級になるため、
 `create_flask_app` を duck-typed `FakeNode` に bind して呼び出す (= `MapoiWebNode.create_flask_app`
 は `self` を `node = self` で local capture するだけで、`/api/pois` `/api/routes`
-`/api/custom_tags` の経路はいずれも `node.get_config_path()` / `node.call_reload_map_info()` /
+`/api/custom-tags` の経路はいずれも `node.get_config_path()` / `node.call_reload_map_info()` /
 `node.get_logger()` の 3 メソッドだけに依存する、pois/routes/custom_tags で fixture 構成が
 共通なため `docs/testing-policy.md` 3 節に従い同一ファイルにクラスを追加している)。他 endpoint
 の closures は登録時に評価されないため `FakeNode` に該当 attr が無くても本 test は影響を受けない。
@@ -297,7 +297,7 @@ def _valid_custom_tags_payload():
 
 
 class TestApiSaveCustomTagsVersionConflict(unittest.TestCase):
-    """`POST /api/custom_tags` の楽観的競合検出 (#241 の展開, #343)。
+    """`POST /api/custom-tags` の楽観的競合検出 (#241 の展開, #343)。
 
     `api_save_pois` と同じ `compute_config_version` / `expected_version` 契約を
     `api_save_custom_tags` にも適用したことを pin する。`_FakeNode` は
@@ -319,7 +319,7 @@ class TestApiSaveCustomTagsVersionConflict(unittest.TestCase):
 
     def test_save_with_matching_expected_version_returns_200_with_new_version(self):
         v_before = self._current_version()
-        resp = self.client.post('/api/custom_tags', json={
+        resp = self.client.post('/api/custom-tags', json={
             'custom_tags': _valid_custom_tags_payload(),
             'expected_version': v_before,
         })
@@ -340,7 +340,7 @@ class TestApiSaveCustomTagsVersionConflict(unittest.TestCase):
         stale_version = 'c' * 64
         self.assertNotEqual(stale_version, v_before)
 
-        resp = self.client.post('/api/custom_tags', json={
+        resp = self.client.post('/api/custom-tags', json={
             'custom_tags': _valid_custom_tags_payload(),
             'expected_version': stale_version,
         })
@@ -356,7 +356,7 @@ class TestApiSaveCustomTagsVersionConflict(unittest.TestCase):
         """`expected_version` 省略時は旧クライアント / curl 後方互換で check skip する。"""
         v_before = self._current_version()
         resp = self.client.post(
-            '/api/custom_tags', json={'custom_tags': _valid_custom_tags_payload()})
+            '/api/custom-tags', json={'custom_tags': _valid_custom_tags_payload()})
         self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
         body = resp.get_json()
         self.assertTrue(body.get('success'))

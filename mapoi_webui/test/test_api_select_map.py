@@ -1,4 +1,4 @@
-"""Flask endpoint level test for `POST /api/maps/select` (#343).
+"""Flask endpoint level test for `POST /api/editor/select-map` (#343, URL rename #340).
 
 SelectMap.srv の response フィールド rename (`initial_poi_name` →
 `resolved_initial_poi_name`, #343) を REST JSON key レベルでも pin する。
@@ -52,7 +52,7 @@ class TestApiSelectMap(unittest.TestCase):
         node = _FakeNode(service_response=SimpleNamespace(
             success=True, error_message='', config_path='/maps/m/mapoi_config.yaml',
             resolved_initial_poi_name='poi_start'))
-        resp = _client(node).post('/api/maps/select', json={'map_name': 'm'})
+        resp = _client(node).post('/api/editor/select-map', json={'map_name': 'm'})
         self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
         payload = resp.get_json()
         self.assertEqual(payload['resolved_initial_poi_name'], 'poi_start')
@@ -63,7 +63,7 @@ class TestApiSelectMap(unittest.TestCase):
         node = _FakeNode(service_response=SimpleNamespace(
             success=False, error_message='boom', config_path='',
             resolved_initial_poi_name=''))
-        resp = _client(node).post('/api/maps/select', json={'map_name': 'm'})
+        resp = _client(node).post('/api/editor/select-map', json={'map_name': 'm'})
         self.assertEqual(resp.status_code, 400)
         body = resp.get_json()
         self.assertEqual(body['error'], 'boom')
@@ -73,13 +73,13 @@ class TestApiSelectMap(unittest.TestCase):
 
     def test_service_unavailable_returns_503(self):
         node = _FakeNode(service_response=None)
-        resp = _client(node).post('/api/maps/select', json={'map_name': 'm'})
+        resp = _client(node).post('/api/editor/select-map', json={'map_name': 'm'})
         self.assertEqual(resp.status_code, 503)
         self.assertEqual(resp.get_json().get('code'), 'service_unavailable')
 
     def test_missing_map_name_returns_400(self):
         node = _FakeNode(service_response=None)
-        resp = _client(node).post('/api/maps/select', json={})
+        resp = _client(node).post('/api/editor/select-map', json={})
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.get_json().get('code'), 'invalid_request')
 

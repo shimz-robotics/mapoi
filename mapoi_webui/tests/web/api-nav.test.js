@@ -93,14 +93,14 @@ describe('MapoiApi.saveRoutes', () => {
 });
 
 describe('MapoiApi.saveCustomTags', () => {
-  it('POST /api/custom_tags に custom_tags と expected_version を JSON body で送る', async () => {
+  it('POST /api/custom-tags に custom_tags と expected_version を JSON body で送る', async () => {
     const fetchMock = mockFetch({ success: true, config_version: 'v2' });
     const customTags = [{ name: 'zone_a', description: 'Zone A' }];
     const res = await MapoiApi.saveCustomTags(customTags, 'v1');
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, opts] = fetchMock.mock.calls[0];
-    expect(url).toBe('/api/custom_tags');
+    expect(url).toBe('/api/custom-tags');
     expect(opts.method).toBe('POST');
     expect(JSON.parse(opts.body)).toEqual({ custom_tags: customTags, expected_version: 'v1' });
     expect(res).toEqual({

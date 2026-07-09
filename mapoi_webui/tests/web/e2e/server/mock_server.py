@@ -8,7 +8,7 @@ rclpy / mapoi_interfaces を要し CI が重く、フィクスチャも制御で
 
 - 静的: `/` -> web/index.html, `/css/<f>` -> web/css/<f>, `/js/<f>` -> web/js/<f>
 - API GET: /api/maps, /api/maps/<n>/metadata, /api/maps/<n>/image (動的生成 PNG),
-           /api/pois, /api/routes, /api/tag_definitions, /api/nav/status, /api/mode
+           /api/pois, /api/routes, /api/tag-definitions, /api/nav/status, /api/mode
 - API POST: /api/pois ほか -> {"success": true, ...} (テストは save を踏まないが契約上用意)
 - SSE: /api/events -> text/event-stream を張りっぱなしにし keepalive (フロントの
        EventSource が onerror で再接続を繰り返さないように 200 を返し続ける)
@@ -179,7 +179,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/routes":
             self._send_json({"routes": STATE["routes"], "map_name": STATE["current_map"]})
             return
-        if path == "/api/tag_definitions":
+        if path == "/api/tag-definitions":
             self._send_json({"tags": STATE["tags"]})
             return
         if path == "/api/nav/status":
@@ -202,7 +202,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/pois":
             self._send_json({"success": True, "config_version": STATE["config_version"]})
             return
-        # routes / custom_tags / maps/select / nav/* など一律 success
+        # routes / custom-tags / editor/select-map / nav/* など一律 success
         self._send_json({"success": True})
 
 

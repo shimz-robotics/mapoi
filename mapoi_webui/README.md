@@ -51,7 +51,7 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 
 | サービス名 | 型 | 説明 |
 | --- | --- | --- |
-| `mapoi/request_initial_pose` | `RequestInitialPose` | `POST /api/nav/initialpose` 受信時に `mapoi_server` へ publish を依頼 (#211)。WebUI は直接 `mapoi/initialpose_poi` を publish しない |
+| `mapoi/request_initial_pose` | `RequestInitialPose` | `POST /api/nav/initial-pose` 受信時に `mapoi_server` へ publish を依頼 (#211)。WebUI は直接 `mapoi/initialpose_poi` を publish しない |
 
 #### サブスクライバー
 
@@ -68,28 +68,37 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 
 ## REST API
 
-| メソッド | エンドポイント | 説明 |
-| --- | --- | --- |
-| GET | `/api/maps` | 地図一覧と現在の地図名 |
-| GET | `/api/maps/<name>/image` | 地図画像（PNG） |
-| GET | `/api/maps/<name>/metadata` | 地図メタデータ（解像度・原点・サイズ） |
-| GET | `/api/pois` | POI 一覧 |
-| POST | `/api/pois` | POI の保存 |
-| GET | `/api/routes` | ルート一覧 |
-| POST | `/api/routes` | ルートの保存 |
-| GET | `/api/tag_definitions` | タグ定義一覧 |
-| POST | `/api/custom_tags` | カスタムタグの保存 |
-| GET | `/api/nav/status` | ナビゲーション状態・ロボット位置・`robot_radius` (m) |
-| POST | `/api/nav/goal` | POI へのゴール走行 |
-| POST | `/api/nav/route` | ルート走行の開始 |
-| POST | `/api/nav/pause` | ナビゲーションの一時停止 |
-| POST | `/api/nav/resume` | ナビゲーションの再開 |
-| POST | `/api/nav/cancel` | ナビゲーションの停止 |
-| POST | `/api/nav/initialpose` | 自己位置推定のリセット |
-| POST | `/api/nav/switch-map` | Navigation map switch。`mapoi/nav/switch_map` に map 名を publish |
-| GET | `/api/mode` | navigation 機能の検出結果 (`navigation_available`, topic subscriber 数) |
+v1.0.0 に向けて URL 階層を editor 系 (`/api/editor/*`)・nav 系 (`/api/nav/*`) に分離しています (#340)。**「作用対象」列**は各 endpoint が触れる範囲を示します:
 
-> **注意 (`POST /api/nav/*` 呼び出し側は必読)**: `mapoi/nav/*` 系 topic への publish はローカルで成功したかどうかしか分からず、navigation backend (`mapoi_nav2_bridge` 等) が実際にコマンドを受理・実行したかまでは保証できません。そのため `POST /api/nav/goal` `/route` `/pause` `/resume` `/cancel` `/initialpose` `/switch-map` は subscriber 不在等の失敗時でも HTTP `200 OK` を返し、代わりに response body の `warning` フィールドに理由を入れます (詳細は下記「REST API と server 依存」参照)。**HTTP ステータスコードだけでは失敗を検知できません** — 外部 client は必ず response body に `warning` フィールドが含まれていないか確認してください。
+- **編集 context のみ**: `mapoi_server` 内部の編集対象 (map context / YAML) を変更するだけで、稼働中の実ロボット・Nav2 には一切作用しません
+- **実ロボットに作用**: Nav2 / navigation backend (`mapoi_nav2_bridge` 等) に指示を送り、稼働中のロボットの挙動 (走行・地図切替・自己位置) を変えます
+- **読み取りのみ**: 状態取得のみで副作用はありません
+
+| メソッド | エンドポイント | 作用対象 | 説明 |
+| --- | --- | --- | --- |
+| GET | `/api/maps` | 読み取りのみ | 地図一覧と現在の地図名 |
+| GET | `/api/maps/<name>/image` | 読み取りのみ | 地図画像（PNG） |
+| GET | `/api/maps/<name>/metadata` | 読み取りのみ | 地図メタデータ（解像度・原点・サイズ） |
+| POST | `/api/editor/select-map` | 編集 context のみ (実ロボット非接触) | `mapoi_server` の編集対象地図を切替 (`select_map` service)。Nav2 / 実ロボットの走行地図には作用しない。単独で叩くと server の編集 context と Nav2 の実 map が乖離しうる (乖離を解消するのは `/api/nav/switch-map`) |
+| GET | `/api/pois` | 読み取りのみ | POI 一覧 |
+| POST | `/api/pois` | 編集 context のみ | POI の保存 |
+| GET | `/api/routes` | 読み取りのみ | ルート一覧 |
+| POST | `/api/routes` | 編集 context のみ | ルートの保存 |
+| GET | `/api/tag-definitions` | 読み取りのみ | タグ定義一覧 |
+| POST | `/api/custom-tags` | 編集 context のみ | カスタムタグの保存 |
+| GET | `/api/nav/status` | 読み取りのみ | ナビゲーション状態・ロボット位置・`robot_radius` (m) |
+| POST | `/api/nav/goal` | 実ロボットに作用 | POI へのゴール走行 |
+| POST | `/api/nav/route` | 実ロボットに作用 | ルート走行の開始 |
+| POST | `/api/nav/pause` | 実ロボットに作用 | ナビゲーションの一時停止 |
+| POST | `/api/nav/resume` | 実ロボットに作用 | ナビゲーションの再開 |
+| POST | `/api/nav/cancel` | 実ロボットに作用 | ナビゲーションの停止 |
+| POST | `/api/nav/initial-pose` | 実ロボットに作用 | 自己位置推定のリセット |
+| POST | `/api/nav/switch-map` | 実ロボットに作用 | 稼働中ロボットの Nav2 map を実際に切替える。`mapoi/nav/switch_map` に map 名を publish |
+| GET | `/api/mode` | 読み取りのみ | navigation 機能の検出結果 (`navigation_available`, topic subscriber 数) |
+
+> **`/api/editor/select-map` と `/api/nav/switch-map` の違い (必読)**: 名前が紛らわしいですが挙動は全く異なります。`/api/editor/select-map` は WebUI の編集対象 (どの地図の POI/Route/CustomTags を編集するか) を切替えるだけで、Nav2 や実ロボットの走行地図には触れません。`/api/nav/switch-map` は稼働中ロボットの Nav2 map を実際に切替えます。`/api/editor/select-map` だけを叩いた場合、server の編集 context と Nav2 の実際の走行地図が乖離した状態になり得ます — 両方を一致させたい場合は呼び出し側が両方を叩く必要があります (#340)。
+
+> **注意 (`POST /api/nav/*` 呼び出し側は必読)**: `mapoi/nav/*` 系 topic への publish はローカルで成功したかどうかしか分からず、navigation backend (`mapoi_nav2_bridge` 等) が実際にコマンドを受理・実行したかまでは保証できません。そのため `POST /api/nav/goal` `/route` `/pause` `/resume` `/cancel` `/initial-pose` `/switch-map` は subscriber 不在等の失敗時でも HTTP `200 OK` を返し、代わりに response body の `warning` フィールドに理由を入れます (詳細は下記「REST API と server 依存」参照)。**HTTP ステータスコードだけでは失敗を検知できません** — 外部 client は必ず response body に `warning` フィールドが含まれていないか確認してください。
 
 ### エラーレスポンス
 
@@ -105,7 +114,7 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 
 ### 楽観的競合検出 (`expected_version`)
 
-`POST /api/pois` `/api/routes` `/api/custom_tags` はいずれも同じ yaml (`mapoi_config.yaml`) への書き込みのため、共通の楽観的競合検出に対応しています (`expected_version` フィールド、`/api/pois` は #241、`/api/routes` `/api/custom_tags` への展開は #343)。対応する GET (`/api/pois` `/api/routes` `/api/tag_definitions`) が返す `config_version` (yaml 内容の sha256 ハッシュ) を POST 時に `expected_version` として送り返すと、backend が現在の yaml と比較し、不一致なら `409` + `code: version_mismatch` を返します。WebUI 経由は frontend が自動でハンドリング（確認ダイアログの上でリロード）、外部 POST (curl / 別 client) で `expected_version` 省略時は check skip のため、競合上書きを避けたい場合は呼び出し側が対応する GET の `config_version` を送り返す責任を負う。
+`POST /api/pois` `/api/routes` `/api/custom-tags` はいずれも同じ yaml (`mapoi_config.yaml`) への書き込みのため、共通の楽観的競合検出に対応しています (`expected_version` フィールド、`/api/pois` は #241、`/api/routes` `/api/custom-tags` への展開は #343)。対応する GET (`/api/pois` `/api/routes` `/api/tag-definitions`) が返す `config_version` (yaml 内容の sha256 ハッシュ) を POST 時に `expected_version` として送り返すと、backend が現在の yaml と比較し、不一致なら `409` + `code: version_mismatch` を返します。WebUI 経由は frontend が自動でハンドリング（確認ダイアログの上でリロード）、外部 POST (curl / 別 client) で `expected_version` 省略時は check skip のため、競合上書きを避けたい場合は呼び出し側が対応する GET の `config_version` を送り返す責任を負う。
 
 `config_version` は yaml ファイル全体の内容ハッシュのため、POI/Route/CustomTags のいずれかを保存すると、他 2 つの GET が返す `config_version` も変わります（同じ yaml を共有しているため意図した挙動です）。詳細仕様は実装コメント (`api_save_pois` / `api_save_routes` / `api_save_custom_tags`) / test (`test_api_save_pois_version_conflict.py`) を参照。
 
@@ -140,7 +149,7 @@ ros2 launch mapoi_webui mapoi_editor.launch.yaml maps_path:=/path/to/maps map_na
 `maps_path` 未設定時の挙動は以下の通りです:
 
 - 起動時に `maps_path parameter not set. Set it to use the web editor.` を `WARN` ログ出力し、そのまま起動を継続する
-- **editor 機能 (地図一覧・地図画像・POI/Route/CustomTags の閲覧・編集) は無効になる**: `get_maps_list()` は `maps_path` が空 (または存在しないディレクトリ) の場合に空リストを返すため、`GET /api/maps` は `maps: []` を返し、`GET /api/maps/<name>/image` `/metadata` や POI/Route/CustomTags 系の endpoint (`GET`/`POST /api/pois` `/api/routes` `/api/custom_tags`) は対象 YAML/PNG が見つからず `404 Not Found` を返す
+- **editor 機能 (地図一覧・地図画像・POI/Route/CustomTags の閲覧・編集) は無効になる**: `get_maps_list()` は `maps_path` が空 (または存在しないディレクトリ) の場合に空リストを返すため、`GET /api/maps` は `maps: []` を返し、`GET /api/maps/<name>/image` `/metadata` や POI/Route/CustomTags 系の endpoint (`GET`/`POST /api/pois` `/api/routes` `/api/custom-tags`) は対象 YAML/PNG が見つからず `404 Not Found` を返す
 - **nav 操作系 (`/api/nav/*`, `/api/mode`, `GET /api/nav/status`) は `maps_path` に依存せず動作する**: これらは `mapoi/nav/*` topic の publish / subscribe や `mapoi_server` の service 呼び出しのみで完結するため、`maps_path` 未設定でも通常通り使える
 
 したがって、`maps_path` を設定せずに起動した webui は「ナビゲーション操作専用の後付け UI」として機能し、地図編集機能だけが無効になります。
@@ -153,18 +162,20 @@ ros2 launch mapoi_webui mapoi_editor.launch.yaml maps_path:=/path/to/maps map_na
 |---|---|---|
 | `GET /api/maps` `/maps/<name>/image\|metadata` | 不要 | `maps_path` を直 ls / YAML/PNG 直読み |
 | `GET /api/pois` `/api/routes` | 不要 | YAML 直読み |
-| `POST /api/pois` `/api/routes` `/api/custom_tags` | **必要** | YAML 書き込み後に `mapoi/reload_map_info` service を呼ぶ |
-| `GET /api/tag_definitions` | **必要** | `mapoi/get_tag_definitions` service 経由 |
+| `POST /api/editor/select-map` | **必要 (`mapoi_server` の `select_map` service)** | 編集対象地図の切替のみ。Nav2 / 実ロボットには作用しない |
+| `POST /api/pois` `/api/routes` `/api/custom-tags` | **必要** | YAML 書き込み後に `mapoi/reload_map_info` service を呼ぶ |
+| `GET /api/tag-definitions` | **必要** | `mapoi/get_tag_definitions` service 経由 |
 | `POST /api/nav/{goal,route,cancel,pause,resume}` | **必要 (mapoi_nav2_bridge)** | publisher → mapoi_nav2_bridge が listener、subscriber 0 件なら warning を返す |
-| `POST /api/nav/initialpose` | **必要 (`mapoi_server` の `mapoi/request_initial_pose` service)** | `mapoi/request_initial_pose` service 経由で `mapoi_server` が `mapoi/initialpose_poi` を publish (#211)。service 不在時は 503。さらに `mapoi/initialpose_poi` に subscriber (`mapoi_amcl_localization_bridge` 等) が居ないと initial pose は配信されず warning を返す |
-| `POST /api/nav/switch-map` | **必要 (mapoi_nav2_bridge 等)** | `mapoi/nav/switch_map` publisher → navigation backend が listener、subscriber 0 件なら warning を返す |
+| `POST /api/nav/initial-pose` | **必要 (`mapoi_server` の `mapoi/request_initial_pose` service)** | `mapoi/request_initial_pose` service 経由で `mapoi_server` が `mapoi/initialpose_poi` を publish (#211)。service 不在時は 503。さらに `mapoi/initialpose_poi` に subscriber (`mapoi_amcl_localization_bridge` 等) が居ないと initial pose は配信されず warning を返す |
+| `POST /api/nav/switch-map` | **必要 (mapoi_nav2_bridge 等)** | 稼働中ロボットの Nav2 map を実際に切替える。`mapoi/nav/switch_map` publisher → navigation backend が listener、subscriber 0 件なら warning を返す |
 | `GET /api/nav/status` | 不要 (subscriber 経由で受信値返却) | mapoi_nav2_bridge がいなければ default 値 |
 | `GET /api/mode` | 不要 | command topic の subscriber 数から best-effort で検出 |
 
 server / mapoi_nav2_bridge 不在時の挙動 (endpoint カテゴリ別):
-- `GET /api/tag_definitions`: `503 Service Unavailable` (service 必須、unavailable / timeout 時)
-- `POST /api/pois` / `/api/routes` / `/api/custom_tags`: `200 OK` + `warning` フィールド (YAML 書き込み自体は成功するため、`mapoi/reload_map_info` の unavailable / timeout / failure は warning として通知)
-- `POST /api/nav/{goal,route,cancel,pause,resume}` / `/api/nav/initialpose` / `/api/nav/switch-map`: `200 OK` + `warning` フィールド (publish 自体は成功扱い、subscriber 不在を best-effort で検出して通知)
+- `POST /api/editor/select-map`: `503 Service Unavailable` (service 必須、unavailable / timeout 時)
+- `GET /api/tag-definitions`: `503 Service Unavailable` (service 必須、unavailable / timeout 時)
+- `POST /api/pois` / `/api/routes` / `/api/custom-tags`: `200 OK` + `warning` フィールド (YAML 書き込み自体は成功するため、`mapoi/reload_map_info` の unavailable / timeout / failure は warning として通知)
+- `POST /api/nav/{goal,route,cancel,pause,resume}` / `/api/nav/initial-pose` / `/api/nav/switch-map`: `200 OK` + `warning` フィールド (publish 自体は成功扱い、subscriber 不在を best-effort で検出して通知)
 
 ## 開発者規約
 

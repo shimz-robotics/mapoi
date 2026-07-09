@@ -668,7 +668,7 @@ class MapoiWebNode(Node):
                 'height': meta['height'],
             })
 
-        @app.route('/api/maps/select', methods=['POST'])
+        @app.route('/api/editor/select-map', methods=['POST'])
         def api_select_map():
             data = request.get_json()
             if not data or 'map_name' not in data:
@@ -781,7 +781,7 @@ class MapoiWebNode(Node):
                 node.get_logger().error(f'Failed to save POIs: {e}')
                 return jsonify({'error': str(e), 'code': 'internal_error'}), 500
 
-        @app.route('/api/tag_definitions')
+        @app.route('/api/tag-definitions')
         def api_tag_definitions():
             response = node._call_service_sync(
                 node.tag_defs_client_, GetTagDefinitions.Request(), 'mapoi/get_tag_definitions')
@@ -794,7 +794,7 @@ class MapoiWebNode(Node):
                 {'name': d.name, 'description': d.description, 'is_system': d.is_system}
                 for d in response.definitions
             ]
-            # custom_tags は pois/routes と同じ yaml に書き込むため、POST /api/custom_tags の
+            # custom_tags は pois/routes と同じ yaml に書き込むため、POST /api/custom-tags の
             # 楽観的競合検出 (#241 の展開, #343) 用に config_version を同梱する。config 不在
             # (maps_path 未設定等) では compute_config_version が None を返し、POST 側は
             # None を expected_version 一致対象から外して check skip 相当に倒す。
@@ -803,7 +803,7 @@ class MapoiWebNode(Node):
                 'config_version': compute_config_version(node.get_config_path()),
             })
 
-        @app.route('/api/custom_tags', methods=['POST'])
+        @app.route('/api/custom-tags', methods=['POST'])
         def api_save_custom_tags():
             data = request.get_json()
             if data is None or 'custom_tags' not in data:
@@ -942,7 +942,7 @@ class MapoiWebNode(Node):
                 'navigation': node.get_navigation_capabilities(),
             })
 
-        @app.route('/api/nav/initialpose', methods=['POST'])
+        @app.route('/api/nav/initial-pose', methods=['POST'])
         def api_nav_initialpose():
             data = request.get_json()
             if not data or 'poi_name' not in data:
