@@ -157,6 +157,24 @@ Breaking changes
   frontends) pinning one of the old paths. See
   ``docs/migration/v0.5.0.md`` for the full migration guide.
 
+Changed
+-------
+
+* **mapoi_nav2_bridge.cpp split into three translation units, step 1 of 2 (#345).**
+  ``mapoi_server/src/mapoi_nav2_bridge.cpp`` had grown to 1,712 lines / ~40 methods
+  covering seven-plus responsibilities. Route navigation (``FollowWaypoints`` + the
+  mapoi-driven waypoint-arrival mode) and single-goal navigation (``NavigateToPose``)
+  are now defined in new files ``mapoi_nav2_bridge_route.cpp`` and
+  ``mapoi_nav2_bridge_goal.cpp``; all three compile into the same ``mapoi_nav2_bridge``
+  executable and ``MapoiNav2Bridge`` remains a single class. This is an internal
+  refactor with no behavior change: topic/service names, QoS, parameters, log
+  messages, callback groups, mutex/lock granularity, and publish timing are all
+  unchanged. Map switching (``LoadMap`` / ``select_map`` sync) and backend status
+  publishing are deliberately left untouched for a follow-up PR (#345 step 2), as is
+  the shared ``tolerance_check_callback`` POI-event judgment engine and the
+  pause/resume/cancel/reset dispatchers, which read and write state from both route
+  and goal navigation and are not cleanly separable without touching those.
+
 Fixed
 -----
 
