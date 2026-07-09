@@ -229,7 +229,7 @@ demo は `mapoi` モード既定 (#263)。sample config (`turtlebot3_world/mapoi
 | `goal_pose` | `geometry_msgs/PoseStamped` | ゴール位置の配信 |
 | `mapoi/nav/status` | `std_msgs/String` | ナビゲーション状態を `"status"` または `"status:target"` 形式で配信（例: `"navigating:kitchen"`、`"succeeded:patrol_route"`、`"paused:patrol_route"`、`"map_switching:turtlebot3_world"`、`"rejected:kitchen"`）。`status` は `navigating` / `succeeded` / `aborted` / `canceled` / `paused` / `map_switching` / `map_switch_succeeded` / `map_switch_failed` / `backend_unavailable` / `rejected`。`backend_unavailable` は Nav2 action / service 不在で goal / route / resume を実行できなかった場合（#198）。`rejected` は goal / route コマンドを **受理する前** に無効と判定し実行しなかった場合（存在しない POI 名、landmark タグ POI を goal 指定、`mapoi/get_pois_info` / `mapoi/get_route_pois` service 未 ready、route の waypoints が空、等）（#339, #355）。`target` は POI 名（goal mode）、route 名（route mode）、または map 名で、subscriber 側は最初の `:` で split して復元する（target 内に `:` が含まれても残り全体を target として扱える）。`transient_local` QoS の **現在状態 snapshot**（depth=1）で、後起動 subscriber が最後の状態を受信できるが状態遷移履歴は復元できない。現在走行中かは `navigating` / `paused` / `map_switching` で判定し、終端状態（`succeeded` / `aborted` / `canceled` / `map_switch_succeeded` / `map_switch_failed` / `backend_unavailable` / `rejected`）は直近結果として扱う |
 | `mapoi/nav/command_rejected` | `std_msgs/String` | reject コマンドの**イベント通知**（#354）。payload は reject 対象の target 文字列のみ。`mapoi/nav/status` は latched な状態 snapshot のため、走行中（`nav_mode_ != IDLE`）の reject は "rejected" を書けない（#339、上記参照）。本 topic はそれとは独立したイベント軸で、`publish_rejected_status` の先頭で **nav_mode_ に関わらず reject の都度必ず publish** する（走行中に typo goal 等を送っても操作者が気づけるようにするため）。QoS は volatile（非 `transient_local`、depth=10）— イベントは「今」しか意味を持たないため後起動 subscriber へのリプレイは行わない。WebUI はこれを購読して SSE 経由の一時的な toast 表示に使う（`mapoi_webui/README.md` 参照） |
-| `mapoi/nav/backend_status` | `mapoi_interfaces/NavigationBackendStatus` | navigation bridge の readiness summary を 1Hz で配信（#198）。`transient_local` QoS。Minimal 3 フィールド（`backend_type` / `backend_ready` / `reason`）。WebUI / panel は `backend_ready` で navigation 操作 UI を一括 gate する。詳細は ルート README "Navigation backend 仕様" 節を参照 |
+| `mapoi/nav/backend_status` | `mapoi_interfaces/NavigationBackendStatus` | navigation bridge の readiness summary を 1Hz で配信（#198）。`transient_local` QoS。Minimal 3 フィールド（`backend_type` / `backend_ready` / `reason`）。WebUI / panel は `backend_ready` で navigation 操作 UI を一括 gate する。詳細は [docs/backend-status.md](../docs/backend-status.md) を参照 |
 | `mapoi/events` | `mapoi_interfaces/PoiEvent` | route 走行中の POI 侵入 (`EVENT_ENTER`) / pause POI で navigation 停止 (`EVENT_PAUSED`) / 退出 (`EVENT_EXIT`) イベント (#220) |
 
 #### アクションクライアント
@@ -266,7 +266,7 @@ demo は `mapoi` モード既定 (#263)。sample config (`turtlebot3_world/mapoi
 
 ### mapoi_amcl_localization_bridge
 
-AMCL 互換 localization (`/initialpose` を `geometry_msgs/PoseWithCovarianceStamped` で受ける構成) 向けの localization bridge ノードです (#209)。`mapoi_nav2_bridge` から AMCL adapter を分離して、Navigation backend と Localization backend を独立した仕様で扱えるようにしています。slam_toolbox / NDT / 自前 localization に切替える場合は、本 bridge の代替として同じ topic 仕様を満たす自作 bridge を用意してください（ルート README の「Localization backend 仕様」節参照）。
+AMCL 互換 localization (`/initialpose` を `geometry_msgs/PoseWithCovarianceStamped` で受ける構成) 向けの localization bridge ノードです (#209)。`mapoi_nav2_bridge` から AMCL adapter を分離して、Navigation backend と Localization backend を独立した仕様で扱えるようにしています。slam_toolbox / NDT / 自前 localization に切替える場合は、本 bridge の代替として同じ topic 仕様を満たす自作 bridge を用意してください（[docs/backend-status.md](../docs/backend-status.md) の「Localization backend 仕様」節参照）。
 
 #### パラメータ
 
@@ -306,7 +306,7 @@ AMCL 互換 localization (`/initialpose` を `geometry_msgs/PoseWithCovarianceSt
 
 **動作確認済み**: Nav2 AMCL (Humble / Jazzy)。
 
-**別 topic を使うパッケージ** (例: 自社実装) は、`initial_pose_topic` parameter で配信先を変更できます。受信 message 型が `PoseWithCovarianceStamped` でない場合は、本 bridge を停止して同じ仕様を満たす自作 bridge を用意してください（ルート README の「Localization backend 仕様」節を参照）。
+**別 topic を使うパッケージ** (例: 自社実装) は、`initial_pose_topic` parameter で配信先を変更できます。受信 message 型が `PoseWithCovarianceStamped` でない場合は、本 bridge を停止して同じ仕様を満たす自作 bridge を用意してください（[docs/backend-status.md](../docs/backend-status.md) の「Localization backend 仕様」節を参照）。
 
 **注意**: `/mapoi/nav/switch_map` 経由の map 入替は Nav2 `LoadMap` service 経由のため、Nav2 lifecycle に乗らない localization では map 入替動作の整合は別途検証・対応が必要です。
 
