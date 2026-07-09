@@ -206,6 +206,18 @@ Changed
   public API and remains a single class; both new files are added to
   ``index.html``'s script load order ahead of ``map-viewer.js``.
 
+* **app.js tag editor split into a TagEditor class (#346), internal refactor
+  with no behavior change.** ``mapoi_webui/web/js/app.js`` had the custom tag
+  list UI (rendering, add/delete, description disclosure, dirty tracking,
+  save/discard against ``MapoiApi.saveCustomTags``) inline in its single IIFE.
+  It now lives in the new ``TagEditor`` class (``tag-editor.js``), mirroring
+  the ``PoiEditor``/``RouteEditor`` shape: DOM wiring in the constructor, a
+  ``dirty`` field read by app.js's unsaved-changes guards, and
+  ``onReload``/``onConflictReload`` callbacks so app.js still owns the actual
+  ``loadTagDefinitions``/``loadPois``/``loadRoutes`` refetch sequencing after
+  a save, discard, or 409 version-mismatch. ``tag-editor.js`` is added to
+  ``index.html`` ahead of ``app.js``.
+
 Fixed
 -----
 
