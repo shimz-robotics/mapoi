@@ -14,6 +14,7 @@ from rclpy.executors import MultiThreadedExecutor, SingleThreadedExecutor
 from nav2_msgs.action import NavigateToPose
 from nav2_msgs.action import FollowWaypoints
 from nav2_msgs.srv import LoadMap
+from mapoi_interfaces.srv import GetRoutePois
 
 
 class FakeNavigateToPoseServer:
@@ -243,5 +244,84 @@ class FakeFollowWaypointsServer:
             # (humble の rclpy examples も destroy() を明示)、先に明示破棄する。
             try:
                 self._action_server.destroy()
+            finally:
+                self._node.destroy_node()
+
+
+class FakeRoutePoisServer:
+    """``mapoi/get_route_pois`` service の最小 mock (#353)。
+
+    #342 で ``GetRoutePois.srv`` の response に ``success`` / ``error_message`` が
+    追加されたことで、「service 自体が異常応答を返す」経路 (``on_route_received`` の
+    (b) ``success=false`` 経路、および (c) ``success=true`` だが ``pois_list`` 空の
+    "Route is empty" 経路) を決定論的に mock できるようになった。実物の mapoi_server が
+    返す success=false は「route not found」の 1 パターンに限られるため、server 実装に
+    依存しない任意の異常応答に対する bridge 側防御の pin にはこの mock が必要
+    (docs/testing-policy.md 3節)。
+
+    ``set_response()`` でテストケースごとに応答を切り替える。service callback は
+    lock 下で保持値を返すだけで blocking しないため、``FakeMapServer`` と同じく
+    SingleThreadedExecutor で足りる。
+    """
+
+    def __init__(self, service_name='mapoi/get_route_pois', node_name='fake_route_pois_server'):
+        self._node = rclpy.create_node(node_name)
+        self._lock = threading.Lock()
+        self._success = True
+        self._error_message = ''
+        self._pois_list = []
+        self._landmark_pois = []
+        self._requests = []
+        self._service = self._node.create_service(
+            GetRoutePois, service_name, self._handle_request)
+        self._executor = SingleThreadedExecutor()
+        self._executor.add_node(self._node)
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+
+    def _spin(self):
+        while rclpy.ok() and not self._stop_event.is_set():
+            self._executor.spin_once(timeout_sec=0.05)
+
+    def _handle_request(self, request, response):
+        with self._lock:
+            self._requests.append(request.route_name)
+            response.success = self._success
+            response.error_message = self._error_message
+            response.pois_list = list(self._pois_list)
+            response.landmark_pois = list(self._landmark_pois)
+        return response
+
+    def set_response(self, success=True, error_message='', pois_list=None, landmark_pois=None):
+        """次回以降の request への応答を設定する (次に set_response / reset するまで固定)。"""
+        with self._lock:
+            self._success = success
+            self._error_message = error_message
+            self._pois_list = list(pois_list) if pois_list else []
+            self._landmark_pois = list(landmark_pois) if landmark_pois else []
+
+    def requests(self):
+        """受信した route_name のリストを返す (呼び出し確認用)。"""
+        with self._lock:
+            return list(self._requests)
+
+    def reset(self):
+        """test 間の状態リセット: 応答を既定 (success=True, 空リスト) に戻し記録も消す。"""
+        with self._lock:
+            self._success = True
+            self._error_message = ''
+            self._pois_list = []
+            self._landmark_pois = []
+            self._requests.clear()
+
+    def shutdown(self):
+        self._stop_event.set()
+        self._thread.join(timeout=1.0)
+        try:
+            self._executor.shutdown()
+        finally:
+            try:
+                self._node.destroy_service(self._service)
             finally:
                 self._node.destroy_node()

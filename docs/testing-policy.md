@@ -20,7 +20,7 @@ mapoi には次の 5 層のテストがある（workflow はいずれも `.githu
 | --- | --- | --- | --- |
 | gtest unit | C++ 純関数・契約テスト（`mapoi_server`, `mapoi_rviz_plugins`） | PR gate（`ros-test.yml`） | 6 target |
 | pytest unit | Python 純関数・API 単体（`mapoi_webui`, `mapoi_turtlebot3_example`） | PR gate（`ros-test.yml`） | 6 target |
-| launch_test | `mapoi_server` の実プロセス統合テスト（最重量・flaky 層） | main push / 週次 schedule / 手動 dispatch のみ（PR gate 外） | 10 ファイル、timeout 60〜180s |
+| launch_test | `mapoi_server` の実プロセス統合テスト（最重量・flaky 層） | main push / 週次 schedule / 手動 dispatch のみ（PR gate 外） | 11 ファイル、timeout 60〜180s |
 | vitest | WebUI JS の純関数・API モジュール | PR gate（`consistency-check.yml`） | 8 ファイル |
 | Playwright e2e | WebUI ブラウザ smoke（jsdom 不可の Leaflet 直結部等） | PR gate（`consistency-check.yml`） | 9 ファイル |
 
