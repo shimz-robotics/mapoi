@@ -14,7 +14,7 @@ int main(int argc, char **argv)
 
   std::shared_ptr<rclcpp::Node> node = rclcpp::Node::make_shared("get_maps_info_client");
   rclcpp::Client<mapoi_interfaces::srv::GetMapsInfo>::SharedPtr client =
-    node->create_client<mapoi_interfaces::srv::GetMapsInfo>("get_maps_info");
+    node->create_client<mapoi_interfaces::srv::GetMapsInfo>("mapoi/get_maps_info");
 
   auto request = std::make_shared<mapoi_interfaces::srv::GetMapsInfo::Request>();
 
@@ -36,7 +36,7 @@ int main(int argc, char **argv)
       RCLCPP_INFO(rclcpp::get_logger("get_maps_info_client"), "Map: %s", map.c_str());
     }
   }else{
-    RCLCPP_ERROR(rclcpp::get_logger("get_maps_info_client"), "Failed to call service get_maps_info");
+    RCLCPP_ERROR(rclcpp::get_logger("get_maps_info_client"), "Failed to call service mapoi/get_maps_info");
   }
 
   rclcpp::shutdown();

@@ -30,9 +30,9 @@ MapoiRviz2Publisher::MapoiRviz2Publisher() : Node("mapoi_rviz2_publisher") {
   marker_pois_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi/markers/pois", 10);
   marker_routes_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("mapoi/markers/routes", 10);
 
-  this->poi_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
-  this->routes_info_client_ = this->create_client<mapoi_interfaces::srv::GetRoutesInfo>("get_routes_info");
-  this->route_pois_client_ = this->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
+  this->poi_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("mapoi/get_pois_info");
+  this->routes_info_client_ = this->create_client<mapoi_interfaces::srv::GetRoutesInfo>("mapoi/get_routes_info");
+  this->route_pois_client_ = this->create_client<mapoi_interfaces::srv::GetRoutePois>("mapoi/get_route_pois");
 
   highlight_goal_sub_ = this->create_subscription<std_msgs::msg::String>(
     "mapoi/highlight/goal", 10,
@@ -88,7 +88,7 @@ void MapoiRviz2Publisher::request_routes_info()
   // (Codex round 1 high 対策: stale callback による旧 map / 新 map の route 混在防止)。
   // service 未起動なら skip (config_path 通知の度に再試行されるので自然回復)。
   if (!routes_info_client_->service_is_ready()) {
-    RCLCPP_WARN(this->get_logger(), "get_routes_info service not ready, skipping route fetch.");
+    RCLCPP_WARN(this->get_logger(), "mapoi/get_routes_info service not ready, skipping route fetch.");
     return;
   }
   const size_t my_gen = ++routes_fetch_generation_;

@@ -28,9 +28,9 @@ mapoi は navigation と localization の 2 つの backend を **独立した契
 
 `mapoi_nav2_bridge` が使う `status` 値は `navigating` / `succeeded` / `aborted` / `canceled` / `paused` / `map_switching` / `map_switch_succeeded` / `map_switch_failed` / `backend_unavailable` / `rejected`（詳細は [`mapoi_server` の README](../mapoi_server/README.md) の `mapoi/nav/status` 節）。**bridge 実装上の必須ルール**: goal / route / map switch コマンドを「受理したが実行しなかった」経路（無効な入力、内部 service 未 ready 等）では、必ず何らかの終端 status を publish してください。publish しないまま return すると、WebUI / RViz panel には直前の status（`succeeded` / `navigating` 等）が居座り続け、操作者が誤操作に気づけません（#339）。新規 status 値の追加は既存 subscriber に対して後方互換です。
 
-`rejected` と `backend_unavailable` の使い分け: `backend_unavailable` は **Nav2 側**（action server / `/goal_pose` fallback subscriber）が不在で navigation そのものを実行できない場合に限定する。`get_pois_info` / `get_route_pois` service 未 ready・POI 名 typo・landmark POI 指定・空 route など、**mapoi_server 側** の内部 service 未 ready・入力検証で Nav2 の readiness とは無関係にコマンドを reject する経路は `rejected` を使う（goal / route とも service 呼び出し前に `wait_for_service(2s)` で readiness を確認し、未 ready なら `rejected` を publish する。#339 / #355）。運用上どちらも「今回のコマンドは実行されなかった」点は同じだが、`backend_unavailable` を Nav2 readiness 専用に保つことで、WebUI の `Navigation connected` バッジ (`mapoi/nav/backend_status`) との対応関係を崩さない。
+`rejected` と `backend_unavailable` の使い分け: `backend_unavailable` は **Nav2 側**（action server / `/goal_pose` fallback subscriber）が不在で navigation そのものを実行できない場合に限定する。`mapoi/get_pois_info` / `mapoi/get_route_pois` service 未 ready・POI 名 typo・landmark POI 指定・空 route など、**mapoi_server 側** の内部 service 未 ready・入力検証で Nav2 の readiness とは無関係にコマンドを reject する経路は `rejected` を使う（goal / route とも service 呼び出し前に `wait_for_service(2s)` で readiness を確認し、未 ready なら `rejected` を publish する。#339 / #355）。運用上どちらも「今回のコマンドは実行されなかった」点は同じだが、`backend_unavailable` を Nav2 readiness 専用に保つことで、WebUI の `Navigation connected` バッジ (`mapoi/nav/backend_status`) との対応関係を崩さない。
 
-`mapoi/nav/backend_status` の `backend_ready=true` を出した時のみ WebUI が `Navigation connected` 状態になり、ナビ操作 UI が enable されます。bridge は POI / route / map 情報を `mapoi_server` の service（`get_pois_info` / `get_route_pois` / `select_map`）から取得し、自前の navigation API に変換します。各 topic / service の詳細は [`mapoi_server` の README](../mapoi_server/README.md) を参照してください。
+`mapoi/nav/backend_status` の `backend_ready=true` を出した時のみ WebUI が `Navigation connected` 状態になり、ナビ操作 UI が enable されます。bridge は POI / route / map 情報を `mapoi_server` の service（`mapoi/get_pois_info` / `mapoi/get_route_pois` / `mapoi/select_map`）から取得し、自前の navigation API に変換します。各 topic / service の詳細は [`mapoi_server` の README](../mapoi_server/README.md) を参照してください。
 
 **`NavigationBackendStatus` 各フィールドの埋め方**（minimal 仕様）:
 
@@ -60,7 +60,7 @@ bridge 実装者の必須実装は **`backend_ready` を真にする** ことだ
 | --- | --- |
 | `mapoi/localization/backend_status` | `mapoi_interfaces/LocalizationBackendStatus`（readiness summary、`transient_local`、minimal 3 フィールド） |
 
-`mapoi/localization/backend_status` の `backend_ready=true` を出した時のみ WebUI / RViz panel の Initial Pose 操作 UI が enable されます。bridge は POI 情報を `mapoi_server` の `get_pois_info` service から取得し、`InitialPoseRequest.poi_name` を resolve して自前 localization に流します。
+`mapoi/localization/backend_status` の `backend_ready=true` を出した時のみ WebUI / RViz panel の Initial Pose 操作 UI が enable されます。bridge は POI 情報を `mapoi_server` の `mapoi/get_pois_info` service から取得し、`InitialPoseRequest.poi_name` を resolve して自前 localization に流します。
 
 **`LocalizationBackendStatus` 各フィールドの埋め方**（minimal 仕様）:
 

@@ -63,8 +63,8 @@ class TestSelectMapValidation(unittest.TestCase):
     def setUpClass(cls):
         rclpy.init()
         cls.node = rclpy.create_node('test_select_map_validation_node')
-        cls.select_map_client = cls.node.create_client(SelectMap, 'select_map')
-        cls.get_maps_info_client = cls.node.create_client(GetMapsInfo, 'get_maps_info')
+        cls.select_map_client = cls.node.create_client(SelectMap, 'mapoi/select_map')
+        cls.get_maps_info_client = cls.node.create_client(GetMapsInfo, 'mapoi/get_maps_info')
 
     @classmethod
     def tearDownClass(cls):

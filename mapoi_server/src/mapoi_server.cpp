@@ -152,19 +152,19 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
     publish_initial_poi_name("");
   }
 
-  get_pois_info_service_ = this->create_service<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info",
+  get_pois_info_service_ = this->create_service<mapoi_interfaces::srv::GetPoisInfo>("mapoi/get_pois_info",
     std::bind(&MapoiServer::get_pois_info_service, this, std::placeholders::_1, std::placeholders::_2));
 
-  get_route_pois_service_ = this->create_service<mapoi_interfaces::srv::GetRoutePois>("get_route_pois",
+  get_route_pois_service_ = this->create_service<mapoi_interfaces::srv::GetRoutePois>("mapoi/get_route_pois",
     std::bind(&MapoiServer::get_route_pois_service, this, std::placeholders::_1, std::placeholders::_2));
 
-  get_maps_info_service_ = this->create_service<mapoi_interfaces::srv::GetMapsInfo>("get_maps_info",
+  get_maps_info_service_ = this->create_service<mapoi_interfaces::srv::GetMapsInfo>("mapoi/get_maps_info",
     std::bind(&MapoiServer::get_maps_info_service, this, std::placeholders::_1, std::placeholders::_2));
 
-  get_routes_info_service_ = this->create_service<mapoi_interfaces::srv::GetRoutesInfo>("get_routes_info",
+  get_routes_info_service_ = this->create_service<mapoi_interfaces::srv::GetRoutesInfo>("mapoi/get_routes_info",
     std::bind(&MapoiServer::get_routes_info_service, this, std::placeholders::_1, std::placeholders::_2));
 
-  select_map_service_ = this->create_service<mapoi_interfaces::srv::SelectMap>("select_map",
+  select_map_service_ = this->create_service<mapoi_interfaces::srv::SelectMap>("mapoi/select_map",
     std::bind(&MapoiServer::select_map_service, this, std::placeholders::_1, std::placeholders::_2));
 
   // #211: mapoi/initialpose_poi の publish を mapoi_server 1 writer に集約するための service。
@@ -172,13 +172,13 @@ MapoiServer::MapoiServer() : Node("mapoi_server") {
   // mapoi_server が唯一の writer として initialpose_poi_publisher_ から publish する。
   // initialpose_poi_publisher_ は上で構築済みなので、callback 実行時 (spin 開始後) は必ず存在する。
   request_initial_pose_service_ = this->create_service<mapoi_interfaces::srv::RequestInitialPose>(
-    "request_initial_pose",
+    "mapoi/request_initial_pose",
     std::bind(&MapoiServer::request_initial_pose_service, this, std::placeholders::_1, std::placeholders::_2));
 
-  reload_map_info_service_ = this->create_service<std_srvs::srv::Trigger>("reload_map_info",
+  reload_map_info_service_ = this->create_service<std_srvs::srv::Trigger>("mapoi/reload_map_info",
     std::bind(&MapoiServer::reload_map_info_service, this, std::placeholders::_1, std::placeholders::_2));
 
-  get_tag_definitions_srv_ = this->create_service<mapoi_interfaces::srv::GetTagDefinitions>("get_tag_definitions",
+  get_tag_definitions_srv_ = this->create_service<mapoi_interfaces::srv::GetTagDefinitions>("mapoi/get_tag_definitions",
     std::bind(&MapoiServer::get_tag_definitions_service, this, std::placeholders::_1, std::placeholders::_2));
 
   RCLCPP_INFO(this->get_logger(), "Ready to serve. The current map_name is %s", config_path_.c_str());

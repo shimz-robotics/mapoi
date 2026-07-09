@@ -25,13 +25,13 @@ void MapoiPanel::onInitialize()
 
   // Create shared service node and persistent clients
   service_node_ = rclcpp::Node::make_shared("mapoi_panel_service_client");
-  get_pois_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
-  get_maps_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetMapsInfo>("get_maps_info");
-  get_routes_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetRoutesInfo>("get_routes_info");
-  get_route_pois_client_ = service_node_->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
+  get_pois_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetPoisInfo>("mapoi/get_pois_info");
+  get_maps_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetMapsInfo>("mapoi/get_maps_info");
+  get_routes_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetRoutesInfo>("mapoi/get_routes_info");
+  get_route_pois_client_ = service_node_->create_client<mapoi_interfaces::srv::GetRoutePois>("mapoi/get_route_pois");
   // #211: initialpose POI は直接 publish せず mapoi_server へ service 経由で依頼する。
   request_initial_pose_client_ =
-    service_node_->create_client<mapoi_interfaces::srv::RequestInitialPose>("request_initial_pose");
+    service_node_->create_client<mapoi_interfaces::srv::RequestInitialPose>("mapoi/request_initial_pose");
 
   connect(ui_->MapComboBox, SIGNAL(activated(int)), this, SLOT(MapComboBox()));
   connect(ui_->Nav2GoalComboBox, SIGNAL(activated(int)), this, SLOT(Nav2GoalComboBox()));
@@ -48,7 +48,7 @@ void MapoiPanel::onInitialize()
 
   // map ComboBox
   if (!get_maps_info_client_->wait_for_service(3s)) {
-    RCLCPP_ERROR(LOGGER, "get_maps_info service not available after 3s timeout.");
+    RCLCPP_ERROR(LOGGER, "mapoi/get_maps_info service not available after 3s timeout.");
     return;
   }
   auto request = std::make_shared<mapoi_interfaces::srv::GetMapsInfo::Request>();
@@ -63,7 +63,7 @@ void MapoiPanel::onInitialize()
     }
     SetMapComboBox(map_info->map_name);
   }else{
-    RCLCPP_ERROR(LOGGER, "Failed to call service get_maps_info");
+    RCLCPP_ERROR(LOGGER, "Failed to call service mapoi/get_maps_info");
   }
 
   // Buttons
@@ -200,7 +200,7 @@ void MapoiPanel::MapoiRouteComboBox()
         }
       }
     } else {
-      RCLCPP_ERROR(LOGGER, "get_route_pois service not available after 3s timeout.");
+      RCLCPP_ERROR(LOGGER, "mapoi/get_route_pois service not available after 3s timeout.");
     }
   }
   PublishHighlightPois();
@@ -219,7 +219,7 @@ void MapoiPanel::LocalizationButton()
   // per-writer latched cache が単一化され stale POI を構造的に排除する。bridge が POI resolve /
   // landmark 排他 / `/initialpose` 配信 / retry を一元処理する点は不変 (#209)。
   if (!request_initial_pose_client_->wait_for_service(3s)) {
-    RCLCPP_ERROR(LOGGER, "request_initial_pose service not available after 3s timeout.");
+    RCLCPP_ERROR(LOGGER, "mapoi/request_initial_pose service not available after 3s timeout.");
     return;
   }
   auto request = std::make_shared<mapoi_interfaces::srv::RequestInitialPose::Request>();
@@ -366,7 +366,7 @@ void MapoiPanel::SetNav2GoalComboBox()
   auto request_gtp = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
 
   if (!get_pois_info_client_->wait_for_service(3s)) {
-    RCLCPP_ERROR(LOGGER, "get_pois_info service not available after 3s timeout.");
+    RCLCPP_ERROR(LOGGER, "mapoi/get_pois_info service not available after 3s timeout.");
     return;
   }
 
@@ -397,7 +397,7 @@ void MapoiPanel::SetNav2GoalComboBox()
     }
     goal_combobox_ind_ = ui_->Nav2GoalComboBox->currentIndex();
   }else{
-    RCLCPP_ERROR(LOGGER, "Failed to call service get_pois_info");
+    RCLCPP_ERROR(LOGGER, "Failed to call service mapoi/get_pois_info");
   }
 }
 
@@ -408,7 +408,7 @@ void MapoiPanel::SetMapoiRouteComboBox()
   QString prev_selection = ui_->MapoiRouteComboBox->currentText();
 
   if (!get_routes_info_client_->wait_for_service(3s)) {
-    RCLCPP_ERROR(LOGGER, "get_routes_info service not available after 3s timeout.");
+    RCLCPP_ERROR(LOGGER, "mapoi/get_routes_info service not available after 3s timeout.");
     return;
   }
 
@@ -428,7 +428,7 @@ void MapoiPanel::SetMapoiRouteComboBox()
     }
     route_combobox_ind_ = ui_->MapoiRouteComboBox->currentIndex();
   }else{
-    RCLCPP_ERROR(LOGGER, "Failed to call service get_routes_info");
+    RCLCPP_ERROR(LOGGER, "Failed to call service mapoi/get_routes_info");
   }
 }
 

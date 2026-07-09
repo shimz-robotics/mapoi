@@ -154,14 +154,14 @@ class MapoiWebNode(Node):
             self.robot_radius_ = raw_radius
 
         # ROS2 service clients
-        self.reload_client_ = self.create_client(Trigger, 'reload_map_info')
-        self.get_maps_client_ = self.create_client(GetMapsInfo, 'get_maps_info')
-        self.tag_defs_client_ = self.create_client(GetTagDefinitions, 'get_tag_definitions')
-        self.select_map_client_ = self.create_client(SelectMap, 'select_map')
+        self.reload_client_ = self.create_client(Trigger, 'mapoi/reload_map_info')
+        self.get_maps_client_ = self.create_client(GetMapsInfo, 'mapoi/get_maps_info')
+        self.tag_defs_client_ = self.create_client(GetTagDefinitions, 'mapoi/get_tag_definitions')
+        self.select_map_client_ = self.create_client(SelectMap, 'mapoi/select_map')
         # #211: initialpose POI は直接 publish せず mapoi_server (唯一の writer) へ
         # request_initial_pose service 経由で依頼する。
         self.request_initial_pose_client_ = self.create_client(
-            RequestInitialPose, 'request_initial_pose')
+            RequestInitialPose, 'mapoi/request_initial_pose')
 
         # Navigation publishers
         self.goal_poi_pub_ = self.create_publisher(String, 'mapoi/nav/goal_pose_poi', 10)
@@ -400,13 +400,13 @@ class MapoiWebNode(Node):
         unavailable / timeout / server-side failure.
         """
         response = self._call_service_sync(
-            self.reload_client_, Trigger.Request(), 'reload_map_info', timeout_sec=3.0)
+            self.reload_client_, Trigger.Request(), 'mapoi/reload_map_info', timeout_sec=3.0)
         if response is None:
             return False  # service unavailable / timeout (logged in helper)
         if not response.success:
-            self.get_logger().warn(f'reload_map_info returned failure: {response.message}')
+            self.get_logger().warn(f'mapoi/reload_map_info returned failure: {response.message}')
             return False
-        self.get_logger().info('reload_map_info succeeded')
+        self.get_logger().info('mapoi/reload_map_info succeeded')
         return True
 
     def publish_with_subscriber_check(self, pub, msg, topic_name):
@@ -653,11 +653,11 @@ class MapoiWebNode(Node):
             req = SelectMap.Request()
             req.map_name = map_name
             response = node._call_service_sync(
-                node.select_map_client_, req, 'select_map', timeout_sec=3.0)
+                node.select_map_client_, req, 'mapoi/select_map', timeout_sec=3.0)
             if response is None:
-                return jsonify({'error': 'select_map service unavailable or timed out'}), 503
+                return jsonify({'error': 'mapoi/select_map service unavailable or timed out'}), 503
             if not response.success:
-                return jsonify({'error': response.error_message or 'select_map failed'}), 400
+                return jsonify({'error': response.error_message or 'mapoi/select_map failed'}), 400
             node.map_name_ = map_name
             return jsonify({
                 'success': True,
@@ -751,7 +751,7 @@ class MapoiWebNode(Node):
                     return jsonify({
                         'success': True,
                         'config_version': new_version,
-                        'warning': 'The YAML file was saved, but mapoi_server reload_map_info '
+                        'warning': 'The YAML file was saved, but mapoi_server mapoi/reload_map_info '
                                    'did not respond or failed. Check the logs for details.'
                     })
                 return jsonify({'success': True, 'config_version': new_version})
@@ -762,9 +762,9 @@ class MapoiWebNode(Node):
         @app.route('/api/tag_definitions')
         def api_tag_definitions():
             response = node._call_service_sync(
-                node.tag_defs_client_, GetTagDefinitions.Request(), 'get_tag_definitions')
+                node.tag_defs_client_, GetTagDefinitions.Request(), 'mapoi/get_tag_definitions')
             if response is None:
-                return jsonify({'error': 'get_tag_definitions service unavailable or timed out'}), 503
+                return jsonify({'error': 'mapoi/get_tag_definitions service unavailable or timed out'}), 503
             tags = [
                 {'name': d.name, 'description': d.description, 'is_system': d.is_system}
                 for d in response.definitions
@@ -785,7 +785,7 @@ class MapoiWebNode(Node):
                 if not reloaded:
                     return jsonify({
                         'success': True,
-                        'warning': 'The YAML file was saved, but mapoi_server reload_map_info '
+                        'warning': 'The YAML file was saved, but mapoi_server mapoi/reload_map_info '
                                    'did not respond or failed. Check the logs for details.'
                     })
                 return jsonify({'success': True})
@@ -818,7 +818,7 @@ class MapoiWebNode(Node):
                 if not reloaded:
                     return jsonify({
                         'success': True,
-                        'warning': 'The YAML file was saved, but mapoi_server reload_map_info '
+                        'warning': 'The YAML file was saved, but mapoi_server mapoi/reload_map_info '
                                    'did not respond or failed. Check the logs for details.'
                     })
                 return jsonify({'success': True})
@@ -906,13 +906,13 @@ class MapoiWebNode(Node):
             req.map_name = node.map_name_
             req.poi_name = data['poi_name']
             response = node._call_service_sync(
-                node.request_initial_pose_client_, req, 'request_initial_pose', timeout_sec=3.0)
+                node.request_initial_pose_client_, req, 'mapoi/request_initial_pose', timeout_sec=3.0)
             if response is None:
                 return jsonify(
-                    {'error': 'request_initial_pose service unavailable or timed out'}), 503
+                    {'error': 'mapoi/request_initial_pose service unavailable or timed out'}), 503
             if not response.success:
                 return jsonify(
-                    {'error': response.error_message or 'request_initial_pose failed'}), 400
+                    {'error': response.error_message or 'mapoi/request_initial_pose failed'}), 400
             node.get_logger().info(f'Initial pose: {data["poi_name"]}')
             # #211 review fix: 旧 publish_with_subscriber_check 相当の「無人 publish」警告を復元。
             # service は mapoi_server に届くが、その先の mapoi/initialpose_poi に subscriber

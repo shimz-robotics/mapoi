@@ -38,7 +38,7 @@ MapoiAmclLocalizationBridge::MapoiAmclLocalizationBridge(
   initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
     this->get_parameter("initial_pose_topic").as_string(), 1);
 
-  pois_info_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
+  pois_info_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("mapoi/get_pois_info");
 
   // Localization backend readiness publisher + 1Hz polling timer (#209)。
   // /initialpose の subscriber 有無は実行時に変化し得る (AMCL を後起動 / 落とすケース) ため、
@@ -78,7 +78,7 @@ void MapoiAmclLocalizationBridge::initialpose_poi_callback(
     "Received initialpose POI '%s' for map '%s'.", poi_name.c_str(), msg->map_name.c_str());
 
   if (!this->pois_info_client_->wait_for_service(2s)) {
-    RCLCPP_ERROR(this->get_logger(), "get_pois_info service not available");
+    RCLCPP_ERROR(this->get_logger(), "mapoi/get_pois_info service not available");
     return;
   }
   auto request = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
