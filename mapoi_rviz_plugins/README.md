@@ -1,94 +1,95 @@
 # mapoi_rviz_plugins
 
-mapoi 用の RViz2 プラグインパッケージです。GUI から地図切替・POI 選択・自律走行の操作、および POI の編集ができます。
+> Japanese version: [README.ja.md](./README.ja.md)
 
-## プラグイン
+RViz2 plugin package for mapoi. Provides a GUI for map switching, POI selection, autonomous navigation operation, and POI editing.
 
-### MapoiPanel（パネルプラグイン）
+## Plugins
 
-RViz2 のパネルとして追加できるナビゲーション操作パネルです。
+### MapoiPanel (panel plugin)
 
-- 地図の切替をドロップダウンから選択
-- 地図に応じた目的地（`goal` タグの POI）をリストから選択
-- ルートをリストから選択して走行開始
-- 選択した POI の位置に自己位置を修正（Initial Pose の設定）
-- 選択した POI への自律走行を開始
-- 自律走行の一時停止・再開・停止
-- ナビゲーション状態の表示（`navigating`, `succeeded`, `aborted`, `paused`, `canceled`）
-- 選択中の POI/ルートを RViz2 上でハイライト表示
+A navigation operation panel that can be added as an RViz2 panel.
 
-#### パブリッシャー
+- Select a map to switch to from a dropdown
+- Select a destination (a POI tagged `goal`) from a list, scoped to the current map
+- Select a route from a list and start navigation along it
+- Correct the robot's estimated pose to a selected POI's position (setting the Initial Pose)
+- Start autonomous navigation to a selected POI
+- Pause / resume / cancel autonomous navigation
+- Display navigation status (`navigating`, `succeeded`, `aborted`, `paused`, `canceled`)
+- Highlight the selected POI/route in RViz2
 
-| トピック名 | 型 | 説明 |
+#### Publishers
+
+| Topic | Type | Description |
 | --- | --- | --- |
-| `mapoi/nav/goal_pose_poi` | `std_msgs/String` | ゴール POI 名の配信。実際の Nav2 action 起動は navigation bridge (`mapoi_nav2_bridge` ほか) が担当 |
-| `mapoi/nav/pause` | `std_msgs/String` | ナビゲーションの一時停止 |
-| `mapoi/nav/resume` | `std_msgs/String` | ナビゲーションの再開 |
-| `mapoi/nav/cancel` | `std_msgs/String` | ナビゲーションのキャンセル |
-| `mapoi/nav/route` | `std_msgs/String` | ルート走行の開始 |
-| `mapoi/highlight/goal` | `std_msgs/String` | ゴールマーカーのハイライト |
-| `mapoi/highlight/route` | `std_msgs/String` | ルートマーカーのハイライト |
+| `mapoi/nav/goal_pose_poi` | `std_msgs/String` | Publishes the goal POI name. The actual Nav2 action call is handled by the navigation bridge (`mapoi_nav2_bridge` etc.) |
+| `mapoi/nav/pause` | `std_msgs/String` | Pauses navigation |
+| `mapoi/nav/resume` | `std_msgs/String` | Resumes navigation |
+| `mapoi/nav/cancel` | `std_msgs/String` | Cancels navigation |
+| `mapoi/nav/route` | `std_msgs/String` | Starts route navigation |
+| `mapoi/highlight/goal` | `std_msgs/String` | Highlights the goal marker |
+| `mapoi/highlight/route` | `std_msgs/String` | Highlights the route marker |
 
-#### サービスクライアント
+#### Service clients
 
-| サービス名 | 型 | 説明 |
+| Service | Type | Description |
 | --- | --- | --- |
-| `mapoi/request_initial_pose` | `RequestInitialPose` | Initial Pose 設定時に `mapoi_server` へ publish を依頼 (#211)。panel は直接 `mapoi/initialpose_poi` を publish しない |
+| `mapoi/request_initial_pose` | `RequestInitialPose` | Requests `mapoi_server` to publish when setting the Initial Pose (#211). The panel does not publish `mapoi/initialpose_poi` directly |
 
-#### サブスクライバー
+#### Subscribers
 
-| トピック名 | 型 | 説明 |
+| Topic | Type | Description |
 | --- | --- | --- |
-| `mapoi/config_path` | `std_msgs/String` | 設定ファイルパスの変更検知 |
-| `mapoi/nav/status` | `std_msgs/String` | ナビゲーション状態の表示（`"status"` / `"status:target"` 形式、transient_local QoS）。target が含まれていれば後起動 panel でも「走行中: target」「到着: target」等を復元可能 |
+| `mapoi/config_path` | `std_msgs/String` | Detects changes to the config file path |
+| `mapoi/nav/status` | `std_msgs/String` | Displays navigation status (`"status"` / `"status:target"` format, transient_local QoS). If a target is included, a late-joining panel can restore messages like "Navigating: target" / "Arrived: target" |
 
-### PoiEditor（パネルプラグイン）
+### PoiEditor (panel plugin)
 
-POI の情報を表形式で表示・編集・保存できるパネルです。
+A panel that displays, edits, and saves POI information in tabular form.
 
-- 現在の設定ファイルから POI 情報を読み込み
-- 表形式での POI 情報の確認・編集（name, pose, tolerance, tags, description の 5 column 構成、#158）
-  - **pose** column は `x, y, yaw` 形式（例: `1.00, 2.00, 0.79`、x/y は m、yaw は rad、表示は小数点以下 2 桁）
-  - **tolerance** column は `xy, yaw` 形式の 1 column 統合表記（例: `0.50, 0.79`、xy は m、yaw は rad、表示は小数点以下 2 桁）
-    - validation 制約: `xy >= 0.001 m` / `0.001 rad <= yaw <= 2π rad`
-    - max `2π rad` (= 360°) は、deg → rad 単位変更 (#158) 後の旧 deg 入力 (例: `45`)
-      を誤って rad として入れたケースを弾くガード
-  - **description** は末尾 column（長文 OK、横幅圧迫を回避）
-- POI の追加・コピー・削除
-- タグによるフィルタリング表示
-- TagHelperComboBox によるタグ入力補助（システムタグは `[S]` 表記）
-- バリデーション付き保存（名前重複・座標形式・tolerance.xy チェック、未定義タグの警告）
-- MapoiPoseTool と連携した位置入力
-- 保存後に mapoi_server の設定を自動リロード
+- Loads POI information from the current config file
+- View and edit POI information in a table (5-column layout: name, pose, tolerance, tags, description, #158)
+  - The **pose** column uses `x, y, yaw` format (e.g. `1.00, 2.00, 0.79`; x/y in m, yaw in rad, displayed with 2 decimal places)
+  - The **tolerance** column uses a single-column combined `xy, yaw` format (e.g. `0.50, 0.79`; xy in m, yaw in rad, displayed with 2 decimal places)
+    - Validation constraints: `xy >= 0.001 m` / `0.001 rad <= yaw <= 2π rad`
+    - The `2π rad` (= 360°) maximum is a guard that rejects old deg-based inputs (e.g. `45`) mistakenly entered as rad after the deg → rad unit change (#158)
+  - **description** is the last column (long text is fine, avoids squeezing the other columns)
+- Add / copy / delete POIs
+- Filter the displayed list by tag
+- Tag input assistance via a TagHelperComboBox (system tags shown with an `[S]` marker)
+- Save with validation (duplicate-name check, coordinate format, `tolerance.xy` check, warnings for undefined tags)
+- Position input in conjunction with MapoiPoseTool
+- Automatically reloads `mapoi_server`'s config after saving
 
-#### サブスクライバー
+#### Subscribers
 
-| トピック名 | 型 | 説明 |
+| Topic | Type | Description |
 | --- | --- | --- |
-| `mapoi_rviz_pose` | `geometry_msgs/PoseStamped` | MapoiPoseTool からの位置入力 |
-| `mapoi/config_path` | `std_msgs/String` | 設定ファイルパスの変更検知 |
+| `mapoi_rviz_pose` | `geometry_msgs/PoseStamped` | Position input from MapoiPoseTool |
+| `mapoi/config_path` | `std_msgs/String` | Detects changes to the config file path |
 
-### MapoiPoseTool（ツールプラグイン）
+### MapoiPoseTool (tool plugin)
 
-RViz2 のツールバーに追加できるポーズ指定ツールです。ショートカットキー: `i`
+A pose-specification tool that can be added to the RViz2 toolbar. Shortcut key: `i`
 
-- RViz2 上でクリック＆ドラッグして位置・姿勢を指定
-- PoiEditor の選択行に位置を反映
-- 使用後は自動的にデフォルトツールに戻る
+- Click and drag on RViz2 to specify a position and orientation
+- Reflects the position onto the selected row in PoiEditor
+- Automatically switches back to the default tool after use
 
-#### パブリッシャー
+#### Publishers
 
-| トピック名 | 型 | 説明 |
+| Topic | Type | Description |
 | --- | --- | --- |
-| `mapoi_rviz_pose` | `geometry_msgs/PoseStamped` | 指定した位置・姿勢の配信 |
+| `mapoi_rviz_pose` | `geometry_msgs/PoseStamped` | Publishes the specified position and orientation |
 
-## RViz2 への追加方法
+## Adding to RViz2
 
-1. RViz2 を起動
-2. Panels > Add New Panel から `MapoiPanel` または `PoiEditor` を追加
-3. ツールバーの「+」ボタンから `MapoiPoseTool` を追加
+1. Launch RViz2
+2. Add `MapoiPanel` or `PoiEditor` via Panels > Add New Panel
+3. Add `MapoiPoseTool` via the "+" button on the toolbar
 
-## 依存パッケージ
+## Dependencies
 
 - `rviz_common`
 - `rviz_default_plugins`

@@ -1,11 +1,13 @@
 # mapoi_server
 
-mapoi のメインパッケージです。
-地図と POI の情報を管理し、他のパッケージにサービスとして提供します。また、POI 名を指定した自律走行やPOI半径イベントの検知を行います。
+> Japanese version: [README.ja.md](./README.ja.md)
 
-## 自分のロボットへの組み込み方
+The main package of mapoi.
+It manages map and POI information and serves it to other packages, and performs POI-name-based autonomous navigation and POI radius event detection.
 
-4 つの core node (`mapoi_server` / `mapoi_nav2_bridge` / `mapoi_amcl_localization_bridge` / `mapoi_rviz2_publisher`) と、必要に応じてシミュレータ連動 bridge をまとめて起動する bringup launch を提供しています。自前の launch から以下のように include してください:
+## Integrating with your own robot
+
+We provide a bringup launch file that starts the 4 core nodes (`mapoi_server` / `mapoi_nav2_bridge` / `mapoi_amcl_localization_bridge` / `mapoi_rviz2_publisher`) together, along with a simulator-integration bridge if needed. Include it from your own launch file like this:
 
 ```yaml
 - include:
@@ -14,71 +16,71 @@ mapoi のメインパッケージです。
       - {name: maps_path, value: "/path/to/your/maps"}    # REQUIRED
       - {name: map_name, value: "initial_map_name"}        # REQUIRED
       - {name: config_file, value: "mapoi_config.yaml"}    # optional
-      - {name: state_path, value: "/var/lib/mapoi"}        # optional (実機運用では推奨、#297)
+      - {name: state_path, value: "/var/lib/mapoi"}        # optional (recommended for real-robot deployments, #297)
       - {name: simulator, value: "none"}                   # gazebo|gz|none (default: none)
-      - {name: robot_entity_name, value: "burger"}         # simulator=gazebo|gz のとき必要
-      - {name: robot_sdf_path, value: "/path/.../model.sdf"} # simulator=gazebo のとき必要
-      - {name: init_world_name, value: "default"}          # simulator=gz のとき必要 (gz_sim 起動時の world 名)
+      - {name: robot_entity_name, value: "burger"}         # required when simulator=gazebo|gz
+      - {name: robot_sdf_path, value: "/path/.../model.sdf"} # required when simulator=gazebo
+      - {name: init_world_name, value: "default"}          # required when simulator=gz (world name used when starting gz_sim)
 ```
 
-`maps_path` と `map_name` は **必須** です。`maps_path` 未指定 / 存在しないパス / ディレクトリでない場合は `RCLCPP_FATAL` ログ + 終了コード 1 で起動失敗します (#163)。`mapoi_turtlebot3_example` の sample を流用するなら `$(find-pkg-share mapoi_turtlebot3_example)/maps` を指定してください。
+`maps_path` and `map_name` are **required**. If `maps_path` is unset, points to a nonexistent path, or is not a directory, startup fails with an `RCLCPP_FATAL` log and exit code 1 (#163). To reuse the `mapoi_turtlebot3_example` samples, pass `$(find-pkg-share mapoi_turtlebot3_example)/maps`.
 
-### CLI から直接起動する例
+### Launching directly from the CLI
 
-include せず `ros2 launch` を直接叩く場合の最小例:
+A minimal example of calling `ros2 launch` directly, without an include:
 
 ```bash
-# mapoi_turtlebot3_example の sample maps を流用 (apt / 配布 install 後にも動く)
+# Reuse the mapoi_turtlebot3_example sample maps (also works after apt / distributed install)
 ros2 launch mapoi_server mapoi_bringup.launch.yaml \
   maps_path:=$(ros2 pkg prefix --share mapoi_turtlebot3_example)/maps \
   map_name:=turtlebot3_world
 
-# ソースツリーから直接 (ros2_ws 内で source 後)
-# 注: 本 repo を `<ws>/src/mapoi/` 配下に展開している前提 (`git clone .../mapoi.git`)。
-# パッケージを `<ws>/src/mapoi_turtlebot3_example/` のようにフラット展開している場合は
-# パスを調整するか、上の `pkg prefix --share` 形式を使う方が確実。
+# Directly from a source tree (after sourcing inside ros2_ws)
+# Note: assumes this repo is checked out at `<ws>/src/mapoi/` (`git clone .../mapoi.git`).
+# If you've laid packages out flat, e.g. `<ws>/src/mapoi_turtlebot3_example/`,
+# adjust the path accordingly, or use the `pkg prefix --share` form above for reliability.
 ros2 launch mapoi_server mapoi_bringup.launch.yaml \
   maps_path:=$(pwd)/src/mapoi/mapoi_turtlebot3_example/maps \
   map_name:=turtlebot3_dqn_stage1
 ```
 
-#### 引数の取り違え注意
+#### Watch out for mixing up arguments
 
-各 launch arg のセマンティクスは以下のとおり (`{maps_path}/{map_name}/{config_file}` でアクセスする 3 レベルの分割):
+The semantics of each launch arg are as follows (a 3-level split accessed as `{maps_path}/{map_name}/{config_file}`):
 
-| arg | 渡すもの | 例 |
+| arg | What to pass | Example |
 |---|---|---|
-| `maps_path` | **地図群を束ねる親ディレクトリ** (各地図は配下のサブディレクトリ) | `/path/to/maps` |
-| `map_name` | `maps_path` 直下の地図サブディレクトリ名 | `turtlebot3_world` |
-| `config_file` | 地図サブディレクトリ内の設定ファイル名 (default: `mapoi_config.yaml`) | `mapoi_config.yaml` |
+| `maps_path` | **the parent directory that bundles the map collection** (each map is a subdirectory under it) | `/path/to/maps` |
+| `map_name` | the name of the map subdirectory directly under `maps_path` | `turtlebot3_world` |
+| `config_file` | the config filename inside the map subdirectory (default: `mapoi_config.yaml`) | `mapoi_config.yaml` |
 
-実際にロードされるパスは `{maps_path}/{map_name}/{config_file}` で、上記例なら `/path/to/maps/turtlebot3_world/mapoi_config.yaml` となります。
+The path actually loaded is `{maps_path}/{map_name}/{config_file}`, which for the example above resolves to `/path/to/maps/turtlebot3_world/mapoi_config.yaml`.
 
-`maps_path` / `map_name` 必須 (上節参照) の検証は **2 段階**: `map_name` 自体未指定なら `ros2 launch` が `Required launch argument 'map_name' was not provided` で fail (node 起動前 / launch system 側)、`maps_path` がディレクトリでない等のセマンティクス違反は `mapoi_server` ノード起動時に `RCLCPP_FATAL` で fail します。
+Validation of the required `maps_path` / `map_name` (see above) happens in **two stages**: if `map_name` itself is unset, `ros2 launch` fails with `Required launch argument 'map_name' was not provided` (before the node starts, on the launch-system side); semantic violations such as `maps_path` not being a directory fail with `RCLCPP_FATAL` when the `mapoi_server` node starts.
 
-**❌ よくある間違い**: `maps_path` に **config.yaml ファイルパスを直接指定** してしまう:
+**A common mistake**: passing a **config.yaml file path directly** as `maps_path`:
 
 ```bash
-# WRONG: maps_path はファイルではなくディレクトリ
+# WRONG: maps_path must be a directory, not a file
 ros2 launch mapoi_server mapoi_bringup.launch.yaml \
   maps_path:=./maps/turtlebot3_dqn_stage1/mapoi_config.yaml \
   map_name:=turtlebot3_dqn_stage1
 ```
 
-→ 起動時に `mapoi_server` ノードが以下を 1 行で出力して FATAL 終了します (`mapoi_server.cpp` 内の `RCLCPP_FATAL` ログ全文):
+→ On startup, the `mapoi_server` node prints the following in a single line and exits FATAL (the full text of the `RCLCPP_FATAL` log in `mapoi_server.cpp`):
 
 ```
-[FATAL] maps_path '...mapoi_config.yaml' does not exist or is not a directory. 正しい maps ディレクトリ path を指定してください (例: $(find-pkg-share mapoi_turtlebot3_example)/maps)。
+[FATAL] maps_path '...mapoi_config.yaml' does not exist or is not a directory. Please specify a valid maps directory path (e.g. $(find-pkg-share mapoi_turtlebot3_example)/maps).
 ```
 
-`maps_path` は **地図群を束ねる親ディレクトリ** で、特定の地図ディレクトリやファイルではありません。ディレクトリ構成は本 README 末尾の [ディレクトリ構成](#ディレクトリ構成) 節を参照してください。
+`maps_path` is **the parent directory that bundles the map collection**, not a specific map directory or file. See the [Directory structure](#directory-structure) section at the end of this README for the directory layout.
 
-`simulator` arg はシミュレータ連動 bridge の起動を制御します:
-- `gazebo` (Gazebo Classic / Humble): `mapoi_gazebo_bridge` を起動。operator map switch 時に Gazebo 内の `world_model` entity を入れ替え + ロボットを delete + spawn で **POI list 先頭** の座標に再生成 (#144 で旧 `initial_pose` system tag を廃止し、yaml 順序で表現する semantics に変更)
-- `gz` (gz-sim / Jazzy): `mapoi_gz_bridge` + `parameter_bridge` (`ros_gz_bridge`) を起動。operator map switch 時に gz-sim 内の `world_model` entity を入れ替え + ロボットを `SetEntityPose` で **POI list 先頭** の座標に teleport (gz-sim では Classic と異なり set_pose service が使えるため delete + spawn は不要)
-- `none` (default): bridge 起動なし (実機運用)
+The `simulator` arg controls whether a simulator-integration bridge is started:
+- `gazebo` (Gazebo Classic / Humble): starts `mapoi_gazebo_bridge`. On an operator map switch, it swaps the `world_model` entity in Gazebo and respawns the robot (delete + spawn) at the coordinates of the **first POI in the list** (#144 dropped the old `initial_pose` system tag in favor of expressing this via yaml ordering)
+- `gz` (gz-sim / Jazzy): starts `mapoi_gz_bridge` + `parameter_bridge` (`ros_gz_bridge`). On an operator map switch, it swaps the `world_model` entity in gz-sim and teleports the robot to the coordinates of the **first POI in the list** via `SetEntityPose` (unlike Classic, gz-sim has a set_pose service, so delete + spawn isn't needed)
+- `none` (default): no bridge is started (real-robot deployment)
 
-Web UI も使う場合は `mapoi_webui.launch.yaml` も併せて include:
+If you also want the Web UI, include `mapoi_webui.launch.yaml` as well:
 
 ```yaml
 - include:
@@ -88,277 +90,277 @@ Web UI も使う場合は `mapoi_webui.launch.yaml` も併せて include:
       - {name: map_name, value: "initial_map_name"}
 ```
 
-> **NOTE**: `mapoi_webui` はシステムタグを `mapoi_server` の `mapoi/get_tag_definitions` service 経由で取得します。`mapoi_webui` 単体を起動しても system tags の表示は service 通信になるため、`mapoi_server` の package install 自体は不要 (ただし service responder として `mapoi_server` ノードが起動している必要あり)。
+> **NOTE**: `mapoi_webui` retrieves system tags via `mapoi_server`'s `mapoi/get_tag_definitions` service. Since the system-tags display goes through this service call, `mapoi_webui` doesn't need `mapoi_server` installed as a package even when launched standalone (though a `mapoi_server` node must be running to respond as the service server).
 
-TurtleBot3 を使った動作例は `mapoi_turtlebot3_example` パッケージを参照してください。
+See the `mapoi_turtlebot3_example` package for a working example with TurtleBot3.
 
-## ノード
+## Nodes
 
 ### mapoi_server
 
-地図・POI の設定ファイルを読み込み、情報提供サービスを公開するノードです。
+A node that loads the map and POI config files and exposes information-retrieval services.
 
-#### パラメータ
+#### Parameters
 
-| パラメータ名 | 型 | デフォルト | 説明 |
+| Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `maps_path` | `string` | **REQUIRED** | 地図ディレクトリのパス (#163 で sample maps 廃止により必須化) |
-| `map_name` | `string` | `turtlebot3_world` | 起動時に読み込む地図名 |
-| `config_file` | `string` | `mapoi_config.yaml` | 設定ファイル名 |
-| `state_path` | `string` | `""` (無効) | last-selected map を永続化する**書き込み可能**ディレクトリ (#297)。空で永続化無効 (従来挙動)。詳細は下記「map 選択の永続化と再起動時の復元」節 |
+| `maps_path` | `string` | **REQUIRED** | Path to the maps directory (made required after sample maps were dropped in #163) |
+| `map_name` | `string` | `turtlebot3_world` | Name of the map to load at startup |
+| `config_file` | `string` | `mapoi_config.yaml` | Name of the config file |
+| `state_path` | `string` | `""` (disabled) | A **writable** directory used to persist the last-selected map (#297). Empty disables persistence (legacy behavior). See the "Persisting map selection and restoring on restart" section below for details |
 
-#### map 選択の永続化と再起動時の復元 (`state_path`、#297)
+#### Persisting map selection and restoring on restart (`state_path`, #297)
 
-`mapoi_server` の再起動 (crash / supervisor 再起動) は新しい DDS publisher の出現なので、起動時の initial pose publish (#144) は後起動 subscriber だけでなく**稼働中の localization bridge にも新規サンプルとして届きます** (active push)。`state_path` 未設定 (default) では、operator が別 map へ切替済みでも再起動後は起動パラメータ `map_name` の先頭 POI が publish され、**走行中ロボットの自己位置が起動 map の先頭 POI へテレポート**します (map 切替なしの same-map 再起動でも同様)。加えて map context 自体が起動パラメータへ巻き戻るため、goal / route の POI 名解決も旧 map 基準になります。
+Since a `mapoi_server` restart (crash / supervisor restart) creates a brand-new DDS publisher, the startup initial-pose publish (#144) reaches not only late-joining subscribers but also **any localization bridge that's already running, as a fresh sample** (an active push). With `state_path` unset (the default), even if the operator had already switched to a different map, a restart re-publishes the first POI of the startup parameter `map_name`, **teleporting a running robot's estimated pose to the startup map's first POI** (the same happens even on a same-map restart with no map switch). On top of that, since the map context itself reverts to the startup parameter, goal / route POI-name resolution also falls back to the old map.
 
-`state_path` に書き込み可能なディレクトリを指定すると `<state_path>/last_selected_map` に現在の map 名が記録され (起動時 + `mapoi/select_map` 成功時、tmp + rename の atomic write)、この state file の**有無**で挙動が分かれます:
+If `state_path` points to a writable directory, the current map name is recorded to `<state_path>/last_selected_map` (on startup and on a successful `mapoi/select_map`, via an atomic tmp + rename write), and behavior branches based on whether this state file exists:
 
-- **state file なし (真の初回起動)**: 従来どおり先頭 POI を publish (#144 の自動 initial pose を維持)
-- **state file あり (運用中の再起動)**: last-selected map へ map context を復元した上で、initial pose は **clear (`poi_name` 空、subscriber は無視) のみ** publish。稼働中の自己位置には影響しない
+- **No state file (a genuine first boot)**: publishes the first POI as before (preserves #144's automatic initial pose)
+- **State file present (a restart during operation)**: restores the map context to the last-selected map, and publishes the initial pose as **clear only** (`poi_name` empty, ignored by subscribers). Does not affect the robot's currently running position estimate
 
-運用上の注意:
+Operational notes:
 
-- 再起動時の復元は起動パラメータ `map_name` より**優先**されます。明示的に別 map で上げ直したい場合は `mapoi/select_map` を呼ぶか、state file を削除してから起動してください (削除すると次回起動は初回起動扱いに戻る)
-- `maps_path` を複数ロボット・複数構成で共有していても、`state_path` は**ロボットごとのローカルディレクトリ**を指定してください (例: `/var/lib/mapoi`)。パラメータ値の `~` は mapoi_server 側では展開しないため、**絶対パスで指定**するか、shell 展開が効く経路 (`state_path:=$HOME/.ros/mapoi` 等) で渡してください
-- state file の map が `maps_path` 配下に存在しない場合 (地図削除・パス付け替え) は WARN を出して起動パラメータの map を使います (この場合も publish は clear のみ)
-- `state_path` が書き込み不能な場合は起動時に `RCLCPP_FATAL` + 終了コード 1 で fail fast します (#163 の `maps_path` 検証と同じ方針)。運用中の書き込み失敗 (disk full 等) は WARN のみで稼働継続します
+- Restoring on restart takes **priority** over the startup parameter `map_name`. If you explicitly want to bring the system up on a different map, either call `mapoi/select_map` or delete the state file before starting (deleting it reverts the next boot to first-boot behavior)
+- Even if `maps_path` is shared across multiple robots/configurations, `state_path` should point to a **local directory per robot** (e.g. `/var/lib/mapoi`). `mapoi_server` does not expand `~` in parameter values, so either give an **absolute path**, or pass it through a route where shell expansion applies (e.g. `state_path:=$HOME/.ros/mapoi`)
+- If the state file's map doesn't exist under `maps_path` (map deleted / path changed), a WARN is emitted and the startup parameter's map is used instead (in this case too, only a clear is published)
+- If `state_path` is not writable, startup fails fast with `RCLCPP_FATAL` and exit code 1 (the same policy as the `maps_path` validation in #163). A write failure during operation (e.g. disk full) only emits a WARN and the node keeps running
 
-#### サービス
+#### Services
 
-| サービス名 | 型 | 説明 |
+| Service | Type | Description |
 | --- | --- | --- |
-| `mapoi/get_maps_info` | `GetMapsInfo` | 利用可能な地図一覧と現在の地図名を取得 |
-| `mapoi/get_pois_info` | `GetPoisInfo` | 現在の地図の全 POI を取得 |
-| `mapoi/get_route_pois` | `GetRoutePois` | ルート上の POI を取得。`route_name` に一致する route が無い場合は `success=false` + `error_message` (#342) |
-| `mapoi/get_routes_info` | `GetRoutesInfo` | 利用可能なルート一覧を取得 |
-| `mapoi/get_tag_definitions` | `GetTagDefinitions` | タグ定義（システム/ユーザー）を取得 |
-| `mapoi/select_map` | `SelectMap` | 現在 map context を切り替え（Nav2 は呼ばない）。`map_name` は `maps_path` 直下の単一 path segment のみ受け付け、separator 入り / `.` / `..` は reject (#328) |
-| `mapoi/reload_map_info` | `std_srvs/Trigger` | 設定ファイルを再読み込み |
-| `mapoi/request_initial_pose` | `RequestInitialPose` | `{map_name, poi_name}` を受け取り `mapoi/initialpose_poi` を publish する唯一の経路 (#211)。空 `poi_name` は clear (subscriber は無視)。非空 `map_name` が現在 map と不一致の場合は publish せず `success=false` (#299) |
+| `mapoi/get_maps_info` | `GetMapsInfo` | Gets the list of available maps and the current map name |
+| `mapoi/get_pois_info` | `GetPoisInfo` | Gets all POIs on the current map |
+| `mapoi/get_route_pois` | `GetRoutePois` | Gets the POIs on a route. If no route matches `route_name`, returns `success=false` + `error_message` (#342) |
+| `mapoi/get_routes_info` | `GetRoutesInfo` | Gets the list of available routes |
+| `mapoi/get_tag_definitions` | `GetTagDefinitions` | Gets the tag definitions (system/user) |
+| `mapoi/select_map` | `SelectMap` | Switches the current map context (does not call Nav2). `map_name` only accepts a single path segment directly under `maps_path`; separators, `.`, and `..` are rejected (#328) |
+| `mapoi/reload_map_info` | `std_srvs/Trigger` | Reloads the config file |
+| `mapoi/request_initial_pose` | `RequestInitialPose` | The sole path for receiving `{map_name, poi_name}` and publishing `mapoi/initialpose_poi` (#211). An empty `poi_name` clears (ignored by subscribers). If a non-empty `map_name` doesn't match the current map, nothing is published and `success=false` (#299) |
 
-#### パブリッシャー
+#### Publishers
 
-| トピック名 | 型 | 説明 |
+| Topic | Type | Description |
 | --- | --- | --- |
-| `mapoi/config_path` | `std_msgs/String` | 現在の設定ファイルのパス（定期配信、transient_local QoS） |
-| `mapoi/initialpose_poi` | `mapoi_interfaces/InitialPoseRequest` | initial pose 候補の通知（transient_local QoS、depth=1）。`mapoi/request_initial_pose` service 経由でのみ発火する唯一の publisher (#211) |
+| `mapoi/config_path` | `std_msgs/String` | Path of the current config file (published periodically, transient_local QoS) |
+| `mapoi/initialpose_poi` | `mapoi_interfaces/InitialPoseRequest` | Notification of an initial-pose candidate (transient_local QoS, depth=1). The sole publisher that fires only via the `mapoi/request_initial_pose` service (#211) |
 
 ### mapoi_nav2_bridge
 
-POI 名を指定した自律走行と、POI 半径イベント検知を行うノードです。
+A node that performs POI-name-based autonomous navigation and POI radius event detection.
 
-#### パラメータ
+#### Parameters
 
-| パラメータ名 | 型 | デフォルト | 説明 |
+| Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `radius_check_hz` | `double` | `5.0` | POI 半径チェックの頻度 (Hz) |
-| `hysteresis_exit_multiplier` | `double` | `1.15` | EXIT 判定の閾値倍率（チャタリング防止） |
-| `map_frame` | `string` | `map` | TF の親フレーム |
-| `base_frame` | `string` | `base_link` | TF の子フレーム |
-| `auto_resume_timeout_sec` | `double` | `0.0` | `EVENT_PAUSED` 発火後の auto-resume timeout (秒、#231)。`0.0` で disabled (現行仕様、外部 `/mapoi/nav/resume` を無限待ち)。正値で「PAUSED から N 秒後に内部 resume を呼ぶ」demo / 自動運転シナリオ向け opt-in 動作を有効化。負値は起動時に `0.0` へ clamp。動的 reconfigure 非対応 |
-| `cmd_vel_topic` | `string` | `cmd_vel` | `EVENT_PAUSED` 判定用 `cmd_vel` の subscribe 先 topic 名。Nav2 と同じ topic を見る前提 (停止判定 source) |
-| `cmd_vel_msg_type` | `string` | `auto` | `cmd_vel` の message 型 (#249 / #251)。`twist` / `twist_stamped` / `auto` (default = `ROS_DISTRO` から自動選択)。詳細と override が必要なケースは下記サブセクション参照 |
-| `waypoint_arrival_mode` | `string` | `nav2` | route の waypoint 到達判定の主導権 (#243)。`mapoi` では単発 Go も POI 個別 `tolerance.xy`+`tolerance.yaw` で到達判定する (#261)。`nav2` / `mapoi`。詳細は下記「waypoint 到達モード」節参照。動的 reconfigure 非対応 (起動時に解決、未知値は `nav2` にフォールバック) |
+| `radius_check_hz` | `double` | `5.0` | Frequency (Hz) of the POI radius check |
+| `hysteresis_exit_multiplier` | `double` | `1.15` | Threshold multiplier for the EXIT determination (prevents chattering) |
+| `map_frame` | `string` | `map` | Parent TF frame |
+| `base_frame` | `string` | `base_link` | Child TF frame |
+| `auto_resume_timeout_sec` | `double` | `0.0` | Auto-resume timeout (seconds) after an `EVENT_PAUSED` fires (#231). `0.0` disables it (current behavior, waits indefinitely for an external `/mapoi/nav/resume`). A positive value enables an opt-in behavior for demo / autonomous-driving scenarios of "call an internal resume N seconds after PAUSED." Negative values are clamped to `0.0` at startup. No dynamic reconfigure support |
+| `cmd_vel_topic` | `string` | `cmd_vel` | Topic name to subscribe to for `cmd_vel`, used for `EVENT_PAUSED` detection. Assumes the same topic Nav2 uses (the stop-detection source) |
+| `cmd_vel_msg_type` | `string` | `auto` | Message type of `cmd_vel` (#249 / #251). `twist` / `twist_stamped` / `auto` (default = auto-selected from `ROS_DISTRO`). See the subsection below for details and cases requiring an override |
+| `waypoint_arrival_mode` | `string` | `nav2` | Which side drives waypoint-arrival determination for routes (#243). In `mapoi` mode, even a single-shot Go determines arrival via the POI's own `tolerance.xy`+`tolerance.yaw` (#261). `nav2` / `mapoi`. See the "Waypoint arrival mode" section below for details. No dynamic reconfigure support (resolved at startup; unknown values fall back to `nav2`) |
 
-##### `cmd_vel_msg_type` の値と override が必要な構成 (#249 / #251)
+##### `cmd_vel_msg_type` values and configurations requiring an override (#249 / #251)
 
-`cmd_vel` の publisher 型は ROS 2 distro / 採用 controller によって `geometry_msgs/Twist` と `geometry_msgs/TwistStamped` に分かれる:
+The `cmd_vel` publisher type varies by ROS 2 distro / controller in use, split between `geometry_msgs/Twist` and `geometry_msgs/TwistStamped`:
 
-- `twist` — `geometry_msgs/Twist` で subscribe (humble Nav2 互換)
-- `twist_stamped` — `geometry_msgs/TwistStamped` で subscribe (jazzy 以降 Nav2: `collision_monitor` / `docking_server` 等が TwistStamped 化済)
-- `auto` (default) — `ROS_DISTRO` 環境変数で自動選択 (`humble` → `twist`、それ以外 / 未設定 → `twist_stamped`)
+- `twist` — subscribes as `geometry_msgs/Twist` (Humble Nav2 compatible)
+- `twist_stamped` — subscribes as `geometry_msgs/TwistStamped` (Jazzy-and-later Nav2: `collision_monitor` / `docking_server` etc. have already moved to TwistStamped)
+- `auto` (default) — auto-selected from the `ROS_DISTRO` environment variable (`humble` → `twist`, otherwise / unset → `twist_stamped`)
 
-**型不一致は単に subscribe が空になるのではなく process が落ちる**: 同じ topic に違う型の subscriber を 2 つ作ると rcl が `invalid allocator` で crash する (#249 で実機再発)。`auto` の選ぶ型と実際に流れる publisher 型を揃えるのが大前提。
+**A type mismatch doesn't just leave the subscription empty — it crashes the process**: creating two subscribers of different types on the same topic makes rcl crash with `invalid allocator` (reproduced on real hardware in #249). It's essential that the type `auto` selects matches the actual publisher type in use.
 
-`auto` を override する必要があるのは下記の混在構成:
+You need to override `auto` in the following mixed configurations:
 
-| ケース | override |
+| Case | Override |
 | --- | --- |
-| jazzy 上で自前 controller が Twist のまま publish | `cmd_vel_msg_type: "twist"` を明示 |
-| humble 上で自前 controller が TwistStamped を先取りしている | `cmd_vel_msg_type: "twist_stamped"` を明示 |
-| 最小 CI / 自作 container で `ROS_DISTRO` が unset、かつ humble を使う | `cmd_vel_msg_type: "twist"` を明示 (default fallback は `twist_stamped` のため) |
+| A custom controller on jazzy still publishes Twist | explicitly set `cmd_vel_msg_type: "twist"` |
+| A custom controller on humble has already adopted TwistStamped | explicitly set `cmd_vel_msg_type: "twist_stamped"` |
+| `ROS_DISTRO` is unset in a minimal CI / custom container, and you're using humble | explicitly set `cmd_vel_msg_type: "twist"` (the default fallback is `twist_stamped`) |
 
-未知値 (typo) は WARN を出した上で `ROS_DISTRO` ベースで安全側にフォールバックする。
+An unknown value (typo) emits a WARN and falls back to the safe side based on `ROS_DISTRO`.
 
-##### waypoint 到達モード (`waypoint_arrival_mode`、#243)
+##### Waypoint arrival mode (`waypoint_arrival_mode`, #243)
 
-route 走行中に「ある waypoint に到達したので次へ進む」判定を **どちらが主導するか** を切り替える。
+Switches **which side drives** the "this waypoint has been reached, advance to the next one" decision during route navigation.
 
-| 値 | 到達判定の主導 | tolerance.xy と xy_goal_tolerance の関係 |
+| Value | Arrival determination driven by | Relationship between tolerance.xy and xy_goal_tolerance |
 | --- | --- | --- |
-| `nav2` (default) | Nav2 `FollowWaypoints` が `xy_goal_tolerance` で waypoint を進行。mapoi は radius observer (`EVENT_ENTER` 等を出すだけ) | `tolerance.xy` は `xy_goal_tolerance` **より大きく** 取る必要がある (Nav2 が radius に入る前に goal 判定で止まると ENTER が出ないため) |
-| `mapoi` | mapoi が 1 waypoint ずつ `NavigateToPose` を送り、**到達 = OR((`tolerance.xy` ∧ `tolerance.yaw`) ∨ Nav2 SUCCEEDED)** で次へ進める (#265) | `tolerance.xy < xy_goal_tolerance` が可能 (POI を小さくできる) |
+| `nav2` (default) | Nav2's `FollowWaypoints` advances waypoints using `xy_goal_tolerance`. mapoi acts only as a radius observer (just emits `EVENT_ENTER` etc.) | `tolerance.xy` must be set **larger than** `xy_goal_tolerance` (otherwise, if Nav2's goal check stops the robot before it reaches the radius, ENTER never fires) |
+| `mapoi` | mapoi sends `NavigateToPose` one waypoint at a time and advances on **arrival = OR((`tolerance.xy` ∧ `tolerance.yaw`) ∨ Nav2 SUCCEEDED)** (#265) | `tolerance.xy < xy_goal_tolerance` is possible (POIs can be made smaller) |
 
-**`mapoi` モードの設計ポイント:**
+**Design points of `mapoi` mode:**
 
-- **統一到達 (#265)**: route 中間 waypoint / 最終 goal / 単発 Go (`mapoi/nav/goal_pose_poi`) すべて **OR((`tolerance.xy` ∧ `tolerance.yaw`) ∨ Nav2 SUCCEEDED)** で判定する。robot が半径内かつ姿勢が `tolerance.yaw` 以内に自然に収まっていれば Nav2 完走を待たず即到達/前進 (snappy)、ずれていれば Nav2 の姿勢合わせ (SUCCEEDED) を待つ。radius 進入後にその場旋回して yaw が合うケースも毎 tick 再評価で拾う。`nav2` モードでは route も Go も従来通り Nav2 任せ。
-- **per-POI `tolerance.yaw` が「yaw を見るか」のつまみ**: 到達判定の角度差は `[0, π]` (最大 π ≈ 180°)。ただの通過点は `tolerance.yaw` を π 以上 (`3.1416` 等、デモ config の `basic_waypoint` と同値) にすれば完全に yaw 不問で fly-through。π 直下 (`3.14`) でも実質同等だが、真後ろ ±0.09° のごく狭い帯だけ radius 未到達になる (Nav2 SUCCEEDED が保険)。向きが要る点 (撮影・最終 goal 等) は小さくして姿勢を効かせる。`tolerance.yaw` を実効的に効かせるには (xy と同様) Nav2 の `yaw_goal_tolerance` を `tolerance.yaw` 以下まで下げる (OR の実効許容は緩い方になるため)。**注**: yaw 不問 (`tolerance.yaw >= π`) の POI は RViz/WebUI で扇形の代わりに塗りつぶし円が重ね描きされる (#267)。
-- **OR 到達 (スタック防止)**: `tolerance.xy`/`tolerance.yaw` を Nav2 の goal_checker より小さくしても、Nav2 SUCCEEDED を保険にすることで route が止まらない (AND だけだとデッドロックしうる)。
-- **実効到達半径を真に小さくするには Nav2 も寄せる**: OR の実効到達半径は「緩い方」になる。`tolerance.xy=0.15` でも Nav2 が `xy_goal_tolerance=0.25` で止まれば実効 0.25 のまま (ENTER も出ない)。POI を実際に小さくするには `param/<distro>/burger.yaml` の `goal_checker.xy_goal_tolerance` も `tolerance.xy` 以下まで下げる。
-- **landmark は対象外**: `landmark` は waypoint ではなく ENTER (音声等) トリガ半径なので本モードの進行判定に関与せず、半径は経路に掛かる程度に広いままでよい。
-- **pause waypoint**: 統一到達 (`tolerance.xy` ∧ `tolerance.yaw`) で auto-pause し、`mapoi/nav/resume` で次 waypoint へ進む。撮影で向きを問うなら `tolerance.yaw` を小さく、問わないなら大きく。
+- **Unified arrival (#265)**: route mid-waypoints, the final goal, and single-shot Go (`mapoi/nav/goal_pose_poi`) are all judged by **OR((`tolerance.xy` ∧ `tolerance.yaw`) ∨ Nav2 SUCCEEDED)**. If the robot naturally settles within the radius and within `tolerance.yaw` of the target orientation, it advances/arrives immediately without waiting for Nav2 to finish (snappy); if it's off, it waits for Nav2 to finish aligning the pose (SUCCEEDED). This also catches the case where the robot turns in place after entering the radius and the yaw lines up later, since it's re-evaluated every tick. In `nav2` mode, both routes and Go are left entirely to Nav2 as before.
+- **Per-POI `tolerance.yaw` is the knob for "does yaw matter here"**: the angular difference used for arrival determination is in `[0, π]` (max π ≈ 180°). For a pure pass-through point, set `tolerance.yaw` to π or above (e.g. `3.1416`, matching the demo config's `basic_waypoint`) for complete fly-through regardless of yaw. Just under π (`3.14`) is practically equivalent, but leaves a very narrow band around directly-facing-backward (±0.09°) where the radius alone won't register arrival (Nav2 SUCCEEDED is the safety net). For points where orientation matters (e.g. photo capture, the final goal), make it small so orientation is enforced. To make `tolerance.yaw` actually take effect (just like xy), also lower Nav2's `yaw_goal_tolerance` to at or below `tolerance.yaw` (since the OR's effective tolerance is the looser of the two). **Note**: a POI where yaw doesn't matter (`tolerance.yaw >= π`) is drawn in RViz/WebUI as a filled circle overlay instead of a sector (#267).
+- **OR arrival (prevents getting stuck)**: even if `tolerance.xy`/`tolerance.yaw` are set smaller than Nav2's goal_checker, using Nav2 SUCCEEDED as a fallback keeps the route from stalling (an AND-only check could deadlock).
+- **To truly shrink the effective arrival radius, Nav2 must be tightened too**: the OR's effective arrival radius is "whichever is looser." Even with `tolerance.xy=0.15`, if Nav2 stops at `xy_goal_tolerance=0.25`, the effective radius stays 0.25 (and ENTER never fires). To actually shrink a POI, also lower `goal_checker.xy_goal_tolerance` in `param/<distro>/burger.yaml` to at or below `tolerance.xy`.
+- **`landmark` is out of scope**: a `landmark` is an ENTER-trigger radius (for voice guidance, etc.), not a waypoint, so it doesn't participate in this mode's progression decision; its radius can stay as wide as needed to cover the route.
+- **Pause waypoints**: auto-pauses on unified arrival (`tolerance.xy` ∧ `tolerance.yaw`), and advances to the next waypoint via `mapoi/nav/resume`. Make `tolerance.yaw` small if orientation matters for the capture, or large if it doesn't.
 
-**demo (turtlebot3_example) で試す:**
+**Trying it out with the demo (turtlebot3_example):**
 
 ```sh
-# mapoi モードで起動 (POI を小さくする実験には burger.yaml の goal_checker.xy_goal_tolerance も下げる)
+# Start in mapoi mode (for experiments that shrink POIs, also lower burger.yaml's goal_checker.xy_goal_tolerance)
 ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml waypoint_arrival_mode:=mapoi
 ```
 
-demo は `mapoi` モード既定 (#263)。sample config (`turtlebot3_world/mapoi_config.yaml`) は POI ごとに `tolerance.yaw` を設定済み (通過点は広め、最終 `goal` は `0.1` で厳密)。`mapoi` モードで POI を縮小する場合は yaml の `tolerance` と Nav2 param をセットで sim 確認しながら調整する。
+The demo defaults to `mapoi` mode (#263). The sample config (`turtlebot3_world/mapoi_config.yaml`) already sets `tolerance.yaw` per POI (loose for pass-through points, `0.1` and strict for the final `goal`). When shrinking POIs in `mapoi` mode, adjust the yaml's `tolerance` together with the Nav2 params while checking in sim.
 
-#### サブスクライバー
+#### Subscribers
 
-| トピック名 | 型 | 説明 |
+| Topic | Type | Description |
 | --- | --- | --- |
-| `mapoi/nav/switch_map` | `std_msgs/String` | operator map switch 指示。受信後に `mapoi/select_map` → Nav2 `LoadMap` → `mapoi/request_initial_pose` service 経由で `mapoi_server` が `mapoi/initialpose_poi` を publish (= localization bridge へ初期位置 trigger) を実行 |
-| `mapoi/nav/goal_pose_poi` | `std_msgs/String` | 指定した POI 名の位置に自律走行 |
-| `mapoi/nav/route` | `std_msgs/String` | 指定したルート名のウェイポイントを順に走行 |
-| `mapoi/nav/pause` | `std_msgs/String` | ナビゲーションの一時停止 |
-| `mapoi/nav/resume` | `std_msgs/String` | ナビゲーションの再開 |
-| `mapoi/nav/cancel` | `std_msgs/String` | ナビゲーションのキャンセル |
-| `mapoi/config_path` | `std_msgs/String` | マップ切替検知（transient_local QoS） |
+| `mapoi/nav/switch_map` | `std_msgs/String` | Operator map-switch instruction. On receipt, executes `mapoi/select_map` → Nav2 `LoadMap` → `mapoi_server` publishing `mapoi/initialpose_poi` via the `mapoi/request_initial_pose` service (= triggers an initial-pose push to the localization bridge) |
+| `mapoi/nav/goal_pose_poi` | `std_msgs/String` | Navigates autonomously to the position of the given POI name |
+| `mapoi/nav/route` | `std_msgs/String` | Navigates through the waypoints of the given route name in order |
+| `mapoi/nav/pause` | `std_msgs/String` | Pauses navigation |
+| `mapoi/nav/resume` | `std_msgs/String` | Resumes navigation |
+| `mapoi/nav/cancel` | `std_msgs/String` | Cancels navigation |
+| `mapoi/config_path` | `std_msgs/String` | Detects map switches (transient_local QoS) |
 
-#### パブリッシャー
+#### Publishers
 
-| トピック名 | 型 | 説明 |
+| Topic | Type | Description |
 | --- | --- | --- |
-| `goal_pose` | `geometry_msgs/PoseStamped` | ゴール位置の配信 |
-| `mapoi/nav/status` | `std_msgs/String` | ナビゲーション状態を `"status"` または `"status:target"` 形式で配信（例: `"navigating:kitchen"`、`"succeeded:patrol_route"`、`"paused:patrol_route"`、`"map_switching:turtlebot3_world"`、`"rejected:kitchen"`）。`status` は `navigating` / `succeeded` / `aborted` / `canceled` / `paused` / `map_switching` / `map_switch_succeeded` / `map_switch_failed` / `backend_unavailable` / `rejected`。`backend_unavailable` は Nav2 action / service 不在で goal / route / resume を実行できなかった場合（#198）。`rejected` は goal / route コマンドを **受理する前** に無効と判定し実行しなかった場合（存在しない POI 名、landmark タグ POI を goal 指定、`mapoi/get_pois_info` / `mapoi/get_route_pois` service 未 ready、route の waypoints が空、等）（#339, #355）。`target` は POI 名（goal mode）、route 名（route mode）、または map 名で、subscriber 側は最初の `:` で split して復元する（target 内に `:` が含まれても残り全体を target として扱える）。`transient_local` QoS の **現在状態 snapshot**（depth=1）で、後起動 subscriber が最後の状態を受信できるが状態遷移履歴は復元できない。現在走行中かは `navigating` / `paused` / `map_switching` で判定し、終端状態（`succeeded` / `aborted` / `canceled` / `map_switch_succeeded` / `map_switch_failed` / `backend_unavailable` / `rejected`）は直近結果として扱う |
-| `mapoi/nav/command_rejected` | `std_msgs/String` | reject コマンドの**イベント通知**（#354）。payload は reject 対象の target 文字列のみ。`mapoi/nav/status` は latched な状態 snapshot のため、走行中（`nav_mode_ != IDLE`）の reject は "rejected" を書けない（#339、上記参照）。本 topic はそれとは独立したイベント軸で、`publish_rejected_status` の先頭で **nav_mode_ に関わらず reject の都度必ず publish** する（走行中に typo goal 等を送っても操作者が気づけるようにするため）。QoS は volatile（非 `transient_local`、depth=10）— イベントは「今」しか意味を持たないため後起動 subscriber へのリプレイは行わない。WebUI はこれを購読して SSE 経由の一時的な toast 表示に使う（`mapoi_webui/README.md` 参照） |
-| `mapoi/nav/backend_status` | `mapoi_interfaces/NavigationBackendStatus` | navigation bridge の readiness summary を 1Hz で配信（#198）。`transient_local` QoS。Minimal 3 フィールド（`backend_type` / `backend_ready` / `reason`）。WebUI / panel は `backend_ready` で navigation 操作 UI を一括 gate する。詳細は ルート README "Navigation backend 仕様" 節を参照 |
-| `mapoi/events` | `mapoi_interfaces/PoiEvent` | route 走行中の POI 侵入 (`EVENT_ENTER`) / pause POI で navigation 停止 (`EVENT_PAUSED`) / 退出 (`EVENT_EXIT`) イベント (#220) |
+| `goal_pose` | `geometry_msgs/PoseStamped` | Publishes the goal position |
+| `mapoi/nav/status` | `std_msgs/String` | Publishes navigation status in `"status"` or `"status:target"` form (e.g. `"navigating:kitchen"`, `"succeeded:patrol_route"`, `"paused:patrol_route"`, `"map_switching:turtlebot3_world"`, `"rejected:kitchen"`). `status` is one of `navigating` / `succeeded` / `aborted` / `canceled` / `paused` / `map_switching` / `map_switch_succeeded` / `map_switch_failed` / `backend_unavailable` / `rejected`. `backend_unavailable` means a goal / route / resume could not be executed because a Nav2 action/service was unavailable (#198). `rejected` means a goal / route command was judged invalid and never executed **before being accepted** (a nonexistent POI name, a `landmark`-tagged POI given as a goal, the `mapoi/get_pois_info` / `mapoi/get_route_pois` services not ready, an empty route waypoint list, etc.) (#339, #355). `target` is a POI name (goal mode), a route name (route mode), or a map name; subscribers split on the first `:` to reconstruct it (so a `:` inside the target itself is preserved as part of the remainder). This is a **snapshot of the current state** via `transient_local` QoS (depth=1) — a late-joining subscriber receives the last state, but the history of state transitions cannot be reconstructed. Whether navigation is currently in progress is determined by `navigating` / `paused` / `map_switching`, and terminal states (`succeeded` / `aborted` / `canceled` / `map_switch_succeeded` / `map_switch_failed` / `backend_unavailable` / `rejected`) are treated as the most recent result |
+| `mapoi/nav/command_rejected` | `std_msgs/String` | An **event notification** for a rejected command (#354). The payload is just the target string of the rejected command. Since `mapoi/nav/status` is a latched state snapshot, a reject while navigating (`nav_mode_ != IDLE`) cannot write "rejected" there (#339, see above). This topic is an independent event axis: at the top of `publish_rejected_status`, it is **always published on every reject, regardless of `nav_mode_`** (so an operator can notice things like a typo'd goal sent mid-navigation). QoS is volatile (not `transient_local`, depth=10) — since an event is only meaningful "now," it is not replayed to late-joining subscribers. WebUI subscribes to this to show a transient toast via SSE (see `mapoi_webui/README.md`) |
+| `mapoi/nav/backend_status` | `mapoi_interfaces/NavigationBackendStatus` | Publishes the navigation bridge's readiness summary at 1Hz (#198). `transient_local` QoS. A minimal 3-field message (`backend_type` / `backend_ready` / `reason`). The WebUI / panel use `backend_ready` to gate the navigation-operation UI as a whole. See [docs/backend-status.md](../docs/backend-status.md) for details |
+| `mapoi/events` | `mapoi_interfaces/PoiEvent` | POI entry (`EVENT_ENTER`) during route navigation / navigation stop at a pause POI (`EVENT_PAUSED`) / exit (`EVENT_EXIT`) events (#220) |
 
-#### アクションクライアント
+#### Action clients
 
-| アクション名 | 型 | 説明 |
+| Action | Type | Description |
 | --- | --- | --- |
-| `follow_waypoints` | `nav2_msgs/FollowWaypoints` | ウェイポイント追従 |
-| `navigate_to_pose` | `nav2_msgs/NavigateToPose` | 単一ゴールナビゲーション |
+| `follow_waypoints` | `nav2_msgs/FollowWaypoints` | Waypoint following |
+| `navigate_to_pose` | `nav2_msgs/NavigateToPose` | Single-goal navigation |
 
-#### サービスクライアント
+#### Service clients
 
-| サービス名 | 型 | 説明 |
+| Service | Type | Description |
 | --- | --- | --- |
-| `request_initial_pose` | `RequestInitialPose` | Nav2 LoadMap 完了後、`mapoi_server` に initial pose publish を依頼 (#211)。mapoi_nav2_bridge は直接 `mapoi/initialpose_poi` を publish しない |
+| `request_initial_pose` | `RequestInitialPose` | Asks `mapoi_server` to publish the initial pose after Nav2 `LoadMap` completes (#211). `mapoi_nav2_bridge` does not publish `mapoi/initialpose_poi` directly |
 
-#### POI 半径イベント検知 (`PoiEvent`)
+#### POI radius event detection (`PoiEvent`)
 
-`mapoi/events` topic で 3 種別の event を publish します (#220 で 4 種別 → 3 種別に簡素化)。検知対象は **route 走行中 (`nav_mode == ROUTE`、`FollowWaypoints` 駆動)** + **route 登録 POI** のみで、route 走行外 (`IDLE` / `GOAL` mode) では event は発火しません。
+Publishes 3 kinds of events on the `mapoi/events` topic (#220 simplified this from 4 types to 3). Detection is limited to **during route navigation (`nav_mode == ROUTE`, driven by `FollowWaypoints`)** + **route-registered POIs**; events do not fire outside route navigation (in `IDLE` / `GOAL` mode).
 
-| event_type | 発火条件 |
+| event_type | Fires when |
 | --- | --- |
-| `EVENT_ENTER` | route POI の `tolerance.xy` 半径内へ侵入 |
-| `EVENT_PAUSED` | `pause` タグ付き POI の `tolerance.xy` 内で **navigation 停止** (cmd_vel dwell で検知)、1 visit につき 1 回のみ |
-| `EVENT_EXIT` | route POI から `tolerance.xy * hysteresis_exit_multiplier` を超えて退出 |
+| `EVENT_ENTER` | Entering a route POI's `tolerance.xy` radius |
+| `EVENT_PAUSED` | **Navigation stops** within a `pause`-tagged POI's `tolerance.xy` (detected via cmd_vel dwell), only once per visit |
+| `EVENT_EXIT` | Exiting a route POI beyond `tolerance.xy * hysteresis_exit_multiplier` |
 
-検知の前提:
+Prerequisites for detection:
 
-- TF lookup (`map` -> `base_link`) でロボット位置を取得（デフォルト 5Hz）
-- `pause` タグ付き POI では侵入時に走行を自動一時停止 (併せて `EVENT_PAUSED` を nav 停止後に publish)
-- `EVENT_PAUSED` は採用 controller が **navigation 停止中も cmd_vel = 0 を継続 publish** する前提 (Nav2 default の挙動)。controller が静止時に cmd_vel publish を止める実装の場合、`EVENT_PAUSED` は発火しません
-- マップ切替時は内部状態をリセットし、新しい POI リストで監視を再開
-- `RESUMED` 相当の event はありません (resume は client 側 request + `mapoi/nav/status` で観測可能)
-- `auto_resume_timeout_sec > 0.0` を設定すると、`EVENT_PAUSED` 発火後 N 秒で内部的に resume を呼ぶ opt-in 動作になります (#231)。外部 `/mapoi/nav/resume` が timer より先に届けば pending timer はキャンセル、route cancel / 別 route 投入 / 新たな PAUSED 発火でも上書きキャンセルされます。default `0.0` (= disabled) では現行仕様 (無限待ち) を維持します
+- Gets the robot's position via a TF lookup (`map` -> `base_link`) (default 5Hz)
+- For `pause`-tagged POIs, navigation is automatically paused on entry (and `EVENT_PAUSED` is published after nav stops)
+- `EVENT_PAUSED` assumes the controller in use **keeps publishing cmd_vel = 0 while navigation is stopped** (the Nav2 default behavior). If the controller stops publishing cmd_vel while stationary, `EVENT_PAUSED` will not fire
+- On a map switch, internal state is reset and monitoring resumes with the new POI list
+- There is no `RESUMED`-equivalent event (resume can be observed via a client-side request and `mapoi/nav/status`)
+- Setting `auto_resume_timeout_sec > 0.0` enables an opt-in behavior that internally calls resume N seconds after `EVENT_PAUSED` fires (#231). If an external `/mapoi/nav/resume` arrives before the timer, the pending timer is canceled; a route cancel, a new route command, or another `PAUSED` firing also cancels it via overwrite. The default `0.0` (= disabled) preserves the current behavior (waiting indefinitely)
 
 ### mapoi_amcl_localization_bridge
 
-AMCL 互換 localization (`/initialpose` を `geometry_msgs/PoseWithCovarianceStamped` で受ける構成) 向けの localization bridge ノードです (#209)。`mapoi_nav2_bridge` から AMCL adapter を分離して、Navigation backend と Localization backend を独立した仕様で扱えるようにしています。slam_toolbox / NDT / 自前 localization に切替える場合は、本 bridge の代替として同じ topic 仕様を満たす自作 bridge を用意してください（ルート README の「Localization backend 仕様」節参照）。
+A localization bridge node for AMCL-compatible localization (a setup that receives `/initialpose` as `geometry_msgs/PoseWithCovarianceStamped`) (#209). By separating the AMCL adapter out of `mapoi_nav2_bridge`, the Navigation backend and Localization backend can be treated as independent specs. If you switch to slam_toolbox / NDT / a custom localization, provide your own bridge that satisfies the same topic spec as a replacement for this bridge (see the "Localization backend" section of [docs/backend-status.md](../docs/backend-status.md)).
 
-#### パラメータ
+#### Parameters
 
-| パラメータ名 | 型 | デフォルト | 説明 |
+| Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `initial_pose_topic` | `string` | `/initialpose` | initial_pose の配信先 topic 名 (非 AMCL の localization に対応する場合に変更) |
-| `initialpose_retry_interval_sec` | `double` | `0.1` | subscriber 後起動 / 検知後 republish の timer 間隔 (秒)。`0.01` 未満は default に clamp |
-| `initialpose_retry_max_attempts` | `int` | `50` | subscriber 検知前の最大 wait 試行回数 (= `interval_sec × max_attempts` 秒で諦め)。default = 約 5 秒 |
-| `initialpose_post_subscribe_republish_count` | `int` | `3` | subscriber 検知後に追加 republish する回数。AMCL の「visible だが処理 ready 直前」取りこぼしを防ぐ |
+| `initial_pose_topic` | `string` | `/initialpose` | Topic to publish `initial_pose` to (change when targeting non-AMCL localization) |
+| `initialpose_retry_interval_sec` | `double` | `0.1` | Timer interval (seconds) for republishing after late-joining subscriber detection. Values below `0.01` are clamped to the default |
+| `initialpose_retry_max_attempts` | `int` | `50` | Maximum number of wait attempts before subscriber detection (gives up after `interval_sec × max_attempts` seconds). Default = about 5 seconds |
+| `initialpose_post_subscribe_republish_count` | `int` | `3` | Number of additional republishes after subscriber detection. Prevents AMCL from missing a message in the "visible but not quite ready to process" window |
 | `map_frame` | `string` | `map` | `PoseWithCovarianceStamped.header.frame_id` |
 
-#### サブスクライバー
+#### Subscribers
 
-| トピック名 | 型 | 説明 |
+| Topic | Type | Description |
 | --- | --- | --- |
-| `mapoi/initialpose_poi` | `mapoi_interfaces/InitialPoseRequest` | 初期位置に採用する POI 名 (`{map_name, poi_name}`)。`mapoi/get_pois_info` で resolve した pose を `/initialpose` に流す。空 `poi_name` は無視 |
+| `mapoi/initialpose_poi` | `mapoi_interfaces/InitialPoseRequest` | The POI name to adopt as the initial pose (`{map_name, poi_name}`). Forwards the pose resolved via `mapoi/get_pois_info` to `/initialpose`. An empty `poi_name` is ignored |
 
-#### パブリッシャー
+#### Publishers
 
-| トピック名 | 型 | 説明 |
+| Topic | Type | Description |
 | --- | --- | --- |
-| `initialpose` | `geometry_msgs/PoseWithCovarianceStamped` | 初期位置の配信 (topic 名は `initial_pose_topic` parameter で変更可)。`mapoi/initialpose_poi` で受信した POI の pose を流す。subscriber 後起動 / 検知後 ready 直前ケースに備えて wall_timer ベースで非同期 retry + post-subscribe republish する (`initialpose_retry_*` parameter 群、#152) |
-| `mapoi/localization/backend_status` | `mapoi_interfaces/LocalizationBackendStatus` | localization bridge の readiness summary を 1Hz で配信 (#209)。`transient_local` QoS。Minimal 3 フィールド (`backend_type` / `backend_ready` / `reason`)。`backend_ready` は `/initialpose` の subscriber 数 > 0 を ready proxy として採用。WebUI / panel は `backend_ready` で Initial Pose UI を gate する |
+| `initialpose` | `geometry_msgs/PoseWithCovarianceStamped` | Publishes the initial pose (the topic name can be changed via the `initial_pose_topic` parameter). Forwards the pose of the POI received on `mapoi/initialpose_poi`. Uses a wall_timer-based asynchronous retry + post-subscribe republish (the `initialpose_retry_*` parameters, #152) to handle late-joining subscribers / the just-before-ready detection window |
+| `mapoi/localization/backend_status` | `mapoi_interfaces/LocalizationBackendStatus` | Publishes the localization bridge's readiness summary at 1Hz (#209). `transient_local` QoS. A minimal 3-field message (`backend_type` / `backend_ready` / `reason`). `backend_ready` uses the `/initialpose` subscriber count > 0 as a readiness proxy. The WebUI / panel gate the Initial Pose UI based on `backend_ready` |
 
-#### サービスクライアント
+#### Service clients
 
-| サービス名 | 型 | 説明 |
+| Service | Type | Description |
 | --- | --- | --- |
-| `mapoi/get_pois_info` | `GetPoisInfo` | POI 名から pose を resolve するために `mapoi_server` を呼び出す |
+| `mapoi/get_pois_info` | `GetPoisInfo` | Calls `mapoi_server` to resolve a pose from a POI name |
 
-#### 対応 localization パッケージの要件
+#### Requirements for a compatible localization package
 
-`mapoi_amcl_localization_bridge` は以下を満たす localization パッケージで動作します:
+`mapoi_amcl_localization_bridge` works with any localization package that satisfies:
 
-- `geometry_msgs/PoseWithCovarianceStamped` を topic で受信できる (default `/initialpose`)
-- 動的 (起動後の operator map switch) でも上記 topic 経由で初期位置を受け付ける
+- Can receive `geometry_msgs/PoseWithCovarianceStamped` over a topic (default `/initialpose`)
+- Accepts an initial pose via that topic dynamically (i.e. after an operator map switch post-startup)
 
-**動作確認済み**: Nav2 AMCL (Humble / Jazzy)。
+**Verified to work with**: Nav2 AMCL (Humble / Jazzy).
 
-**別 topic を使うパッケージ** (例: 自社実装) は、`initial_pose_topic` parameter で配信先を変更できます。受信 message 型が `PoseWithCovarianceStamped` でない場合は、本 bridge を停止して同じ仕様を満たす自作 bridge を用意してください（ルート README の「Localization backend 仕様」節を参照）。
+**For packages using a different topic** (e.g. an in-house implementation), you can change the publish target via the `initial_pose_topic` parameter. If the message type it receives isn't `PoseWithCovarianceStamped`, stop this bridge and provide your own bridge satisfying the same spec (see the "Localization backend" section of [docs/backend-status.md](../docs/backend-status.md)).
 
-**注意**: `/mapoi/nav/switch_map` 経由の map 入替は Nav2 `LoadMap` service 経由のため、Nav2 lifecycle に乗らない localization では map 入替動作の整合は別途検証・対応が必要です。
+**Note**: since map swaps via `/mapoi/nav/switch_map` go through the Nav2 `LoadMap` service, localization that isn't on the Nav2 lifecycle will need separate verification and handling to keep map swaps consistent.
 
 ### mapoi_rviz2_publisher
 
-RViz2 上に POI のマーカーを表示するためのノードです。
+A node for displaying POI markers in RViz2.
 
-#### パラメータ
+#### Parameters
 
-| パラメータ名 | 型 | デフォルト | 説明 |
+| Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `show_tolerance_sector` | `bool` | `true` | POI tolerance visualization (#136 / #179) を表示するか。対象 layer = xy 判定円 outline + yaw 制約扇形 (`0 < tolerance.yaw < π` の時のみ重ね描き) + pause overlay (xy 円沿いの dot pattern)。`tolerance.yaw >= π` (yaw 不問) の場合は扇形の代わりに塗りつぶし円を重ね描きする (#267)。`false` で全 POI のこれら 3 layer を抑制 (Editor 中心の使い方や RViz が情報過多な時の用途)。WebUI 側にも同等の描画仕様 (`mapoi_webui/web/js/map-viewer.js`) があるため、仕様変更時はペアで更新する |
-| `poi_label_format` | `string` | `"index"` | POI label の表示形式: `"index"` = POI Editor 行番号 (1-based 通し、tag フィルタ非依存) / `"name"` = POI 名 / `"both"` = `"<index>: <name>"` / `"none"` = 非表示 |
-| `route_display_mode` | `string` | `"selected"` | Route marker の表示形式: `"all"` = 全 route 表示 (active route は太線 + 不透明で強調) / `"selected"` = active route のみ表示 / `"none"` = 表示しない |
+| `show_tolerance_sector` | `bool` | `true` | Whether to show the POI tolerance visualization (#136 / #179). Covers the following layers: the xy-detection-circle outline + the yaw-constraint sector (drawn only when `0 < tolerance.yaw < π`) + the pause overlay (a dot pattern along the xy circle). For `tolerance.yaw >= π` (yaw doesn't matter), a filled circle is drawn instead of a sector (#267). `false` suppresses all 3 layers for every POI (useful for editor-focused workflows or when RViz feels too cluttered). The WebUI has an equivalent rendering spec (`mapoi_webui/web/js/map-viewer.js`), so update both in tandem when changing this behavior |
+| `poi_label_format` | `string` | `"index"` | Display format for the POI label: `"index"` = POI Editor row number (1-based, sequential, independent of tag filtering) / `"name"` = POI name / `"both"` = `"<index>: <name>"` / `"none"` = hidden |
+| `route_display_mode` | `string` | `"selected"` | Display format for route markers: `"all"` = show all routes (the active route is emphasized with a thicker, opaque line) / `"selected"` = show only the active route / `"none"` = don't display |
 
-#### サブスクライバー
+#### Subscribers
 
-| トピック名 | 型 | 説明 |
+| Topic | Type | Description |
 | --- | --- | --- |
-| `mapoi/highlight/goal` | `std_msgs/String` | ハイライトするゴール POI 名 |
-| `mapoi/highlight/route` | `std_msgs/String` | ハイライトするルート POI 名（カンマ区切り） |
+| `mapoi/highlight/goal` | `std_msgs/String` | Name of the goal POI to highlight |
+| `mapoi/highlight/route` | `std_msgs/String` | Names of the route POIs to highlight (comma-separated) |
 
-#### パブリッシャー
+#### Publishers
 
-| トピック名 | 型 | 説明 |
+| Topic | Type | Description |
 | --- | --- | --- |
-| `mapoi/markers/pois` | `visualization_msgs/MarkerArray` | POI マーカー。`waypoint` は緑、`landmark` は灰、custom tag のみの POI は青で描画 |
-| `mapoi/markers/routes` | `visualization_msgs/MarkerArray` | Route マーカー。route line と選択中 route の方向矢印を描画 |
+| `mapoi/markers/pois` | `visualization_msgs/MarkerArray` | POI markers. `waypoint` is drawn green, `landmark` gray, and a POI with only custom tags is drawn blue |
+| `mapoi/markers/routes` | `visualization_msgs/MarkerArray` | Route markers. Draws the route line and a direction arrow for the selected route |
 
-`mapoi/markers/pois` は Marker namespace で layer を分けています。RViz の `Namespaces` toggle で layer 単位に表示を切り替えられます。
+`mapoi/markers/pois` separates layers by Marker namespace. You can toggle visibility per layer using RViz's `Namespaces` toggle.
 
-| Marker namespace | 説明 |
+| Marker namespace | Description |
 | --- | --- |
-| `arrow/<poi_name>` | POI の向き矢印と label |
-| `tolerance_xy/<poi_name>` | `tolerance.xy` の判定円 |
-| `tolerance_yaw/<poi_name>` | `tolerance.yaw` の扇形 |
-| `status_paused/<poi_name>` | `pause` tag POI の dot overlay |
+| `arrow/<poi_name>` | The POI's direction arrow and label |
+| `tolerance_xy/<poi_name>` | The `tolerance.xy` detection circle |
+| `tolerance_yaw/<poi_name>` | The `tolerance.yaw` sector |
+| `status_paused/<poi_name>` | The dot overlay for a `pause`-tagged POI |
 
-## タグシステム
+## Tag system
 
-POI にはタグを付与して用途を分類できます。タグは **システムタグ** と **ユーザータグ** の2種類があります。
+POIs can be tagged to classify their purpose. There are two kinds of tags: **system tags** and **user tags**.
 
-### システムタグ
+### System tags
 
-`mapoi_server.cpp` 内に const 定義されるグローバルなタグです (`kSystemTags`)。`mapoi/get_tag_definitions` service で配信されます。system tag はコア機能と一体のため変更非推奨で、増減はコア改修扱いです。
+Global tags defined as constants inside `mapoi_server.cpp` (`kSystemTags`). Served via the `mapoi/get_tag_definitions` service. Since system tags are tied to core functionality, changing them is discouraged, and adding/removing one is treated as a core modification.
 
-| タグ名 | 説明 |
+| Tag | Description |
 | --- | --- |
-| `waypoint` | Nav2 navigation の到達対象（単発 navigation goal、route の中間点いずれも対応） |
-| `landmark` | Nav2 navigation 対象にしない参照専用 POI（可視化のみ、waypoint 候補と initial pose 候補から除外） |
-| `pause` | ロボットが POI 半径内に入ったとき、**ROUTE 走行中かつ active route の `waypoints` / `landmarks` に含まれる POI** であれば自動的に一時停止（#143）。GOAL 走行中・IDLE では発火しない。`landmark` との併用は不可 |
+| `waypoint` | A Nav2 navigation target (works both as a single-shot navigation goal and as a route mid-point) |
+| `landmark` | A reference-only POI excluded from Nav2 navigation targets (visualization only; excluded from waypoint candidates and initial-pose candidates) |
+| `pause` | When the robot enters the POI's radius, it automatically pauses **if it's during ROUTE navigation and the POI is included in the active route's `waypoints` / `landmarks`** (#143). Does not fire during GOAL navigation or IDLE. Cannot be combined with `landmark` |
 
-### ユーザータグ
+### User tags
 
-各地図の `mapoi_config.yaml` 内の `custom_tags` セクションで定義します。
+Defined in the `custom_tags` section of each map's `mapoi_config.yaml`.
 
 ```yaml
 custom_tags:
@@ -366,9 +368,9 @@ custom_tags:
     description: "音声ガイドのトリガー"
 ```
 
-## 設定ファイル (mapoi_config.yaml)
+## Config file (mapoi_config.yaml)
 
-各地図ディレクトリに `mapoi_config.yaml` を配置して、地図と POI を設定します。
+Place a `mapoi_config.yaml` in each map directory to configure the map and its POIs.
 
 ```yaml
 custom_tags:
@@ -380,16 +382,16 @@ map:
   localization: map_file_name
 
 poi:
-  # POI 名は構造を示す汎用例 (turtlebot3 demo の実 POI 名とは独立)
+  # POI names below are generic examples showing the structure (independent of the actual turtlebot3 demo POI names)
   - name: entrance
     pose: {x: -2.0, y: -0.5, yaw: 0.0}
     tolerance: {xy: 0.5, yaw: 0.785}
-    tags: [waypoint]                # POI list 先頭が default initial pose に採用される (#144)
+    tags: [waypoint]                # the first POI in the list is adopted as the default initial pose (#144)
     description: エントランス
   - name: checkpoint_a
     pose: {x: 0.5, y: 0.5, yaw: 0.0}
     tolerance: {xy: 0.5, yaw: 0.785}
-    tags: [waypoint, pause]   # tolerance.xy 半径内に入ると自動一時停止
+    tags: [waypoint, pause]   # auto-pauses on entering the tolerance.xy radius
     description: 中間チェックポイント
   - name: info_point_a
     pose: {x: 1.0, y: 2.0, yaw: 1.57}
@@ -402,38 +404,38 @@ route:
     waypoints: [entrance, info_point_a]
 ```
 
-### フィールド説明
+### Field descriptions
 
-- **custom_tags**: ユーザー定義タグ
-  - `name`: タグ名
-  - `description`: タグの説明
-- **map**: 使用する地図ファイルの設定
-  - `path_planning`: 経路計画用の地図ファイル名
-  - `localization`: 自己位置推定用の地図ファイル名
-- **poi**: POI の定義（**順序が semantics を持ちます**: 各 map で `poi:` 配下の **先頭 POI** が地図ロード/切替時の default 初期位置として採用される。先頭は `landmark` タグなし & `pose.x/y/yaw` が完備された POI である必要あり。明示指定したい場合は `SelectMap.srv` の `initial_poi_name` で POI 名を渡す、#144）
-  - `name`: POI の名前（トピックで指定する際に使用）
-  - `pose`: 位置（`x`, `y`, `yaw` すべて必須。default 初期位置候補として使われる場合は欠落不可）
-  - `tolerance`: Nav2 align tolerance struct
-    - `xy`: Euclidean tolerance (m)。POI 進入判定半径としても使用される
-    - `yaw`: Angular tolerance (rad)。`0` = 未指定として Nav2 default にフォールバック
-  - `tags`: タグのリスト
-  - `description`: 説明文
-- **route**: ルートの定義
-  - `name`: ルート名
-  - `waypoints`: 巡回する POI 名のリスト（`waypoint` タグ付き POI を Nav2 `FollowWaypoints` に送る）
-  - `landmarks` (任意): この route 走行中に意識する補助 POI 名のリスト（#143）。Nav2 へは送らず radius event 監視と pause 発火スコープにのみ使う。`landmark` タグ付き POI を指定する想定
-- **gazebo** (任意、`mapoi_gazebo_bridge` のみが参照): operator map switch 時に入れ替える Gazebo Classic 側のモデル定義
-  - `world_model.uri`: モデル URI (例: `model://turtlebot3_world`)
-  - `world_model.name`: Gazebo 内での entity 名 (delete/spawn のキー)
+- **custom_tags**: user-defined tags
+  - `name`: tag name
+  - `description`: description of the tag
+- **map**: settings for the map files in use
+  - `path_planning`: map filename used for path planning
+  - `localization`: map filename used for localization
+- **poi**: POI definitions (**order carries semantics**: for each map, the **first POI** listed under `poi:` is adopted as the default initial pose on map load/switch. The first entry must have no `landmark` tag and complete `pose.x/y/yaw` fields. To specify it explicitly instead, pass a POI name via `SelectMap.srv`'s `initial_poi_name`, #144)
+  - `name`: the POI's name (used when specifying it in a topic)
+  - `pose`: position (`x`, `y`, `yaw` are all required. Cannot be missing if this POI may be used as a default initial-pose candidate)
+  - `tolerance`: Nav2 alignment tolerance struct
+    - `xy`: Euclidean tolerance (m). Also used as the POI entry-detection radius
+    - `yaw`: Angular tolerance (rad). `0` = unspecified, falls back to the Nav2 default
+  - `tags`: list of tags
+  - `description`: description text
+- **route**: route definitions
+  - `name`: route name
+  - `waypoints`: list of POI names to visit in order (sends `waypoint`-tagged POIs to Nav2's `FollowWaypoints`)
+  - `landmarks` (optional): list of auxiliary POI names to watch during this route (#143). Not sent to Nav2; used only for radius-event monitoring and the pause-trigger scope. Intended for `landmark`-tagged POIs
+- **gazebo** (optional, referenced only by `mapoi_gazebo_bridge`): Gazebo Classic model definition swapped in on an operator map switch
+  - `world_model.uri`: model URI (e.g. `model://turtlebot3_world`)
+  - `world_model.name`: the entity name inside Gazebo (the key used for delete/spawn)
 
-## ディレクトリ構成
+## Directory structure
 
-`maps_path` 配下は地図ごとのサブディレクトリで構成されます (システムタグ定義は `mapoi_server.cpp` 内に const として保持されるため、この dir には含まれません)。
+Under `maps_path` is a subdirectory per map (system tag definitions are held as constants inside `mapoi_server.cpp`, so they are not part of this directory).
 
 ```
 maps/
-└── <地図名>/
-    ├── mapoi_config.yaml    # POI・ルート・ユーザータグ設定
-    ├── <地図名>.yaml        # 地図メタデータ
-    └── <地図名>.pgm         # 地図画像
+└── <map_name>/
+    ├── mapoi_config.yaml    # POI, route, and user-tag configuration
+    ├── <map_name>.yaml      # map metadata
+    └── <map_name>.pgm       # map image
 ```

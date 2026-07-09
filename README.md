@@ -1,44 +1,46 @@
 # mapoi
 
-Navigation2 向けの地図（Map）と関心地点（POI: Point of Interest）を管理するメタパッケージです。
-地図の切り替え、POI の管理、RViz2 GUI からの自律走行操作、POI 半径イベントの検知を提供します。
+> Japanese version: [README.ja.md](./README.ja.md)
 
-## パッケージ構成
+A metapackage for managing maps and POIs (Points of Interest) for Navigation2.
+It provides map switching, POI management, autonomous navigation operation from the RViz2 GUI, and POI radius event detection.
 
-| パッケージ | 説明 |
+## Package composition
+
+| Package | Description |
 | --- | --- |
-| [mapoi_server](./mapoi_server/) | 地図・POI 情報の管理サーバー、ナビゲーションサーバー、RViz2 マーカー配信（メインパッケージ） |
-| [mapoi_interfaces](./mapoi_interfaces/) | メッセージ・サービスの定義 |
-| [mapoi_rviz_plugins](./mapoi_rviz_plugins/) | RViz2 プラグイン（地図切替・POI 選択・自律走行の GUI、POI エディタ） |
-| [mapoi_webui](./mapoi_webui/) | Web UI（ブラウザからの地図表示・POI 編集・ナビゲーション操作・ロボット位置表示） |
-| [mapoi_turtlebot3_example](./mapoi_turtlebot3_example/) | TurtleBot3 シミュレーション環境でのサンプル |
-| [mapoi](./mapoi/) | コア 4 パッケージを 1 つの単位でインストールするための metapackage 定義 (シミュレーション用の mapoi_turtlebot3_example は含まない。デモを試す場合は example を直接インストールするとコア一式も入る) |
+| [mapoi_server](./mapoi_server/) | Server that manages map/POI information, navigation server, RViz2 marker publisher (main package) |
+| [mapoi_interfaces](./mapoi_interfaces/) | Message and service definitions |
+| [mapoi_rviz_plugins](./mapoi_rviz_plugins/) | RViz2 plugins (GUI for map switching, POI selection, and autonomous navigation, plus a POI editor) |
+| [mapoi_webui](./mapoi_webui/) | Web UI (map display, POI editing, navigation operation, and robot position display from a browser) |
+| [mapoi_turtlebot3_example](./mapoi_turtlebot3_example/) | Sample for the TurtleBot3 simulation environment |
+| [mapoi](./mapoi/) | Metapackage definition that installs the 4 core packages as a single unit (does not include mapoi_turtlebot3_example, which is for simulation; installing the example package directly also pulls in the full core set if you just want to try the demo) |
 
-## ドキュメント
+## Documentation
 
-| 用途 | リンク |
+| Purpose | Link |
 | --- | --- |
-| 自分のロボットへの導入手順 | [docs/integration.md](./docs/integration.md) |
-| Docker での demo / 開発環境 | [docs/docker.md](./docs/docker.md) |
-| Navigation / Localization backend 仕様 (自前 bridge 実装者向け) | [docs/backend-status.md](./docs/backend-status.md) |
-| テスト追加ポリシー (致命核基準・launch_test/e2e 追加の判断) | [docs/testing-policy.md](./docs/testing-policy.md) |
-| v0.5.0 migration (service 名前空間 `mapoi/` 化 + GetRoutePois success + PointOfInterest.id 削除) | [docs/migration/v0.5.0.md](./docs/migration/v0.5.0.md) |
-| v0.4.0 migration (`mapoi_nav_server` → `mapoi_nav2_bridge` rename + AMCL split + system tag hardcode) | [docs/migration/v0.4.0.md](./docs/migration/v0.4.0.md) |
-| v0.3.0 migration (topic namespace `/mapoi/...` 再編) | [docs/migration/v0.3.0.md](./docs/migration/v0.3.0.md) |
-| 各リリースの破壊的変更詳細 | [`CHANGELOG.rst`](./CHANGELOG.rst) |
+| Integration steps for your own robot | [docs/integration.md](./docs/integration.md) |
+| Docker demo / development environment | [docs/docker.md](./docs/docker.md) |
+| Navigation / Localization backend spec (for custom bridge implementers) | [docs/backend-status.md](./docs/backend-status.md) |
+| Test addition policy (criteria for critical-core coverage, decisions on adding launch_test/e2e tests) | [docs/testing-policy.md](./docs/testing-policy.md) |
+| v0.5.0 migration (service namespace `mapoi/` prefix + `GetRoutePois` success + removal of `PointOfInterest.id`) | [docs/migration/v0.5.0.md](./docs/migration/v0.5.0.md) |
+| v0.4.0 migration (`mapoi_nav_server` → `mapoi_nav2_bridge` rename + AMCL split + system tag hardcoding) | [docs/migration/v0.4.0.md](./docs/migration/v0.4.0.md) |
+| v0.3.0 migration (topic namespace reorganized under `/mapoi/...`) | [docs/migration/v0.3.0.md](./docs/migration/v0.3.0.md) |
+| Breaking-change details for each release | [`CHANGELOG.rst`](./CHANGELOG.rst) |
 
-## バージョン方針 (SemVer)
+## Versioning policy (SemVer)
 
-本プロジェクトは現在 **v0.x の開発フェーズ** にあります。
+This project is currently in the **v0.x development phase**.
 
-- **v0.x 系**: API は安定していません。設計の見直しによる **破壊的変更が任意のリリースで発生する可能性** があります。各リリースの破壊的変更は [`CHANGELOG.rst`](./CHANGELOG.rst) と [GitHub Releases](https://github.com/shimz-robotics/mapoi/releases) で明示します
-- **v1.0.0 以降**: 公開 API (msg / topic / service / launch param / YAML schema 等) の後方互換性を保証します。破壊的変更は major バージョン bump (v2.0.0 等) で明示します
+- **v0.x series**: The API is not yet stable. **Breaking changes may occur in any release** as the design evolves. Breaking changes for each release are documented in [`CHANGELOG.rst`](./CHANGELOG.rst) and [GitHub Releases](https://github.com/shimz-robotics/mapoi/releases)
+- **v1.0.0 and later**: Backward compatibility of the public API (msg / topic / service / launch params / YAML schema, etc.) is guaranteed. Breaking changes will be indicated by a major version bump (e.g., v2.0.0)
 
-### 計画中の破壊的変更
+### Planned breaking changes
 
-現時点で計画中の破壊的変更はありません。今後の予定は [GitHub Milestones](https://github.com/shimz-robotics/mapoi/milestones) を参照してください。
+No breaking changes are currently planned. See [GitHub Milestones](https://github.com/shimz-robotics/mapoi/milestones) for what's coming up.
 
-## ビルドとサンプルの実行
+## Building and running the sample
 
 ```sh
 # cd path/to/your_ws
@@ -50,14 +52,14 @@ export TURTLEBOT3_MODEL=burger
 ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml
 ```
 
-ブラウザから Web UI にアクセス:
+Access the Web UI from a browser:
 
 http://localhost:8765
 
-スマートフォンからも同一ネットワーク内であればアクセスできます。その場合、localhostの部分を実行しているPCのIPアドレスに変更してください。
-地図表示・POI 編集・ナビゲーション操作・ロボット位置表示が可能です。
+You can also access it from a smartphone on the same network. In that case, replace `localhost` with the IP address of the PC running the demo.
+It lets you view the map, edit POIs, operate navigation, and see the robot's position.
 
-コマンドで目的地をしたい場合には、別ターミナルから自律走行をテストできます。
+If you'd rather send a goal from the command line, you can test autonomous navigation from a separate terminal.
 
 ```sh
 ros2 topic pub -1 /mapoi/nav/goal_pose_poi std_msgs/msg/String "{data: goal}"
@@ -65,11 +67,11 @@ ros2 topic pub -1 /mapoi/nav/goal_pose_poi std_msgs/msg/String "{data: goal}"
 
 ## Docker quickstart
 
-最速で試したい場合は ghcr.io 配布 image を `docker run`:
+For the fastest way to try it out, `docker run` the image distributed via ghcr.io:
 
 ```sh
 xhost +local:docker
-docker pull ghcr.io/shimz-robotics/mapoi:jazzy   # jazzy/latest は main 追従のローリングタグ。再訪時も pull で最新化
+docker pull ghcr.io/shimz-robotics/mapoi:jazzy   # jazzy/latest is a rolling tag that tracks main; pull again on each revisit to get the latest
 docker run --rm -it --network host --ipc host \
   -e DISPLAY=$DISPLAY \
   -e QT_X11_NO_MITSHM=1 \
@@ -77,21 +79,21 @@ docker run --rm -it --network host --ipc host \
   ghcr.io/shimz-robotics/mapoi:jazzy
 ```
 
-ブラウザで http://localhost:8765 にアクセス。Nav2 lifecycle 立ち上げに 30〜60 秒かかるので少し待ってから。WebUI が「Navigation unavailable」のままになる場合は [docs/docker.md](./docs/docker.md) のトラブルシューティングを参照してください。
+Access http://localhost:8765 in your browser. Bringing up the Nav2 lifecycle takes about 30-60 seconds, so give it a moment. If the WebUI stays stuck on "Navigation unavailable", see the troubleshooting section in [docs/docker.md](./docs/docker.md).
 
-Humble 版 / GPU 加速 / ソースビルド / 開発用 bind mount / UID 調整等の詳細は [docs/docker.md](./docs/docker.md) を参照してください。
+See [docs/docker.md](./docs/docker.md) for details on the Humble variant, GPU acceleration, building from source, development bind mounts, UID adjustment, and more.
 
-## 主な機能
+## Key features
 
-- **地図管理**: 複数地図の切り替え、Nav2 との連携
-- **POI 管理**: YAML ベースの POI 定義、サービス経由での取得
-- **自律走行**: POI 名指定でのゴール走行、ルート走行、一時停止・再開
-- **POI 半径イベント**: POI の半径にロボットが侵入/退出した際のイベント発行
-- **タグシステム**: システムタグ（`waypoint`, `landmark`, `pause`）とユーザー定義タグによる POI 分類
-- **RViz2 GUI**: 地図切替・ゴール指定・ルート走行の操作パネル、POI エディタ、ポーズ指定ツール
-- **Web UI**: ブラウザからの地図表示・POI 編集・ナビゲーション操作・ロボット位置表示（スマートフォン対応）
-- **マーカー表示**: RViz2 上での POI 可視化、ハイライト表示、半径表示
+- **Map management**: switching between multiple maps, integration with Nav2
+- **POI management**: YAML-based POI definitions, retrieval via services
+- **Autonomous navigation**: goal navigation by POI name, route navigation, pause/resume
+- **POI radius events**: events fired when the robot enters/exits a POI's radius
+- **Tag system**: POI classification via system tags (`waypoint`, `landmark`, `pause`) and user-defined tags
+- **RViz2 GUI**: an operation panel for map switching, goal selection, and route navigation, a POI editor, and a pose-specification tool
+- **Web UI**: map display, POI editing, navigation operation, and robot position display from a browser (smartphone-friendly)
+- **Marker display**: POI visualization, highlighting, and radius display in RViz2
 
-## ライセンス
+## License
 
 MIT

@@ -19,6 +19,12 @@ Unreleased
 Added
 -----
 
+* All six package ``README.md`` files (root, ``mapoi_server``, ``mapoi_webui``,
+  ``mapoi_turtlebot3_example``, ``mapoi_interfaces``, ``mapoi_rviz_plugins``)
+  are now English-primary, ahead of ROS Index registration (#20); the prior
+  Japanese content is preserved as a same-directory ``README.ja.md``
+  snapshot, with cross-links between the two at the top of each file (#162).
+
 * A metapackage ``mapoi`` (``mapoi/package.xml`` with ``exec_depend`` on
   the four core packages), so the core suite can be installed/depended on
   as one unit — groundwork for apt/rosdep distribution (#20) (#348).

@@ -1,187 +1,187 @@
 # mapoi_interfaces
 
-mapoi パッケージ群で使用するメッセージとサービスの定義パッケージです。
+> Japanese version: [README.ja.md](./README.ja.md)
 
-## メッセージ (msg)
+Package defining the messages and services used across the mapoi packages.
+
+## Messages (msg)
 
 ### Tolerance.msg
 
-POI の到達判定 tolerance（Nav2 `SimpleGoalChecker` の `xy_goal_tolerance` / `yaw_goal_tolerance` と align）。
+Tolerance for POI arrival detection (aligned with Nav2 `SimpleGoalChecker`'s `xy_goal_tolerance` / `yaw_goal_tolerance`).
 
-| フィールド | 型 | 説明 |
+| Field | Type | Description |
 | --- | --- | --- |
-| `xy` | `float64` | Euclidean tolerance (m)。POI 進入判定半径としても使われる |
-| `yaw` | `float64` | Angular tolerance (rad)。`0` = 未指定として Nav2 default にフォールバック |
+| `xy` | `float64` | Euclidean tolerance (m). Also used as the POI entry-detection radius |
+| `yaw` | `float64` | Angular tolerance (rad). `0` means unspecified and falls back to the Nav2 default |
 
 ### PointOfInterest.msg
 
-POI（Point of Interest）を表すメッセージです。
+Message representing a POI (Point of Interest).
 
-| フィールド | 型 | 説明 |
+| Field | Type | Description |
 | --- | --- | --- |
-| `name` | `string` | POI の名前。実質的な一意キー |
-| `pose` | `geometry_msgs/Pose` | POI の位置・姿勢 |
-| `tolerance` | `mapoi_interfaces/Tolerance` | xy / yaw tolerance（v0.3.0 で旧 `radius` から置換） |
-| `tags` | `string[]` | POI に紐づくタグ（例: `goal`, `audio_info`） |
-| `description` | `string` | POI の説明 |
+| `name` | `string` | POI name. Serves as the effective unique key |
+| `pose` | `geometry_msgs/Pose` | Position and orientation of the POI |
+| `tolerance` | `mapoi_interfaces/Tolerance` | xy / yaw tolerance (replaced the old `radius` field in v0.3.0) |
+| `tags` | `string[]` | Tags associated with the POI (e.g. `goal`, `audio_info`) |
+| `description` | `string` | Description of the POI |
 
 ### PoiEvent.msg
 
-route 走行中に route 登録 POI への侵入 / 退出、および `pause` タグ付き POI で navigation 停止が発生した時に publish されるイベントメッセージです (#220 で 4 種別 → 3 種別に簡素化)。
+Event message published when a robot enters/exits a route-registered POI during route navigation, or when navigation stops at a `pause`-tagged POI (#220 simplified this from 4 event types to 3).
 
-| フィールド | 型 | 説明 |
+| Field | Type | Description |
 | --- | --- | --- |
-| `EVENT_ENTER` | `uint8` (定数=1) | route 走行中に route 登録 POI の `tolerance.xy` 半径へ侵入 (`nav_mode == ROUTE` かつ `current_route_poi_names_` 該当 POI のみ、route 走行外 (IDLE / GOAL mode) では publish しない) |
-| `EVENT_PAUSED` | `uint8` (定数=2) | `pause` タグ付き POI の `tolerance.xy` 内で navigation 停止 (cmd_vel dwell で検知)。pause 自動 trigger 後に Nav2 が停止状態に入った瞬間 |
-| `EVENT_EXIT` | `uint8` (定数=3) | route 登録 POI から `tolerance.xy * hysteresis_exit_multiplier` を超えて退出 |
-| `event_type` | `uint8` | イベント種別 (上記 3 種のいずれか) |
-| `poi` | `mapoi_interfaces/PointOfInterest` | 対象 POI の情報 |
-| `stamp` | `builtin_interfaces/Time` | イベント発生時刻 |
+| `EVENT_ENTER` | `uint8` (constant=1) | The robot entered a route-registered POI's `tolerance.xy` radius during route navigation (only when `nav_mode == ROUTE` and the POI is in `current_route_poi_names_`; not published outside route navigation, i.e. in IDLE / GOAL mode) |
+| `EVENT_PAUSED` | `uint8` (constant=2) | Navigation stopped (detected via cmd_vel dwell) within the `tolerance.xy` of a `pause`-tagged POI. Fires the moment Nav2 enters the stopped state after the pause auto-trigger |
+| `EVENT_EXIT` | `uint8` (constant=3) | The robot exited a route-registered POI beyond `tolerance.xy * hysteresis_exit_multiplier` |
+| `event_type` | `uint8` | Event type (one of the 3 above) |
+| `poi` | `mapoi_interfaces/PointOfInterest` | Information about the target POI |
+| `stamp` | `builtin_interfaces/Time` | Timestamp of the event |
 
-ライフサイクル:
+Lifecycle:
 ```
 EVENT_ENTER -> [EVENT_PAUSED (only if pause-tagged + nav stops)] -> EVENT_EXIT
 ```
 
-`EVENT_PAUSED` の前提:
-- 採用 controller が **navigation 停止中も cmd_vel = 0 を継続 publish する** こと (Nav2 default の挙動)。controller が静止時に cmd_vel publish を止める実装の場合、`EVENT_PAUSED` は発火しません。
-- pause 自動 trigger は `mapoi_server` 側で実施し、resume は client 側 `mapoi/nav/resume` request で発動するため、`RESUMED` 相当の event は本仕様に含めません (resume は status topic で観測可能)。
+Prerequisites for `EVENT_PAUSED`:
+- The controller in use must **keep publishing cmd_vel = 0 while navigation is stopped** (the Nav2 default behavior). If the controller stops publishing cmd_vel while stationary, `EVENT_PAUSED` will not fire.
+- The pause auto-trigger is performed on the `mapoi_server` side, and resume is triggered by a client-side `mapoi/nav/resume` request, so there is no `RESUMED`-equivalent event in this spec (resume can be observed via the status topic).
 
 ### TagDefinition.msg
 
-POI 分類タグ (system tag / user tag) の単一定義を表すメッセージです。`GetTagDefinitions.srv` のレスポンス成分としても使えるよう PR #193 で導入されました。
+Message representing a single POI classification tag definition (system tag / user tag). Introduced in PR #193 so it can also be used as a response component of `GetTagDefinitions.srv`.
 
-| フィールド | 型 | 説明 |
+| Field | Type | Description |
 | --- | --- | --- |
-| `name` | `string` | タグ名 (例: `goal`, `event`) |
-| `description` | `string` | タグ用途の human-readable 説明 |
-| `is_system` | `bool` | `true` = システムタグ、`false` = ユーザー定義タグ |
+| `name` | `string` | Tag name (e.g. `goal`, `event`) |
+| `description` | `string` | Human-readable description of the tag's purpose |
+| `is_system` | `bool` | `true` = system tag, `false` = user-defined tag |
 
 ### InitialPoseRequest.msg
 
-operator の map switch / reload に伴う「初期姿勢候補 POI」通知メッセージ (#149 round 8 で文字列ペアから型化)。`mapoi_nav2_bridge` が Nav2 `LoadMap` 成功後に publish し、localization bridge 群が subscribe します。詳細・stale 排除戦略は `msg/InitialPoseRequest.msg` の冒頭コメント参照。
+Notification message for the "candidate initial-pose POI" accompanying an operator's map switch / reload (typed in #149 round 8, previously a pair of strings). Published by `mapoi_nav2_bridge` after a successful Nav2 `LoadMap`, and subscribed to by the localization bridges. See the header comment in `msg/InitialPoseRequest.msg` for details and the stale-rejection strategy.
 
-| フィールド | 型 | 説明 |
+| Field | Type | Description |
 | --- | --- | --- |
-| `map_name` | `string` | 通知対象の map 名 (世代識別用)。非空なら publish 時点の現在 map と一致 (#299)。map 不明の requester が service に空を渡した場合のみ空文字がありうる |
-| `poi_name` | `string` | 採用する POI 名 (空文字 = 「候補なし」、subscriber は無視) |
+| `map_name` | `string` | Name of the map this notification targets (for generation identification). If non-empty, it must match the current map at publish time (#299). Empty is only possible when a requester with an unknown map passes an empty value to the service |
+| `poi_name` | `string` | Name of the POI to adopt (empty string = "no candidate", ignored by subscribers) |
 
-QoS は `transient_local` (depth=1) で後起動 subscriber も latched 値を受信できます。
+QoS is `transient_local` (depth=1), so late-joining subscribers can also receive the latched value.
 
 ### NavigationBackendStatus.msg
 
-Navigation bridge (Nav2 bridge / 自前 bridge) が 1 Hz で `mapoi/nav/backend_status` に publish する readiness メッセージです。UI 側 (`mapoi_webui`, `mapoi_rviz_plugins`) は `backend_ready` を見て navigation 操作を gate します。
+Readiness message published at 1 Hz to `mapoi/nav/backend_status` by the navigation bridge (Nav2 bridge / custom bridge). The UI side (`mapoi_webui`, `mapoi_rviz_plugins`) gates navigation operations based on `backend_ready`.
 
-| フィールド | 型 | 説明 |
+| Field | Type | Description |
 | --- | --- | --- |
-| `backend_type` | `string` | bridge 識別子 (例: `nav2`, `custom_lidar_planner`)。tooltip 表示用 |
-| `backend_ready` | `bool` | bridge が navigation コマンドを受け付け実行できる状態か |
-| `reason` | `string` | `backend_ready=false` 時の human-readable 理由 (任意、機微情報は含めない — 下記参照) |
+| `backend_type` | `string` | Bridge identifier (e.g. `nav2`, `custom_lidar_planner`). For tooltip display |
+| `backend_ready` | `bool` | Whether the bridge can accept and execute navigation commands |
+| `reason` | `string` | Human-readable reason when `backend_ready=false` (optional, must not contain sensitive information — see below) |
 
 #### QoS contract (issue #208)
 
-publisher / subscriber 双方で以下を必ず指定:
+Both the publisher and subscriber must always specify the following:
 
-- `durability`: `TRANSIENT_LOCAL` (late-joiner UI が最新 status を受信できる)
+- `durability`: `TRANSIENT_LOCAL` (so a late-joining UI can receive the latest status)
 - `reliability`: `RELIABLE`
-- `liveliness` (publisher): `MANUAL_BY_TOPIC` (publish() ごとに liveliness assert)
-- `liveliness` (subscriber): `AUTOMATIC` (pub `MANUAL_BY_TOPIC` × sub `AUTOMATIC` のみ互換)
-- `liveliness_lease_duration`: 5 s (両側、`pub.lease <= sub.lease` を満たす)
+- `liveliness` (publisher): `MANUAL_BY_TOPIC` (asserts liveliness on every `publish()`)
+- `liveliness` (subscriber): `AUTOMATIC` (only `MANUAL_BY_TOPIC` publisher × `AUTOMATIC` subscriber is compatible)
+- `liveliness_lease_duration`: 5 s (both sides; must satisfy `pub.lease <= sub.lease`)
 
-詳細・違反パターンは `msg/NavigationBackendStatus.msg` の冒頭コメント参照。
+See the header comment in `msg/NavigationBackendStatus.msg` for details and violation patterns.
 
-#### Custom bridge 実装者向けガイダンス (issue #207)
+#### Guidance for custom bridge implementers (issue #207)
 
-`backend_ready` の算出は bridge ごとに「実際に expose する capability の AND」とすること。`mapoi_nav2_bridge` (Nav2 bridge) の `goal_ready && route_ready && switch_map_ready` は **3 capability 全部を expose する bridge にのみ正しい**。片機能 bridge (例: NavigateToPose のみ) でこれを真似ると、expose していない capability が常に false → `backend_ready` も常に false → UI が常に "Navigation unavailable" になる。
+Each bridge should compute `backend_ready` as the AND of the capabilities it *actually* exposes. `mapoi_nav2_bridge`'s (Nav2 bridge) `goal_ready && route_ready && switch_map_ready` is **only correct for a bridge that exposes all 3 capabilities**. If a bridge that only exposes a single capability (e.g. NavigateToPose only) mimics this, the capability it doesn't expose is always false → `backend_ready` is also always false → the UI always shows "Navigation unavailable".
 
-具体例とフィールド populate 方針 (`reason` の慣習表記含む) は `msg/NavigationBackendStatus.msg` の冒頭コメントに記載。
+See the header comment in `msg/NavigationBackendStatus.msg` for concrete examples and the field-population conventions (including the `reason` phrasing convention).
 
-`reason` は operator UI に表示され bag や remote dashboard に記録され得るため、credentials / token / 絶対パス / 内部 hostname / IP / user identifier / stack trace 等の機微情報を含めないこと。capability 名と短い状態動詞 (例: `not ready: navigate_to_pose action`) に留める。
-
-> **CI lint の責務範囲** (`scripts/check_docs_consistency.py`、PR #217 / Close #216): static check は `publish_backend_status` 系関数中の **明示的な string literal** のみを走査する。パラメータ連結 (`reason = "ip=" + this->get_parameter(...).as_string()`) など動的に組み立てられる文字列、および raw string literal (`R"(...)"`) は責務外。lint 通過 ≠ 完全な redaction 保証。bridge 実装者は dynamic 部分にも本節の禁止事項を適用すること。
+> **Scope of the CI lint** (`scripts/check_docs_consistency.py`, PR #217 / Closes #216): the static check only scans **explicit string literals** in `publish_backend_status`-family functions. Dynamically-assembled strings (e.g. `reason = "ip=" + this->get_parameter(...).as_string()`) and raw string literals (`R"(...)"`) are out of scope. Passing the lint does *not* guarantee complete redaction. Bridge implementers must apply this section's prohibitions to dynamic parts as well.
 
 ### LocalizationBackendStatus.msg
 
-Localization bridge (`mapoi_amcl_localization_bridge` / 自前 bridge) が 1 Hz で `mapoi/localization/backend_status` に publish する readiness メッセージ (#209)。UI 側は `backend_ready` を見て Initial Pose 操作を gate します。Navigation backend (上記 `NavigationBackendStatus`) とは独立した軸で、それぞれ別 indicator として扱います。
+Readiness message published at 1 Hz to `mapoi/localization/backend_status` by the localization bridge (`mapoi_amcl_localization_bridge` / a custom bridge) (#209). The UI side gates Initial Pose operations based on `backend_ready`. This is an independent axis from the Navigation backend (`NavigationBackendStatus` above) and each is treated as a separate indicator.
 
-| フィールド | 型 | 説明 |
+| Field | Type | Description |
 | --- | --- | --- |
-| `backend_type` | `string` | bridge 識別子 (例: `amcl`, `slam_toolbox`, `custom_lidar_amcl`)。tooltip 表示用 |
-| `backend_ready` | `bool` | bridge が新しい initial pose を受け付け転送できる状態か |
-| `reason` | `string` | `backend_ready=false` 時の human-readable 理由 (任意、機微情報禁止 — `NavigationBackendStatus` の節と同方針) |
+| `backend_type` | `string` | Bridge identifier (e.g. `amcl`, `slam_toolbox`, `custom_lidar_amcl`). For tooltip display |
+| `backend_ready` | `bool` | Whether the bridge can accept and forward a new initial pose |
+| `reason` | `string` | Human-readable reason when `backend_ready=false` (optional, sensitive information prohibited — same policy as the `NavigationBackendStatus` section) |
 
-QoS contract (TRANSIENT_LOCAL / RELIABLE / MANUAL_BY_TOPIC publisher / AUTOMATIC subscriber / 5s lease) は `NavigationBackendStatus` と同一です。詳細は `msg/LocalizationBackendStatus.msg` の冒頭コメント参照。
+The QoS contract (TRANSIENT_LOCAL / RELIABLE / MANUAL_BY_TOPIC publisher / AUTOMATIC subscriber / 5s lease) is identical to `NavigationBackendStatus`. See the header comment in `msg/LocalizationBackendStatus.msg` for details.
 
-## サービス (srv)
+## Services (srv)
 
 ### SelectMap.srv
 
-現在の地図 context を切り替える Nav2-free サービスです。Operator mode の地図切替は `/mapoi/nav/switch_map` topic で指示し、`mapoi_nav2_bridge` がこの service を呼んだ後に Nav2 `LoadMap` を実行します。
+A Nav2-free service for switching the current map context. In operator mode, a map switch is requested via the `/mapoi/nav/switch_map` topic, and `mapoi_nav2_bridge` calls this service before executing Nav2's `LoadMap`.
 
-| 方向 | フィールド | 型 | 説明 |
+| Direction | Field | Type | Description |
 | --- | --- | --- | --- |
-| Request | `map_name` | `string` | 選択する地図名 |
-| Request | `initial_poi_name` | `string` | 初期姿勢に使う POI 名。空なら先頭の有効 POI |
-| Response | `success` | `bool` | context 選択成功の有無 |
-| Response | `error_message` | `string` | 失敗時の理由 |
-| Response | `config_path` | `string` | 選択後の設定ファイル path |
-| Response | `resolved_initial_poi_name` | `string` | 解決済み初期姿勢 POI 名 |
-| Response | `nav2_node_names` | `string[]` | Nav2 map server node 名 |
-| Response | `nav2_map_urls` | `string[]` | 対応する map YAML path |
+| Request | `map_name` | `string` | Name of the map to select |
+| Request | `initial_poi_name` | `string` | POI name to use for the initial pose. If empty, the first valid POI is used |
+| Response | `success` | `bool` | Whether the context selection succeeded |
+| Response | `error_message` | `string` | Reason for failure |
+| Response | `config_path` | `string` | Path of the config file after selection |
+| Response | `resolved_initial_poi_name` | `string` | The resolved initial-pose POI name |
+| Response | `nav2_node_names` | `string[]` | Nav2 map server node names |
+| Response | `nav2_map_urls` | `string[]` | Corresponding map YAML paths |
 
 ### RequestInitialPose.srv
 
-`mapoi/initialpose_poi` (唯一の writer = `mapoi_server`) への publish を依頼するサービスです (#211)。従来は `mapoi_server` / `mapoi_nav2_bridge` / WebUI / RViz panel の 4 つが直接 publish していましたが、`transient_local` の latched cache は writer ごとに保持されるためクロス writer の stale 競合がありました。全 publish を本 service 経由で `mapoi_server` 1 つに集約することで latched cache を単一化し、clear が真の last-write-wins で効くようにします。
+A service that requests a publish to `mapoi/initialpose_poi` (whose sole writer is `mapoi_server`) (#211). Previously, `mapoi_server` / `mapoi_nav2_bridge` / WebUI / the RViz panel all published directly, but since `transient_local`'s latched cache is kept per writer, this caused stale conflicts across writers. Consolidating all publishing through this service into a single `mapoi_server` unifies the latched cache, so that a clear takes effect as a true last-write-wins.
 
-| 方向 | フィールド | 型 | 説明 |
+| Direction | Field | Type | Description |
 | --- | --- | --- | --- |
-| Request | `map_name` | `string` | 対象の地図名 (`InitialPoseRequest.msg` の `map_name` をミラー)。非空なら `mapoi_server` の現在 map と一致必須で、不一致は publish されず `success=false` (#299)。空 = map 不明の requester として検証なしで透過 |
-| Request | `poi_name` | `string` | 採用する POI 名。空文字は clear (skip sample を publish、subscriber は無視) |
-| Response | `success` | `bool` | publish に成功したら true (`map_name` 不一致 reject 時は false、#299) |
-| Response | `error_message` | `string` | 失敗時の理由 (非空) |
+| Request | `map_name` | `string` | Target map name (mirrors `InitialPoseRequest.msg`'s `map_name`). If non-empty, it must match `mapoi_server`'s current map; a mismatch means nothing is published and `success=false` (#299). Empty passes through without validation, for a requester with an unknown map |
+| Request | `poi_name` | `string` | POI name to adopt. An empty string means clear (publishes a skip sample, ignored by subscribers) |
+| Response | `success` | `bool` | `true` if the publish succeeded (`false` if rejected due to a `map_name` mismatch, #299) |
+| Response | `error_message` | `string` | Reason for failure (non-empty) |
 
 ### GetMapsInfo.srv
 
-利用可能な地図の一覧と現在の地図名を取得するサービスです。
+A service to get the list of available maps and the current map name.
 
-| 方向 | フィールド | 型 | 説明 |
+| Direction | Field | Type | Description |
 | --- | --- | --- | --- |
-| Response | `maps_list` | `string[]` | 利用可能な地図名のリスト |
-| Response | `map_name` | `string` | 現在の地図名 |
+| Response | `maps_list` | `string[]` | List of available map names |
+| Response | `map_name` | `string` | Current map name |
 
 ### GetPoisInfo.srv
 
-現在の地図に登録されている全 POI を取得するサービスです。
+A service to get all POIs registered on the current map.
 
-| 方向 | フィールド | 型 | 説明 |
+| Direction | Field | Type | Description |
 | --- | --- | --- | --- |
-| Response | `pois_list` | `PointOfInterest[]` | POI のリスト |
+| Response | `pois_list` | `PointOfInterest[]` | List of POIs |
 
 ### GetRoutePois.srv
 
-指定されたルートに含まれる POI を取得するサービスです。
+A service to get the POIs included in a given route.
 
-| 方向 | フィールド | 型 | 説明 |
+| Direction | Field | Type | Description |
 | --- | --- | --- | --- |
-| Request | `route_name` | `string` | ルート名 |
-| Response | `success` | `bool` | route が見つかった場合 `true`（POI 0 件でも route が存在すれば `true`）(#342) |
-| Response | `error_message` | `string` | `success=false` 時のみ非空。route 不存在の説明 (#342) |
-| Response | `pois_list` | `PointOfInterest[]` | ルート上の POI のリスト |
+| Request | `route_name` | `string` | Route name |
+| Response | `success` | `bool` | `true` if the route was found (also `true` when the route exists but has 0 POIs) (#342) |
+| Response | `error_message` | `string` | Non-empty only when `success=false`. Explains that the route doesn't exist (#342) |
+| Response | `pois_list` | `PointOfInterest[]` | List of POIs on the route |
 
 ### GetRoutesInfo.srv
 
-利用可能なルートの一覧を取得するサービスです。
+A service to get the list of available routes.
 
-| 方向 | フィールド | 型 | 説明 |
+| Direction | Field | Type | Description |
 | --- | --- | --- | --- |
-| Response | `routes_list` | `string[]` | ルート名のリスト |
+| Response | `routes_list` | `string[]` | List of route names |
 
 ### GetTagDefinitions.srv
 
-タグ定義（システムタグ・ユーザータグ）を取得するサービスです。
+A service to get the tag definitions (system tags / user tags).
 
-| 方向 | フィールド | 型 | 説明 |
+| Direction | Field | Type | Description |
 | --- | --- | --- | --- |
-| Response | `tag_names` | `string[]` | タグ名のリスト |
-| Response | `tag_descriptions` | `string[]` | タグ説明のリスト |
-| Response | `is_system` | `bool[]` | システムタグかどうか（`true` = システムタグ） |
+| Response | `tag_names` | `string[]` | List of tag names |
+| Response | `tag_descriptions` | `string[]` | List of tag descriptions |
+| Response | `is_system` | `bool[]` | Whether each tag is a system tag (`true` = system tag) |
