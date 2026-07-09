@@ -494,6 +494,13 @@ void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
       ui_->NavStatusLabel->setText(
           target.empty() ? QString::fromStdString("ナビゲーション利用不可")
                          : QString::fromStdString("ナビゲーション利用不可: " + target));
+    } else if (status == "rejected") {
+      // #339: 受理前に拒否されたコマンド (存在しない POI 名、landmark POI を goal 指定、
+      // 空 route 等)。直前の status が居座って誤操作に気づけない事態を防ぐ。
+      current_nav_mode_ = "idle";
+      ui_->NavStatusLabel->setText(
+          target.empty() ? QString::fromStdString("コマンド拒否")
+                         : QString::fromStdString("コマンド拒否: " + target));
     }
   }, Qt::QueuedConnection);
 }

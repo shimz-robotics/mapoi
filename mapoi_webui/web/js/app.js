@@ -786,6 +786,7 @@
     map_switch_succeeded: 'Map switched',
     map_switch_failed: 'Map switch failed',
     backend_unavailable: 'Navigation backend unavailable',
+    rejected: 'Rejected',
   };
 
   function updateNavStatus(status, target) {

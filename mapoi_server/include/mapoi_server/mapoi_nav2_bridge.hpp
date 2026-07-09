@@ -200,6 +200,10 @@ private:
   // payload は target 空なら "status"、target 有りなら "status:target" を送る (#104)。
   // subscriber 側 (mapoi_panel / mapoi_webui_node) は : split で target を復元する。
   void publish_nav_status(const std::string & status, const std::string & target = "");
+  // 「受理する前に無効と判定して実行しなかった」新規コマンドを "rejected" で通知する (#339)。
+  // 進行中の navigation (nav_mode_ != IDLE) がある間は publish しない — 実際の走行状態
+  // (navigating / paused / map_switching) を上書きしないため。詳細は .cpp 側の doc コメント参照。
+  void publish_rejected_status(const std::string & target);
   bool send_load_map_request(const std::string & server_name, const std::string & map_file);
   // #211: LoadMap 成功後に mapoi_server (唯一の writer) へ request_initial_pose service 経由で
   // initial pose POI の publish を依頼する。LoadMap 完了の timing gate は nav2_bridge が引き続き

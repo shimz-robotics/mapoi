@@ -156,6 +156,22 @@ if(BUILD_TESTING)
     test/test_select_map_validation.py
     TIMEOUT 60
   )
+  # #339: 「受理したが未実行」経路の mapoi/nav/status 未 publish bug 再現。Nav2 mock 不要で軽量。
+  add_launch_test(
+    test/test_nav_status_rejected_paths.py
+    TIMEOUT 60
+  )
+  # #339: get_pois_info service 自体が unreachable (mapoi_server 不在) な経路は別 fixture で分離。
+  add_launch_test(
+    test/test_nav_status_service_unavailable.py
+    TIMEOUT 60
+  )
+  # #339 (Cursor review PR #352 round 2 high): 走行中の reject が status を上書きしないこと。
+  # NavigateToPose mock 前提で別ファイルに分離。
+  add_launch_test(
+    test/test_nav_status_rejected_during_navigation.py
+    TIMEOUT 120
+  )
 
   # Install test config
   install(

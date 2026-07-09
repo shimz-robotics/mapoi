@@ -1176,6 +1176,7 @@ main {
 .nav-status-map_switching { background: #3498db; animation: pulse 1s infinite; }
 .nav-status-map_switch_succeeded { background: #27ae60; }
 .nav-status-map_switch_failed { background: #e74c3c; }
+.nav-status-rejected { background: #e74c3c; }
 
 .navigation-availability {
   display: flex;
