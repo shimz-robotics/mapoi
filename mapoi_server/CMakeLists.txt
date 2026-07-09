@@ -161,6 +161,11 @@ if(BUILD_TESTING)
     test/test_nav_status_rejected_paths.py
     TIMEOUT 60
   )
+  # #339: get_pois_info service 自体が unreachable (mapoi_server 不在) な経路は別 fixture で分離。
+  add_launch_test(
+    test/test_nav_status_service_unavailable.py
+    TIMEOUT 60
+  )
 
   # Install test config
   install(
