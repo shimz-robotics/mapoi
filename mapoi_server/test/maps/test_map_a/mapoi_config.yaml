@@ -16,3 +16,8 @@ poi:
 
 map:
   - {node_name: /map_server, map_file: map_a.yaml}
+
+# get_route_pois の success/error_message 契約 pin 用 (#342、test_select_map_validation.py)。
+route:
+  - name: route_a_full
+    waypoints: [map_a_start, map_a_goal]

@@ -311,10 +311,6 @@ void MapoiServer::get_route_pois_service(
 {
   RCLCPP_DEBUG(this->get_logger(), "Incoming get_route_pois request: %s", request->route_name.c_str());
 
-  if (!routes_list_ || !routes_list_.IsSequence()) {
-    return;
-  }
-
   // Helper to look up a POI by name in pois_list_ and append the converted msg
   // into the given vector (#143).
   auto append_poi_by_name = [this](const std::string & name,
@@ -330,42 +326,66 @@ void MapoiServer::get_route_pois_service(
       "Route POI '%s' not found in pois_list_; skipping.", name.c_str());
   };
 
-  for (const auto &route : routes_list_) {
-    if (route["name"].as<std::string>("") != request->route_name) continue;
+  bool route_found = false;
+  if (routes_list_ && routes_list_.IsSequence()) {
+    for (const auto &route : routes_list_) {
+      if (route["name"].as<std::string>("") != request->route_name) continue;
+      route_found = true;
 
-    // Ordered waypoints (sent to Nav2 FollowWaypoints).
-    if (route["waypoints"] && route["waypoints"].IsSequence()) {
-      for (const auto &wp : route["waypoints"]) {
-        append_poi_by_name(wp.as<std::string>(), response->pois_list);
+      // Ordered waypoints (sent to Nav2 FollowWaypoints).
+      if (route["waypoints"] && route["waypoints"].IsSequence()) {
+        for (const auto &wp : route["waypoints"]) {
+          append_poi_by_name(wp.as<std::string>(), response->pois_list);
+        }
       }
-    }
 
-    // route.landmarks (#143): NOT navigated, but radius-monitored while this
-    // route is active. Order is informational only.
-    // Codex review #147 low: 参照先 POI が `landmark` tag を持つかも検証し、
-    // 持たない POI を route.landmarks に書いた場合は WARN ログ (typo / spec 誤解の検知)。
-    if (route["landmarks"] && route["landmarks"].IsSequence()) {
-      for (const auto &lm : route["landmarks"]) {
-        const std::string lm_name = lm.as<std::string>();
-        const size_t before = response->landmark_pois.size();
-        append_poi_by_name(lm_name, response->landmark_pois);
-        if (response->landmark_pois.size() > before) {
-          const auto & lm_poi = response->landmark_pois.back();
-          bool has_landmark_tag = false;
-          for (const auto & t : lm_poi.tags) {
-            if (t == "landmark") { has_landmark_tag = true; break; }
-          }
-          if (!has_landmark_tag) {
-            RCLCPP_WARN(this->get_logger(),
-              "Route '%s' references '%s' as landmark but POI does not have 'landmark' tag.",
-              request->route_name.c_str(), lm_name.c_str());
+      // route.landmarks (#143): NOT navigated, but radius-monitored while this
+      // route is active. Order is informational only.
+      // Codex review #147 low: 参照先 POI が `landmark` tag を持つかも検証し、
+      // 持たない POI を route.landmarks に書いた場合は WARN ログ (typo / spec 誤解の検知)。
+      if (route["landmarks"] && route["landmarks"].IsSequence()) {
+        for (const auto &lm : route["landmarks"]) {
+          const std::string lm_name = lm.as<std::string>();
+          const size_t before = response->landmark_pois.size();
+          append_poi_by_name(lm_name, response->landmark_pois);
+          if (response->landmark_pois.size() > before) {
+            const auto & lm_poi = response->landmark_pois.back();
+            bool has_landmark_tag = false;
+            for (const auto & t : lm_poi.tags) {
+              if (t == "landmark") { has_landmark_tag = true; break; }
+            }
+            if (!has_landmark_tag) {
+              RCLCPP_WARN(this->get_logger(),
+                "Route '%s' references '%s' as landmark but POI does not have 'landmark' tag.",
+                request->route_name.c_str(), lm_name.c_str());
+            }
           }
         }
       }
-    }
 
-    break;
+      break;
+    }
   }
+
+  // #342: route_name の typo と「route は存在するが POI 0 件」を呼び出し側が区別できるよう
+  // success/error_message を返す (SelectMap パターン準拠)。POI 0 件自体は route はある
+  // ので success=true のまま (呼び出し側の空 reject 経路は現行維持)。
+  // routes 未定義 (config に route 節が無い / 未ロード) は typo と原因が違うため
+  // error_message を分ける (Cursor review PR #361 medium)。route キー欠如は load 時に
+  // 空 sequence へ正規化される (load_mapoi_config) ため size()==0 も同扱い。
+  if (!route_found) {
+    response->success = false;
+    if (!routes_list_ || !routes_list_.IsSequence() || routes_list_.size() == 0) {
+      response->error_message = "Route '" + request->route_name +
+        "' not found: map '" + map_name_ + "' has no routes";
+    } else {
+      response->error_message = "Route '" + request->route_name +
+        "' not found in map '" + map_name_ + "'";
+    }
+    RCLCPP_WARN(this->get_logger(), "get_route_pois: %s", response->error_message.c_str());
+    return;
+  }
+  response->success = true;
 
   // debug log
   std::string wp_names;

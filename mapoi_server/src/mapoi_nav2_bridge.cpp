@@ -592,6 +592,12 @@ void MapoiNav2Bridge::on_route_received(
     publish_rejected_status(route_name);
     return;
   }
+  if (!result->success) {
+    RCLCPP_ERROR(this->get_logger(),
+      "get_route_pois failed for '%s': %s", route_name.c_str(), result->error_message.c_str());
+    publish_rejected_status(route_name);
+    return;
+  }
 
   const auto & route_poi = result->pois_list;
   const auto & route_landmarks = result->landmark_pois;

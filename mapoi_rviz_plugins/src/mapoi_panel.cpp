@@ -193,10 +193,15 @@ void MapoiPanel::MapoiRouteComboBox()
       auto result = get_route_pois_client_->async_send_request(request);
       if (rclcpp::spin_until_future_complete(service_node_, result, 5s) == rclcpp::FutureReturnCode::SUCCESS) {
         auto response = result.get();
-        if (response) {
+        if (response && response->success) {
           for (const auto & poi : response->pois_list) {
             highlighted_route_poi_names_.push_back(poi.name);
           }
+        } else if (response) {
+          // #342: route が見つからない (typo 等)。highlight は設定しない
+          // (highlighted_route_poi_names_ は上で既に clear 済み)。
+          RCLCPP_ERROR(LOGGER, "get_route_pois failed for '%s': %s",
+                       route_name_list_[route_index].c_str(), response->error_message.c_str());
         }
       }
     } else {

@@ -70,6 +70,18 @@ Breaking changes
   request/response fields, topics, and launch parameters are unchanged
   (#341).
 
+* ``mapoi_interfaces/srv/GetRoutePois`` response gains ``bool success`` /
+  ``string error_message`` (same pattern as ``SelectMap``), added ahead of
+  the existing ``pois_list`` / ``landmark_pois`` fields. When
+  ``route_name`` does not match any route on the current map,
+  ``mapoi_server`` now returns ``success=false`` with a descriptive
+  ``error_message`` and logs a ``WARN``, instead of silently returning
+  empty lists. A route that exists but has zero waypoints still returns
+  ``success=true`` (data-distinguishable from a typo'd route name).
+  Recompile all clients against the updated ``.srv``; ``mapoi_nav2_bridge``,
+  ``mapoi_rviz2_publisher``, and ``mapoi_rviz_plugins`` (``MapoiPanel``)
+  are updated in this change to check ``response.success`` (#342).
+
 Fixed
 -----
 
