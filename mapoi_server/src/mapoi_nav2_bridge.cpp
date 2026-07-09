@@ -222,10 +222,7 @@ void MapoiNav2Bridge::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::Shared
   // Fetch POI list asynchronously, then navigate in the callback
   if (!this->pois_info_client_->wait_for_service(2s)) {
     RCLCPP_ERROR(this->get_logger(), "get_pois_info service not available");
-    // #339: 受理したが実行できなかった経路も status を publish する。放置すると
-    // WebUI/panel に直前の status (succeeded/navigating 等) が居座り、操作者が
-    // 誤操作 (typo 等) に気づけない。
-    publish_nav_status("rejected", poi_name);
+    publish_rejected_status(poi_name);
     return;
   }
   auto request = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
@@ -250,8 +247,7 @@ void MapoiNav2Bridge::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::Shared
             RCLCPP_ERROR(this->get_logger(),
               "POI '%s' has 'landmark' tag; cannot be set as Nav2 goal.",
               poi_name.c_str());
-            // #339: landmark POI を goal 指定した操作は拒否されたことを status で通知する。
-            publish_nav_status("rejected", poi_name);
+            publish_rejected_status(poi_name);
             return;
           }
           geometry_msgs::msg::PoseStamped goal_pose;
@@ -315,8 +311,7 @@ void MapoiNav2Bridge::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::Shared
         }
       }
       RCLCPP_WARN(this->get_logger(), "POI named '%s' not found!", poi_name.c_str());
-      // #339: typo 等で goal POI が見つからない操作も status で拒否を通知する。
-      publish_nav_status("rejected", poi_name);
+      publish_rejected_status(poi_name);
     });
 }
 
@@ -585,8 +580,7 @@ void MapoiNav2Bridge::on_route_received(
   auto result = future.get();
   if (!result) {
     RCLCPP_ERROR(this->get_logger(), "Failed to get Route info.");
-    // #339: route 情報取得失敗も status を publish し、WebUI/panel の表示を居座らせない。
-    publish_nav_status("rejected", route_name);
+    publish_rejected_status(route_name);
     return;
   }
 
@@ -608,8 +602,7 @@ void MapoiNav2Bridge::on_route_received(
 
   if (waypoints.empty()) {
     RCLCPP_ERROR(this->get_logger(), "Route is empty. Cannot navigate.");
-    // #339: 空 route を渡された操作も status で拒否を通知する。
-    publish_nav_status("rejected", route_name);
+    publish_rejected_status(route_name);
     return;
   }
 
@@ -957,6 +950,22 @@ void MapoiNav2Bridge::publish_nav_status(const std::string & status, const std::
   // 読まないだけで従来通り動く。
   msg.data = target.empty() ? status : status + ':' + target;
   nav_status_pub_->publish(msg);
+}
+
+void MapoiNav2Bridge::publish_rejected_status(const std::string & target)
+{
+  // #339: 「受理する前に無効と判定して実行しなかった」新規コマンド (存在しない POI 名、
+  // landmark POI を goal 指定、get_pois_info 未 ready、route 取得失敗、空 route 等) を
+  // "rejected" で通知する。ただし進行中の navigation (nav_mode_ != IDLE) がある間は publish
+  // しない: この reject は新規コマンドの入力検証失敗であって進行中の navigation には一切
+  // 影響しない (state・action は未変更のまま走行を継続する) ため、"rejected" で "navigating"
+  // / "paused" / "map_switching" 等の実際の走行状態を上書きすると、ロボットは走行を継続して
+  // いるのに UI が停止したかのように誤表示される (Cursor review PR #352 round 2 high 指摘)。
+  // 走行中は従来通り ERROR/WARN ログのみに留め、status は実際の走行状態を優先する。
+  if (nav_mode_ != NavMode::IDLE) {
+    return;
+  }
+  publish_nav_status("rejected", target);
 }
 
 void MapoiNav2Bridge::publish_backend_status()
