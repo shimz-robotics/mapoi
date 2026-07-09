@@ -1,8 +1,10 @@
-"""`get_pois_info` service 未 ready 時の goal 経路が "rejected" を publish することの再現 test (#339).
+"""service 未 ready 時の goal / route 経路が "rejected" を publish することの再現 test (#339 / #355).
 
 `mapoi_server` を起動せず `mapoi_nav2_bridge` 単独で goal_pose_poi を送ると、
 `pois_info_client_->wait_for_service(2s)` が timeout し、POI 名の解決すらできない。
 この経路も他の「受理前 reject」経路と同様に status を publish する必要がある。
+route コマンドも同型: `get_route_pois` が unreachable なら
+`route_client_->wait_for_service(2s)` timeout で reject する (#355)。
 
 `test_nav_status_rejected_paths.py` は mapoi_server 込みの構成のため、この経路
 (service 自体が unreachable) は別 launch fixture (mapoi_server を起動しない) で
@@ -46,7 +48,7 @@ def generate_test_description():
 
 
 class TestNavStatusServiceUnavailable(unittest.TestCase):
-    """get_pois_info service 未 ready での reject (#339) を pin する。"""
+    """get_pois_info / get_route_pois service 未 ready での reject (#339 / #355) を pin する。"""
 
     # wait_for_service(2s) の timeout + spin overhead を見込む。
     NAV_STATUS_WAIT_TIMEOUT = 8.0
@@ -66,6 +68,7 @@ class TestNavStatusServiceUnavailable(unittest.TestCase):
         cls.nav_status_sub = cls.node.create_subscription(
             String, 'mapoi/nav/status', cls._nav_status_callback, nav_status_qos)
         cls.goal_pub = cls.node.create_publisher(String, 'mapoi/nav/goal_pose_poi', 1)
+        cls.route_pub = cls.node.create_publisher(String, 'mapoi/nav/route', 1)
 
     @classmethod
     def tearDownClass(cls):
@@ -114,3 +117,14 @@ class TestNavStatusServiceUnavailable(unittest.TestCase):
         self.assertTrue(
             self._wait_for_nav_status('rejected:poi_goal_only'),
             'get_pois_info service 未 ready で status が publish されない (#339 regression)')
+
+    def test_route_with_route_pois_service_unavailable_publishes_rejected(self):
+        """mapoi_server 不在 (get_route_pois unreachable) でも "rejected:<name>" を publish する (#355)。"""
+        self.assertTrue(self._wait_for_subscriber('mapoi/nav/route'),
+                        'mapoi_nav2_bridge が mapoi/nav/route を subscribe していない')
+        msg = String()
+        msg.data = 'route_a'
+        self.route_pub.publish(msg)
+        self.assertTrue(
+            self._wait_for_nav_status('rejected:route_a'),
+            'get_route_pois service 未 ready で status が publish されない (#355 regression)')
