@@ -657,7 +657,7 @@ class MapoiWebNode(Node):
             if response is None:
                 return jsonify({'error': 'mapoi/select_map service unavailable or timed out'}), 503
             if not response.success:
-                return jsonify({'error': response.error_message or 'select_map failed'}), 400
+                return jsonify({'error': response.error_message or 'mapoi/select_map failed'}), 400
             node.map_name_ = map_name
             return jsonify({
                 'success': True,
@@ -912,7 +912,7 @@ class MapoiWebNode(Node):
                     {'error': 'mapoi/request_initial_pose service unavailable or timed out'}), 503
             if not response.success:
                 return jsonify(
-                    {'error': response.error_message or 'request_initial_pose failed'}), 400
+                    {'error': response.error_message or 'mapoi/request_initial_pose failed'}), 400
             node.get_logger().info(f'Initial pose: {data["poi_name"]}')
             # #211 review fix: 旧 publish_with_subscriber_check 相当の「無人 publish」警告を復元。
             # service は mapoi_server に届くが、その先の mapoi/initialpose_poi に subscriber
