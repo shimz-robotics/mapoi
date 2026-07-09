@@ -82,6 +82,15 @@ Breaking changes
   ``mapoi_rviz2_publisher``, and ``mapoi_rviz_plugins`` (``MapoiPanel``)
   are updated in this change to check ``response.success`` (#342).
 
+* ``mapoi_interfaces/msg/PointOfInterest`` drops the ``int32 id`` field. Its
+  sole producer, ``MapoiServer::yaml_to_poi_msg()``, never assigned it, so
+  every ``id`` surfaced via ``get_pois_info`` / ``get_route_pois`` /
+  ``PoiEvent.poi`` was always ``0``; ``name`` is the de facto unique key
+  already used by the WebUI and REST API. Recompile all clients against the
+  updated ``.msg``. Any external code reading ``PointOfInterest.id`` must
+  switch to keying on ``name`` instead. See ``docs/migration/v0.5.0.md``
+  (#338).
+
 Fixed
 -----
 

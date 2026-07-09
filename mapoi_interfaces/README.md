@@ -19,8 +19,7 @@ POI（Point of Interest）を表すメッセージです。
 
 | フィールド | 型 | 説明 |
 | --- | --- | --- |
-| `id` | `int32` | POI の識別子 |
-| `name` | `string` | POI の名前 |
+| `name` | `string` | POI の名前。実質的な一意キー |
 | `pose` | `geometry_msgs/Pose` | POI の位置・姿勢 |
 | `tolerance` | `mapoi_interfaces/Tolerance` | xy / yaw tolerance（v0.3.0 で旧 `radius` から置換） |
 | `tags` | `string[]` | POI に紐づくタグ（例: `goal`, `audio_info`） |
