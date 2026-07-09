@@ -298,6 +298,10 @@ class RouteEditor {
    * Populate the waypoint POI dropdown.
    */
   populateWaypointSelect() {
+    // POI undo 等で候補が変わった後の再構築 (#334 round5) でも、ユーザーが選択中
+    // だった値が新しい候補集合にまだ含まれるなら保持する (#334 round6: innerHTML
+    // 入れ替えで無条件に空へ戻ると、選択済みの候補が黙って別物に変わってしまう)。
+    const prevValue = this.waypointSelect.value;
     this.waypointSelect.innerHTML = '<option value="">-- Select POI --</option>';
     this.poiNames.forEach((name) => {
       const opt = document.createElement('option');
@@ -305,6 +309,9 @@ class RouteEditor {
       opt.textContent = name;
       this.waypointSelect.appendChild(opt);
     });
+    if (prevValue && this.poiNames.includes(prevValue)) {
+      this.waypointSelect.value = prevValue;
+    }
   }
 
   /**
@@ -476,6 +483,8 @@ class RouteEditor {
 
   populateLandmarkSelect() {
     if (!this.landmarkSelect) return;
+    // populateWaypointSelect と同じ理由で選択中の値を保持する (#334 round6)。
+    const prevValue = this.landmarkSelect.value;
     this.landmarkSelect.innerHTML = '<option value="">-- Select landmark POI --</option>';
     this.landmarkNames.forEach((name) => {
       const opt = document.createElement('option');
@@ -483,6 +492,9 @@ class RouteEditor {
       opt.textContent = name;
       this.landmarkSelect.appendChild(opt);
     });
+    if (prevValue && this.landmarkNames.includes(prevValue)) {
+      this.landmarkSelect.value = prevValue;
+    }
   }
 
   renderLandmarkList() {

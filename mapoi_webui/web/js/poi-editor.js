@@ -33,6 +33,9 @@ class PoiEditor {
     // 409 受信時に app.js 側で全体 reload (loadMaps → loadPois/Routes) を発火させるためのフック。
     // poi-editor 単独では route-editor の state を巻き戻せないため、解決は呼び出し側に委ねる (#241)。
     this.onConflictReload = null;  // async callback() — full reload on version_mismatch
+    // undo スタックの有無が変わるたびに発火 (#332)。モバイルでパネルが畳まれていても
+    // 押せるフローティング Undo ボタンの表示/非表示を app.js 側で切り替えるためのフック。
+    this.onHistoryChange = null;  // callback(canUndo)
 
     // DOM references
     this.listEl = document.getElementById('poi-list');
@@ -582,6 +585,7 @@ class PoiEditor {
   _updateUndoButtons() {
     if (this.btnUndo) this.btnUndo.disabled = this.undoStack.length === 0;
     if (this.btnRedo) this.btnRedo.disabled = this.redoStack.length === 0;
+    if (this.onHistoryChange) this.onHistoryChange(this.undoStack.length > 0);
   }
 
   /**

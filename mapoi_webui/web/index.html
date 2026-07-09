@@ -49,6 +49,15 @@
             <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
           </svg>
         </button>
+        <!-- POI ドラッグの誤操作をパネルを開かずに取り消せるよう、undo 履歴がある間だけ
+             出現するフローティング Undo (#332)。パネルの開閉状態と無関係に地図上で
+             marker を選択・ドラッグできるため、モバイルで #poi-body が畳まれていても
+             即座に取り消せる場所に置く。POI 専用 (route の drag はフォームを開いている
+             時にしか発生せず、その時点でパネルは既に展開済みなので同じ問題が無い)。 -->
+        <button id="btn-poi-undo-float" type="button" class="ui-control-btn hidden"
+                title="Undo POI edit (Ctrl+Z)" aria-label="Undo last POI edit">
+          <span class="ui-control-glyph" aria-hidden="true">&#8630;</span>
+        </button>
         <button id="btn-ui-toggle" type="button" class="ui-control-btn"
                 aria-pressed="false" title="Hide UI" aria-label="Toggle UI visibility">
           <svg id="ui-toggle-icon-hide" class="ui-control-icon-svg" viewBox="0 0 24 24"
