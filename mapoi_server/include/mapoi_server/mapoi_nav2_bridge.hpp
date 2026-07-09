@@ -165,7 +165,6 @@ private:
   // route 受信 (on_route_received) で set、route 終端 / cancel / GOAL 切替で clear。
   // tolerance_check_callback の pause 発火条件 (active route POI に含まれる時のみ) で参照。
   std::unordered_set<std::string> current_route_poi_names_;
-  void clear_current_route_poi_names_();
 
   // nav_attempt_generation: navigation 開始 (route or GOAL) ごとに 1 ずつ増分。各 action
   // callback で stale 判定に使う (Codex review #147 round 1+2 high 対応)。route ↔ route /
