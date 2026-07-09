@@ -73,9 +73,10 @@ jobs:
           colcon build --symlink-install --cmake-args -DBUILD_TESTING=ON
 
       # critical-core = #193 PR1/PR2 で prune した後に残る gtest (unit/contract) + pytest。
-      #   gtest(4): mapoi_server test_nav2_bridge_unit / test_initial_pose_resolver /
-      #             test_system_tags_contract, mapoi_rviz_plugins test_poi_editor_helpers
-      #   pytest(5): mapoi_webui yaml/api contract 4 + mapoi_turtlebot3_example config 1
+      #   対象は各パッケージの CMakeLists.txt で ament_(auto_)add_gtest / ament_add_pytest_test
+      #   により登録された test target (launch_test は含まない)。個々の test 名を列挙すると
+      #   増減のたびにここも drift するため、下の EXPECTED_TARGETS 算出もこの登録数を
+      #   source of truth にしている (#351)。
       # 遅い launch_test (mapoi_server の統合 test 6 本, LABELS "launch_test", timeout 120-180s)
       # は ctest label exclude で外す。test-result が落ちれば job も fail。
       - name: colcon test (gtest + pytest, launch_test を除外)
@@ -92,12 +93,28 @@ jobs:
           # 「テスト 0 件でも colcon が green」を塞ぐ hardening (#193)。
           # gtest binary の build 漏れ / BUILD_TESTING off / ctest label 全除外などで test
           # target が静かに消えても colcon test 自体は exit 0 になる。実際に結果を出した test
-          # target 数 (gtest 6 + pytest 6 = 12; humble/jazzy 両 distro で実測) を数え、下限を割れば
-          # fail。個々の case 数 (~150) ではなく target 数を不変量にして case 増減での誤検知を避ける。
-          # target を意図的に増減した時は EXPECTED_TARGETS も更新する (silent drop を強制的に可視化)。
+          # target 数を数え、下限を割れば fail。個々の case 数 (~150) ではなく target 数を
+          # 不変量にして case 増減での誤検知を避ける。
           # NOTE: package を絞らず全 package を test 対象にしておくことで、新規 package の test が
-          # 静かに除外される穴を避ける (PR #289 review high-1)。下限 12 は build 漏れ等の損失を捕える。
-          EXPECTED_TARGETS=12
+          # 静かに除外される穴を避ける (PR #289 review high-1)。
+          #
+          # EXPECTED_TARGETS はハードコードせず、checkout 先 src/mapoi 配下の CMakeLists.txt に
+          # 登録された ament_(auto_)add_gtest / ament_add_pytest_test の呼び出し数から算出する
+          # (target を増減するたびに手動更新が漏れて #297 / #344 のように検知漏れが再発したため、
+          # #351 で自動化)。colcon の build 成果物 (ctest -N 等) から数えると BUILD_TESTING が
+          # silent に off になった時に期待値ごと縮んで検知できなくなるため、ソース上の登録を
+          # source of truth にする。launch_test はここでは数えない (ctest 側も -LE launch_test
+          # で除外しているため対応が取れる)。`^[[:space:]]*` アンカーで行頭 (インデントのみ許容)
+          # から始まる呼び出しだけを数え、行中のコメントや文章中の言及は拾わない。
+          # `(grep ... || true)` は set -eo pipefail 下で grep が 0 件 (exit 1) を返しても
+          # コマンド置換ごと落ちないようにするための保険。
+          EXPECTED_TARGETS=$( (grep -rhE --include=CMakeLists.txt \
+            '^[[:space:]]*ament_(auto_)?add_gtest\(|^[[:space:]]*ament_add_pytest_test\(' \
+            src/mapoi || true) | wc -l )
+          if [ "${EXPECTED_TARGETS}" -eq 0 ]; then
+            echo "::error::EXPECTED_TARGETS computed as 0; grep pattern or checkout layout may have drifted"
+            exit 1
+          fi
           ran=$(find build -path '*test_results*' -name '*.xml' | wc -l)
           echo "ran ${ran} test target result file(s); expected >= ${EXPECTED_TARGETS}"
           if [ "${ran}" -lt "${EXPECTED_TARGETS}" ]; then
