@@ -337,6 +337,12 @@
   <!-- poi-history.js は MapoiPoiHistory を window に attach する pure helper 群 (#300)。
        poi-editor.js より前に読み込む (Undo/Redo の stack 操作で参照される)。 -->
   <script src="/js/poi-history.js"></script>
+  <!-- map-icons.js は MapoiMapIcons を window に attach するマーカー/アイコン生成ヘルパー (#346)。
+       map-viewer.js より前に読み込む (POI/ロボット/route アイコン生成で参照される)。 -->
+  <script src="/js/map-icons.js"></script>
+  <!-- map-viewer-sector.js は MapViewerSector クラス (POI 扇形描画 + yaw 回転ハンドル、#346)。
+       map-viewer.js より前に読み込む (MapViewer コンストラクタが new する)。 -->
+  <script src="/js/map-viewer-sector.js"></script>
   <script src="/js/map-viewer.js"></script>
   <script src="/js/poi-editor.js"></script>
   <script src="/js/route-editor.js"></script>

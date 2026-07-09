@@ -190,6 +190,22 @@ Changed
   Also removes ``clear_current_route_poi_names_``, a pre-existing dead private
   method with no remaining callers.
 
+* **mapoi_webui frontend responsibility split (#346), internal refactor with no
+  behavior change.** ``mapoi_webui/web/js/map-viewer.js`` (1,579 lines) had marker
+  icon generation, POI tolerance sector/yaw-handle rendering, and route drawing all
+  in one ``MapViewer`` class. Marker/route icon and color helpers (``getPoiColor``,
+  ``getRouteColor``, ``routeDirectionDeg``, ``createRouteDirectionSvg``,
+  ``createArrowIcon``, ``createRobotIcon``, ``createRouteLandmarkIcon``) move to the
+  new ``map-icons.js`` (``MapoiMapIcons``, dual browser/Node export, continuing the
+  ``geometry.js``/``poi-filter.js``/``poi-interactions.js`` pattern); POI tolerance
+  sector drawing and the yaw-rotation drag handle (``_drawSectorForPoi``,
+  ``_wedgePoints``, ``_circlePoints``, the yaw-handle trio, and the state they
+  owned — ``sectorLayers`` / ``_poiWedgeByIndex`` / ``_yawHandle``) move to the new
+  ``MapViewerSector`` class in ``map-viewer-sector.js``, which ``MapViewer`` now
+  composes (``this._sector = new MapViewerSector(this)``). ``MapViewer`` keeps its
+  public API and remains a single class; both new files are added to
+  ``index.html``'s script load order ahead of ``map-viewer.js``.
+
 Fixed
 -----
 
