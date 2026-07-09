@@ -218,6 +218,28 @@ Changed
   a save, discard, or 409 version-mismatch. ``tag-editor.js`` is added to
   ``index.html`` ahead of ``app.js``.
 
+* **mapoi_rviz_plugins: PoiEditorPanel::ValidatePois split into its own
+  translation unit, with its pose/tolerance/tag-exclusivity checks extracted
+  as pure functions (#346), same staged-split approach as the
+  mapoi_nav2_bridge split above (#345) and internal refactor with no behavior
+  change.** ``ValidatePois()`` (152 lines) now lives in the new
+  ``poi_editor_validation.cpp``, compiled into the same
+  ``mapoi_rviz_plugins`` library; ``PoiEditorPanel`` remains a single class
+  and its header is unchanged. Its per-cell decision logic — pose format
+  ("x, y, yaw"), tolerance format/minimum/2π-overflow ("xy, yaw_rad"), and
+  the waypoint/pause × landmark tag exclusivity (#85/#143) — moves to new
+  Qt/ROS-independent pure functions (``validate_pose_cell``,
+  ``validate_tolerance_cell``, ``check_tag_exclusivity``) in the existing
+  ``poi_editor_helpers.hpp`` (alongside ``try_parse_finite_double`` /
+  ``split_and_trim`` from #158). ``ValidatePois()`` itself still builds the
+  exact same ``QMessageBox`` warning text from the returned status/value
+  structs, so displayed messages are byte-for-byte unchanged. The three new
+  functions get gtest coverage in ``test_poi_editor_validation.cpp``
+  (``mapoi_rviz_plugins``), following the existing
+  ``test_poi_editor_helpers.cpp`` / ``test_config_path_update_policy.cpp``
+  pattern (docs/testing-policy.md §1(b): cheap, ROS/Qt-independent pure
+  functions).
+
 Fixed
 -----
 

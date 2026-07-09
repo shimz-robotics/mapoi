@@ -11,6 +11,9 @@
 namespace mapoi_rviz_plugins::detail
 {
 
+// tolerance.xy / tolerance.yaw の最小値 (msg spec、poi-filter.js の TOLERANCE_MIN と同じ値、#138)。
+constexpr double kToleranceMin = 0.001;
+
 // 文字列を strict に double に parse し、有限性を確認する純関数 (Codex review #139 medium 対応)。
 // std::stod は "1abc" を 1 として返し NaN/Inf も throw しないため、validation と save で
 // 同じ parser を使うために helper にする。min check は呼び出し側の責任。
@@ -52,6 +55,127 @@ inline std::vector<std::string> split_and_trim(const std::string & input, char d
       result.push_back(item.substr(begin, end - begin + 1));
     }
   }
+  return result;
+}
+
+// PoiEditorPanel::ValidatePois の pose セル ("x, y, yaw") 判定 (#346)。判定ロジックのみを
+// 純関数化し、QMessageBox 向けの文言組み立ては呼び出し側 (poi_editor_validation.cpp) が
+// 元の文字列そのまま (raw / invalid_value) を使って行う — Qt の `.arg(double)` 書式化に
+// 依存する数値以外は、ここでは文字列のまま持ち回って表示文言を一切変えない。
+enum class PoseCellStatus
+{
+  kOk,
+  kWrongFieldCount,  // "x, y, yaw" の 3 要素に split できなかった
+  kInvalidValue,     // いずれかの要素が有限 double として parse できなかった
+};
+
+struct PoseCellValidation
+{
+  PoseCellStatus status = PoseCellStatus::kWrongFieldCount;
+  std::string raw;            // 元の pose_str (kWrongFieldCount のメッセージに使う)
+  std::string invalid_value;  // parse 失敗した要素 (kInvalidValue のメッセージに使う)
+};
+
+inline PoseCellValidation validate_pose_cell(const std::string & pose_str)
+{
+  PoseCellValidation result;
+  result.raw = pose_str;
+  const auto parts = split_and_trim(pose_str, ',');
+  if (parts.size() != 3) {
+    result.status = PoseCellStatus::kWrongFieldCount;
+    return result;
+  }
+  for (const auto & part : parts) {
+    double v = 0.0;
+    if (!try_parse_finite_double(part, v)) {
+      result.status = PoseCellStatus::kInvalidValue;
+      result.invalid_value = part;
+      return result;
+    }
+  }
+  result.status = PoseCellStatus::kOk;
+  return result;
+}
+
+// PoiEditorPanel::ValidatePois の tolerance セル ("xy_m, yaw_rad") 判定 (#346)。
+// xy / yaw は独立に評価する (両方エラーがあれば呼び出し側は両方の警告を積める)。
+enum class ToleranceFieldStatus
+{
+  kOk,
+  kParseError,     // 有限 double として parse できない
+  kBelowMinimum,   // 0 以上だが kToleranceMin 未満
+  kYawExceeds2Pi,  // yaw のみ: 2π 超過 (#159、deg 入力の取り違え防御)
+};
+
+struct ToleranceCellValidation
+{
+  bool format_ok = false;  // "xy, yaw" の 2 要素に split できたか
+  std::string xy_raw;      // parts[0] (kParseError のメッセージに使う)
+  std::string yaw_raw;     // parts[1] (kParseError のメッセージに使う)
+  ToleranceFieldStatus xy_status = ToleranceFieldStatus::kOk;
+  double xy_value = 0.0;   // xy_status==kOk|kBelowMinimum 時のみ意味を持つ
+  ToleranceFieldStatus yaw_status = ToleranceFieldStatus::kOk;
+  double yaw_value = 0.0;  // yaw_status==kOk|kBelowMinimum|kYawExceeds2Pi 時のみ意味を持つ
+};
+
+inline ToleranceCellValidation validate_tolerance_cell(const std::string & tolerance_str)
+{
+  ToleranceCellValidation result;
+  const auto parts = split_and_trim(tolerance_str, ',');
+  if (parts.size() != 2) {
+    result.format_ok = false;
+    return result;
+  }
+  result.format_ok = true;
+  result.xy_raw = parts[0];
+  result.yaw_raw = parts[1];
+
+  double xy_val = 0.0;
+  if (!try_parse_finite_double(parts[0], xy_val)) {
+    result.xy_status = ToleranceFieldStatus::kParseError;
+  } else {
+    result.xy_value = xy_val;
+    if (xy_val < kToleranceMin) {
+      result.xy_status = ToleranceFieldStatus::kBelowMinimum;
+    }
+  }
+
+  double yaw_val = 0.0;
+  if (!try_parse_finite_double(parts[1], yaw_val)) {
+    result.yaw_status = ToleranceFieldStatus::kParseError;
+  } else {
+    result.yaw_value = yaw_val;
+    if (yaw_val < kToleranceMin) {
+      result.yaw_status = ToleranceFieldStatus::kBelowMinimum;
+    } else if (yaw_val > 2.0 * M_PI) {
+      result.yaw_status = ToleranceFieldStatus::kYawExceeds2Pi;
+    }
+  }
+  return result;
+}
+
+// PoiEditorPanel::ValidatePois のタグ排他判定 (#85 / #143、#346 で純関数化)。
+// waypoint+landmark (landmark は Nav2 navigation 不可) と pause+landmark (landmark は
+// 到達不可なので pause が成立しない) の 2 組を独立に判定する。
+struct TagExclusivityResult
+{
+  bool waypoint_landmark_conflict = false;
+  bool pause_landmark_conflict = false;
+};
+
+inline TagExclusivityResult check_tag_exclusivity(const std::vector<std::string> & tags)
+{
+  bool has_waypoint = false;
+  bool has_landmark = false;
+  bool has_pause = false;
+  for (const auto & t : tags) {
+    if (t == "waypoint") has_waypoint = true;
+    else if (t == "landmark") has_landmark = true;
+    else if (t == "pause") has_pause = true;
+  }
+  TagExclusivityResult result;
+  result.waypoint_landmark_conflict = has_waypoint && has_landmark;
+  result.pause_landmark_conflict = has_pause && has_landmark;
   return result;
 }
 
