@@ -3,7 +3,7 @@
 // 流した結果を実ブラウザで検証する。Leaflet は draggable な marker の icon に
 // 'leaflet-marker-draggable' class を付けるので、これで「掴める/掴めない」を観測する。
 const { test, expect } = require('@playwright/test');
-const { loadApp, selectPoi } = require('./helpers');
+const { loadApp, selectPoi, unlockPoiPosition } = require('./helpers');
 
 // 選択中 (highlighted) の POI arrow marker = draggable。yaw ハンドル (.poi-yaw-handle) も
 // draggable だが class が異なるので、.poi-arrow-icon に限定すれば arrow だけ数えられる。
@@ -16,6 +16,7 @@ test.describe('B. POI ドラッグ enable/disable の実適用', () => {
     await expect(page.locator(DRAGGABLE_ARROW)).toHaveCount(0);
     await expect(page.locator('#btn-save')).toBeDisabled();
 
+    await unlockPoiPosition(page); // 位置ロックは既定 ON (#333)
     await selectPoi(page, 'poi_wedge');
     // 選択中 1 個だけ draggable。
     await expect(page.locator(DRAGGABLE_ARROW)).toHaveCount(1);
@@ -37,6 +38,7 @@ test.describe('B. POI ドラッグ enable/disable の実適用', () => {
 
   test('route 編集中は選択中 POI でもドラッグ不可になり、Cancel で戻る', async ({ page }) => {
     await loadApp(page);
+    await unlockPoiPosition(page); // 位置ロックは既定 ON (#333)
     await selectPoi(page, 'poi_wedge');
     await expect(page.locator(DRAGGABLE_ARROW)).toHaveCount(1);
 

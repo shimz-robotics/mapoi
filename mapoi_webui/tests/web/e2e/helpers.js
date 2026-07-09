@@ -38,4 +38,13 @@ async function setSectionOpen(page, toggleId, bodyId, wantOpen) {
   }
 }
 
-module.exports = { loadApp, poiCard, selectPoi, displayOf, setSectionOpen };
+// POI 位置編集ロックは既定 ON (#333)。drag / yaw ハンドルを実際に動かすテストは
+// 事前にこれで解除する (route 編集中の抑止とは独立な条件なので個別に外す必要がある)。
+async function unlockPoiPosition(page) {
+  const btn = page.locator('#btn-poi-lock-toggle');
+  if ((await btn.getAttribute('aria-pressed')) === 'true') {
+    await btn.click();
+  }
+}
+
+module.exports = { loadApp, poiCard, selectPoi, displayOf, setSectionOpen, unlockPoiPosition };

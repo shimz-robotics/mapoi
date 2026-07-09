@@ -10,6 +10,9 @@ class MapViewer {
       maxZoom: 5,
       zoomSnap: 0.25,
       attributionControl: false,
+      // +/- ズームボタン (Leaflet 既定) は不要。マウスホイール/ドラッグ・タッチのピンチで
+      // 直感的にズームでき、地図上の余計なコントロールを減らす (#333)。
+      zoomControl: false,
     });
 
     this.imageOverlay = null;
