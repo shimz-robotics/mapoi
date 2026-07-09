@@ -12,6 +12,17 @@
 // PoiEvent 判定エンジン、本 PR では触らない) と生の member アクセスで共有しており、
 // component class 化すると lock 粒度・アクセス経路が変わるリスクがあるため
 // 見送った。詳細は PR 本文参照。
+//
+// mutex 境界の注記 (PR #369 review medium): この TU の nav 状態更新
+// (nav_mode_ / current_route_waypoints_ / current_waypoint_index_ 等) の多くは
+// data_mutex_ を取らずに行われる。これは default の MutuallyExclusive callback
+// group 内で subscription / action / timer callback が直列化される既存契約による
+// 意図的なもの (MultiThreadedExecutor 2 threads だが、並行するのは独立 group の
+// backend_status timer のみ)。data_mutex_ が守るのは pois_list_ / event_pois_ /
+// poi_inside_state_ / current_route_poi_names_ 等の限定された共有データだけ
+// (詳細は mapoi_nav2_bridge.cpp の tolerance_check_callback 冒頭コメント参照)。
+// この TU だけを読んで「lock 漏れ」と誤認して lock を追加したり、逆に lock 下の
+// 箇所を外したりしないこと。
 #include "mapoi_server/mapoi_nav2_bridge.hpp"
 
 #include <chrono>
