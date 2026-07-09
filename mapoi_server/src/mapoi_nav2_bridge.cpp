@@ -323,6 +323,15 @@ void MapoiNav2Bridge::mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg)
   // callback 側で goal 固有の target を使って publish_nav_status する (#104 race fix)。
   // current_target_name_ は acceptance 時 (goal_response_callback) に更新される。
 
+  // goal 側 (`get_pois_info`) と対称の readiness check (#355)。service unreachable の
+  // まま async_send_request すると応答待ちのまま status が更新されず、#339 と同型の
+  // 「status が居座って操作者が気づけない」経路が route コマンドに残るため。
+  if (!this->route_client_->wait_for_service(2s)) {
+    RCLCPP_ERROR(this->get_logger(), "get_route_pois service not available");
+    publish_rejected_status(msg->data);
+    return;
+  }
+
   auto route_request = std::make_shared<mapoi_interfaces::srv::GetRoutePois::Request>();
   route_request->route_name = msg->data;
 
