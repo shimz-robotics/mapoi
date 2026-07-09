@@ -23,6 +23,7 @@ target_link_libraries(mapoi_server ${_mapoi_yaml_cpp_target})
 ament_auto_add_executable(mapoi_nav2_bridge
   src/mapoi_nav2_bridge.cpp
   src/mapoi_nav2_bridge_route.cpp
+  src/mapoi_nav2_bridge_goal.cpp
 )
 
 ament_auto_add_executable(mapoi_amcl_localization_bridge
@@ -85,6 +86,7 @@ if(BUILD_TESTING)
     test/test_nav2_bridge_unit.cpp
     src/mapoi_nav2_bridge.cpp
     src/mapoi_nav2_bridge_route.cpp
+    src/mapoi_nav2_bridge_goal.cpp
   )
   target_compile_definitions(test_nav2_bridge_unit PRIVATE UNIT_TEST)
 
