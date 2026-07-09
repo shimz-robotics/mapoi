@@ -274,7 +274,7 @@ Breaking changes
   ``EVENT_STOPPED`` and ``EVENT_RESUMED`` are removed; the remaining
   ``EVENT_ENTER`` / ``EVENT_EXIT`` are joined by a new ``EVENT_PAUSED``
   (constant value ``2``, taking the slot previously used by
-  ``EVENT_STOPPED``, which shifts ``EVENT_EXIT`` from ``2`` to ``3``).
+  ``EVENT_EXIT``, which shifts ``EVENT_EXIT`` from ``2`` to ``3``).
   Events are now published only during ``ROUTE`` navigation (``nav_mode_ ==
   ROUTE`` — whether the route is being driven via a single ``FollowWaypoints``
   batch or, under ``waypoint_arrival_mode=mapoi``, per-waypoint
@@ -391,6 +391,20 @@ Changed
 
 Fixed
 -----
+
+* **Rejected navigation commands are now visible on ``mapoi/nav/status``
+  (#339, #355).** Command inputs that were rejected before being accepted —
+  an unknown goal POI name (typo), a ``landmark``-tagged POI given as a goal,
+  an empty or unknown route, or a route command sent before the
+  ``mapoi/get_route_pois`` service is ready — used to fail with only an
+  ERROR/WARN log, leaving the previous status (``succeeded`` / ``navigating``
+  etc.) latched on ``mapoi/nav/status`` so operators could not tell the
+  command was ignored. ``mapoi_nav2_bridge`` now publishes
+  ``rejected:<target>`` for these paths (#352, #356). While navigation is in
+  progress (``nav_mode_ != IDLE``) the rejected status is deliberately *not*
+  published so it cannot masquerade as the live navigation state — that gap
+  is covered by the ``mapoi/nav/command_rejected`` event topic (#354, see
+  Added).
 
 * **mapoi/initialpose_poi multi-writer race (#211).** The topic had four
   direct publishers (``mapoi_server``, ``mapoi_nav2_bridge``, WebUI, RViz
@@ -560,7 +574,8 @@ Internal / tests
   core, ``launch_test`` retry-gating outside PRs with a guard against a
   silently-empty test run, and new Playwright/jsdom/pytest coverage for
   the WebUI's Leaflet integration, POI drag/yaw-handle rendering,
-  config-publish SSE path, and navigation REST API (#279-#291).
+  config-publish SSE path, and navigation REST API (#279-#291, plus
+  feature-adjacent test additions across later PRs in this release).
 
 * ``ros-test.yml``'s silent-test-loss guard no longer hard-codes
   ``EXPECTED_TARGETS``: it is now derived by grepping ``src/mapoi``'s
