@@ -97,6 +97,16 @@ Samples
     moved into the ``test_poi_event_route_integration`` launch_test
     (#236) instead of the demo config.
 
+Internal / tests
+----------------
+
+* ``ros-test.yml``'s silent-test-loss guard no longer hard-codes
+  ``EXPECTED_TARGETS``: it is now derived by grepping ``src/mapoi``'s
+  ``CMakeLists.txt`` files for ``ament_(auto_)add_gtest`` /
+  ``ament_add_pytest_test`` registrations, so the check can't silently
+  drift out of sync again the way it repeatedly did in #297 / #344
+  (#351).
+
 
 0.4.0 (2026-05-08)
 ==================
