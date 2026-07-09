@@ -1,5 +1,8 @@
 # mapoi_server
 
+> English version (primary): [README.md](./README.md)
+> 本ファイルは日本語スナップショットです。最新の内容は英語版を参照してください。
+
 mapoi のメインパッケージです。
 地図と POI の情報を管理し、他のパッケージにサービスとして提供します。また、POI 名を指定した自律走行やPOI半径イベントの検知を行います。
 

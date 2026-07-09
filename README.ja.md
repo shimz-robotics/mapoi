@@ -1,5 +1,8 @@
 # mapoi
 
+> English version (primary): [README.md](./README.md)
+> 本ファイルは日本語スナップショットです。最新の内容は英語版を参照してください。
+
 Navigation2 向けの地図（Map）と関心地点（POI: Point of Interest）を管理するメタパッケージです。
 地図の切り替え、POI の管理、RViz2 GUI からの自律走行操作、POI 半径イベントの検知を提供します。
 

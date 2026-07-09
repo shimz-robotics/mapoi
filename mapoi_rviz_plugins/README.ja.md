@@ -1,5 +1,8 @@
 # mapoi_rviz_plugins
 
+> English version (primary): [README.md](./README.md)
+> 本ファイルは日本語スナップショットです。最新の内容は英語版を参照してください。
+
 mapoi 用の RViz2 プラグインパッケージです。GUI から地図切替・POI 選択・自律走行の操作、および POI の編集ができます。
 
 ## プラグイン

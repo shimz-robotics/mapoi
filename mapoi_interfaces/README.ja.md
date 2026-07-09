@@ -1,5 +1,8 @@
 # mapoi_interfaces
 
+> English version (primary): [README.md](./README.md)
+> 本ファイルは日本語スナップショットです。最新の内容は英語版を参照してください。
+
 mapoi パッケージ群で使用するメッセージとサービスの定義パッケージです。
 
 ## メッセージ (msg)
