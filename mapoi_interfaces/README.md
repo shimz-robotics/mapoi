@@ -165,6 +165,8 @@ QoS contract (TRANSIENT_LOCAL / RELIABLE / MANUAL_BY_TOPIC publisher / AUTOMATIC
 | 方向 | フィールド | 型 | 説明 |
 | --- | --- | --- | --- |
 | Request | `route_name` | `string` | ルート名 |
+| Response | `success` | `bool` | route が見つかった場合 `true`（POI 0 件でも route が存在すれば `true`）(#342) |
+| Response | `error_message` | `string` | `success=false` 時のみ非空。route 不存在の説明 (#342) |
 | Response | `pois_list` | `PointOfInterest[]` | ルート上の POI のリスト |
 
 ### GetRoutesInfo.srv

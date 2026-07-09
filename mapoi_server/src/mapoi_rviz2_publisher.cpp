@@ -141,10 +141,14 @@ void MapoiRviz2Publisher::on_routes_info_received(
           return;
         }
         auto r = f.get();
-        if (r) {
+        if (r && r->success) {
           (*pending)[route_name] = r->pois_list;
           RCLCPP_INFO(this->get_logger(), "Route '%s': %zu waypoints (gen=%zu).",
             route_name.c_str(), r->pois_list.size(), my_generation);
+        } else if (r) {
+          // #342: route が見つからない (typo 等)。描画対象から skip する。
+          RCLCPP_WARN(this->get_logger(), "Route '%s' not found: %s (gen=%zu).",
+            route_name.c_str(), r->error_message.c_str(), my_generation);
         } else {
           RCLCPP_ERROR(this->get_logger(), "Failed to get route pois for '%s' (gen=%zu).",
             route_name.c_str(), my_generation);
