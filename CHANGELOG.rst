@@ -175,6 +175,19 @@ Changed
   pause/resume/cancel/reset dispatchers, which read and write state from both route
   and goal navigation and are not cleanly separable without touching those.
 
+* **mapoi_nav2_bridge.cpp split into five translation units, step 2 of 2 (final,
+  #345).** Map switching (``mapoi_switch_map_cb`` / ``on_select_map_received`` /
+  ``send_load_map_request`` / ``request_initial_pose``) and backend status
+  publishing (``publish_backend_status``) are now defined in new files
+  ``mapoi_nav2_bridge_map_switch.cpp`` and ``mapoi_nav2_bridge_backend_status.cpp``;
+  all five compile into the same ``mapoi_nav2_bridge`` executable and
+  ``MapoiNav2Bridge`` remains a single class. Internal refactor only, no behavior
+  change (same guarantees as step 1). ``mapoi_nav2_bridge.cpp`` now holds node
+  setup/constructor, the pause/resume/cancel/reset dispatchers, the shared
+  ``tolerance_check_callback`` POI-event judgment engine, POI list / system tag
+  fetch infrastructure, and cmd_vel monitoring — all of which are shared across
+  route, goal, and map-switch navigation and are not cleanly separable per domain.
+
 Fixed
 -----
 

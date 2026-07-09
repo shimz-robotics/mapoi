@@ -149,14 +149,18 @@ Operational notes:
 
 A node that performs POI-name-based autonomous navigation and POI radius event detection.
 
-The `MapoiNav2Bridge` class implementation is split across three translation units for
-maintainability (#345, step 1 of a staged split): `src/mapoi_nav2_bridge.cpp` (node
-setup, map switching, pause/resume, backend status, and the POI radius/pause judgment
-engine — the shared core), `src/mapoi_nav2_bridge_route.cpp` (route navigation:
-`FollowWaypoints` and the mapoi-driven waypoint-arrival mode), and
-`src/mapoi_nav2_bridge_goal.cpp` (single-goal navigation: `NavigateToPose`). All three
-compile into the single `mapoi_nav2_bridge` executable; the split is internal-only and
-does not change the node's external behavior (topics, services, parameters, or logs).
+The `MapoiNav2Bridge` class implementation is split across five translation units for
+maintainability (#345, a two-step split now complete): `src/mapoi_nav2_bridge.cpp` (node
+setup, pause/resume/cancel dispatch, and the POI radius/pause judgment engine — the
+shared core), `src/mapoi_nav2_bridge_route.cpp` (route navigation: `FollowWaypoints` and
+the mapoi-driven waypoint-arrival mode), `src/mapoi_nav2_bridge_goal.cpp` (single-goal
+navigation: `NavigateToPose`), `src/mapoi_nav2_bridge_map_switch.cpp` (map switching:
+`switch_map` subscription, `select_map` sync, Nav2 `LoadMap`, and the initial-pose
+request), and `src/mapoi_nav2_bridge_backend_status.cpp` (the 1Hz backend-status
+publisher, which runs on its own callback group — see the file's header comment before
+touching it). All five compile into the single `mapoi_nav2_bridge` executable; the split
+is internal-only and does not change the node's external behavior (topics, services,
+parameters, or logs).
 
 #### Parameters
 

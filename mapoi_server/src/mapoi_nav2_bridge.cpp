@@ -310,56 +310,6 @@ void MapoiNav2Bridge::publish_rejected_status(const std::string & target)
   publish_nav_status("rejected", target);
 }
 
-void MapoiNav2Bridge::publish_backend_status()
-{
-  // Nav2 bridge としての readiness を 1Hz polling で集約して publish する (#198)。
-  // contract は minimal 3 フィールドだけ (#205 review): bridge 実装者は backend_ready を
-  // 真にするだけで mapoi UI と統合できる。Per-capability の内訳が必要なら reason 文字列に
-  // 詰める。Localization readiness は別軸 (#209) で、本 msg では扱わない。
-  // 二重管理に見える点 (1Hz timer の集約 + 各 cb 内 `action_server_is_ready()` 即時判定) は
-  // 意図的: cb 内で 1Hz timer の cache を読むと最大 1 秒の lag が発生し、operator が ready
-  // 表示直後に Run を押した場合に偽の backend_unavailable を出しかねない。即時判定で current
-  // を見る (#205 review low #2)。
-  // backend_ready の AND に `select_map` service を含めるのは README contract が「map switch
-  // を含む」と書いていることと整合させるため (#205 round 3 review high)。bridge 単独起動で
-  // mapoi_server が居ない構成では `backend_ready=false` になるが、これは妥当な挙動。
-  // この AND は Nav2 bridge が `goal` / `route` / `switch_map` の 3 capability 全部を expose
-  // する前提に閉じた算出 (#207)。custom bridge は自前で expose する capability だけを AND
-  // すること (例: goal-only bridge なら `backend_ready = goal_ready`)。詳細は
-  // `mapoi_interfaces/msg/NavigationBackendStatus.msg` 冒頭コメント参照。
-  const bool goal_ready =
-    nav_to_pose_client_ && nav_to_pose_client_->action_server_is_ready();
-  const bool route_ready =
-    action_client_ && action_client_->action_server_is_ready();
-  const bool switch_map_ready =
-    select_map_client_ && select_map_client_->service_is_ready();
-
-  mapoi_interfaces::msg::NavigationBackendStatus msg;
-  msg.backend_type = "nav2";
-  msg.backend_ready = goal_ready && route_ready && switch_map_ready;
-  if (!msg.backend_ready) {
-    std::vector<std::string> missing;
-    if (!goal_ready) {
-      missing.emplace_back("navigate_to_pose action");
-    }
-    if (!route_ready) {
-      missing.emplace_back("follow_waypoints action");
-    }
-    if (!switch_map_ready) {
-      missing.emplace_back("mapoi/select_map service");
-    }
-    std::string joined;
-    for (size_t i = 0; i < missing.size(); ++i) {
-      if (i > 0) {
-        joined += ", ";
-      }
-      joined += missing[i];
-    }
-    msg.reason = "not ready: " + joined;
-  }
-  backend_status_pub_->publish(msg);
-}
-
 void MapoiNav2Bridge::mapoi_cancel_cb(const std_msgs::msg::String::SharedPtr msg)
 {
   (void)msg;

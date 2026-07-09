@@ -25,6 +25,7 @@ ament_auto_add_executable(mapoi_nav2_bridge
   src/mapoi_nav2_bridge_route.cpp
   src/mapoi_nav2_bridge_goal.cpp
   src/mapoi_nav2_bridge_map_switch.cpp
+  src/mapoi_nav2_bridge_backend_status.cpp
 )
 
 ament_auto_add_executable(mapoi_amcl_localization_bridge
@@ -89,6 +90,7 @@ if(BUILD_TESTING)
     src/mapoi_nav2_bridge_route.cpp
     src/mapoi_nav2_bridge_goal.cpp
     src/mapoi_nav2_bridge_map_switch.cpp
+    src/mapoi_nav2_bridge_backend_status.cpp
   )
   target_compile_definitions(test_nav2_bridge_unit PRIVATE UNIT_TEST)
 
