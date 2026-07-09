@@ -130,6 +130,11 @@ class TestNavStatusRejectedPaths(unittest.TestCase):
                         'mapoi_nav2_bridge が mapoi/nav/goal_pose_poi を subscribe していない')
         self.assertTrue(self._wait_for_subscriber('mapoi/nav/route'),
                         'mapoi_nav2_bridge が mapoi/nav/route を subscribe していない')
+        # command_rejected は volatile QoS (イベント通知、リプレイ無し) なので、publisher と
+        # テスト側 subscriber の matching 完了前に reject が発火すると黙って失われる。
+        # subscriber 側の発見だけでなく publisher の存在も gate する (#354 review medium)。
+        self.assertTrue(self._wait_for_publisher('mapoi/nav/command_rejected'),
+                        'mapoi_nav2_bridge が mapoi/nav/command_rejected を publish していない')
 
     # --- helpers ---
 
@@ -143,6 +148,14 @@ class TestNavStatusRejectedPaths(unittest.TestCase):
         while time.monotonic() < end:
             rclpy.spin_once(self.node, timeout_sec=0.05)
             if self.node.count_subscribers(topic_name) > 0:
+                return True
+        return False
+
+    def _wait_for_publisher(self, topic_name, timeout_sec=5.0):
+        end = time.monotonic() + timeout_sec
+        while time.monotonic() < end:
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+            if self.node.count_publishers(topic_name) > 0:
                 return True
         return False
 

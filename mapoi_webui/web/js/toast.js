@@ -47,6 +47,9 @@
 
     const el = doc.createElement('div');
     el.className = 'toast';
+    // toast が唯一の通知経路なのでスクリーンリーダーにも届くようにする (#354 review low)。
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
     el.textContent = message;
     container.appendChild(el);
 

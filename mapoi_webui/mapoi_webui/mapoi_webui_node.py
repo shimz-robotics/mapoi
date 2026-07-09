@@ -415,7 +415,8 @@ class MapoiWebNode(Node):
 
         各 client の queue.Queue に put_nowait で event を流す。client 切断は
         /api/events generator の finally で自動 discard されるので queue 漏れなし。
-        queue は unbounded (現状) なので Full 例外は通常発火しない。
+        queue は bounded (maxsize=10、#173 の DoS 対策) なので、drain が滞る遅い
+        client では Full で event が黙って drop される (通知系イベントの用途では許容)。
         """
         data = {'type': event_type}
         if payload is not None:
@@ -425,7 +426,7 @@ class MapoiWebNode(Node):
                 try:
                     q.put_nowait(data)
                 except queue.Full:
-                    pass  # bounded queue にした場合の安全弁、現在は unbounded で発火しない
+                    pass  # 遅い client への event は drop する (maxsize=10, #173)
 
     def get_config_path(self, map_name=None):
         """Get the full path to mapoi_config.yaml for a given map."""
