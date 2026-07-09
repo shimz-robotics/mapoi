@@ -87,6 +87,8 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 | POST | `/api/nav/switch-map` | Navigation map switch。`mapoi/nav/switch_map` に map 名を publish |
 | GET | `/api/mode` | navigation 機能の検出結果 (`navigation_available`, topic subscriber 数) |
 
+> **注意 (`POST /api/nav/*` 呼び出し側は必読)**: `mapoi/nav/*` 系 topic への publish はローカルで成功したかどうかしか分からず、navigation backend (`mapoi_nav2_bridge` 等) が実際にコマンドを受理・実行したかまでは保証できません。そのため `POST /api/nav/goal` `/route` `/pause` `/resume` `/cancel` `/initialpose` `/switch-map` は subscriber 不在等の失敗時でも HTTP `200 OK` を返し、代わりに response body の `warning` フィールドに理由を入れます (詳細は下記「REST API と server 依存」参照)。**HTTP ステータスコードだけでは失敗を検知できません** — 外部 client は必ず response body に `warning` フィールドが含まれていないか確認してください。
+
 `POST /api/pois` は楽観的競合検出 (`expected_version` フィールド) に対応 (#241)。WebUI 経由は frontend が自動でハンドリング、外部 POST (curl / 別 client) で `expected_version` 省略時は check skip のため、競合上書きを避けたい場合は呼び出し側が `GET /api/pois` の `config_version` を送り返す責任を負う。詳細仕様は実装コメント (`api_save_pois`) / test (`test_api_save_pois_version_conflict.py`) を参照。
 
 ## 起動方法 (3 つのシナリオ)
@@ -112,6 +114,18 @@ ros2 launch mapoi_webui mapoi_editor.launch.yaml maps_path:=/path/to/maps map_na
 ### C. 統合運用 / デモ (Nav2 + sim + webui を全部)
 
 `mapoi_turtlebot3_example` の `turtlebot3_navigation.launch.yaml` のような bringup + webui 統合 launch を使う。詳細はそのパッケージの README を参照。
+
+## maps_path 未設定時の縮退
+
+`maps_path` パラメータは `""` (未設定) でも `mapoi_webui_node` は起動します。`mapoi_server` が `maps_path` 空で FATAL ログを出して即 throw する (起動しない) のとは非対称ですが、これは意図的な設計です — webui は「ロボットが既に稼働中の環境に、RViz の代替としてオペレーター用 nav UI を後付けする」用途 (起動方法 A) が正当に存在し、その用途では地図ディレクトリへのアクセスを必要としないため、fail-fast にはしていません。
+
+`maps_path` 未設定時の挙動は以下の通りです:
+
+- 起動時に `maps_path parameter not set. Set it to use the web editor.` を `WARN` ログ出力し、そのまま起動を継続する
+- **editor 機能 (地図一覧・地図画像・POI/Route/CustomTags の閲覧・編集) は無効になる**: `get_maps_list()` は `maps_path` が空 (または存在しないディレクトリ) の場合に空リストを返すため、`GET /api/maps` は `maps: []` を返し、`GET /api/maps/<name>/image` `/metadata` や POI/Route/CustomTags 系の endpoint (`GET`/`POST /api/pois` `/api/routes` `/api/custom_tags`) は対象 YAML/PNG が見つからず `404 Not Found` を返す
+- **nav 操作系 (`/api/nav/*`, `/api/mode`, `GET /api/nav/status`) は `maps_path` に依存せず動作する**: これらは `mapoi/nav/*` topic の publish / subscribe や `mapoi_server` の service 呼び出しのみで完結するため、`maps_path` 未設定でも通常通り使える
+
+したがって、`maps_path` を設定せずに起動した webui は「ナビゲーション操作専用の後付け UI」として機能し、地図編集機能だけが無効になります。
 
 ## REST API と server 依存
 

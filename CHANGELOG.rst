@@ -91,6 +91,16 @@ Breaking changes
   switch to keying on ``name`` instead. See ``docs/migration/v0.5.0.md``
   (#338).
 
+* ``mapoi_interfaces/srv/SelectMap`` response field ``initial_poi_name`` is
+  renamed to ``resolved_initial_poi_name``. Request and response previously
+  reused the same field name (``initial_poi_name``) for the *requested* POI
+  and the *resolved* POI, which read ambiguously at a glance; the request
+  field is unchanged. The ``mapoi_webui`` REST endpoint ``POST
+  /api/maps/select`` mirrors the rename in its JSON response body.
+  Recompile all clients against the updated ``.srv``; ``mapoi_server`` and
+  ``mapoi_nav2_bridge`` are updated in this change. See
+  ``docs/migration/v0.5.0.md`` (#343).
+
 Fixed
 -----
 

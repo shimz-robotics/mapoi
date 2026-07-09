@@ -188,7 +188,7 @@ class TestServerRestartInitialposeRelatch(unittest.TestCase):
         select_result = self._call(
             select_map_client, SelectMap.Request(map_name='test_map_b'))
         self.assertTrue(select_result.success)
-        self.assertEqual(select_result.initial_poi_name, 'map_b_start')
+        self.assertEqual(select_result.resolved_initial_poi_name, 'map_b_start')
         request = RequestInitialPose.Request(
             map_name='test_map_b', poi_name='map_b_start')
         self.assertTrue(self._call(request_initialpose_client, request).success)
