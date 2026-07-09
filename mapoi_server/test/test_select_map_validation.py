@@ -1,4 +1,7 @@
-"""select_map の map_name 入力検証 launch_test (#328).
+"""mapoi_server 単体 fixture の service 契約 launch_test。
+
+- select_map の map_name 入力検証 (#328)
+- get_route_pois の success/error_message 契約 (#342)
 
 `select_map_service` は operator UI (WebUI / RViz panel) からの service 入力である
 `request.map_name` を maps_path に path 連結する。separator や ".." を含む名前を
@@ -27,7 +30,7 @@ import launch_testing.markers
 
 import rclpy
 from ament_index_python.packages import get_package_share_directory
-from mapoi_interfaces.srv import GetMapsInfo, SelectMap
+from mapoi_interfaces.srv import GetMapsInfo, GetRoutePois, SelectMap
 
 
 @launch_testing.markers.keep_alive
@@ -52,6 +55,72 @@ def generate_test_description():
     ]), {
         'mapoi_server': mapoi_server_node,
     }
+
+
+class TestGetRoutePoisContract(unittest.TestCase):
+    """get_route_pois の success/error_message 契約 (#342) を service 経路で pin する。
+
+    mapoi_server 単体 fixture を共有するため本ファイルに同居 (docs/testing-policy.md
+    3 節: 新規 launch_test ファイルは新しい mock/fixture 構成が必要な時のみ)。
+    テスト順序に依存しないよう setUpClass で対象 map を明示 select する。
+    """
+
+    SPIN_TIMEOUT = 10.0
+
+    @classmethod
+    def setUpClass(cls):
+        rclpy.init()
+        cls.node = rclpy.create_node('test_get_route_pois_contract_node')
+        cls.select_map_client = cls.node.create_client(SelectMap, 'mapoi/select_map')
+        cls.get_route_pois_client = cls.node.create_client(GetRoutePois, 'mapoi/get_route_pois')
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.node.destroy_node()
+        rclpy.shutdown()
+
+    def _call(self, client, request):
+        self.assertTrue(client.wait_for_service(timeout_sec=self.SPIN_TIMEOUT),
+                        f'{client.srv_name} service did not become available')
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(self.node, future, timeout_sec=self.SPIN_TIMEOUT)
+        result = future.result()
+        self.assertIsNotNone(result, f'{client.srv_name} call did not complete')
+        return result
+
+    def _select_map(self, map_name):
+        result = self._call(self.select_map_client, SelectMap.Request(map_name=map_name))
+        self.assertTrue(result.success, f'fixture select_map({map_name}) failed: {result.error_message}')
+
+    def test_existing_route_returns_success_true(self):
+        """route が存在すれば success=true / error_message 空 / waypoints が返る。"""
+        self._select_map('test_map_a')
+        result = self._call(self.get_route_pois_client,
+                            GetRoutePois.Request(route_name='route_a_full'))
+        self.assertTrue(result.success, f'existing route rejected: {result.error_message}')
+        self.assertEqual(result.error_message, '')
+        self.assertEqual([p.name for p in result.pois_list], ['map_a_start', 'map_a_goal'])
+
+    def test_missing_route_returns_success_false(self):
+        """存在しない route 名は success=false + route 名入りの error_message (#342)。"""
+        self._select_map('test_map_a')
+        result = self._call(self.get_route_pois_client,
+                            GetRoutePois.Request(route_name='no_such_route'))
+        self.assertFalse(result.success, 'nonexistent route returned success=true')
+        self.assertIn('no_such_route', result.error_message)
+        self.assertEqual(len(result.pois_list), 0)
+
+    def test_map_without_routes_returns_success_false(self):
+        """route 節が無い map では success=false + routes 未定義である旨の error_message。"""
+        self._select_map('test_map_b')
+        try:
+            result = self._call(self.get_route_pois_client,
+                                GetRoutePois.Request(route_name='route_a_full'))
+            self.assertFalse(result.success, 'route lookup on routeless map returned success=true')
+            self.assertIn('no routes', result.error_message)
+        finally:
+            # 後続クラス (TestSelectMapValidation) が初期 map=test_map_a を前提にするため戻す。
+            self._select_map('test_map_a')
 
 
 class TestSelectMapValidation(unittest.TestCase):

@@ -370,10 +370,18 @@ void MapoiServer::get_route_pois_service(
   // #342: route_name の typo と「route は存在するが POI 0 件」を呼び出し側が区別できるよう
   // success/error_message を返す (SelectMap パターン準拠)。POI 0 件自体は route はある
   // ので success=true のまま (呼び出し側の空 reject 経路は現行維持)。
+  // routes 未定義 (config に route 節が無い / 未ロード) は typo と原因が違うため
+  // error_message を分ける (Cursor review PR #361 medium)。route キー欠如は load 時に
+  // 空 sequence へ正規化される (load_mapoi_config) ため size()==0 も同扱い。
   if (!route_found) {
     response->success = false;
-    response->error_message = "Route '" + request->route_name +
-      "' not found in map '" + map_name_ + "'";
+    if (!routes_list_ || !routes_list_.IsSequence() || routes_list_.size() == 0) {
+      response->error_message = "Route '" + request->route_name +
+        "' not found: map '" + map_name_ + "' has no routes";
+    } else {
+      response->error_message = "Route '" + request->route_name +
+        "' not found in map '" + map_name_ + "'";
+    }
     RCLCPP_WARN(this->get_logger(), "get_route_pois: %s", response->error_message.c_str());
     return;
   }
