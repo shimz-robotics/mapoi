@@ -78,21 +78,28 @@ class TestApiNavSwitchMap(unittest.TestCase):
         node = _FakeNode(maps=['mapA'])
         resp = _client(node).post('/api/nav/switch-map', json=[1, 2])
         self.assertEqual(resp.status_code, 400, resp.get_data(as_text=True))
-        self.assertIn('map_name', resp.get_json().get('error', ''))
+        body = resp.get_json()
+        self.assertIn('map_name', body.get('error', ''))
+        # 機械可読 code フィールド (#343): 400 系は invalid_request で統一。
+        self.assertEqual(body.get('code'), 'invalid_request')
         self.assertEqual(node.published, [])  # publish されていない
 
     def test_missing_map_name_returns_400(self):
         node = _FakeNode(maps=['mapA'])
         resp = _client(node).post('/api/nav/switch-map', json={})
         self.assertEqual(resp.status_code, 400, resp.get_data(as_text=True))
-        self.assertIn('map_name', resp.get_json().get('error', ''))
+        body = resp.get_json()
+        self.assertIn('map_name', body.get('error', ''))
+        self.assertEqual(body.get('code'), 'invalid_request')
         self.assertEqual(node.published, [])
 
     def test_whitespace_map_name_returns_400(self):
         node = _FakeNode(maps=['mapA'])
         resp = _client(node).post('/api/nav/switch-map', json={'map_name': '   '})
         self.assertEqual(resp.status_code, 400, resp.get_data(as_text=True))
-        self.assertIn('map_name', resp.get_json().get('error', ''))
+        body = resp.get_json()
+        self.assertIn('map_name', body.get('error', ''))
+        self.assertEqual(body.get('code'), 'invalid_request')
         self.assertEqual(node.published, [])
 
     def test_non_string_map_name_returns_400(self):
@@ -108,14 +115,19 @@ class TestApiNavSwitchMap(unittest.TestCase):
             self.assertEqual(
                 resp.status_code, 400,
                 f'map_name={bad!r}: {resp.get_data(as_text=True)}')
-            self.assertIn('map_name', resp.get_json().get('error', ''))
+            body = resp.get_json()
+            self.assertIn('map_name', body.get('error', ''))
+            self.assertEqual(body.get('code'), 'invalid_request')
             self.assertEqual(node.published, [], f'map_name={bad!r} を publish した')
 
     def test_unknown_map_returns_404(self):
         node = _FakeNode(maps=['mapA', 'mapB'])
         resp = _client(node).post('/api/nav/switch-map', json={'map_name': 'mapX'})
         self.assertEqual(resp.status_code, 404, resp.get_data(as_text=True))
-        self.assertIn('mapX', resp.get_json().get('error', ''))
+        body = resp.get_json()
+        self.assertIn('mapX', body.get('error', ''))
+        # 機械可読 code フィールド (#343): 404 系は not_found で統一。
+        self.assertEqual(body.get('code'), 'not_found')
         self.assertEqual(node.published, [])
 
     def test_valid_map_publishes_and_returns_200(self):

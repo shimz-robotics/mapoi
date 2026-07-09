@@ -68,13 +68,23 @@ const MapoiApi = {
     return res.json();
   },
 
-  async saveCustomTags(customTags) {
+  /**
+   * POST /api/custom_tags (#343: #241 の楽観的競合検出を custom_tags にも展開)。
+   * 返値の形は savePois と同じ { ok, status, conflict, ...body } (#343)。
+   */
+  async saveCustomTags(customTags, expectedVersion) {
     const res = await fetch('/api/custom_tags', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ custom_tags: customTags }),
+      body: JSON.stringify({ custom_tags: customTags, expected_version: expectedVersion }),
     });
-    return res.json();
+    const body = await res.json().catch(() => ({}));
+    return {
+      ok: res.ok,
+      status: res.status,
+      conflict: res.status === 409,
+      ...body,
+    };
   },
 
   async getRoutes() {
@@ -82,13 +92,23 @@ const MapoiApi = {
     return res.json();
   },
 
-  async saveRoutes(routes) {
+  /**
+   * POST /api/routes (#343: #241 の楽観的競合検出を routes にも展開)。
+   * 返値の形は savePois と同じ { ok, status, conflict, ...body } (#343)。
+   */
+  async saveRoutes(routes, expectedVersion) {
     const res = await fetch('/api/routes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ routes }),
+      body: JSON.stringify({ routes, expected_version: expectedVersion }),
     });
-    return res.json();
+    const body = await res.json().catch(() => ({}));
+    return {
+      ok: res.ok,
+      status: res.status,
+      conflict: res.status === 409,
+      ...body,
+    };
   },
 
   async navGoal(poiName) {

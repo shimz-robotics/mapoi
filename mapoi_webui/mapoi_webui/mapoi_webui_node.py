@@ -628,7 +628,7 @@ class MapoiWebNode(Node):
             map_dir = node.get_map_dir(name)
             png_bytes, content_type = get_map_png(map_dir)
             if png_bytes is None:
-                return jsonify({'error': 'Map image not found'}), 404
+                return jsonify({'error': 'Map image not found', 'code': 'not_found'}), 404
             return Response(png_bytes, mimetype=content_type)
 
         @app.route('/api/maps/<name>/metadata')
@@ -636,7 +636,7 @@ class MapoiWebNode(Node):
             map_dir = node.get_map_dir(name)
             meta = get_map_metadata(map_dir)
             if meta is None:
-                return jsonify({'error': 'Map metadata not found'}), 404
+                return jsonify({'error': 'Map metadata not found', 'code': 'not_found'}), 404
             return jsonify({
                 'resolution': meta['resolution'],
                 'origin': meta['origin'],
@@ -648,18 +648,24 @@ class MapoiWebNode(Node):
         def api_select_map():
             data = request.get_json()
             if not data or 'map_name' not in data:
-                return jsonify({'error': 'map_name required'}), 400
+                return jsonify({'error': 'map_name required', 'code': 'invalid_request'}), 400
             map_name = str(data['map_name']).strip()
             if not map_name:
-                return jsonify({'error': 'map_name required'}), 400
+                return jsonify({'error': 'map_name required', 'code': 'invalid_request'}), 400
             req = SelectMap.Request()
             req.map_name = map_name
             response = node._call_service_sync(
                 node.select_map_client_, req, 'mapoi/select_map', timeout_sec=3.0)
             if response is None:
-                return jsonify({'error': 'mapoi/select_map service unavailable or timed out'}), 503
+                return jsonify({
+                    'error': 'mapoi/select_map service unavailable or timed out',
+                    'code': 'service_unavailable',
+                }), 503
             if not response.success:
-                return jsonify({'error': response.error_message or 'mapoi/select_map failed'}), 400
+                return jsonify({
+                    'error': response.error_message or 'mapoi/select_map failed',
+                    'code': 'invalid_request',
+                }), 400
             node.map_name_ = map_name
             return jsonify({
                 'success': True,
@@ -676,13 +682,13 @@ class MapoiWebNode(Node):
             # membership skip 経路でそのまま publish される潜在バグになる。別 client
             # からの POST 保険として、型不正は coerce せず 400 で弾く (#199 follow-up)。
             if not isinstance(data, dict) or not isinstance(data.get('map_name'), str):
-                return jsonify({'error': 'map_name required'}), 400
+                return jsonify({'error': 'map_name required', 'code': 'invalid_request'}), 400
             map_name = data['map_name'].strip()
             if not map_name:
-                return jsonify({'error': 'map_name required'}), 400
+                return jsonify({'error': 'map_name required', 'code': 'invalid_request'}), 400
             maps = node.get_maps_list()
             if maps and map_name not in maps:
-                return jsonify({'error': f'unknown map: {map_name}'}), 404
+                return jsonify({'error': f'unknown map: {map_name}', 'code': 'not_found'}), 404
             msg = String()
             msg.data = map_name
             _, warning = node.publish_with_subscriber_check(
@@ -703,7 +709,7 @@ class MapoiWebNode(Node):
         def api_get_pois():
             config_path = node.get_config_path()
             if not os.path.exists(config_path):
-                return jsonify({'error': 'Config not found'}), 404
+                return jsonify({'error': 'Config not found', 'code': 'not_found'}), 404
             pois = get_pois(config_path)
             return jsonify({
                 'pois': pois,
@@ -716,22 +722,22 @@ class MapoiWebNode(Node):
         def api_save_pois():
             data = request.get_json()
             if data is None or 'pois' not in data:
-                return jsonify({'error': 'Invalid request body'}), 400
+                return jsonify({'error': 'Invalid request body', 'code': 'invalid_request'}), 400
             # name の uniqueness / 空 を backend でも validate (#109)。
             # frontend 経由なら poi-editor が reject 済みだが、yaml 直編集や
             # 別 client からの POST に対する保険として 400 で reject する。
             err = _validate_unique_names(data['pois'], 'POI')
             if err:
-                return jsonify({'error': err}), 400
+                return jsonify({'error': err, 'code': 'invalid_request'}), 400
             err = _validate_pois_tag_exclusivity(data['pois'])
             if err:
-                return jsonify({'error': err}), 400
+                return jsonify({'error': err, 'code': 'invalid_request'}), 400
             err = _validate_pois_tolerance(data['pois'])
             if err:
-                return jsonify({'error': err}), 400
+                return jsonify({'error': err, 'code': 'invalid_request'}), 400
             config_path = node.get_config_path()
             if not os.path.exists(config_path):
-                return jsonify({'error': 'Config not found'}), 404
+                return jsonify({'error': 'Config not found', 'code': 'not_found'}), 404
             # 楽観的競合検出 (#241): frontend が GET 時に受け取った version を `expected_version`
             # として送り返す。current version と不一致なら 409 を返し、frontend に reload を促す。
             # `expected_version` 不在 (旧クライアント / curl) の場合は check をスキップ。
@@ -759,80 +765,123 @@ class MapoiWebNode(Node):
                 return jsonify({'success': True, 'config_version': new_version})
             except Exception as e:
                 node.get_logger().error(f'Failed to save POIs: {e}')
-                return jsonify({'error': str(e)}), 500
+                return jsonify({'error': str(e), 'code': 'internal_error'}), 500
 
         @app.route('/api/tag_definitions')
         def api_tag_definitions():
             response = node._call_service_sync(
                 node.tag_defs_client_, GetTagDefinitions.Request(), 'mapoi/get_tag_definitions')
             if response is None:
-                return jsonify({'error': 'mapoi/get_tag_definitions service unavailable or timed out'}), 503
+                return jsonify({
+                    'error': 'mapoi/get_tag_definitions service unavailable or timed out',
+                    'code': 'service_unavailable',
+                }), 503
             tags = [
                 {'name': d.name, 'description': d.description, 'is_system': d.is_system}
                 for d in response.definitions
             ]
-            return jsonify({'tags': tags})
+            # custom_tags は pois/routes と同じ yaml に書き込むため、POST /api/custom_tags の
+            # 楽観的競合検出 (#241 の展開, #343) 用に config_version を同梱する。config 不在
+            # (maps_path 未設定等) では compute_config_version が None を返し、POST 側は
+            # None を expected_version 一致対象から外して check skip 相当に倒す。
+            return jsonify({
+                'tags': tags,
+                'config_version': compute_config_version(node.get_config_path()),
+            })
 
         @app.route('/api/custom_tags', methods=['POST'])
         def api_save_custom_tags():
             data = request.get_json()
             if data is None or 'custom_tags' not in data:
-                return jsonify({'error': 'Invalid request body'}), 400
+                return jsonify({'error': 'Invalid request body', 'code': 'invalid_request'}), 400
             config_path = node.get_config_path()
             if not os.path.exists(config_path):
-                return jsonify({'error': 'Config not found'}), 404
+                return jsonify({'error': 'Config not found', 'code': 'not_found'}), 404
+            # 楽観的競合検出 (#241 の展開, #343): pois と同一契約。expected_version 不在なら
+            # check skip (旧クライアント / curl 後方互換)。
+            expected_version = data.get('expected_version')
+            if expected_version is not None:
+                current_version = compute_config_version(config_path)
+                if current_version is not None and current_version != expected_version:
+                    return jsonify({
+                        'error': 'yaml file has been modified externally; '
+                                 'please reload to fetch the latest state before saving',
+                        'code': 'version_mismatch',
+                        'current_version': current_version,
+                    }), 409
             try:
                 save_custom_tags(config_path, data['custom_tags'])
+                new_version = compute_config_version(config_path)
                 reloaded = node.call_reload_map_info()
                 if not reloaded:
                     return jsonify({
                         'success': True,
+                        'config_version': new_version,
                         'warning': 'The YAML file was saved, but mapoi_server mapoi/reload_map_info '
                                    'did not respond or failed. Check the logs for details.'
                     })
-                return jsonify({'success': True})
+                return jsonify({'success': True, 'config_version': new_version})
             except Exception as e:
                 node.get_logger().error(f'Failed to save custom tags: {e}')
-                return jsonify({'error': str(e)}), 500
+                return jsonify({'error': str(e), 'code': 'internal_error'}), 500
 
         @app.route('/api/routes')
         def api_get_routes():
             config_path = node.get_config_path()
             if not os.path.exists(config_path):
-                return jsonify({'error': 'Config not found'}), 404
+                return jsonify({'error': 'Config not found', 'code': 'not_found'}), 404
             routes = get_routes(config_path)
-            return jsonify({'routes': routes, 'map_name': node.map_name_})
+            return jsonify({
+                'routes': routes,
+                'map_name': node.map_name_,
+                # 楽観的競合検出 (#241 の展開, #343) のため frontend に渡す yaml 内容ハッシュ。
+                'config_version': compute_config_version(config_path),
+            })
 
         @app.route('/api/routes', methods=['POST'])
         def api_save_routes():
             data = request.get_json()
             if data is None or 'routes' not in data:
-                return jsonify({'error': 'Invalid request body'}), 400
+                return jsonify({'error': 'Invalid request body', 'code': 'invalid_request'}), 400
             err = _validate_unique_names(data['routes'], 'Route')
             if err:
-                return jsonify({'error': err}), 400
+                return jsonify({'error': err, 'code': 'invalid_request'}), 400
             config_path = node.get_config_path()
             if not os.path.exists(config_path):
-                return jsonify({'error': 'Config not found'}), 404
+                return jsonify({'error': 'Config not found', 'code': 'not_found'}), 404
+            # 楽観的競合検出 (#241 の展開, #343): pois と同一契約。expected_version 不在なら
+            # check skip (旧クライアント / curl 後方互換)。
+            expected_version = data.get('expected_version')
+            if expected_version is not None:
+                current_version = compute_config_version(config_path)
+                if current_version is not None and current_version != expected_version:
+                    return jsonify({
+                        'error': 'yaml file has been modified externally; '
+                                 'please reload to fetch the latest state before saving',
+                        'code': 'version_mismatch',
+                        'current_version': current_version,
+                    }), 409
             try:
                 save_routes(config_path, data['routes'])
+                new_version = compute_config_version(config_path)
                 reloaded = node.call_reload_map_info()
                 if not reloaded:
                     return jsonify({
                         'success': True,
+                        'config_version': new_version,
                         'warning': 'The YAML file was saved, but mapoi_server mapoi/reload_map_info '
                                    'did not respond or failed. Check the logs for details.'
                     })
-                return jsonify({'success': True})
+                return jsonify({'success': True, 'config_version': new_version})
             except Exception as e:
                 node.get_logger().error(f'Failed to save routes: {e}')
-                return jsonify({'error': str(e)}), 500
+                return jsonify({'error': str(e), 'code': 'internal_error'}), 500
 
         @app.route('/api/nav/goal', methods=['POST'])
         def api_nav_goal():
             data = request.get_json()
             if not data or 'poi_name' not in data:
-                return jsonify({'error': 'poi_name required'}), 400
+                return jsonify({'error': 'poi_name required', 'code': 'invalid_request'}), 400
             msg = String()
             msg.data = data['poi_name']
             _, warning = node.publish_with_subscriber_check(
@@ -846,7 +895,7 @@ class MapoiWebNode(Node):
         def api_nav_route():
             data = request.get_json()
             if not data or 'route_name' not in data:
-                return jsonify({'error': 'route_name required'}), 400
+                return jsonify({'error': 'route_name required', 'code': 'invalid_request'}), 400
             msg = String()
             msg.data = data['route_name']
             _, warning = node.publish_with_subscriber_check(
@@ -901,7 +950,7 @@ class MapoiWebNode(Node):
         def api_nav_initialpose():
             data = request.get_json()
             if not data or 'poi_name' not in data:
-                return jsonify({'error': 'poi_name required'}), 400
+                return jsonify({'error': 'poi_name required', 'code': 'invalid_request'}), 400
             # #211: initialpose_poi を直接 publish せず、唯一の writer である mapoi_server に
             # request_initial_pose service 経由で publish を依頼する。
             req = RequestInitialPose.Request()
@@ -910,11 +959,15 @@ class MapoiWebNode(Node):
             response = node._call_service_sync(
                 node.request_initial_pose_client_, req, 'mapoi/request_initial_pose', timeout_sec=3.0)
             if response is None:
-                return jsonify(
-                    {'error': 'mapoi/request_initial_pose service unavailable or timed out'}), 503
+                return jsonify({
+                    'error': 'mapoi/request_initial_pose service unavailable or timed out',
+                    'code': 'service_unavailable',
+                }), 503
             if not response.success:
-                return jsonify(
-                    {'error': response.error_message or 'mapoi/request_initial_pose failed'}), 400
+                return jsonify({
+                    'error': response.error_message or 'mapoi/request_initial_pose failed',
+                    'code': 'invalid_request',
+                }), 400
             node.get_logger().info(f'Initial pose: {data["poi_name"]}')
             # #211 review fix: 旧 publish_with_subscriber_check 相当の「無人 publish」警告を復元。
             # service は mapoi_server に届くが、その先の mapoi/initialpose_poi に subscriber

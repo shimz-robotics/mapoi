@@ -1,7 +1,8 @@
-"""Flask endpoint level test for `/api/pois` POST 楽観的競合検出 (#241 / #246).
+"""Flask endpoint level test for POST /api/pois `/api/routes` `/api/custom_tags` の
+楽観的競合検出 (#241 / #246、routes・custom_tags への展開は #343)。
 
 `test_yaml_handler_version.py` は `compute_config_version` 単体の決定性しか pin して
-いないため、Flask endpoint レベルで以下の `api_save_pois` 仕様契約を独立に固定する:
+いないため、Flask endpoint レベルで以下の仕様契約を独立に固定する (3 endpoint 共通):
 
 - `expected_version` 不一致 → 409 + `code: 'version_mismatch'` + `current_version`
 - `expected_version` 省略 → 200 OK (旧クライアント / curl 後方互換)
@@ -9,10 +10,11 @@
 
 ROS 2 Node を本物で起動すると DDS / service / publisher が絡んで test 重量級になるため、
 `create_flask_app` を duck-typed `FakeNode` に bind して呼び出す (= `MapoiWebNode.create_flask_app`
-は `self` を `node = self` で local capture するだけで、`/api/pois` 経路は
-`node.get_config_path()` / `node.call_reload_map_info()` / `node.get_logger()` の 3 メソッドだけに
-依存する)。他 endpoint の closures は登録時に評価されないため `FakeNode` に該当 attr が無くても
-本 test は影響を受けない。
+は `self` を `node = self` で local capture するだけで、`/api/pois` `/api/routes`
+`/api/custom_tags` の経路はいずれも `node.get_config_path()` / `node.call_reload_map_info()` /
+`node.get_logger()` の 3 メソッドだけに依存する、pois/routes/custom_tags で fixture 構成が
+共通なため `docs/testing-policy.md` 3 節に従い同一ファイルにクラスを追加している)。他 endpoint
+の closures は登録時に評価されないため `FakeNode` に該当 attr が無くても本 test は影響を受けない。
 """
 import os
 import tempfile
@@ -201,6 +203,154 @@ class TestApiSavePoisVersionConflict(unittest.TestCase):
         「明示送信は常に check」契約を test で固定する。
         """
         self._assert_409_version_mismatch_without_writing('')
+
+
+def _valid_routes_payload():
+    """`_validate_unique_names` の check を通る最小 1 route body."""
+    return [{'name': 'route1', 'waypoints': ['p1'], 'landmarks': []}]
+
+
+class TestApiSaveRoutesVersionConflict(unittest.TestCase):
+    """`POST /api/routes` の楽観的競合検出 (#241 の展開, #343)。
+
+    `api_save_pois` と同じ `compute_config_version` / `expected_version` 契約を
+    `api_save_routes` にも適用したことを pin する。`_FakeNode` は
+    `TestApiSavePoisVersionConflict` と共通 (get_config_path / call_reload_map_info /
+    get_logger の 3 メソッドだけに依存)。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.config_path = os.path.join(self._tmp.name, 'cfg.yaml')
+        _seed_config(self.config_path)
+        self.fake_node = _FakeNode(self.config_path)
+        self.app = MapoiWebNode.create_flask_app(self.fake_node)
+        self.client = self.app.test_client()
+
+    def _current_version(self):
+        from mapoi_webui.yaml_handler import compute_config_version
+        return compute_config_version(self.config_path)
+
+    def test_save_with_matching_expected_version_returns_200_with_new_version(self):
+        v_before = self._current_version()
+        resp = self.client.post('/api/routes', json={
+            'routes': _valid_routes_payload(),
+            'expected_version': v_before,
+        })
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+        body = resp.get_json()
+        self.assertTrue(body.get('success'))
+        self.assertIn('config_version', body)
+        self.assertNotEqual(body['config_version'], v_before)
+        self.assertEqual(body['config_version'], self._current_version())
+        with open(self.config_path, 'r') as f:
+            saved = yaml.safe_load(f)
+        self.assertEqual((saved.get('route') or [])[0]['name'], 'route1')
+
+    def test_save_with_mismatched_expected_version_returns_409_without_writing(self):
+        v_before = self._current_version()
+        with open(self.config_path, 'rb') as f:
+            content_before = f.read()
+        stale_version = 'b' * 64
+        self.assertNotEqual(stale_version, v_before)
+
+        resp = self.client.post('/api/routes', json={
+            'routes': _valid_routes_payload(),
+            'expected_version': stale_version,
+        })
+        self.assertEqual(resp.status_code, 409, resp.get_data(as_text=True))
+        body = resp.get_json()
+        self.assertEqual(body.get('code'), 'version_mismatch')
+        self.assertEqual(body.get('current_version'), v_before)
+        self.assertIn('reload', str(body.get('error', '')).lower())
+        # 競合時に save_routes が呼ばれていないこと (byte 単位で content 不変)。
+        with open(self.config_path, 'rb') as f:
+            self.assertEqual(f.read(), content_before)
+
+    def test_save_without_expected_version_returns_200(self):
+        """`expected_version` 省略時は旧クライアント / curl 後方互換で check skip する。"""
+        v_before = self._current_version()
+        resp = self.client.post('/api/routes', json={'routes': _valid_routes_payload()})
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+        body = resp.get_json()
+        self.assertTrue(body.get('success'))
+        self.assertNotEqual(body.get('config_version'), v_before)
+        self.assertEqual(body['config_version'], self._current_version())
+
+
+def _valid_custom_tags_payload():
+    """`api_save_custom_tags` は name uniqueness 等の validation を持たないため、
+    素朴な 1 tag body で十分。"""
+    return [{'name': 'zone_a', 'description': 'Zone A'}]
+
+
+class TestApiSaveCustomTagsVersionConflict(unittest.TestCase):
+    """`POST /api/custom_tags` の楽観的競合検出 (#241 の展開, #343)。
+
+    `api_save_pois` と同じ `compute_config_version` / `expected_version` 契約を
+    `api_save_custom_tags` にも適用したことを pin する。`_FakeNode` は
+    `TestApiSavePoisVersionConflict` と共通。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.config_path = os.path.join(self._tmp.name, 'cfg.yaml')
+        _seed_config(self.config_path)
+        self.fake_node = _FakeNode(self.config_path)
+        self.app = MapoiWebNode.create_flask_app(self.fake_node)
+        self.client = self.app.test_client()
+
+    def _current_version(self):
+        from mapoi_webui.yaml_handler import compute_config_version
+        return compute_config_version(self.config_path)
+
+    def test_save_with_matching_expected_version_returns_200_with_new_version(self):
+        v_before = self._current_version()
+        resp = self.client.post('/api/custom_tags', json={
+            'custom_tags': _valid_custom_tags_payload(),
+            'expected_version': v_before,
+        })
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+        body = resp.get_json()
+        self.assertTrue(body.get('success'))
+        self.assertIn('config_version', body)
+        self.assertNotEqual(body['config_version'], v_before)
+        self.assertEqual(body['config_version'], self._current_version())
+        with open(self.config_path, 'r') as f:
+            saved = yaml.safe_load(f)
+        self.assertEqual((saved.get('custom_tags') or [])[0]['name'], 'zone_a')
+
+    def test_save_with_mismatched_expected_version_returns_409_without_writing(self):
+        v_before = self._current_version()
+        with open(self.config_path, 'rb') as f:
+            content_before = f.read()
+        stale_version = 'c' * 64
+        self.assertNotEqual(stale_version, v_before)
+
+        resp = self.client.post('/api/custom_tags', json={
+            'custom_tags': _valid_custom_tags_payload(),
+            'expected_version': stale_version,
+        })
+        self.assertEqual(resp.status_code, 409, resp.get_data(as_text=True))
+        body = resp.get_json()
+        self.assertEqual(body.get('code'), 'version_mismatch')
+        self.assertEqual(body.get('current_version'), v_before)
+        self.assertIn('reload', str(body.get('error', '')).lower())
+        with open(self.config_path, 'rb') as f:
+            self.assertEqual(f.read(), content_before)
+
+    def test_save_without_expected_version_returns_200(self):
+        """`expected_version` 省略時は旧クライアント / curl 後方互換で check skip する。"""
+        v_before = self._current_version()
+        resp = self.client.post(
+            '/api/custom_tags', json={'custom_tags': _valid_custom_tags_payload()})
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+        body = resp.get_json()
+        self.assertTrue(body.get('success'))
+        self.assertNotEqual(body.get('config_version'), v_before)
+        self.assertEqual(body['config_version'], self._current_version())
 
 
 if __name__ == '__main__':

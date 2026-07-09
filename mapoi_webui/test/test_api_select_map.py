@@ -65,18 +65,23 @@ class TestApiSelectMap(unittest.TestCase):
             resolved_initial_poi_name=''))
         resp = _client(node).post('/api/maps/select', json={'map_name': 'm'})
         self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.get_json()['error'], 'boom')
+        body = resp.get_json()
+        self.assertEqual(body['error'], 'boom')
+        # 機械可読 code フィールド (#343): 400 系は invalid_request で統一。
+        self.assertEqual(body.get('code'), 'invalid_request')
         self.assertEqual(node.map_name_, 'old_map', '失敗時に map_name_ が更新されている')
 
     def test_service_unavailable_returns_503(self):
         node = _FakeNode(service_response=None)
         resp = _client(node).post('/api/maps/select', json={'map_name': 'm'})
         self.assertEqual(resp.status_code, 503)
+        self.assertEqual(resp.get_json().get('code'), 'service_unavailable')
 
     def test_missing_map_name_returns_400(self):
         node = _FakeNode(service_response=None)
         resp = _client(node).post('/api/maps/select', json={})
         self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json().get('code'), 'invalid_request')
 
 
 if __name__ == '__main__':
