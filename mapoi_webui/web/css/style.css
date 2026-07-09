@@ -1502,6 +1502,11 @@ main {
   display: block;
 }
 
+.ui-control-glyph {
+  font-size: 20px;
+  line-height: 1;
+}
+
 /* Display section (パネル内の表示設定 #323/#324)。他 section と同じ
    section-header イディオムで、body だけ専用の縦並び。 */
 .display-body {

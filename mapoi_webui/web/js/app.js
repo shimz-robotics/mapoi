@@ -444,13 +444,46 @@
     }
   };
 
-  // Dirty state change — refresh map markers and routes after save/discard
+  // Dirty state change — refresh map markers and routes after save/discard/undo/redo。
+  // isDirty=false になる経路は save 成功・discard・undo・redo と複数あり (Codex review
+  // #334 round 1-4 で全経路が同じ問題を踏むと判明)、loadRoutes() はサーバ最新状態で
+  // route working copy を丸ごと上書きするため、route 編集フォームが開いている間、または
+  // OK 後 Save 前の未保存 route 変更が残っている間に走ると route 側の作業を黙って失う。
+  // POI 側の操作自体 (undo/redo/discard/save) は route 編集と無関係にいつでも行えて
+  // よく、危険なのは loadRoutes() という副作用の方なので、個々の POI 操作ではなく
+  // ここ (route working copy を触る唯一の呼び出し元) で一元的にガードする。
   poiEditor.onDirtyChange = (isDirty) => {
     updateRouteEditorPoiNames();
     if (!isDirty) {
       mapViewer.showPois(poiEditor.pois, poiEditor.visiblePois);
-      loadRoutes();
+      if (routeEditor.editingIndex === -1 && !routeEditor.dirty) {
+        loadRoutes();
+      } else {
+        // loadRoutes() (サーバ最新化 + フォーム閉じ) は route working copy 保護のため
+        // skip したが、クライアント側の表示は最新の poiEditor.pois に合わせて更新して
+        // おかないと、開いている route フォームの waypoint/landmark select が古い POI
+        // 名を出し続けたり、route polyline が undo 前の POI 座標のまま残ったりする
+        // (Codex review #334 round 5)。どちらも poiEditor.pois の再取得済みデータだけで
+        // 完結する再描画で、サーバ最新化 (route working copy 上書き) は伴わない。
+        redrawRoutes();
+        if (routeEditor.editingIndex !== -1) {
+          // updateRouteEditorPoiNames() は関数先頭で呼び済み (routeEditor.poiNames は
+          // 最新)。select の DOM 再構築だけここで行う。
+          routeEditor.populateWaypointSelect();
+          routeEditor.populateLandmarkSelect();
+        }
+      }
     }
+  };
+
+  // モバイルで #poi-body が畳まれていても POI のドラッグ誤操作をすぐ取り消せるよう、
+  // undo 履歴がある間だけ地図上のフローティング Undo を出す (#332)。
+  const btnPoiUndoFloat = document.getElementById('btn-poi-undo-float');
+  if (btnPoiUndoFloat) {
+    btnPoiUndoFloat.addEventListener('click', () => poiEditor.undo());
+  }
+  poiEditor.onHistoryChange = (canUndo) => {
+    if (btnPoiUndoFloat) btnPoiUndoFloat.classList.toggle('hidden', !canUndo);
   };
 
   // 409 version_mismatch 受信時の全体 reload (#241)。POI だけ再 load しても route 側
