@@ -20,15 +20,21 @@ Added
 -----
 
 * A metapackage ``mapoi`` (``mapoi/package.xml`` with ``exec_depend`` on
-  all five packages), so the whole suite can be installed/depended on as
-  one unit — groundwork for apt/rosdep distribution (#20) (#348). Two
-  deliberate deviations from the issue text: it lives in a ``mapoi/``
-  subdirectory (navigation2-style) rather than at the repository root,
-  because a package manifest at the root would stop colcon's package
-  discovery from descending into the sibling packages; and it omits the
-  REP 140 ``<metapackage/>`` export, whose catkin_pkg validation is ROS 1
-  specific and would warn ("must buildtool_depend on catkin") on every
-  colcon invocation.
+  the four core packages), so the core suite can be installed/depended on
+  as one unit — groundwork for apt/rosdep distribution (#20) (#348).
+  Three deliberate deviations from the issue text: it lives in a
+  ``mapoi/`` subdirectory (navigation2-style) rather than at the
+  repository root, because a package manifest at the root would stop
+  colcon's package discovery from descending into the sibling packages;
+  it omits the REP 140 ``<metapackage/>`` export, whose catkin_pkg
+  validation is ROS 1 specific and would warn ("must buildtool_depend on
+  catkin") on every colcon invocation; and it excludes
+  ``mapoi_turtlebot3_example``, so a robot/production install does not
+  pull in the TurtleBot3 + Gazebo simulator stack (same policy as
+  navigation2, whose metapackage excludes the demo ``nav2_bringup``).
+  Installing ``mapoi_turtlebot3_example`` directly still brings in the
+  whole demo, since the example itself ``exec_depend``-s the mapoi core
+  packages.
 
 * New service ``request_initial_pose``
   (``mapoi_interfaces/srv/RequestInitialPose``,
