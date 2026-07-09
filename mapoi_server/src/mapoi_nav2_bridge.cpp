@@ -222,6 +222,10 @@ void MapoiNav2Bridge::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::Shared
   // Fetch POI list asynchronously, then navigate in the callback
   if (!this->pois_info_client_->wait_for_service(2s)) {
     RCLCPP_ERROR(this->get_logger(), "get_pois_info service not available");
+    // #339: 受理したが実行できなかった経路も status を publish する。放置すると
+    // WebUI/panel に直前の status (succeeded/navigating 等) が居座り、操作者が
+    // 誤操作 (typo 等) に気づけない。
+    publish_nav_status("rejected", poi_name);
     return;
   }
   auto request = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
@@ -246,6 +250,8 @@ void MapoiNav2Bridge::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::Shared
             RCLCPP_ERROR(this->get_logger(),
               "POI '%s' has 'landmark' tag; cannot be set as Nav2 goal.",
               poi_name.c_str());
+            // #339: landmark POI を goal 指定した操作は拒否されたことを status で通知する。
+            publish_nav_status("rejected", poi_name);
             return;
           }
           geometry_msgs::msg::PoseStamped goal_pose;
@@ -309,6 +315,8 @@ void MapoiNav2Bridge::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::Shared
         }
       }
       RCLCPP_WARN(this->get_logger(), "POI named '%s' not found!", poi_name.c_str());
+      // #339: typo 等で goal POI が見つからない操作も status で拒否を通知する。
+      publish_nav_status("rejected", poi_name);
     });
 }
 
@@ -577,6 +585,8 @@ void MapoiNav2Bridge::on_route_received(
   auto result = future.get();
   if (!result) {
     RCLCPP_ERROR(this->get_logger(), "Failed to get Route info.");
+    // #339: route 情報取得失敗も status を publish し、WebUI/panel の表示を居座らせない。
+    publish_nav_status("rejected", route_name);
     return;
   }
 
@@ -598,6 +608,8 @@ void MapoiNav2Bridge::on_route_received(
 
   if (waypoints.empty()) {
     RCLCPP_ERROR(this->get_logger(), "Route is empty. Cannot navigate.");
+    // #339: 空 route を渡された操作も status で拒否を通知する。
+    publish_nav_status("rejected", route_name);
     return;
   }
 

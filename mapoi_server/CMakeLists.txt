@@ -156,6 +156,11 @@ if(BUILD_TESTING)
     test/test_select_map_validation.py
     TIMEOUT 60
   )
+  # #339: 「受理したが未実行」経路の mapoi/nav/status 未 publish bug 再現。Nav2 mock 不要で軽量。
+  add_launch_test(
+    test/test_nav_status_rejected_paths.py
+    TIMEOUT 60
+  )
 
   # Install test config
   install(

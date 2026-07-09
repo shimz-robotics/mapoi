@@ -26,6 +26,8 @@ mapoi は navigation と localization の 2 つの backend を **独立した契
 | `mapoi/nav/status` | `std_msgs/String`（`status` または `status:target`） |
 | `mapoi/nav/backend_status` | `mapoi_interfaces/NavigationBackendStatus`（readiness summary、`transient_local`、minimal 3 フィールド） |
 
+`mapoi_nav2_bridge` が使う `status` 値は `navigating` / `succeeded` / `aborted` / `canceled` / `paused` / `map_switching` / `map_switch_succeeded` / `map_switch_failed` / `backend_unavailable` / `rejected`（詳細は [`mapoi_server` の README](../mapoi_server/README.md) の `mapoi/nav/status` 節）。**bridge 実装上の必須ルール**: goal / route / map switch コマンドを「受理したが実行しなかった」経路（無効な入力、内部 service 未 ready 等）では、必ず何らかの終端 status を publish してください。publish しないまま return すると、WebUI / RViz panel には直前の status（`succeeded` / `navigating` 等）が居座り続け、操作者が誤操作に気づけません（#339）。新規 status 値の追加は既存 subscriber に対して後方互換です。
+
 `mapoi/nav/backend_status` の `backend_ready=true` を出した時のみ WebUI が `Navigation connected` 状態になり、ナビ操作 UI が enable されます。bridge は POI / route / map 情報を `mapoi_server` の service（`get_pois_info` / `get_route_pois` / `select_map`）から取得し、自前の navigation API に変換します。各 topic / service の詳細は [`mapoi_server` の README](../mapoi_server/README.md) を参照してください。
 
 **`NavigationBackendStatus` 各フィールドの埋め方**（minimal 仕様）:
