@@ -17,7 +17,7 @@ const MapoiApi = {
   },
 
   async selectMap(mapName) {
-    const res = await fetch('/api/maps/select', {
+    const res = await fetch('/api/editor/select-map', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ map_name: mapName }),
@@ -64,16 +64,16 @@ const MapoiApi = {
   },
 
   async getTagDefinitions() {
-    const res = await fetch('/api/tag_definitions');
+    const res = await fetch('/api/tag-definitions');
     return res.json();
   },
 
   /**
-   * POST /api/custom_tags (#343: #241 の楽観的競合検出を custom_tags にも展開)。
+   * POST /api/custom-tags (#343: #241 の楽観的競合検出を custom_tags にも展開)。
    * 返値の形は savePois と同じ { ok, status, conflict, ...body } (#343)。
    */
   async saveCustomTags(customTags, expectedVersion) {
-    const res = await fetch('/api/custom_tags', {
+    const res = await fetch('/api/custom-tags', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ custom_tags: customTags, expected_version: expectedVersion }),
@@ -145,7 +145,7 @@ const MapoiApi = {
   },
 
   async navInitialPose(poiName) {
-    const res = await fetch('/api/nav/initialpose', {
+    const res = await fetch('/api/nav/initial-pose', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ poi_name: poiName }),

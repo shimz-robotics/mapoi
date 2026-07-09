@@ -118,6 +118,26 @@ Breaking changes
   ``mapoi_nav2_bridge`` are updated in this change. See
   ``docs/migration/v0.5.0.md`` (#343).
 
+* ``mapoi_webui`` REST API URL hierarchy: editor-only endpoints now live
+  under an ``/api/editor/`` prefix, separate from ``/api/nav/`` endpoints
+  that act on the running robot. ``POST /api/maps/select`` only switches
+  ``mapoi_server``'s edit-context map and does not touch Nav2 or the
+  running robot, whereas ``POST /api/nav/switch-map`` actually switches
+  the running robot's Nav2 map; the similar naming made this distinction
+  easy to miss and risked unintended map switches on a live robot (#340).
+  The remaining renames unify the URL separator convention on kebab-case
+  (#343, fifth checklist item). No compatibility alias is provided; old
+  paths now return ``404``. Rename table:
+
+  - ``POST /api/maps/select`` -> ``POST /api/editor/select-map``
+  - ``GET /api/tag_definitions`` -> ``GET /api/tag-definitions``
+  - ``POST /api/custom_tags`` -> ``POST /api/custom-tags``
+  - ``POST /api/nav/initialpose`` -> ``POST /api/nav/initial-pose``
+
+  Update any external client (curl scripts, dashboards, custom
+  frontends) pinning one of the old paths. See
+  ``docs/migration/v0.5.0.md`` for the full migration guide.
+
 Fixed
 -----
 

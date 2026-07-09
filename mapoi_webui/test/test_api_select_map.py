@@ -1,4 +1,4 @@
-"""Flask endpoint level test for `POST /api/maps/select` (#343).
+"""Flask endpoint level test for `POST /api/editor/select-map` (#343, URL rename #340).
 
 SelectMap.srv の response フィールド rename (`initial_poi_name` →
 `resolved_initial_poi_name`, #343) を REST JSON key レベルでも pin する。
@@ -45,6 +45,29 @@ def _client(node):
     return app.test_client()
 
 
+class TestApiUrlRouting(unittest.TestCase):
+    """#340 の URL rename (editor/nav 階層分離 + kebab-case 統一) を routing 表で pin する。
+
+    url_map の検査は handler closure を評価しないため、最小 FakeNode で全 endpoint の
+    登録有無を一括確認できる。互換 alias なし (旧 URL は 404) が仕様の中心なので、
+    新 URL の存在だけでなく**旧 URL の不在**も assert する (alias の意図しない復活防止)。
+    """
+
+    _RENAMES = {
+        '/api/maps/select': '/api/editor/select-map',
+        '/api/tag_definitions': '/api/tag-definitions',
+        '/api/custom_tags': '/api/custom-tags',
+        '/api/nav/initialpose': '/api/nav/initial-pose',
+    }
+
+    def test_renamed_urls_registered_and_old_urls_gone(self):
+        app = MapoiWebNode.create_flask_app(_FakeNode(service_response=None))
+        rules = {r.rule for r in app.url_map.iter_rules()}
+        for old, new in self._RENAMES.items():
+            self.assertIn(new, rules, f'renamed URL {new} not registered')
+            self.assertNotIn(old, rules, f'old URL {old} still registered (#340 no-alias policy)')
+
+
 class TestApiSelectMap(unittest.TestCase):
 
     def test_success_returns_resolved_initial_poi_name_key(self):
@@ -52,7 +75,7 @@ class TestApiSelectMap(unittest.TestCase):
         node = _FakeNode(service_response=SimpleNamespace(
             success=True, error_message='', config_path='/maps/m/mapoi_config.yaml',
             resolved_initial_poi_name='poi_start'))
-        resp = _client(node).post('/api/maps/select', json={'map_name': 'm'})
+        resp = _client(node).post('/api/editor/select-map', json={'map_name': 'm'})
         self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
         payload = resp.get_json()
         self.assertEqual(payload['resolved_initial_poi_name'], 'poi_start')
@@ -63,7 +86,7 @@ class TestApiSelectMap(unittest.TestCase):
         node = _FakeNode(service_response=SimpleNamespace(
             success=False, error_message='boom', config_path='',
             resolved_initial_poi_name=''))
-        resp = _client(node).post('/api/maps/select', json={'map_name': 'm'})
+        resp = _client(node).post('/api/editor/select-map', json={'map_name': 'm'})
         self.assertEqual(resp.status_code, 400)
         body = resp.get_json()
         self.assertEqual(body['error'], 'boom')
@@ -73,13 +96,13 @@ class TestApiSelectMap(unittest.TestCase):
 
     def test_service_unavailable_returns_503(self):
         node = _FakeNode(service_response=None)
-        resp = _client(node).post('/api/maps/select', json={'map_name': 'm'})
+        resp = _client(node).post('/api/editor/select-map', json={'map_name': 'm'})
         self.assertEqual(resp.status_code, 503)
         self.assertEqual(resp.get_json().get('code'), 'service_unavailable')
 
     def test_missing_map_name_returns_400(self):
         node = _FakeNode(service_response=None)
-        resp = _client(node).post('/api/maps/select', json={})
+        resp = _client(node).post('/api/editor/select-map', json={})
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.get_json().get('code'), 'invalid_request')
 
