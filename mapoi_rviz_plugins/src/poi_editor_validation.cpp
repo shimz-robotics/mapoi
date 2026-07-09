@@ -21,14 +21,12 @@
 namespace mapoi_rviz_plugins
 {
 
-// PoiTable column index 定数 (#158 round 1 medium): poi_editor.cpp と同じ値。
-// anonymous namespace で TU ローカルに閉じる (ODR 衝突回避)。
-namespace {
-constexpr int kColName = 0;
-constexpr int kColPose = 1;
-constexpr int kColTolerance = 2;
-constexpr int kColTags = 3;
-}  // namespace
+// PoiTable column index 定数は poi_editor_helpers.hpp に集約 (PR #371 review medium:
+// TU ごとの重複定義は列並び替え時の片側更新漏れで validation が黙って壊れるため)。
+using detail::kColName;
+using detail::kColPose;
+using detail::kColTolerance;
+using detail::kColTags;
 
 bool PoiEditorPanel::ValidatePois()
 {

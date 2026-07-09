@@ -27,17 +27,14 @@ static const rclcpp::Logger LOGGER = rclcpp::get_logger("mapoi_rviz_plugins.poi_
 using detail::try_parse_finite_double;
 using detail::split_and_trim;
 
-// PoiTable column index 定数 (#158 round 1 medium): magic number を排除して
-// 「name → pose → tolerance → tags → description」順序を 1 箇所に集約。将来の column
-// 追加・順序変更で silent な誤読み書きが起きないようにする。
-namespace {
-constexpr int kColName = 0;
-constexpr int kColPose = 1;
-constexpr int kColTolerance = 2;
-constexpr int kColTags = 3;
-constexpr int kColDescription = 4;
-constexpr int kColCount = 5;
-}  // namespace
+// PoiTable column index 定数は poi_editor_helpers.hpp に集約 (#158 で導入、#346 の
+// TU 分割に伴い 2 TU から参照されるため header へ移動)。
+using detail::kColName;
+using detail::kColPose;
+using detail::kColTolerance;
+using detail::kColTags;
+using detail::kColDescription;
+using detail::kColCount;
 
 PoiEditorPanel::PoiEditorPanel(QWidget* parent) : Panel(parent),  ui_(new Ui::PoiEditorUi())
 {

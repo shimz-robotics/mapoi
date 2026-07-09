@@ -14,6 +14,18 @@ namespace mapoi_rviz_plugins::detail
 // tolerance.xy / tolerance.yaw の最小値 (msg spec、poi-filter.js の TOLERANCE_MIN と同じ値、#138)。
 constexpr double kToleranceMin = 0.001;
 
+// PoiTable column index 定数 (#158 round 1 medium): magic number を排除して
+// 「name → pose → tolerance → tags → description」順序を 1 箇所に集約。
+// #346 の TU 分割で poi_editor.cpp / poi_editor_validation.cpp の両方から参照される
+// ため header へ移動 (PR #371 review medium: TU ごとの重複定義は列並び替え時に
+// 片方だけ更新されて validation が黙って壊れるリスクがあった)。
+constexpr int kColName = 0;
+constexpr int kColPose = 1;
+constexpr int kColTolerance = 2;
+constexpr int kColTags = 3;
+constexpr int kColDescription = 4;
+constexpr int kColCount = 5;
+
 // 文字列を strict に double に parse し、有限性を確認する純関数 (Codex review #139 medium 対応)。
 // std::stod は "1abc" を 1 として返し NaN/Inf も throw しないため、validation と save で
 // 同じ parser を使うために helper にする。min check は呼び出し側の責任。
