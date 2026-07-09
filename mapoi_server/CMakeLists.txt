@@ -172,6 +172,14 @@ if(BUILD_TESTING)
     test/test_nav_status_rejected_during_navigation.py
     TIMEOUT 120
   )
+  # #353: get_route_pois backend の異常応答 (success=false / success=true & 空 pois_list) の
+  # reject 経路。#342 で response に success/error_message が追加され決定論的 mock が可能に
+  # なった。FakeRoutePoisServer (nav2_mocks.py) 前提で既存ファイルと mock 構成が異なるため分離
+  # (docs/testing-policy.md 3節)。mapoi_server 不在で軽量。
+  add_launch_test(
+    test/test_nav_status_route_backend_failure.py
+    TIMEOUT 60
+  )
 
   # Install test config
   install(
