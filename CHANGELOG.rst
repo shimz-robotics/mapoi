@@ -187,6 +187,8 @@ Changed
   ``tolerance_check_callback`` POI-event judgment engine, POI list / system tag
   fetch infrastructure, and cmd_vel monitoring — all of which are shared across
   route, goal, and map-switch navigation and are not cleanly separable per domain.
+  Also removes ``clear_current_route_poi_names_``, a pre-existing dead private
+  method with no remaining callers.
 
 Fixed
 -----

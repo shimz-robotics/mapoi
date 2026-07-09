@@ -847,12 +847,6 @@ void MapoiNav2Bridge::tolerance_check_callback()
   }
 }
 
-void MapoiNav2Bridge::clear_current_route_poi_names_()
-{
-  std::lock_guard<std::mutex> lock(data_mutex_);
-  current_route_poi_names_.clear();
-}
-
 double MapoiNav2Bridge::distance_2d(const geometry_msgs::msg::Pose & poi_pose, double rx, double ry)
 {
   double dx = poi_pose.position.x - rx;
