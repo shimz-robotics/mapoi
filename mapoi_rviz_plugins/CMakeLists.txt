@@ -22,6 +22,7 @@ qt5_wrap_ui(UIC_FILES
 set(SOURCE_FILES
   src/mapoi_panel.cpp
   src/poi_editor.cpp
+  src/poi_editor_validation.cpp
   src/mapoi_pose_tool.cpp
 )
 
@@ -38,6 +39,12 @@ if(BUILD_TESTING)
   # unit test (#169)。Panel callback はこの判定を UI 更新へ写像するだけ。header は Qt/ROS 非依存。
   ament_auto_add_gtest(test_config_path_update_policy
     test/test_config_path_update_policy.cpp
+  )
+  # poi_editor_helpers.hpp に追加した ValidatePois の pose/tolerance セル判定・tag 排他判定の
+  # unit test (#346)。ValidatePois() 本体 (poi_editor_validation.cpp) は QMessageBox 表示に
+  # これらの判定結果を渡すだけなので Qt を起動せずに判定ロジックだけを安く gate できる。
+  ament_auto_add_gtest(test_poi_editor_validation
+    test/test_poi_editor_validation.cpp
   )
 endif()
 

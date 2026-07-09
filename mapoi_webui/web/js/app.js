@@ -6,6 +6,7 @@
   const mapViewer = new MapViewer('map');
   const poiEditor = new PoiEditor();
   const routeEditor = new RouteEditor();
+  const tagEditor = new TagEditor();
 
   const mapSelect = document.getElementById('map-select');
   const navigationMapSelect = document.getElementById('navigation-map-select');
@@ -25,156 +26,16 @@
   // リロードで再度ロックへ戻り、解除状態は永続化しない。
   let poiPositionLocked = true;
 
-  // --- Tag editor state ---
-  let tagDirty = false;
-  let editingTags = []; // working copy of tags (both system + custom)
-  // 楽観的競合検出用 yaml ハッシュ (#241 の展開, #343)。loadTagDefinitions() で受け取り、
-  // btnSaveTags の POST 時に送り返す。
-  let tagConfigVersion = null;
-  const expandedTagDescriptions = new Set();
-  const tagList = document.getElementById('tag-list');
-  const tagAddName = document.getElementById('tag-add-name');
-  const tagAddDesc = document.getElementById('tag-add-desc');
-  const btnTagAdd = document.getElementById('btn-tag-add');
-  const btnSaveTags = document.getElementById('btn-save-tags');
-  const btnDiscardTags = document.getElementById('btn-discard-tags');
-  const tagDirtyIndicator = document.getElementById('tag-dirty-indicator');
-
-  function renderTagList() {
-    tagList.innerHTML = '';
-    editingTags.forEach((tag, i) => {
-      const div = document.createElement('div');
-      div.className = 'tag-item ' + (tag.is_system ? 'tag-item-system' : 'tag-item-custom');
-      const tagKey = tag.name || String(i);
-      const description = tag.description || '';
-      const isExpanded = expandedTagDescriptions.has(tagKey);
-      if (isExpanded) div.classList.add('tag-desc-expanded');
-
-      if (tag.is_system) {
-        const icon = document.createElement('span');
-        icon.className = 'tag-lock';
-        icon.textContent = '\u{1F512}';
-        div.appendChild(icon);
-      }
-
-      const name = document.createElement('span');
-      name.className = 'tag-item-name';
-      name.textContent = tag.name;
-      name.title = tag.name;
-      div.appendChild(name);
-
-      const desc = document.createElement('button');
-      desc.type = 'button';
-      desc.className = 'tag-item-desc';
-      desc.textContent = description;
-      desc.title = description;
-      desc.disabled = !description;
-      desc.setAttribute('aria-label', description ? `Tag description: ${description}` : 'No tag description');
-      desc.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
-      if (description) desc.classList.add('has-description');
-      if (isExpanded) desc.classList.add('expanded');
-      desc.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (!description) return;
-        if (expandedTagDescriptions.has(tagKey)) {
-          expandedTagDescriptions.delete(tagKey);
-        } else {
-          expandedTagDescriptions.add(tagKey);
-        }
-        renderTagList();
-      });
-      div.appendChild(desc);
-
-      const typeLabel = document.createElement('span');
-      typeLabel.className = tag.is_system
-        ? 'tag-type-label tag-type-system'
-        : 'tag-type-label tag-type-custom';
-      typeLabel.textContent = tag.is_system ? 'system' : 'custom';
-      div.appendChild(typeLabel);
-
-      const deleteBtn = document.createElement('button');
-      deleteBtn.className = 'tag-delete-btn';
-      deleteBtn.title = tag.is_system ? 'System tags cannot be deleted' : 'Delete tag';
-      deleteBtn.innerHTML = '&#10005;';
-      if (tag.is_system) {
-        deleteBtn.disabled = true;
-      } else {
-        deleteBtn.dataset.index = String(i);
-      }
-      div.appendChild(deleteBtn);
-      tagList.appendChild(div);
-    });
-    // Attach delete handlers
-    tagList.querySelectorAll('.tag-delete-btn:not(:disabled)').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        const idx = parseInt(e.currentTarget.dataset.index);
-        editingTags.splice(idx, 1);
-        setTagDirty(true);
-        renderTagList();
-      });
-    });
-  }
-
-  function setTagDirty(dirty) {
-    tagDirty = dirty;
-    btnSaveTags.disabled = !dirty;
-    btnDiscardTags.disabled = !dirty;
-    tagDirtyIndicator.textContent = dirty ? 'unsaved changes' : '';
-  }
-
-  btnTagAdd.addEventListener('click', () => {
-    const name = tagAddName.value.trim();
-    const desc = tagAddDesc.value.trim();
-    if (!name) { tagAddName.focus(); return; }
-    // Check duplicate (case-insensitive)
-    if (editingTags.some((t) => t.name.toLowerCase() === name.toLowerCase())) {
-      alert('Tag "' + name + '" already exists.');
-      return;
-    }
-    editingTags.push({ name, description: desc, is_system: false });
-    tagAddName.value = '';
-    tagAddDesc.value = '';
-    setTagDirty(true);
-    renderTagList();
-  });
-
-  btnSaveTags.addEventListener('click', async () => {
-    const customTags = editingTags
-      .filter((t) => !t.is_system)
-      .map((t) => ({ name: t.name, description: t.description }));
-    const result = await MapoiApi.saveCustomTags(customTags, tagConfigVersion);
-    // 409 (version_mismatch): yaml が外部で変わった (#241 の展開, #343)。
-    // poi-editor.js / route-editor.js の save() と同じ確認ダイアログ経路。
-    if (result.conflict) {
-      const shouldReload = window.confirm(
-        'The YAML file was changed outside this page.'
-        + '\nSaving now may overwrite newer changes.'
-        + '\n\n[OK] Reload the latest file. Unsaved edits will be lost.'
-        + '\n[Cancel] Keep editing. You will see this warning again on Save.'
-      );
-      if (shouldReload) {
-        setTagDirty(false);
-        await loadTagDefinitions();
-        await loadPois();
-        await loadRoutes();
-      }
-      return;
-    }
-    if (result.error) {
-      alert('Failed to save tags: ' + result.error);
-      return;
-    }
-    setTagDirty(false);
-    // loadTagDefinitions() が最新 config_version も取り直すため、tagConfigVersion を
-    // ここで個別更新する必要は無い (#343)。
+  // --- Tag editor (tag-editor.js に切り出し、#346) ---
+  // save 成功 / discard 後は tag 定義の再取得のみ、409 確認後は全体 reload
+  // (loadTagDefinitions → loadPois → loadRoutes) — poi-editor.js / route-editor.js の
+  // onConflictReload と同じ順序。
+  tagEditor.onReload = () => loadTagDefinitions();
+  tagEditor.onConflictReload = async () => {
     await loadTagDefinitions();
-  });
-
-  btnDiscardTags.addEventListener('click', async () => {
-    if (tagDirty && !confirm('Discard unsaved tag changes?')) return;
-    setTagDirty(false);
-    await loadTagDefinitions();
-  });
+    await loadPois();
+    await loadRoutes();
+  };
 
   // --- Load maps list ---
   function populateMapSelect(selectEl, maps, selectedMap) {
@@ -225,11 +86,9 @@
     const tags = data.tags || [];
     poiEditor.setTagDefinitions(tags);
     mapViewer.setTagDefinitions(tags);
-    // Update tag editor working copy
-    editingTags = tags.map((t) => ({ ...t }));
-    // 楽観的競合検出 token (#241 の展開, #343)。後続の btnSaveTags で backend に送り返す。
-    tagConfigVersion = data.config_version || null;
-    renderTagList();
+    // config_version は楽観的競合検出 token (#241 の展開, #343): backend から受け取り、
+    // tagEditor の save() で送り返す。
+    tagEditor.setTagDefinitions(tags, data.config_version);
   }
 
   // --- Load POIs ---
@@ -276,7 +135,7 @@
 
   // --- Map selector change ---
   mapSelect.addEventListener('change', () => {
-    if (poiEditor.dirty || routeEditor.dirty || tagDirty) {
+    if (poiEditor.dirty || routeEditor.dirty || tagEditor.dirty) {
       if (!confirm('Unsaved changes will be lost. Switch map?')) {
         mapSelect.value = currentMap;
         return;
@@ -776,7 +635,7 @@
   }
 
   function ensureNoUnsavedChangesBeforeNavigationCommand() {
-    if (!(poiEditor.dirty || routeEditor.dirty || tagDirty)) return true;
+    if (!(poiEditor.dirty || routeEditor.dirty || tagEditor.dirty)) return true;
     return confirm('Unsaved changes may be replaced by the robot map switch. Continue?');
   }
 

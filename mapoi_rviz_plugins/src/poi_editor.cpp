@@ -2,8 +2,6 @@
 #include "mapoi_rviz_plugins/config_path_update_policy.hpp"
 #include "mapoi_rviz_plugins/poi_editor_helpers.hpp"
 #include <class_loader/class_loader.hpp>
-#include <cctype>
-#include <cmath>
 #include <filesystem>
 #include <fstream>
 
@@ -29,17 +27,14 @@ static const rclcpp::Logger LOGGER = rclcpp::get_logger("mapoi_rviz_plugins.poi_
 using detail::try_parse_finite_double;
 using detail::split_and_trim;
 
-// PoiTable column index 定数 (#158 round 1 medium): magic number を排除して
-// 「name → pose → tolerance → tags → description」順序を 1 箇所に集約。将来の column
-// 追加・順序変更で silent な誤読み書きが起きないようにする。
-namespace {
-constexpr int kColName = 0;
-constexpr int kColPose = 1;
-constexpr int kColTolerance = 2;
-constexpr int kColTags = 3;
-constexpr int kColDescription = 4;
-constexpr int kColCount = 5;
-}  // namespace
+// PoiTable column index 定数は poi_editor_helpers.hpp に集約 (#158 で導入、#346 の
+// TU 分割に伴い 2 TU から参照されるため header へ移動)。
+using detail::kColName;
+using detail::kColPose;
+using detail::kColTolerance;
+using detail::kColTags;
+using detail::kColDescription;
+using detail::kColCount;
 
 PoiEditorPanel::PoiEditorPanel(QWidget* parent) : Panel(parent),  ui_(new Ui::PoiEditorUi())
 {
@@ -742,156 +737,7 @@ void PoiEditorPanel::UpdatePoiCount()
   ui_->PoiCountLabel->setText(tr("POIs: %1").arg(count));
 }
 
-bool PoiEditorPanel::ValidatePois()
-{
-  int numRows = ui_->PoiTable->rowCount();
-  QStringList warnings;
-  std::set<std::string> names_seen;
-
-  for (int row = 0; row < numRows; row++) {
-    int logical_row = ui_->PoiTable->verticalHeader()->logicalIndex(row);
-
-    // Check name
-    auto* name_item = ui_->PoiTable->item(logical_row, kColName);
-    std::string name = name_item ? name_item->text().toStdString() : "";
-    if (name.empty()) {
-      warnings.append(tr("Row %1: name is empty").arg(row + 1));
-    } else if (names_seen.count(name) > 0) {
-      warnings.append(tr("Row %1: duplicate name \"%2\"").arg(row + 1).arg(QString::fromStdString(name)));
-    }
-    names_seen.insert(name);
-
-    // Check pose format (expect "x, y, yaw" — 3 elements)。
-    // try_parse_finite_double で strict parse + 有限性検査 (#159 round 1 medium)、
-    // split_and_trim で `1, 2, 3` `1,2,3` `1 , 2 , 3` 等の表記揺れを許容。
-    auto* pose_item = ui_->PoiTable->item(logical_row, kColPose);
-    std::string pose_str = pose_item ? pose_item->text().toStdString() : "";
-    auto poses = split_and_trim(pose_str, ',');
-    if (poses.size() != 3) {
-      warnings.append(tr("Row %1: pose must be \"x, y, yaw\" (3 values, got \"%2\")")
-                        .arg(row + 1).arg(QString::fromStdString(pose_str)));
-    } else {
-      for (int i = 0; i < 3; i++) {
-        double r = 0.0;
-        if (!try_parse_finite_double(poses[i], r)) {
-          warnings.append(tr("Row %1: pose contains invalid value \"%2\"")
-                            .arg(row + 1).arg(QString::fromStdString(poses[i])));
-          break;
-        }
-      }
-    }
-
-    // Check tolerance "xy m, yaw rad" (1 column 統合、#158)。"0.5, 0.7854" 形式で split → 各値を
-    // try_parse_finite_double で strict parse + 有限性検査。
-    // min: tolerance.xy >= 0.001 m / tolerance.yaw >= 0.001 rad ≒ 0.057° (#138 msg spec)。
-    auto* tolerance_item = ui_->PoiTable->item(logical_row, kColTolerance);
-    std::string tolerance_str = tolerance_item ? tolerance_item->text().toStdString() : "";
-    auto tolerance_parts = split_and_trim(tolerance_str, ',');
-    if (tolerance_parts.size() != 2) {
-      warnings.append(tr("Row %1: tolerance must be \"xy, yaw_rad\" (got \"%2\")")
-                        .arg(row + 1).arg(QString::fromStdString(tolerance_str)));
-    } else {
-      double xy_val = 0.0;
-      if (!try_parse_finite_double(tolerance_parts[0], xy_val)) {
-        warnings.append(tr("Row %1: invalid tolerance.xy \"%2\"")
-                          .arg(row + 1).arg(QString::fromStdString(tolerance_parts[0])));
-      } else if (xy_val < 0.001) {
-        warnings.append(tr("Row %1: tolerance.xy must be >= 0.001 m (got %2)")
-                          .arg(row + 1).arg(xy_val));
-      }
-      double yaw_val = 0.0;
-      if (!try_parse_finite_double(tolerance_parts[1], yaw_val)) {
-        warnings.append(tr("Row %1: invalid tolerance.yaw \"%2\"")
-                          .arg(row + 1).arg(QString::fromStdString(tolerance_parts[1])));
-      } else if (yaw_val < 0.001) {
-        warnings.append(tr("Row %1: tolerance.yaw must be >= 0.001 rad (≒ 0.057°) (got %2 rad)")
-                          .arg(row + 1).arg(yaw_val));
-      } else if (yaw_val > 2.0 * M_PI) {
-        // 旧 deg 入力 (例: 45) を rad として誤って入れた場合の防御 (#159 round 2 軽微 medium)。
-        // 2π (= 360°) 超は実用上意味のない異常値 (typo 可能性大) なので reject。
-        // 「rad 入力」の仕様 (#158) を明示し、deg として解釈した場合の同等値も提示する。
-        // (Qt MessageBox は plain text なので markdown 強調は使わない、#159 round 4 low)
-        warnings.append(tr("Row %1: tolerance.yaw is in rad units (#158); value %2 exceeds 2π (= 360°). "
-                           "If you meant deg, %2° = %3 rad.")
-                          .arg(row + 1).arg(yaw_val).arg(yaw_val * M_PI / 180.0));
-      }
-    }
-  }
-
-  if (!warnings.isEmpty()) {
-    QMessageBox::warning(this, tr("Validation Errors"), warnings.join("\n"));
-    return false;
-  }
-
-  // Hard validation: landmark の排他 (#85)。
-  // goal+landmark は意味矛盾 (Nav2 goal にできない reference 点)、
-  // initial_pose+landmark は到達不可な POI を起点に置く矛盾。
-  QStringList exclusivity_warnings;
-  for (int row = 0; row < numRows; row++) {
-    int logical_row = ui_->PoiTable->verticalHeader()->logicalIndex(row);
-    auto* tags_item = ui_->PoiTable->item(logical_row, kColTags);
-    std::string tags_str = tags_item ? tags_item->text().toStdString() : "";
-    if (tags_str.empty()) continue;
-
-    auto tags = this->SplitSentence(tags_str, ", ");
-    bool has_waypoint = false, has_landmark = false, has_pause = false;
-    for (const auto& t : tags) {
-      if (t == "waypoint") has_waypoint = true;
-      else if (t == "landmark") has_landmark = true;
-      else if (t == "pause") has_pause = true;
-    }
-    if (has_waypoint && has_landmark) {
-      exclusivity_warnings.append(
-        tr("Row %1: \"waypoint\" と \"landmark\" は併用できません (landmark は Nav2 navigation 不可)").arg(row + 1));
-    }
-    // landmark × pause 排他 (#143): landmark は到達不可な reference なので
-    // pause (= 到達したときに止める semantics) と意味的に矛盾する。
-    if (has_pause && has_landmark) {
-      exclusivity_warnings.append(
-        tr("Row %1: \"pause\" と \"landmark\" は併用できません (landmark は到達不可な reference のため pause 動作が成立しない)").arg(row + 1));
-    }
-    // (initial_pose × landmark 排他は #144 で initial_pose system tag を廃止したため不要に。)
-  }
-  if (!exclusivity_warnings.isEmpty()) {
-    QMessageBox::warning(this, tr("Tag Exclusivity Errors"), exclusivity_warnings.join("\n"));
-    return false;
-  }
-
-  // Soft validation: warn about undefined tags (non-blocking)
-  QStringList tag_warnings;
-  for (int row = 0; row < numRows; row++) {
-    int logical_row = ui_->PoiTable->verticalHeader()->logicalIndex(row);
-    auto* tags_item = ui_->PoiTable->item(logical_row, kColTags);
-    std::string tags_str = tags_item ? tags_item->text().toStdString() : "";
-    if (tags_str.empty()) continue;
-
-    auto tags = this->SplitSentence(tags_str, ", ");
-    for (const auto& tag : tags) {
-      if (tag.empty()) continue;
-      bool found = false;
-      for (const auto& known : known_tag_names_) {
-        if (known == tag) {
-          found = true;
-          break;
-        }
-      }
-      if (!found) {
-        tag_warnings.append(tr("Row %1: undefined tag \"%2\"").arg(row + 1).arg(QString::fromStdString(tag)));
-      }
-    }
-  }
-
-  if (!tag_warnings.isEmpty()) {
-    QString msg = tr("The following undefined tags were found:\n\n%1\n\nSave anyway?").arg(tag_warnings.join("\n"));
-    auto ret = QMessageBox::question(this, tr("Undefined Tags"), msg,
-                                     QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-    if (ret != QMessageBox::Yes) {
-      return false;
-    }
-  }
-
-  return true;
-}
+// ValidatePois() の定義は poi_editor_validation.cpp へ切り出した (#346)。
 
 // Functions
 void PoiEditorPanel::InitConfigs(std::string map_name)

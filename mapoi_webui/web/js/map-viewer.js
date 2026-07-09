@@ -24,7 +24,6 @@ class MapViewer {
 
     this.imageOverlay = null;
     this.poiMarkers = [];  // { marker, poi, index }
-    this.sectorLayers = []; // POI tolerance を扇形描画した Leaflet layer (#136)
     this.routeLayers = []; // Leaflet layers for route lines and labels
     this.metadata = null;
     this.tagColors = {};  // tag_name -> color, built from definitions
@@ -49,11 +48,9 @@ class MapViewer {
     // setPoiDraggingAllowed が再適用時に「どの marker を enable するか」判断するのに使う。
     this._poiDraggingAllowed = true;
     this._highlightedPoiIndex = -1;
-    // 扇形 (wedge) ドラッグで yaw 回転 (#275)。_poiWedgeByIndex は wedge POI の
-    // { layer(回転中に setLatLngs で追従), cx, cy, r, yawTol } を index 別に保持。
-    // _yawHandle は選択中 wedge POI の弧先端に出す回転ハンドル marker (1 個だけ)。
-    this._poiWedgeByIndex = {};
-    this._yawHandle = null;
+    // POI tolerance の扇形描画 + yaw 回転ハンドル (#275) は MapViewerSector に切り出した
+    // (#346)。sectorLayers / _poiWedgeByIndex / yawHandle marker はこのインスタンスが保持する。
+    this._sector = new MapViewerSector(this);
     this._poseTool = null;       // pose tool state
     this._routePolylines = [];   // { line, hitLine, arrowMarkers, labelMarkers, routeIdx, color, latlngs } for click & highlight
     this._activeRouteIdx = -1;   // 現在 active な route index (highlightRoute で更新)
@@ -273,7 +270,7 @@ class MapViewer {
     this.poiMarkers.forEach((item) => {
       item.marker.setZIndexOffset(this._poiZIndex(item.index === this._highlightedPoiIndex));
     });
-    if (this._yawHandle) this._yawHandle.setZIndexOffset(this._zIndex('yawHandle'));
+    if (this._sector.yawHandle) this._sector.yawHandle.setZIndexOffset(this._zIndex('yawHandle'));
     if (this.robotMarker) this.robotMarker.setZIndexOffset(this._zIndex('robot'));
     this._routePolylines.forEach((item) => {
       this._applyRouteLinePriority(item.line);
@@ -311,38 +308,6 @@ class MapViewer {
   }
 
   /**
-   * Tag-based color for POI markers.
-   */
-  getPoiColor(poi) {
-    const tags = poi.tags || [];
-    for (const tag of tags) {
-      if (this.tagColors[tag]) return this.tagColors[tag];
-    }
-    return '#3498db';
-  }
-
-  /**
-   * Create an SVG arrow icon for a POI marker.
-   * The arrow points in the yaw direction (ROS: 0=+x, pi/2=+y).
-   */
-  createArrowIcon(color, yaw, highlight) {
-    const strokeColor = highlight ? '#e67e22' : '#fff';
-    const strokeWidth = highlight ? 2.5 : 1.5;
-    // SVG arrow pointing UP; CSS rotation converts yaw to visual direction.
-    // yaw=0 → right(+x) → rotate 90° CW from up
-    const rotDeg = 90 - (yaw * 180 / Math.PI);
-    const svg = `<svg width="32" height="32" viewBox="0 0 32 32" style="transform: rotate(${rotDeg}deg);">` +
-      `<path d="M16 2 L27 24 L16 18 L5 24 Z" fill="${color}" fill-opacity="0.85" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linejoin="round"/>` +
-      `</svg>`;
-    return L.divIcon({
-      className: 'poi-arrow-icon',
-      html: svg,
-      iconSize: [32, 32],
-      iconAnchor: [16, 18],  // anchor at the notch (POI position)
-    });
-  }
-
-  /**
    * Display POI markers as directional arrows on the map.
    * @param {Array} pois - POI array
    * @param {Set|null} visibleSet - if provided, only show POIs whose index is in this set
@@ -357,13 +322,13 @@ class MapViewer {
 
       // 扇形 (sector) を arrow icon の背景に描画 (#136)。index は wedge を回転ハンドルから
       // setLatLngs で更新するための追跡に使う (#275)。
-      this._drawSectorForPoi(poi, index);
+      this._sector.drawForPoi(poi, index);
 
       const latlng = this.worldToLatLng(poi.pose.x, poi.pose.y);
-      const color = this.getPoiColor(poi);
+      const color = MapoiMapIcons.getPoiColor(this.tagColors, poi);
       const yaw = poi.pose.yaw || 0;
 
-      const icon = this.createArrowIcon(color, yaw, false);
+      const icon = MapoiMapIcons.createArrowIcon(color, yaw, false);
       // draggable: true で生成して drag ハンドラを用意するが既定は disable。選択された
       // marker だけ highlightPoi (_applyPoiDraggable) が enable する (#239)。
       const marker = L.marker(latlng, {
@@ -456,7 +421,7 @@ class MapViewer {
     this._highlightedPoiIndex = index;
     this.poiMarkers.forEach((item) => {
       const isHighlighted = item.index === index;
-      const icon = this.createArrowIcon(item.color, item.yaw, isHighlighted);
+      const icon = MapoiMapIcons.createArrowIcon(item.color, item.yaw, isHighlighted);
       item.marker.setIcon(icon);
       if (isHighlighted) {
         item.marker.setZIndexOffset(this._poiZIndex(true));
@@ -467,7 +432,7 @@ class MapViewer {
       this._applyPoiDraggable(item, isHighlighted);
     });
     // 選択中 wedge POI に yaw 回転ハンドルを出す (#275)
-    this._refreshYawHandle();
+    this._sector.refreshYawHandle();
   }
 
   /**
@@ -496,70 +461,7 @@ class MapViewer {
       this._applyPoiDraggable(item, item.index === this._highlightedPoiIndex);
     });
     // yaw 回転ハンドルも同じ許可に従う (route 編集中は出さない) (#275)
-    this._refreshYawHandle();
-  }
-
-  /**
-   * 選択中 wedge POI の yaw 回転ハンドル (弧先端の marker) を出し直す (#275)。
-   * 既存ハンドルを除去し、(選択中 && ドラッグ許可 && wedge POI) の時だけ再生成する。
-   * disc (yaw 不問) や扇形のない POI は _poiWedgeByIndex に無いのでハンドルなし。
-   * @private
-   */
-  _refreshYawHandle() {
-    this._removeYawHandle();
-    const index = this._highlightedPoiIndex;
-    const wedge = this._poiWedgeByIndex[index];
-    if (!MapoiPoiInteractions.shouldShowYawHandle(index, this._poiDraggingAllowed, !!wedge)) return;
-    this._addYawHandle(index, wedge);
-  }
-
-  /** @private */
-  _removeYawHandle() {
-    if (this._yawHandle) {
-      this.map.removeLayer(this._yawHandle);
-      this._yawHandle = null;
-    }
-  }
-
-  /**
-   * 弧先端 (中心から yaw 方向に r) にドラッグ可能なハンドル marker を置く (#275)。
-   * drag 中: 中心 → ハンドル位置の角度を新 yaw とし、矢印 (updatePoiMarkerYaw) と
-   *   wedge polygon (setLatLngs) を live 追従。ハンドル自体はカーソル追従 (円上に拘束しない)。
-   * dragend: 確定 yaw を onPoiYawDragEnd で通知 (→ dirty + Save、再描画でハンドルは正位置へ)。
-   * @private
-   */
-  _addYawHandle(index, wedge) {
-    const item = this.poiMarkers.find((m) => m.index === index);
-    if (!item) return;
-    const yaw = item.yaw || 0;
-    const centerLL = this.worldToLatLng(wedge.cx, wedge.cy);
-    const tipLL = this.worldToLatLng(
-      wedge.cx + wedge.r * Math.cos(yaw), wedge.cy + wedge.r * Math.sin(yaw),
-    );
-    const svg = '<svg width="18" height="18" viewBox="0 0 18 18">'
-      + '<circle cx="9" cy="9" r="6" fill="#e67e22" fill-opacity="0.9" stroke="#fff" stroke-width="2"/>'
-      + '</svg>';
-    const icon = L.divIcon({
-      className: 'poi-yaw-handle', html: svg, iconSize: [18, 18], iconAnchor: [9, 9],
-    });
-    const handle = L.marker(tipLL, {
-      icon,
-      draggable: true,
-      zIndexOffset: this._zIndex('yawHandle'),
-    }).addTo(this.map);
-    const yawFrom = (ll) => MapoiPoiInteractions.yawFromDelta(
-      ll.lat - centerLL.lat, ll.lng - centerLL.lng,
-    );
-    handle.on('drag', () => {
-      const newYaw = yawFrom(handle.getLatLng());
-      this.updatePoiMarkerYaw(index, newYaw);
-      wedge.layer.setLatLngs(this._wedgePoints(wedge.cx, wedge.cy, wedge.r, newYaw, wedge.yawTol));
-    });
-    handle.on('dragend', () => {
-      const newYaw = yawFrom(handle.getLatLng());
-      if (this.onPoiYawDragEnd) this.onPoiYawDragEnd(index, newYaw);
-    });
-    this._yawHandle = handle;
+    this._sector.refreshYawHandle();
   }
 
   /**
@@ -734,7 +636,7 @@ class MapViewer {
     const item = this.poiMarkers.find((m) => m.index === index);
     if (!item) return;
     item.yaw = yaw;
-    const icon = this.createArrowIcon(item.color, yaw, true);
+    const icon = MapoiMapIcons.createArrowIcon(item.color, yaw, true);
     item.marker.setIcon(icon);
     item.marker.setZIndexOffset(this._poiZIndex(true));
   }
@@ -750,15 +652,9 @@ class MapViewer {
     // marker を全削除したので highlight 追跡もリセット (#239)。再描画後に highlightPoi が
     // 呼ばれれば再設定される。stale index で setPoiDraggingAllowed が誤判定するのを防ぐ。
     this._highlightedPoiIndex = -1;
-    // 扇形 layer も作り直されるので wedge 追跡と回転ハンドルもリセット (#275)。
-    // 再描画後の highlightPoi (_refreshYawHandle) でハンドルは再生成される。
-    this._poiWedgeByIndex = {};
-    this._removeYawHandle();
-    // POI 扇形 layer も同時に clear (#136)
-    if (this.sectorLayers) {
-      this.sectorLayers.forEach((l) => this.map.removeLayer(l));
-    }
-    this.sectorLayers = [];
+    // 扇形 layer (#136) / wedge 追跡・回転ハンドル (#275) も作り直されるのでリセットする。
+    // 再描画後の highlightPoi (refreshYawHandle) でハンドルは再生成される。
+    this._sector.clear();
     this.clearRouteLandmarkHighlights();
   }
 
@@ -784,7 +680,7 @@ class MapViewer {
       const { pose } = entry.poi;
       const radius = entry.poi.tolerance && entry.poi.tolerance.xy;
       if (typeof radius === 'number' && Number.isFinite(radius) && radius > 0) {
-        const ring = L.polyline(this._circlePoints(pose.x, pose.y, radius), {
+        const ring = L.polyline(this._sector.circlePoints(pose.x, pose.y, radius), {
           color: color || '#8e44ad',
           weight: 3,
           opacity: 0.95,
@@ -795,7 +691,7 @@ class MapViewer {
         this._routeLandmarkLayers.push(ring);
       }
       const marker = L.marker(this.worldToLatLng(pose.x, pose.y), {
-        icon: this._createRouteLandmarkIcon(color || '#8e44ad'),
+        icon: MapoiMapIcons.createRouteLandmarkIcon(color || '#8e44ad'),
         interactive: false,
         zIndexOffset: this._zIndex('landmark'),
       }).addTo(this.map);
@@ -809,15 +705,6 @@ class MapViewer {
     this._applyLayerPriority();
   }
 
-  _createRouteLandmarkIcon(color) {
-    return L.divIcon({
-      className: 'route-landmark-marker',
-      html: `<span class="route-landmark-badge" style="background: ${color};">LM</span>`,
-      iconSize: [28, 20],
-      iconAnchor: [14, 24],
-    });
-  }
-
   _refreshActiveRouteLandmarks() {
     const item = this._routePolylines.find((it) => it.routeIdx === this._activeRouteIdx);
     if (!item) {
@@ -826,170 +713,6 @@ class MapViewer {
     }
     const pois = this._cachedPois || (this._cachedRoutesArgs && this._cachedRoutesArgs.pois);
     this.showRouteLandmarkHighlights(item.landmarks, pois, item.color);
-  }
-
-  /**
-   * 扇形 (wedge) の polygon 頂点列 (latlng) を計算する (#275)。中心 → 弧 (yawCenter±yawTol) → 中心。
-   * 幾何 (頂点数 / 角度範囲) は pure helper に切り出し単体テスト対象とし (#273)、ここでは
-   * world 座標を worldToLatLng で latlng へ変換するだけ。初期描画 (_drawSectorForPoi) と
-   * 回転ハンドルドラッグ中の setLatLngs 追従の両方で使う。
-   * @private
-   */
-  _wedgePoints(cx, cy, r, yawCenter, yawTol) {
-    return MapoiPoiInteractions.wedgePointsWorld(cx, cy, r, yawCenter, yawTol)
-      .map((p) => this.worldToLatLng(p.x, p.y));
-  }
-
-  _circlePoints(cx, cy, r) {
-    const N_CIRCLE = 36;
-    const points = [];
-    for (let i = 0; i <= N_CIRCLE; i += 1) {
-      const a = (2 * Math.PI * i) / N_CIRCLE;
-      points.push(this.worldToLatLng(cx + r * Math.cos(a), cy + r * Math.sin(a)));
-    }
-    return points;
-  }
-
-  /**
-   * POI の tolerance を 円 (xy 判定領域) + 扇形 (yaw 制約) の重ね描きで描画する (#136 / #179)。
-   *
-   * - 円 outline: 半径 = `tolerance.xy` (xy 進入判定の境界、yaw 不問)、
-   *   `L.polyline` で 36 角形を構成して常時描画 (細実線・薄め)
-   * - 扇形: `tolerance.yaw` が `0 < yaw < π` の時のみ重ね描き (`L.polygon`)
-   *   - waypoint: 塗り扇形 (`fillOpacity` 高)
-   *   - landmark: 中抜き扇形 (`fillOpacity = 0`、stroke のみ)
-   *   - その他 (旧 event 等): 描画しない (#70 で別途整理)
-   * - pause tag があれば xy 円沿いに dot pattern overlay (#179: 旧 dash → dot 形式)
-   *
-   * `tolerance.xy <= 0` または対象 tag 無しなら no-op。
-   *
-   * `L.circle` ではなく polyline で実装するのは、`L.circle` の radius が pixel/meter 換算に
-   * `crs` 依存の挙動を持つ一方、扇形は world 座標を `worldToLatLng` で変換して描画するため。
-   * 同じ計算式で円と扇形の弧を生成すれば視覚的整合 (両者の弧が完全一致) が保証される。
-   */
-  _drawSectorForPoi(poi, index) {
-    if (!poi.pose) return;
-    if (!poi.tolerance || typeof poi.tolerance.xy !== 'number' || poi.tolerance.xy <= 0) return;
-
-    const tags = poi.tags || [];
-    const isWaypoint = tags.includes('waypoint');
-    const isLandmark = tags.includes('landmark');
-    const isPause = tags.includes('pause');
-    if (!isWaypoint && !isLandmark) return;
-
-    const r = poi.tolerance.xy;
-    const yawCenter = poi.pose.yaw || 0;
-    const yawTol = (typeof poi.tolerance.yaw === 'number') ? poi.tolerance.yaw : 0;
-    // 到達判定の角度差は [0, π] なので yawTol >= π は「yaw 不問 (全方位)」。0 < yawTol < π は
-    // 扇形 (wedge)、>= π は塗りつぶし円 (disc) で表す (#267)。分類は pure helper に委譲 (#273)。
-    const yawKind = MapoiPoiInteractions.classifyYawTolerance(yawTol);
-    const hasYawConstraint = yawKind === 'wedge';
-    const isYawUnconstrained = yawKind === 'disc';
-
-    const color = this.getPoiColor(poi);
-
-    // 円の頂点列 (36 角形 = 10 度刻み)。最後に起点へ戻り polyline が自然に閉じる。
-    const circlePoints = this._circlePoints(poi.pose.x, poi.pose.y, r);
-
-    // xy 判定領域 (円 outline): 控えめな細実線で常時表示 (#179)
-    const circle = L.polyline(circlePoints, {
-      color,
-      weight: 1,
-      opacity: 0.4,
-      interactive: false,
-    }).addTo(this.map);
-    circle.bringToBack();
-    this.sectorLayers.push(circle);
-
-    // 扇形 (yaw 制約): 0 < yaw < π の時に重ね描き (#179)。
-    const fillOpacity = isWaypoint ? 0.25 : 0.10;  // waypoint=塗り、landmark=薄塗り (#179 ユーザー確認 2)
-    if (hasYawConstraint) {
-      const sectorPoints = this._wedgePoints(poi.pose.x, poi.pose.y, r, yawCenter, yawTol);
-      const sector = L.polygon(sectorPoints, {
-        color,
-        weight: 1,
-        opacity: 0.7,
-        fillColor: color,
-        fillOpacity,
-        interactive: false,
-      }).addTo(this.map);
-      sector.bringToBack();
-      this.sectorLayers.push(sector);
-      // wedge POI は回転ハンドル対象。layer + 幾何を index 別に保持し、ドラッグ中の
-      // setLatLngs 追従と、_refreshYawHandle でのハンドル位置算出に使う (#275)。
-      if (typeof index === 'number' && index >= 0) {
-        this._poiWedgeByIndex[index] = {
-          layer: sector, cx: poi.pose.x, cy: poi.pose.y, r, yawTol,
-        };
-      }
-    } else if (isYawUnconstrained) {
-      // yaw 不問 (yawTol >= π = 全方位): 扇形を省略すると xy 円の outline だけになり「描画され
-      // ていない?」と誤認されるため、xy 円を塗りつぶした disc で「全方位 OK」を明示する (#267)。
-      // 扇形 (wedge) が広がりきって円になったもの、という連続的な見た目になる。
-      const disc = L.polygon(circlePoints, {
-        color,
-        weight: 1,
-        opacity: 0.7,
-        fillColor: color,
-        fillOpacity,
-        interactive: false,
-      }).addTo(this.map);
-      disc.bringToBack();
-      this.sectorLayers.push(disc);
-    }
-
-    // pause overlay: xy 円沿いに dot pattern を重ね描き (#179)。
-    // 旧 dashArray '6, 4' (cycle 比 60% on, 1.5:1 dash) は dot として識別しづらく潰れて見える feedback
-    // (#178 PR コメント) を受け、'2, 6' (cycle 比 25% on, 1:3 on:off) で短い dot + 大きい gap に変更。
-    // RViz 側 (dot 0.02m / step 0.10m, 20% on / 1:4) と厳密比率は僅差だが共に sparse dot で整合。
-    if (isPause) {
-      const pauseOutline = L.polyline(circlePoints, {
-        color,
-        weight: 4,
-        opacity: 0.9,
-        dashArray: '2, 6',
-        lineCap: 'round',  // dot を丸く描画して角ばった dash 感を消す
-        interactive: false,
-      }).addTo(this.map);
-      pauseOutline.bringToBack();
-      this.sectorLayers.push(pauseOutline);
-    }
-  }
-
-  /**
-   * Get the color for a route by its index.
-   */
-  getRouteColor(routeIdx) {
-    const palette = ['#2980b9', '#8e44ad', '#16a085', '#d35400', '#c0392b', '#7f8c8d'];
-    if (routeIdx < palette.length) return palette[routeIdx];
-    // HSL fallback: distribute hues avoiding palette hues
-    const usedHues = [207, 282, 168, 24, 4, 210]; // approx hues of palette colors
-    const n = routeIdx - palette.length;
-    const hue = (n * 47 + 30) % 360; // step by golden-angle-ish offset, start at 30
-    return `hsl(${hue}, 55%, 45%)`;
-  }
-
-  /**
-   * Create an SVG chevron (>) direction marker.
-   * Default orientation: tip points UP (^). Rotated by rotDeg.
-   * Open V-shape with no fill — lightweight and unambiguous.
-   */
-  createRouteDirectionSvg(color, rotDeg, size) {
-    const s = size || 18;
-    return `<svg width="${s}" height="${s}" viewBox="0 0 16 16" style="transform: rotate(${rotDeg}deg);">` +
-      `<path d="M4 12 L8 4 L12 12" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>` +
-      `<path d="M4 12 L8 4 L12 12" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/>` +
-      `<path d="M4 12 L8 4 L12 12" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>` +
-      `</svg>`;
-  }
-
-  /**
-   * Compute CSS rotation (degrees) for a route direction marker (teardrop pointing UP by default).
-   * from/to are Leaflet LatLng objects.
-   */
-  routeDirectionDeg(from, to) {
-    const screenAngle = Math.atan2(to.lat - from.lat, to.lng - from.lng) * (180 / Math.PI);
-    return 90 - screenAngle;
   }
 
   /**
@@ -1080,7 +803,7 @@ class MapViewer {
 
     drawableEntries.forEach(({ route, routeIdx, rawLatlngs, orders, firstWaypointName }, visibleIdx) => {
       const offsetPx = (visibleIdx - (totalDrawable - 1) / 2) * OFFSET_STEP_PX;
-      const color = this.getRouteColor(routeIdx);
+      const color = MapoiMapIcons.getRouteColor(routeIdx);
 
       // 表示用に offset を適用 (offsetPx === 0 なら同じ配列参照が返る)
       const displayLatlngs = this._offsetLatLngs(rawLatlngs, offsetPx);
@@ -1129,11 +852,11 @@ class MapViewer {
         const to = displayLatlngs[i + 1];
         const midLat = (from.lat + to.lat) / 2;
         const midLng = (from.lng + to.lng) / 2;
-        const rotDeg = this.routeDirectionDeg(from, to);
+        const rotDeg = MapoiMapIcons.routeDirectionDeg(from, to);
 
         const arrowIcon = L.divIcon({
           className: 'route-arrow',
-          html: this.createRouteDirectionSvg(color, rotDeg, 16),
+          html: MapoiMapIcons.createRouteDirectionSvg(color, rotDeg, 16),
           iconSize: [16, 16],
           iconAnchor: [8, 8],
         });
@@ -1300,10 +1023,10 @@ class MapViewer {
         const to = latlngs[i + 1];
         const midLat = (from.lat + to.lat) / 2;
         const midLng = (from.lng + to.lng) / 2;
-        const rotDeg = this.routeDirectionDeg(from, to);
+        const rotDeg = MapoiMapIcons.routeDirectionDeg(from, to);
         const arrowIcon = L.divIcon({
           className: 'route-arrow',
-          html: this.createRouteDirectionSvg(color, rotDeg, 20),
+          html: MapoiMapIcons.createRouteDirectionSvg(color, rotDeg, 20),
           iconSize: [20, 20],
           iconAnchor: [10, 10],
         });
@@ -1345,28 +1068,6 @@ class MapViewer {
       });
     }
     this._editingPreviewLayers = [];
-  }
-
-  /**
-   * Create an SVG icon for the robot marker (colored circle with direction arrow).
-   * @param {number} yaw - heading in radians
-   * @param {string} color - circle fill color (default cyan); 内側の方向矢印は白固定
-   * @param {number} sizePx - icon の outer width/height (px)。viewBox は固定 36 のままで
-   *   内部 path / circle 座標は変えず、outer サイズだけリスケールする
-   */
-  createRobotIcon(yaw, color = '#00bcd4', sizePx = 36) {
-    const rotDeg = 90 - (yaw * 180 / Math.PI);
-    const half = sizePx / 2;
-    const svg = `<svg width="${sizePx}" height="${sizePx}" viewBox="0 0 36 36" style="transform: rotate(${rotDeg}deg);">` +
-      `<circle cx="18" cy="18" r="12" fill="${color}" fill-opacity="0.7" stroke="#fff" stroke-width="2"/>` +
-      `<path d="M18 8 L24 24 L18 19 L12 24 Z" fill="#fff" fill-opacity="0.9" stroke="none"/>` +
-      `</svg>`;
-    return L.divIcon({
-      className: 'robot-icon',
-      html: svg,
-      iconSize: [sizePx, sizePx],
-      iconAnchor: [half, half],
-    });
   }
 
   /**
@@ -1453,7 +1154,7 @@ class MapViewer {
     // metadata / pose を使う前に最新値を保存しておく。
     this._lastRobotPose = pose;
     const latlng = this.worldToLatLng(pose.x, pose.y);
-    const icon = this.createRobotIcon(
+    const icon = MapoiMapIcons.createRobotIcon(
       pose.yaw || 0,
       this._resolveRobotMarkerColor(),
       this._resolveRobotMarkerSizePx(),
@@ -1542,10 +1243,10 @@ class MapViewer {
 
     const midLat = (robotLatLng.lat + firstLatLngVisual.lat) / 2;
     const midLng = (robotLatLng.lng + firstLatLngVisual.lng) / 2;
-    const rotDeg = this.routeDirectionDeg(robotLatLng, firstLatLngVisual);
+    const rotDeg = MapoiMapIcons.routeDirectionDeg(robotLatLng, firstLatLngVisual);
     const arrowIcon = L.divIcon({
       className: 'route-arrow',
-      html: this.createRouteDirectionSvg(item.color, rotDeg, 18),
+      html: MapoiMapIcons.createRouteDirectionSvg(item.color, rotDeg, 18),
       iconSize: [18, 18],
       iconAnchor: [9, 9],
     });
