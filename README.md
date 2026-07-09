@@ -24,7 +24,7 @@ It provides map switching, POI management, autonomous navigation operation from 
 | Docker demo / development environment | [docs/docker.md](./docs/docker.md) |
 | Navigation / Localization backend spec (for custom bridge implementers) | [docs/backend-status.md](./docs/backend-status.md) |
 | Test addition policy (criteria for critical-core coverage, decisions on adding launch_test/e2e tests) | [docs/testing-policy.md](./docs/testing-policy.md) |
-| v0.5.0 migration (service namespace `mapoi/` prefix + `GetRoutePois` success + removal of `PointOfInterest.id`) | [docs/migration/v0.5.0.md](./docs/migration/v0.5.0.md) |
+| v0.5.0 migration (service namespace `mapoi/` prefix + `GetRoutePois` success + removal of `PointOfInterest.id` + `SelectMap` field rename + REST API URL reorg + `PoiEvent` simplification) | [docs/migration/v0.5.0.md](./docs/migration/v0.5.0.md) |
 | v0.4.0 migration (`mapoi_nav_server` → `mapoi_nav2_bridge` rename + AMCL split + system tag hardcoding) | [docs/migration/v0.4.0.md](./docs/migration/v0.4.0.md) |
 | v0.3.0 migration (topic namespace reorganized under `/mapoi/...`) | [docs/migration/v0.3.0.md](./docs/migration/v0.3.0.md) |
 | Breaking-change details for each release | [`CHANGELOG.rst`](./CHANGELOG.rst) |

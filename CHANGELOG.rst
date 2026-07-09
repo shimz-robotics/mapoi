@@ -13,8 +13,8 @@ For releases prior to v0.2.0, see the
 `GitHub Releases page <https://github.com/shimz-robotics/mapoi/releases>`_.
 
 
-Unreleased
-==========
+0.5.0 (2026-07-10)
+==================
 
 Added
 -----
@@ -83,6 +83,114 @@ Added
   as an SSE ``command_rejected`` event, and the WebUI frontend shows a small
   auto-dismissing toast (``Command rejected: <target>``). Purely additive;
   ``mapoi/nav/status`` semantics are unchanged.
+
+* New ``waypoint_arrival_mode`` parameter (``"nav2"`` default / ``"mapoi"``)
+  on ``mapoi_nav2_bridge`` (#243, #259, #260, #261, #263, #264, #265, #266).
+  In ``"mapoi"`` mode, route waypoints are no longer submitted to Nav2 in
+  one ``FollowWaypoints`` batch; ``mapoi_nav2_bridge`` instead sends one
+  ``NavigateToPose`` goal per waypoint and advances to the next one as soon
+  as ``OR((tolerance.xy entry AND tolerance.yaw match), Nav2 SUCCEEDED)``, so
+  a waypoint whose orientation already satisfies ``tolerance.yaw`` completes
+  without waiting for Nav2's own goal-checker to settle, while a tight final
+  goal still waits for Nav2's own arrival if the pose doesn't already match.
+  ``pause``-tagged waypoints still auto-pause, and resume advances to the
+  next waypoint. The default ``"nav2"`` mode is unchanged and keeps
+  submitting the whole route via ``FollowWaypoints``. The
+  ``mapoi_turtlebot3_example`` demo now launches with
+  ``waypoint_arrival_mode:=mapoi`` by default (the ``mapoi_nav2_bridge``
+  parameter's own default stays ``"nav2"``), with waypoint ``tolerance.xy``
+  re-tuned to ``0.3`` m (kept above Nav2's ``xy_goal_tolerance`` of
+  ``0.25`` m so ``EVENT_ENTER`` / ``EVENT_PAUSED`` still fire reliably).
+
+* WebUI: the selected POI's marker can now be dragged on the map to move
+  its position (#239, #274). Dragging is disabled by default and enabled
+  only for the currently-selected POI; ``dragend`` updates the in-memory
+  working copy's ``pose.x``/``pose.y`` (rounded to the same 3-decimal
+  precision as the YAML) and marks the editor dirty — nothing is written
+  until the user clicks Save, consistent with the existing pose-tool /
+  optimistic-concurrency save flow (#241, see below). ``yaw``,
+  ``tolerance``, and ``tags`` are untouched by dragging. Dragging is
+  disabled while the route editor is active to avoid conflicting with
+  click-to-add-waypoint.
+
+* WebUI: a rotation handle on the tip of a selected POI's tolerance sector
+  (wedge) lets ``pose.yaw`` be adjusted by dragging (#275, #276), as a
+  companion to the position-drag above (#239): the arrow marker moves
+  position, the sector handle rotates orientation. The handle appears only
+  for a selected, drag-enabled POI whose sector is a wedge (``0 <
+  tolerance.yaw < π``); a yaw-agnostic POI (rendered as a full disc, see
+  below) or one with dragging disabled has no handle. ``dragend`` rounds
+  the new ``pose.yaw`` to 4 decimals and marks the editor dirty;
+  confirmation is via Save, not auto-POST.
+
+* WebUI: a single click on a POI marker now only selects it; a
+  double-click is required to enter the edit form (#240, #272), separating
+  "select" from "edit" so a stray click no longer opens the editor
+  unexpectedly. Clicking a different POI while editing exits the edit form
+  back to selection. Opening the edit form now also collapses the other
+  panel sections (Navigation / Tags / Routes) and hides the POI list to
+  focus on the form, restoring their prior open/closed state on close.
+
+* RViz and WebUI now render a yaw-agnostic POI tolerance
+  (``tolerance.yaw >= π``, i.e. "any orientation is fine") as a filled disc
+  instead of omitting the sector (#267, #268, #271). Previously the sector
+  was silently skipped for yaw-agnostic POIs, which looked like a rendering
+  bug; a disc that grows continuously out of the wedge as ``tolerance.yaw``
+  approaches ``π`` now visually confirms "any orientation accepted". The
+  WebUI's degree display for ``tolerance.yaw`` was also cleaned up (rounds
+  to clean degree values like 30/45/90 instead of noisy values such as
+  ``180.0002``, while still round-tripping exactly with the 4-decimal
+  radian storage).
+
+* WebUI: selecting a POI or route from the Navigation section's dropdowns
+  now highlights it on the map, the same way selecting it from the
+  POI/Route list already did (#262, #278).
+
+* WebUI: the POI editor gained Undo/Redo (Ctrl/Cmd+Z, Ctrl+Shift+Z,
+  Ctrl+Y), backed by a per-mutation snapshot stack capped at 50 entries
+  (#300, #301). Every mutating operation (add / edit / copy / delete /
+  drag-move / yaw-handle rotate) is captured before it runs; loading POIs
+  or discarding resets the stack, and Save advances the baseline depth.
+  POI dirty-state tracking was reworked in the same change to derive from
+  the saved content instead of a separately-tracked flag, so it stays
+  correct across undo/redo. Keyboard shortcuts are ignored while a text
+  input/textarea has focus. Route-level undo is intentionally out of scope
+  for this change.
+
+* ``mapoi_webui``: ``GET /api/pois`` now returns a ``config_version`` (a
+  sha256 of the YAML), and ``POST /api/pois`` rejects a stale write with
+  ``409`` when the caller's ``expected_version`` does not match (#241,
+  #245). The frontend surfaces the conflict as a reload-confirmation
+  dialog instead of silently clobbering a concurrent YAML edit or RViz
+  save. This is the same optimistic-concurrency pattern later extended to
+  ``POST /api/routes`` and ``POST /api/custom_tags`` (#343, see above).
+
+* WebUI: a floating button now toggles the header/panel UI fully on/off
+  (one tap collapses the map to full-screen and back), and a Display
+  section (collapsed by default) exposes an opt-in "floating overlay on
+  map" mode plus a UI-opacity slider (30-100%, frosted-glass
+  ``backdrop-filter``) (#323, #324, #325). Settings persist in
+  ``localStorage``; the default (opacity 100%, docked panel) keeps the
+  prior look unchanged.
+
+* WebUI: on narrow (mobile) screens, a floating Undo icon now appears next
+  to the map whenever the POI undo history is non-empty, so an accidental
+  drag/edit can be reverted without opening the side panel first (#332,
+  #334). The same change fixed a pre-existing bug where POI undo / redo /
+  discard / save could clobber an in-progress, unsaved route-editor working
+  copy; the reload guard is now centralized at the ``loadRoutes()`` call
+  sites. The floating Undo button shares the same floating cluster (top
+  right of the map) as the position-edit lock toggle added alongside the
+  zoom-button removal (#335, see Changed).
+
+* New ``auto_resume_timeout_sec`` parameter (default ``0.0`` = disabled) on
+  ``mapoi_nav2_bridge`` (#231, #232). When positive, a paused route
+  (``EVENT_PAUSED``) automatically resumes after the given number of
+  seconds instead of waiting indefinitely for an external
+  ``mapoi/nav/resume``; an external resume that arrives first cancels the
+  pending timer. Negative, ``NaN``, and ``Inf`` values are clamped to
+  ``0.0`` with an error log. Useful for unattended demos / automated runs;
+  the default keeps the existing indefinite-wait behavior.
 
 Breaking changes
 ----------------
@@ -156,6 +264,23 @@ Breaking changes
   Update any external client (curl scripts, dashboards, custom
   frontends) pinning one of the old paths. See
   ``docs/migration/v0.5.0.md`` for the full migration guide.
+
+* ``mapoi_interfaces/msg/PoiEvent`` is simplified from four event types to
+  three, and its scope is narrowed to route navigation only (#220, #227).
+  ``EVENT_STOPPED`` and ``EVENT_RESUMED`` are removed; the remaining
+  ``EVENT_ENTER`` / ``EVENT_EXIT`` are joined by a new ``EVENT_PAUSED``
+  (constant value ``2``, taking the slot previously used by
+  ``EVENT_STOPPED``, which shifts ``EVENT_EXIT`` from ``2`` to ``3``).
+  Events are now published only during ``ROUTE`` navigation
+  (``FollowWaypoints``) for POIs registered on the active route (waypoints
+  and landmarks); the previous behavior of firing for any tagged POI
+  regardless of navigation mode (``IDLE`` / ``GOAL`` / ``ROUTE``) is gone.
+  ``EVENT_PAUSED`` fires only for ``pause``-tagged POIs once navigation has
+  actually stopped (``cmd_vel`` dwell, not merely Nav2 ``SUCCEEDED``); there
+  is no dedicated resume event — resume timing is observable via
+  ``mapoi/nav/resume`` / ``mapoi/nav/status`` instead. Recompile all
+  clients against the updated ``.msg``. See ``docs/migration/v0.5.0.md`` for
+  the field/value mapping.
 
 Changed
 -------
@@ -240,6 +365,23 @@ Changed
   pattern (docs/testing-policy.md §1(b): cheap, ROS/Qt-independent pure
   functions).
 
+* WebUI: the map's zoom +/- buttons were removed (mouse wheel / pinch zoom
+  still work; a test now pins that a wheel event still changes the map's
+  zoom), and POI position-drag editing (#239, #274) is now **locked by
+  default** — a separate toggle, in the same floating cluster as the
+  mobile Undo button (see Added), must be used to unlock dragging before a
+  POI can be moved on the map (#335). This reduces accidental position
+  edits on touch devices, where a stray drag was easy to trigger.
+
+* WebUI: further POI/Route editor UX refinements on top of the drag /
+  yaw-handle / double-click editing above: the route editor gained a
+  click-to-add-waypoint toggle and inserts a clicked POI after the
+  currently-selected waypoint; route-edit selects stay in sync with
+  POI-list selection; custom tag descriptions can be disclosed in full;
+  active edit modes (POI / pose tool / route) can be cancelled with
+  Escape; and remaining UI warning strings were translated to English
+  (#306, #312, #314, #316, #318, #320, #322).
+
 Fixed
 -----
 
@@ -268,7 +410,7 @@ Fixed
   server side by the ``request_initial_pose`` current-map validation (#299,
   see below); the generation/pending design considered in #155 was dropped
   as unnecessary. The crash/restart startup re-latch was fixed separately
-  via ``state_path`` persistence (#297).
+  via ``state_path`` persistence (#297, see below).
 
 * **Stale initial pose during a map-switch transition window (#299).**
   When operator map switches overlap (A→B), ``mapoi_server`` finishes both
@@ -280,6 +422,83 @@ Fixed
   requesters (``mapoi_nav2_bridge`` / WebUI / RViz panel) all check
   ``response.success`` and surface the rejection as an error instead of
   a false success.
+
+* **Last-selected map is now optionally persisted and restored across a
+  restart (#297).** Previously, a crash/forced restart of ``mapoi_server``
+  re-published the *launch-parameter* map's first POI as the initial pose
+  to every already-running localization bridge — as a fresh DDS publisher
+  joining, its ``transient_local`` sample reaches live subscribers even
+  though the robot was actually operating on a different, operator-selected
+  map — silently teleporting the robot and resetting map context to the
+  wrong map. A new opt-in parameter ``state_path`` (default empty =
+  disabled) makes ``mapoi_server`` record the current map name to
+  ``<state_path>/last_selected_map`` (atomic tmp+rename) on startup and on
+  every successful ``select_map``; on a restart where this state file
+  exists, the server restores map context to the last-selected map and
+  publishes only a clear (no teleporting POI) instead of the
+  launch-parameter map's default. A missing/unreadable state file, or one
+  naming a map absent from ``maps_path``, falls back to the
+  launch-parameter map with a ``WARN`` (first-boot behavior, #144, is
+  unaffected when ``state_path`` is unset). The state file's map name is
+  validated as a single path segment before use, rejecting a
+  crafted/corrupted value that could otherwise cause a path-traversal
+  config load (same style of validation added to the ``select_map`` service
+  input, #328, see below).
+
+* **``select_map`` service ``map_name`` path-traversal validation (#328).**
+  The ``select_map`` service now validates that ``map_name`` is a single
+  path segment (no ``/``, ``\``, or a lone ``.``/``..``) before joining it
+  onto ``maps_path``. Previously an operator-facing caller (WebUI, RViz
+  panel, or any external client) could pass a crafted ``map_name`` to load
+  an arbitrary YAML config file outside ``maps_path`` and, via the
+  resulting ``nav2_map_urls``, direct Nav2's ``LoadMap`` outside the
+  intended maps directory. An invalid name is rejected with
+  ``success=false`` and nothing is published or loaded.
+
+* WebUI: fixed a CSS bug where the map collapsed to zero height on mobile
+  (narrow, ``max-width: 768px``) layouts — ``#map-container``'s
+  ``flex-basis: 0%`` conflicted with ``main``'s ``height: auto`` even
+  though ``height: 50vh`` was also set (#324, #331). Changed to
+  ``flex: none`` in both the docked and UI-overlay layouts. Several
+  under-sized touch targets (section toggles, check-all/none, toolbar
+  buttons) were also enlarged to at least 40px on mobile.
+
+* ``mapoi_webui``: ``POST /api/nav/switch-map`` now rejects a non-string
+  ``map_name`` with ``400`` instead of coercing it with ``str(...)``
+  (which turned e.g. ``null`` into the literal string ``"None"``) (refs
+  #199, #281).
+
+* WebUI: POI Save now rounds floats to the same precision used in the
+  YAML (``xy``: 3 decimals, ``yaw``: 4 decimals) on both the frontend
+  (``poi-editor.readForm``) and the backend
+  (``yaml_handler._round_poi_floats``), preventing floating-point noise
+  from ``parseFloat`` or degree/radian conversion from accumulating into
+  the saved YAML (#242, #244).
+
+* **Jazzy: ``EVENT_PAUSED`` silently stopped firing (#249).** Nav2's
+  ``cmd_vel`` publisher switched to ``geometry_msgs/TwistStamped`` on
+  Jazzy while ``mapoi_nav2_bridge`` still subscribed with plain
+  ``Twist``, so the zero-velocity dwell check never received a message. A
+  new ``cmd_vel_msg_type`` parameter (default ``"auto"``, resolved from
+  ``ROS_DISTRO``) selects the correct type to subscribe with; subscribing
+  both types on the same topic is not an option (it crashes with an
+  invalid-allocator error in rclcpp), so exactly one is chosen. An
+  explicit but unrecognized value also falls back to the
+  ``ROS_DISTRO``-based default (with a ``WARN``) rather than always
+  assuming ``Twist``.
+
+* WebUI: the pose tool no longer commits a POI's position on the first
+  click; position is only a preview (orange circle) until the second
+  click confirms position + yaw together, fixing accidental position
+  changes from a stray first click while editing (#269, #270). Escape now
+  backs out of the yaw-selection phase to the position phase without
+  committing anything, and is ignored while a text input/textarea has
+  focus so it doesn't unexpectedly cancel the pose tool while typing.
+
+* ``mapoi_turtlebot3_example``: a Gazebo GUI render/driver failure no
+  longer brings down the whole demo (#294, #295); navigation continues
+  headless. See ``docs/docker.md`` for the DRI/GPU-sharing prerequisites
+  this relies on.
 
 Samples
 -------
@@ -306,8 +525,35 @@ Samples
     moved into the ``test_poi_event_route_integration`` launch_test
     (#236) instead of the demo config.
 
+* New ``PoiEvent``-driven sample subscribers in
+  ``mapoi_turtlebot3_example``, demonstrating the custom-tag-dispatch
+  pattern for downstream integrations (#88, #238, #248):
+  ``audio_guide_node`` mocks an audio-guide announcement on
+  ``EVENT_ENTER`` for ``audio_info``-tagged POIs, and ``camera_node``
+  mocks a capture on ``EVENT_PAUSED`` for ``capture_trigger``-tagged POIs,
+  then publishes ``mapoi/nav/resume`` (the message payload identifies the
+  originating POI, e.g. ``"camera_node:<poi_name>"``) after a configurable
+  ``capture_duration_sec`` to resume route navigation. Both subscribers
+  launch from a separate ``mapoi_event_samples.launch.yaml`` (not bundled
+  into the main demo launch by default, so the pattern stays discoverable
+  without becoming a hidden dependency of the primary demo).
+  ``camera_node`` uses an atomic compare-exchange to guard against
+  re-entrant capture under a ``MultiThreadedExecutor``.
+
 Internal / tests
 ----------------
+
+* ``docs/testing-policy.md`` now documents the test-addition policy in
+  writing (#347, #359): what counts as "critical core" worth CI-gating on
+  humble/jazzy versus cheap non-critical coverage, and the rule for
+  keeping the policy's own tables in sync as the test suite evolves.
+
+* Continued the ``#193`` test-suite reorganization: critical-core vs.
+  non-critical test triage, CI gating on humble/jazzy for the critical
+  core, ``launch_test`` retry-gating outside PRs with a guard against a
+  silently-empty test run, and new Playwright/jsdom/pytest coverage for
+  the WebUI's Leaflet integration, POI drag/yaw-handle rendering,
+  config-publish SSE path, and navigation REST API (#279-#291).
 
 * ``ros-test.yml``'s silent-test-loss guard no longer hard-codes
   ``EXPECTED_TARGETS``: it is now derived by grepping ``src/mapoi``'s
