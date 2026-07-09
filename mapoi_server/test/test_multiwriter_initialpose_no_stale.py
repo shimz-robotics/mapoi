@@ -81,7 +81,7 @@ class TestMultiwriterInitialposeNoStale(unittest.TestCase):
     def setUpClass(cls):
         rclpy.init()
         cls.node = rclpy.create_node('test_multiwriter_initialpose_node')
-        cls.request_client = cls.node.create_client(RequestInitialPose, 'request_initial_pose')
+        cls.request_client = cls.node.create_client(RequestInitialPose, 'mapoi/request_initial_pose')
 
     @classmethod
     def tearDownClass(cls):

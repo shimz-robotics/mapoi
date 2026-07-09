@@ -54,11 +54,11 @@ void PoiEditorPanel::onInitialize()
 
   // Create shared service node and persistent clients
   service_node_ = rclcpp::Node::make_shared("poieditor_service_client");
-  select_map_client_ = service_node_->create_client<mapoi_interfaces::srv::SelectMap>("select_map");
-  get_pois_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
-  get_maps_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetMapsInfo>("get_maps_info");
-  get_tag_defs_client_ = service_node_->create_client<mapoi_interfaces::srv::GetTagDefinitions>("get_tag_definitions");
-  reload_map_info_client_ = service_node_->create_client<std_srvs::srv::Trigger>("reload_map_info");
+  select_map_client_ = service_node_->create_client<mapoi_interfaces::srv::SelectMap>("mapoi/select_map");
+  get_pois_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetPoisInfo>("mapoi/get_pois_info");
+  get_maps_info_client_ = service_node_->create_client<mapoi_interfaces::srv::GetMapsInfo>("mapoi/get_maps_info");
+  get_tag_defs_client_ = service_node_->create_client<mapoi_interfaces::srv::GetTagDefinitions>("mapoi/get_tag_definitions");
+  reload_map_info_client_ = service_node_->create_client<std_srvs::srv::Trigger>("mapoi/reload_map_info");
 
   connect(ui_->MapComboBox, SIGNAL(activated(int)), this, SLOT(MapComboBox()));
   connect(ui_->ResetButton, SIGNAL(clicked()), this, SLOT(ResetButton()));
@@ -79,13 +79,13 @@ void PoiEditorPanel::onInitialize()
 
   // MapComboBox
   if (!get_maps_info_client_->wait_for_service(3s)) {
-    RCLCPP_ERROR(LOGGER, "get_maps_info service not available after 3s timeout.");
+    RCLCPP_ERROR(LOGGER, "mapoi/get_maps_info service not available after 3s timeout.");
     return;
   }
   auto request = std::make_shared<mapoi_interfaces::srv::GetMapsInfo::Request>();
   auto result = get_maps_info_client_->async_send_request(request);
   if (rclcpp::spin_until_future_complete(service_node_, result) != rclcpp::FutureReturnCode::SUCCESS) {
-    RCLCPP_ERROR(LOGGER, "Failed to call service get_maps_info");
+    RCLCPP_ERROR(LOGGER, "Failed to call service mapoi/get_maps_info");
     return;
   }
   auto map_info = result.get();
@@ -328,14 +328,14 @@ void PoiEditorPanel::MapComboBox()
   request_sm->map_name = map_name_list_[ui_->MapComboBox->currentIndex()];
 
   if (!select_map_client_->wait_for_service(3s)) {
-    RCLCPP_ERROR(LOGGER, "select_map service not available after 3s timeout.");
+    RCLCPP_ERROR(LOGGER, "mapoi/select_map service not available after 3s timeout.");
     return;
   }
 
   auto result_sm = select_map_client_->async_send_request(request_sm);
   if (rclcpp::spin_until_future_complete(service_node_, result_sm) != rclcpp::FutureReturnCode::SUCCESS ||
       !result_sm.get()->success) {
-    RCLCPP_ERROR(LOGGER, "Failed to call service select_map");
+    RCLCPP_ERROR(LOGGER, "Failed to call service mapoi/select_map");
     return;
   }
   PoiEditorPanel::UpdatePoiTable();
@@ -518,7 +518,7 @@ void PoiEditorPanel::SaveButton()
   ui_->SaveButton->setStyleSheet("QPushButton {background-color: green; color: black;}");
 
   if (!reload_map_info_client_->wait_for_service(3s)) {
-    RCLCPP_ERROR(LOGGER, "reload_map_info service not available after 3s timeout.");
+    RCLCPP_ERROR(LOGGER, "mapoi/reload_map_info service not available after 3s timeout.");
     return;
   }
   auto request_reload_map_info = std::make_shared<std_srvs::srv::Trigger::Request>();
@@ -663,7 +663,7 @@ void PoiEditorPanel::PopulateTagFilter()
 void PoiEditorPanel::LoadTagDefinitions()
 {
   if (!get_tag_defs_client_->wait_for_service(3s)) {
-    RCLCPP_WARN(LOGGER, "get_tag_definitions service not available, TagHelper will be empty.");
+    RCLCPP_WARN(LOGGER, "mapoi/get_tag_definitions service not available, TagHelper will be empty.");
     return;
   }
 
@@ -922,7 +922,7 @@ void PoiEditorPanel::UpdatePoiTable()
   auto request_gtp = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
 
   if (!get_pois_info_client_->wait_for_service(3s)) {
-    RCLCPP_ERROR(LOGGER, "get_pois_info service not available after 3s timeout.");
+    RCLCPP_ERROR(LOGGER, "mapoi/get_pois_info service not available after 3s timeout.");
     return;
   }
 

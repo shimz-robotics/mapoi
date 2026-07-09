@@ -48,6 +48,28 @@ Added
   completed call as success (an empty ``map_name`` is passed through
   unvalidated for requesters that do not know the current map).
 
+Breaking changes
+----------------
+
+* All eight ``mapoi_server`` services now live under the ``mapoi/`` namespace,
+  matching the topics (already namespaced since v0.3.0). No compatibility
+  alias is provided. See ``docs/migration/v0.5.0.md`` for the full migration
+  guide. Rename table:
+
+  - ``get_pois_info`` -> ``mapoi/get_pois_info``
+  - ``get_route_pois`` -> ``mapoi/get_route_pois``
+  - ``get_maps_info`` -> ``mapoi/get_maps_info``
+  - ``get_routes_info`` -> ``mapoi/get_routes_info``
+  - ``select_map`` -> ``mapoi/select_map``
+  - ``request_initial_pose`` -> ``mapoi/request_initial_pose``
+  - ``reload_map_info`` -> ``mapoi/reload_map_info``
+  - ``get_tag_definitions`` -> ``mapoi/get_tag_definitions``
+
+  Update any external client (``ros2 service call``, custom bridges,
+  monitoring scripts) that pins one of the old bare names. Service types,
+  request/response fields, topics, and launch parameters are unchanged
+  (#341).
+
 Fixed
 -----
 

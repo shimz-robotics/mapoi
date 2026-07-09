@@ -15,7 +15,7 @@ int main(int argc, char **argv)
 
   std::shared_ptr<rclcpp::Node> node = rclcpp::Node::make_shared("get_pois_info_client");
   rclcpp::Client<mapoi_interfaces::srv::GetPoisInfo>::SharedPtr client =
-    node->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
+    node->create_client<mapoi_interfaces::srv::GetPoisInfo>("mapoi/get_pois_info");
 
   auto request = std::make_shared<mapoi_interfaces::srv::GetPoisInfo::Request>();
 
@@ -37,7 +37,7 @@ int main(int argc, char **argv)
       RCLCPP_INFO(rclcpp::get_logger("get_pois_info_client"), "POI Name: %s", poi.name.c_str());
     }
   }else{
-    RCLCPP_ERROR(rclcpp::get_logger("get_pois_info_client"), "Failed to call service get_pois_info");
+    RCLCPP_ERROR(rclcpp::get_logger("get_pois_info_client"), "Failed to call service mapoi/get_pois_info");
   }
 
   rclcpp::shutdown();

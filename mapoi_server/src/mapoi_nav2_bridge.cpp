@@ -20,7 +20,7 @@ MapoiNav2Bridge::MapoiNav2Bridge(const rclcpp::NodeOptions & options)
   // timing gate は本ノードが所有し続け、wire-publish のみ mapoi_server に移す。これにより
   // transient_local の per-writer latched cache が単一化され stale POI を構造的に排除する。
   request_initial_pose_client_ = this->create_client<mapoi_interfaces::srv::RequestInitialPose>(
-    "request_initial_pose");
+    "mapoi/request_initial_pose");
 
   // goal_pose subscriber and publisher
   mapoi_goal_pose_poi_sub_ = this->create_subscription<std_msgs::msg::String>(
@@ -82,9 +82,9 @@ MapoiNav2Bridge::MapoiNav2Bridge(const rclcpp::NodeOptions & options)
     1s, std::bind(&MapoiNav2Bridge::publish_backend_status, this),
     backend_status_callback_group_);
 
-  this->pois_info_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("get_pois_info");
-  this->route_client_ = this->create_client<mapoi_interfaces::srv::GetRoutePois>("get_route_pois");
-  this->select_map_client_ = this->create_client<mapoi_interfaces::srv::SelectMap>("select_map");
+  this->pois_info_client_ = this->create_client<mapoi_interfaces::srv::GetPoisInfo>("mapoi/get_pois_info");
+  this->route_client_ = this->create_client<mapoi_interfaces::srv::GetRoutePois>("mapoi/get_route_pois");
+  this->select_map_client_ = this->create_client<mapoi_interfaces::srv::SelectMap>("mapoi/select_map");
 
   // --- POI radius event detection ---
   this->declare_parameter<double>("tolerance_check_hz", 5.0);
@@ -183,7 +183,7 @@ MapoiNav2Bridge::MapoiNav2Bridge(const rclcpp::NodeOptions & options)
       "cmd_vel subscribed as Twist (msg_type=%s)", cmd_vel_msg_type.c_str());
   }
 
-  tag_defs_client_ = this->create_client<mapoi_interfaces::srv::GetTagDefinitions>("get_tag_definitions");
+  tag_defs_client_ = this->create_client<mapoi_interfaces::srv::GetTagDefinitions>("mapoi/get_tag_definitions");
   fetch_system_tags();
 
   double hz = this->get_parameter("tolerance_check_hz").as_double();
@@ -221,7 +221,7 @@ void MapoiNav2Bridge::mapoi_goal_pose_poi_cb(const std_msgs::msg::String::Shared
 
   // Fetch POI list asynchronously, then navigate in the callback
   if (!this->pois_info_client_->wait_for_service(2s)) {
-    RCLCPP_ERROR(this->get_logger(), "get_pois_info service not available");
+    RCLCPP_ERROR(this->get_logger(), "mapoi/get_pois_info service not available");
     publish_rejected_status(poi_name);
     return;
   }
@@ -327,7 +327,7 @@ void MapoiNav2Bridge::mapoi_route_cb(const std_msgs::msg::String::SharedPtr msg)
   // まま async_send_request すると応答待ちのまま status が更新されず、#339 と同型の
   // 「status が居座って操作者が気づけない」経路が route コマンドに残るため。
   if (!this->route_client_->wait_for_service(2s)) {
-    RCLCPP_ERROR(this->get_logger(), "get_route_pois service not available");
+    RCLCPP_ERROR(this->get_logger(), "mapoi/get_route_pois service not available");
     publish_rejected_status(msg->data);
     return;
   }
@@ -368,7 +368,7 @@ void MapoiNav2Bridge::mapoi_switch_map_cb(const std_msgs::msg::String::SharedPtr
   ++nav_attempt_generation_;
 
   if (!this->select_map_client_->wait_for_service(2s)) {
-    RCLCPP_ERROR(this->get_logger(), "select_map service not available");
+    RCLCPP_ERROR(this->get_logger(), "mapoi/select_map service not available");
     publish_nav_status("map_switch_failed", map_name);
     return;
   }
@@ -474,7 +474,7 @@ void MapoiNav2Bridge::request_initial_pose(const std::string & map_name, const s
   // (今日の「subscriber 不在で latched されない」と同等の degrade、silent swallow はしない)。
   if (!request_initial_pose_client_->service_is_ready()) {
     RCLCPP_ERROR(this->get_logger(),
-      "request_initial_pose service not available; initial pose for map '%s' was NOT set "
+      "mapoi/request_initial_pose service not available; initial pose for map '%s' was NOT set "
       "(mapoi_server unreachable?).", map_name.c_str());
     return;
   }
@@ -1013,7 +1013,7 @@ void MapoiNav2Bridge::publish_backend_status()
       missing.emplace_back("follow_waypoints action");
     }
     if (!switch_map_ready) {
-      missing.emplace_back("select_map service");
+      missing.emplace_back("mapoi/select_map service");
     }
     std::string joined;
     for (size_t i = 0; i < missing.size(); ++i) {
@@ -1287,7 +1287,7 @@ void MapoiNav2Bridge::mapoi_resume_cb(const std_msgs::msg::String::SharedPtr msg
 void MapoiNav2Bridge::fetch_system_tags()
 {
   if (!tag_defs_client_->service_is_ready()) {
-    RCLCPP_INFO(this->get_logger(), "get_tag_definitions service not available yet, waiting...");
+    RCLCPP_INFO(this->get_logger(), "mapoi/get_tag_definitions service not available yet, waiting...");
     return;  // tolerance_check_callback will retry via guard check
   }
   auto request = std::make_shared<mapoi_interfaces::srv::GetTagDefinitions::Request>();

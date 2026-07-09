@@ -51,7 +51,7 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 
 | サービス名 | 型 | 説明 |
 | --- | --- | --- |
-| `request_initial_pose` | `RequestInitialPose` | `POST /api/nav/initialpose` 受信時に `mapoi_server` へ publish を依頼 (#211)。WebUI は直接 `mapoi/initialpose_poi` を publish しない |
+| `mapoi/request_initial_pose` | `RequestInitialPose` | `POST /api/nav/initialpose` 受信時に `mapoi_server` へ publish を依頼 (#211)。WebUI は直接 `mapoi/initialpose_poi` を publish しない |
 
 #### サブスクライバー
 
@@ -121,17 +121,17 @@ ros2 launch mapoi_webui mapoi_editor.launch.yaml maps_path:=/path/to/maps map_na
 |---|---|---|
 | `GET /api/maps` `/maps/<name>/image\|metadata` | 不要 | `maps_path` を直 ls / YAML/PNG 直読み |
 | `GET /api/pois` `/api/routes` | 不要 | YAML 直読み |
-| `POST /api/pois` `/api/routes` `/api/custom_tags` | **必要** | YAML 書き込み後に `reload_map_info` service を呼ぶ |
-| `GET /api/tag_definitions` | **必要** | `get_tag_definitions` service 経由 |
+| `POST /api/pois` `/api/routes` `/api/custom_tags` | **必要** | YAML 書き込み後に `mapoi/reload_map_info` service を呼ぶ |
+| `GET /api/tag_definitions` | **必要** | `mapoi/get_tag_definitions` service 経由 |
 | `POST /api/nav/{goal,route,cancel,pause,resume}` | **必要 (mapoi_nav2_bridge)** | publisher → mapoi_nav2_bridge が listener、subscriber 0 件なら warning を返す |
-| `POST /api/nav/initialpose` | **必要 (`mapoi_server` の `request_initial_pose` service)** | `request_initial_pose` service 経由で `mapoi_server` が `mapoi/initialpose_poi` を publish (#211)。service 不在時は 503。さらに `mapoi/initialpose_poi` に subscriber (`mapoi_amcl_localization_bridge` 等) が居ないと initial pose は配信されず warning を返す |
+| `POST /api/nav/initialpose` | **必要 (`mapoi_server` の `mapoi/request_initial_pose` service)** | `mapoi/request_initial_pose` service 経由で `mapoi_server` が `mapoi/initialpose_poi` を publish (#211)。service 不在時は 503。さらに `mapoi/initialpose_poi` に subscriber (`mapoi_amcl_localization_bridge` 等) が居ないと initial pose は配信されず warning を返す |
 | `POST /api/nav/switch-map` | **必要 (mapoi_nav2_bridge 等)** | `mapoi/nav/switch_map` publisher → navigation backend が listener、subscriber 0 件なら warning を返す |
 | `GET /api/nav/status` | 不要 (subscriber 経由で受信値返却) | mapoi_nav2_bridge がいなければ default 値 |
 | `GET /api/mode` | 不要 | command topic の subscriber 数から best-effort で検出 |
 
 server / mapoi_nav2_bridge 不在時の挙動 (endpoint カテゴリ別):
 - `GET /api/tag_definitions`: `503 Service Unavailable` (service 必須、unavailable / timeout 時)
-- `POST /api/pois` / `/api/routes` / `/api/custom_tags`: `200 OK` + `warning` フィールド (YAML 書き込み自体は成功するため、`reload_map_info` の unavailable / timeout / failure は warning として通知)
+- `POST /api/pois` / `/api/routes` / `/api/custom_tags`: `200 OK` + `warning` フィールド (YAML 書き込み自体は成功するため、`mapoi/reload_map_info` の unavailable / timeout / failure は warning として通知)
 - `POST /api/nav/{goal,route,cancel,pause,resume}` / `/api/nav/initialpose` / `/api/nav/switch-map`: `200 OK` + `warning` フィールド (publish 自体は成功扱い、subscriber 不在を best-effort で検出して通知)
 
 ## 開発者規約

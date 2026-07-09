@@ -106,10 +106,10 @@ class TestServerRestartInitialposeRelatch(unittest.TestCase):
         return f'relatch_{case}_{os.getpid()}'
 
     def _make_clients(self, ns):
-        select_map = self.node.create_client(SelectMap, f'/{ns}/select_map')
+        select_map = self.node.create_client(SelectMap, f'/{ns}/mapoi/select_map')
         request_initialpose = self.node.create_client(
-            RequestInitialPose, f'/{ns}/request_initial_pose')
-        get_maps_info = self.node.create_client(GetMapsInfo, f'/{ns}/get_maps_info')
+            RequestInitialPose, f'/{ns}/mapoi/request_initial_pose')
+        get_maps_info = self.node.create_client(GetMapsInfo, f'/{ns}/mapoi/get_maps_info')
         self._clients += [select_map, request_initialpose, get_maps_info]
         return select_map, request_initialpose, get_maps_info
 
