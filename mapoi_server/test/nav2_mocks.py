@@ -254,9 +254,10 @@ class FakeRoutePoisServer:
     #342 で ``GetRoutePois.srv`` の response に ``success`` / ``error_message`` が
     追加されたことで、「service 自体が異常応答を返す」経路 (``on_route_received`` の
     (b) ``success=false`` 経路、および (c) ``success=true`` だが ``pois_list`` 空の
-    "Route is empty" 経路) を決定論的に mock できるようになった。実物の mapoi_server は
-    「存在しない route 名」を投げても ``success=true`` かつ空リストで返す (c) しか作れず
-    (b) の任意異常応答は再現できないため、この mock が必要 (docs/testing-policy.md 3節)。
+    "Route is empty" 経路) を決定論的に mock できるようになった。実物の mapoi_server が
+    返す success=false は「route not found」の 1 パターンに限られるため、server 実装に
+    依存しない任意の異常応答に対する bridge 側防御の pin にはこの mock が必要
+    (docs/testing-policy.md 3節)。
 
     ``set_response()`` でテストケースごとに応答を切り替える。service callback は
     lock 下で保持値を返すだけで blocking しないため、``FakeMapServer`` と同じく
