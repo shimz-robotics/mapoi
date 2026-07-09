@@ -232,6 +232,17 @@ class TestApiSaveRoutesVersionConflict(unittest.TestCase):
         from mapoi_webui.yaml_handler import compute_config_version
         return compute_config_version(self.config_path)
 
+    def test_get_routes_returns_config_version(self):
+        """GET /api/routes が expected_version の種になる config_version を返す (#343)。
+
+        frontend (route-editor.js) はこの key を Save 時に送り返す。key 名が変わる /
+        消えると楽観ロックがサイレントに無効化されるため backend 側で pin する。
+        """
+        self.fake_node.map_name_ = 'test_map'
+        resp = self.client.get('/api/routes')
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+        self.assertEqual(resp.get_json()['config_version'], self._current_version())
+
     def test_save_with_matching_expected_version_returns_200_with_new_version(self):
         v_before = self._current_version()
         resp = self.client.post('/api/routes', json={
