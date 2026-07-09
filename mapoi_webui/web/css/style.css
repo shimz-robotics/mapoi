@@ -1340,7 +1340,13 @@ main {
     height: auto;
   }
 
+  /* 基底ルールの `flex: 1` (= flex-basis: 0%) が column 化した main では
+     height を無視して basis 0 のまま flex-grow するため、height:auto な
+     main では地図が高さ0に潰れる (#324)。flex を殺して height を直接
+     効かせる (overlay モードの body.ui-overlay #map-container の
+     height:calc(100vh - 44px) も同じ理由で無効化されていたため合わせて解消)。 */
   #map-container {
+    flex: none;
     height: 50vh;
   }
 
@@ -1415,6 +1421,36 @@ main {
 
   .form-row label {
     width: auto;
+  }
+
+  /* タップ可能要素の最小サイズ確保 (#324, 実機監査で 19〜34px を検出)。
+     デスクトップの密な見た目は変えず mobile 限定で拡大する。 */
+  .btn-section-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .btn-check-all {
+    min-height: 40px;
+    min-width: 40px;
+    padding: 4px 10px;
+  }
+
+  .editor-toolbar button {
+    min-height: 40px;
+    min-width: 40px;
+  }
+
+  .btn-add-wp {
+    min-height: 40px;
+    min-width: 40px;
+  }
+
+  .route-wp-select {
+    min-height: 40px;
   }
 }
 
