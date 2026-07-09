@@ -27,6 +27,28 @@
            誤読されるため不採用。overlay / 不透明度の設定はパネル内 Display section
            (#323)。配線は ui-settings.js。 -->
       <div id="ui-controls">
+        <!-- 選択中 POI の位置編集 (drag + yaw ハンドル) を明示的にロック/アンロックする
+             (#333)。位置編集はロボット運用の主作業 (ナビゲーション/監視) に対して「たまに
+             行う設定変更」なので、既定はロック (安全側)。ページ再読み込みで再度ロックに
+             戻り、解除状態は永続化しない。対象は選択→即ドラッグできてしまう経路のみ。
+             Add POI 配置クリックや Route waypoint 追加は事前に明示ボタン操作が要るため
+             対象外 (誤操作リスクが無い)。配線は app.js、実体制御は
+             MapViewer.setPoiDraggingAllowed (route 編集中の抑止と AND)。 -->
+        <button id="btn-poi-lock-toggle" type="button" class="ui-control-btn"
+                aria-pressed="true" title="Unlock POI position editing" aria-label="Toggle POI position lock">
+          <svg id="poi-lock-icon-locked" class="ui-control-icon-svg" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+               stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+          <svg id="poi-lock-icon-unlocked" class="ui-control-icon-svg hidden" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+               stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+          </svg>
+        </button>
         <button id="btn-ui-toggle" type="button" class="ui-control-btn"
                 aria-pressed="false" title="Hide UI" aria-label="Toggle UI visibility">
           <svg id="ui-toggle-icon-hide" class="ui-control-icon-svg" viewBox="0 0 24 24"

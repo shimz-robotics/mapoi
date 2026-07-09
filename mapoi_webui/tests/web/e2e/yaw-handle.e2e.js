@@ -2,13 +2,14 @@
 // 選択中 wedge POI のときだけ弧先端に .poi-yaw-handle marker が 1 個生成され、disc POI や
 // 未選択では出ない。ハンドルを掴んで回すと矢印が追従し dragend で yaw が dirty 化する。
 const { test, expect } = require('@playwright/test');
-const { loadApp, selectPoi } = require('./helpers');
+const { loadApp, selectPoi, unlockPoiPosition } = require('./helpers');
 
 const DRAGGABLE_ARROW = '.poi-arrow-icon.leaflet-marker-draggable';
 
 test.describe('C. yaw 回転ハンドルの DOM 生成と drag 追従', () => {
   test('wedge 選択でハンドル 1 個、disc 選択ではハンドル無し', async ({ page }) => {
     await loadApp(page);
+    await unlockPoiPosition(page); // 位置ロックは既定 ON (#333)。yaw ハンドルも対象。
     await expect(page.locator('.poi-yaw-handle')).toHaveCount(0);
 
     await selectPoi(page, 'poi_wedge'); // 0 < yawTol < pi → wedge
@@ -20,6 +21,7 @@ test.describe('C. yaw 回転ハンドルの DOM 生成と drag 追従', () => {
 
   test('yaw ハンドルをドラッグすると矢印 rotation が変化し dirty 化する', async ({ page }) => {
     await loadApp(page);
+    await unlockPoiPosition(page); // 位置ロックは既定 ON (#333)
     await selectPoi(page, 'poi_wedge');
 
     const handle = page.locator('.poi-yaw-handle');

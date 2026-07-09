@@ -20,6 +20,10 @@
   let currentMap = '';
   let currentNavigationCapabilities = null;
   let currentNavStatus = 'idle';
+  // 選択中 POI の位置編集 (drag + yaw ハンドル) のロック状態 (#333)。位置編集は
+  // ナビゲーション/監視に対して「たまに行う設定変更」なので既定はロック (安全側)。
+  // リロードで再度ロックへ戻り、解除状態は永続化しない。
+  let poiPositionLocked = true;
 
   // --- Tag editor state ---
   let tagDirty = false;
@@ -457,6 +461,33 @@
     await loadRoutes();
   };
 
+  // 選択中 POI の位置編集ロック (#333)。route 編集中の抑止 (#239) と AND して
+  // MapViewer.setPoiDraggingAllowed に渡す単一の同期点。
+  function refreshPoiDraggingAllowed() {
+    mapViewer.setPoiDraggingAllowed(!poiPositionLocked && routeEditor.editingIndex === -1);
+  }
+
+  const btnPoiLockToggle = document.getElementById('btn-poi-lock-toggle');
+  const poiLockIconLocked = document.getElementById('poi-lock-icon-locked');
+  const poiLockIconUnlocked = document.getElementById('poi-lock-icon-unlocked');
+  function applyPoiLockUi() {
+    if (btnPoiLockToggle) {
+      btnPoiLockToggle.setAttribute('aria-pressed', String(poiPositionLocked));
+      btnPoiLockToggle.title = poiPositionLocked ? 'Unlock POI position editing' : 'Lock POI position editing';
+    }
+    if (poiLockIconLocked) poiLockIconLocked.classList.toggle('hidden', !poiPositionLocked);
+    if (poiLockIconUnlocked) poiLockIconUnlocked.classList.toggle('hidden', poiPositionLocked);
+  }
+  if (btnPoiLockToggle) {
+    btnPoiLockToggle.addEventListener('click', () => {
+      poiPositionLocked = !poiPositionLocked;
+      applyPoiLockUi();
+      refreshPoiDraggingAllowed();
+    });
+  }
+  applyPoiLockUi();
+  refreshPoiDraggingAllowed();
+
   // Route click on map
   mapViewer.onRouteClick = (routeIdx) => {
     // Ignore during editing
@@ -472,8 +503,7 @@
 
   // Route editing state change — redraw routes with editing preview
   routeEditor.onEditingChange = () => {
-    // route 編集中は POI ドラッグを無効化し、waypoint 追加クリックと競合させない (#239)。
-    mapViewer.setPoiDraggingAllowed(routeEditor.editingIndex === -1);
+    refreshPoiDraggingAllowed();
     redrawRoutes();
     // editRoute / copyRoute は selectedIndex を直接変えるが onSelectionChange を
     // 発火しないため、ここで highlightRoute を再適用して MapViewer 側の

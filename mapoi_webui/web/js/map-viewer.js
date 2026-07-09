@@ -10,6 +10,16 @@ class MapViewer {
       maxZoom: 5,
       zoomSnap: 0.25,
       attributionControl: false,
+      // +/- ズームボタン (Leaflet 既定) は不要。マウスホイール/ドラッグ・タッチのピンチで
+      // 直感的にズームでき、地図上の余計なコントロールを減らす (#333)。
+      zoomControl: false,
+    });
+
+    // ボタン削除後もホイール/ピンチでズームできることを e2e から検証できるよう、現在
+    // zoom を DOM に反映する (#333 Codex review low 対応)。アプリの挙動には影響しない
+    // test hook。
+    this.map.on('zoom', () => {
+      this.map.getContainer().dataset.zoom = String(this.map.getZoom());
     });
 
     this.imageOverlay = null;
