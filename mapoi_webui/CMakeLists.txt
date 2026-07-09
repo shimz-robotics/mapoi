@@ -50,6 +50,12 @@ if(BUILD_TESTING)
     test/test_api_sse_config_events.py
     TIMEOUT 15
   )
+  # /api/maps/select の REST 契約 (#343): resolved_initial_poi_name key (srv rename の
+  # REST 側 mirror) と 400/503 経路を Flask test_client で固定。
+  ament_add_pytest_test(test_api_select_map
+    test/test_api_select_map.py
+    TIMEOUT 10
+  )
 endif()
 
 ament_package()

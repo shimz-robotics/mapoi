@@ -20,7 +20,7 @@ except ImportError:  # Humble fallback
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from mapoi_interfaces.srv import (
-    GetMapsInfo, GetTagDefinitions, RequestInitialPose, SelectMap)
+    GetTagDefinitions, RequestInitialPose, SelectMap)
 from mapoi_interfaces.msg import (
     LocalizationBackendStatus, NavigationBackendStatus)
 import tf2_ros
@@ -155,7 +155,6 @@ class MapoiWebNode(Node):
 
         # ROS2 service clients
         self.reload_client_ = self.create_client(Trigger, 'mapoi/reload_map_info')
-        self.get_maps_client_ = self.create_client(GetMapsInfo, 'mapoi/get_maps_info')
         self.tag_defs_client_ = self.create_client(GetTagDefinitions, 'mapoi/get_tag_definitions')
         self.select_map_client_ = self.create_client(SelectMap, 'mapoi/select_map')
         # #211: initialpose POI は直接 publish せず mapoi_server (唯一の writer) へ
@@ -241,7 +240,10 @@ class MapoiWebNode(Node):
         self._sse_clients = set()
         self._sse_lock = threading.Lock()
 
-        # If maps_path not set, try to get it from get_maps_info service or use default
+        # maps_path 未設定時は fail-fast せず WARN のみで起動継続する (#343)。map 一覧は
+        # maps_path 配下を listdir で直読みするため (`get_maps_list`)、この場合は空リストに
+        # なり editor 系 (地図一覧・POI/route 編集) は使えないが、nav 操作系 API は引き続き動く
+        # (詳細は mapoi_webui/README.md の「maps_path 未設定時の縮退」を参照)。
         if not self.maps_path_:
             self.get_logger().warn('maps_path parameter not set. Set it to use the web editor.')
 
@@ -663,7 +665,7 @@ class MapoiWebNode(Node):
                 'success': True,
                 'map_name': map_name,
                 'config_path': response.config_path,
-                'initial_poi_name': response.initial_poi_name,
+                'resolved_initial_poi_name': response.resolved_initial_poi_name,
             })
 
         @app.route('/api/nav/switch-map', methods=['POST'])

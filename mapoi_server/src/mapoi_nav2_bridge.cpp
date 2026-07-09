@@ -427,7 +427,7 @@ void MapoiNav2Bridge::on_select_map_received(
       map_url.c_str(), node_name.c_str());
   }
 
-  request_initial_pose(map_name, result->initial_poi_name);
+  request_initial_pose(map_name, result->resolved_initial_poi_name);
   publish_nav_status("map_switch_succeeded", map_name);
   RCLCPP_INFO(this->get_logger(), "Map switch completed: %s", map_name.c_str());
 }

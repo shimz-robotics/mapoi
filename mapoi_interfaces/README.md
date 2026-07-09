@@ -125,7 +125,7 @@ QoS contract (TRANSIENT_LOCAL / RELIABLE / MANUAL_BY_TOPIC publisher / AUTOMATIC
 | Response | `success` | `bool` | context 選択成功の有無 |
 | Response | `error_message` | `string` | 失敗時の理由 |
 | Response | `config_path` | `string` | 選択後の設定ファイル path |
-| Response | `initial_poi_name` | `string` | 解決済み初期姿勢 POI 名 |
+| Response | `resolved_initial_poi_name` | `string` | 解決済み初期姿勢 POI 名 |
 | Response | `nav2_node_names` | `string[]` | Nav2 map server node 名 |
 | Response | `nav2_map_urls` | `string[]` | 対応する map YAML path |
 

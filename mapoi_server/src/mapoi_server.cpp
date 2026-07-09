@@ -486,7 +486,7 @@ void MapoiServer::select_map_service(const std::shared_ptr<mapoi_interfaces::srv
   // #297: operator の map 選択を永続化 (crash/再起動時の context 復元用)。
   persist_last_selected_map();
   response->config_path = config_path_;
-  response->initial_poi_name = resolve_initial_poi_name(request->initial_poi_name);
+  response->resolved_initial_poi_name = resolve_initial_poi_name(request->initial_poi_name);
 
   if (nav2_map_list_ && nav2_map_list_.IsSequence()) {
     for (const auto & map : nav2_map_list_) {
@@ -513,7 +513,7 @@ void MapoiServer::select_map_service(const std::shared_ptr<mapoi_interfaces::srv
 
   // select_map は Nav2-free の context 更新入口。ここでは AMCL に initial pose を流さず、
   // stale な latched initial pose だけを clear する。operator mode では mapoi_nav2_bridge が
-  // Nav2 LoadMap 成功後に response->initial_poi_name を mapoi/initialpose_poi へ publish する。
+  // Nav2 LoadMap 成功後に response->resolved_initial_poi_name を mapoi/initialpose_poi へ publish する。
   publish_initialpose_clear();
 
   RCLCPP_INFO(this->get_logger(), "Selected map context: %s", map_name_.c_str());

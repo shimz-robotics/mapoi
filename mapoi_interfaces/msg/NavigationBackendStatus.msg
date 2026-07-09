@@ -1,6 +1,6 @@
 # Minimal navigation backend readiness, published 1 Hz on
 # `mapoi/nav/backend_status` by navigation bridges such as
-# `mapoi_nav_server` (Nav2 bridge) or any custom bridge.
+# `mapoi_nav2_bridge` (Nav2 bridge) or any custom bridge.
 #
 # Custom bridges only need to populate these three fields. UI consumers
 # (mapoi_webui, mapoi_rviz_plugins) gate navigation operations on
@@ -9,7 +9,7 @@
 #
 # How to populate `backend_ready` (custom bridge implementers — issue #207):
 #   AND only the capabilities your bridge actually exposes. Do NOT copy
-#   `mapoi_nav_server`'s `goal_ready && route_ready && switch_map_ready`
+#   `mapoi_nav2_bridge`'s `goal_ready && route_ready && switch_map_ready`
 #   verbatim — that AND is correct only for a bridge that exposes all three
 #   (NavigateToPose + FollowWaypoints + map switch). For a single-capability
 #   bridge, ANDing in capabilities you don't expose pins `backend_ready` to
@@ -20,7 +20,7 @@
 #     - Goal + map switch: backend_ready = goal_ready && switch_map_ready
 #   Convention for `reason` (recommended for operator UX consistency):
 #   when `backend_ready` is false, list missing capabilities joined by ", "
-#   prefixed with "not ready: " (see mapoi_nav_server::publish_backend_status
+#   prefixed with "not ready: " (see mapoi_nav2_bridge::publish_backend_status
 #   for the canonical format).
 #   Privacy: `reason` is surfaced in the operator UI and may be logged by
 #   bag recorders or remote dashboards. Bridges MUST NOT include sensitive
@@ -58,7 +58,7 @@
 # regardless of the latched payload (see `_resolve_backend_status_for_ui` in mapoi_webui).
 #
 # NOTE (issue #213): the lease must exceed any blocking call inside the publisher
-# node's executor. mapoi_nav_server's `select_map` flow can block the
+# node's executor. mapoi_nav2_bridge's `select_map` flow can block the
 # SingleThreadedExecutor for up to ~11 s per Nav2 map node during `send_load_map_request`,
 # which can trigger false-positive liveliness lost events even at 5 s lease.
 # Issue #213 tracks splitting backend_status_timer into a Reentrant callback group
