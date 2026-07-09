@@ -8,6 +8,12 @@ state / action には一切影響しないため、"rejected" で "navigating" �
 `test_nav_status_rejected_paths.py` は nav_mode_ == IDLE 前提 (reject → "rejected"
 が publish される側) を pin しており、本 test はその逆 (走行中は publish されない側)
 を NavigateToPose mock で pin する。
+
+#354: 上記の "status を上書きしない" 設計の副作用として、走行中の reject が操作者に
+一切通知されない課題が残っていた。`mapoi/nav/command_rejected` は status と独立した
+イベント通知で、nav_mode_ に関わらず reject の都度必ず publish される。本 test は
+「status は上書きされないが command_rejected は publish される」という #354 の核心
+挙動を pin する。
 """
 
 import os
@@ -84,6 +90,20 @@ class TestNavStatusRejectedDuringNavigation(unittest.TestCase):
         )
         cls.nav_status_sub = cls.node.create_subscription(
             String, 'mapoi/nav/status', cls._nav_status_callback, nav_status_qos)
+
+        # #354: command_rejected は volatile (非 transient_local) QoS。bridge 側
+        # publisher (rclcpp::QoS(10), default reliable + volatile) と一致させる。
+        cls.received_command_rejected = []
+        command_rejected_qos = QoSProfile(
+            depth=10,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.VOLATILE,
+        )
+        cls.command_rejected_sub = cls.node.create_subscription(
+            String, 'mapoi/nav/command_rejected', cls._command_rejected_callback,
+            command_rejected_qos)
+
         cls.goal_pub = cls.node.create_publisher(String, 'mapoi/nav/goal_pose_poi', 1)
         cls.cancel_pub = cls.node.create_publisher(String, 'mapoi/nav/cancel', 1)
 
@@ -102,18 +122,28 @@ class TestNavStatusRejectedDuringNavigation(unittest.TestCase):
     def _nav_status_callback(cls, msg):
         cls.received_nav_status.append(msg.data)
 
+    @classmethod
+    def _command_rejected_callback(cls, msg):
+        cls.received_command_rejected.append(msg.data)
+
     def setUp(self):
         self._publish_cancel()
         self._spin_for(0.3)
         self.received_nav_status.clear()
+        self.received_command_rejected.clear()
         self.fake_server.reset()
         self.assertTrue(self._wait_for_subscriber('mapoi/nav/goal_pose_poi'),
                         'mapoi_nav2_bridge が mapoi/nav/goal_pose_poi を subscribe していない')
+        # command_rejected は volatile QoS でリプレイされないため、matching 完了前の
+        # reject 取りこぼしを防ぐべく publisher の存在も gate する (#354 review medium)。
+        self.assertTrue(self._wait_for_publisher('mapoi/nav/command_rejected'),
+                        'mapoi_nav2_bridge が mapoi/nav/command_rejected を publish していない')
 
     def tearDown(self):
         self._publish_cancel()
         self._spin_for(0.4)
         self.received_nav_status.clear()
+        self.received_command_rejected.clear()
         self.fake_server.reset()
 
     # --- helpers ---
@@ -131,6 +161,14 @@ class TestNavStatusRejectedDuringNavigation(unittest.TestCase):
                 return True
         return False
 
+    def _wait_for_publisher(self, topic_name, timeout_sec=5.0):
+        end = time.monotonic() + timeout_sec
+        while time.monotonic() < end:
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+            if self.node.count_publishers(topic_name) > 0:
+                return True
+        return False
+
     def _wait_for_nav_status(self, status, timeout_sec=None):
         if timeout_sec is None:
             timeout_sec = self.NAV_STATUS_WAIT_TIMEOUT
@@ -139,6 +177,16 @@ class TestNavStatusRejectedDuringNavigation(unittest.TestCase):
             rclpy.spin_once(self.node, timeout_sec=0.1)
             if any(s == status or s.startswith(status + ':')
                    for s in self.received_nav_status):
+                return True
+        return False
+
+    def _wait_for_command_rejected(self, target, timeout_sec=None):
+        if timeout_sec is None:
+            timeout_sec = self.NAV_STATUS_WAIT_TIMEOUT
+        end = time.monotonic() + timeout_sec
+        while time.monotonic() < end:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+            if target in self.received_command_rejected:
                 return True
         return False
 
@@ -191,3 +239,8 @@ class TestNavStatusRejectedDuringNavigation(unittest.TestCase):
         self.assertEqual(
             len(self.fake_server.goals_xy()), 1,
             '走行中の goal が意図せず変化した')
+        # #354: status は上書きされない一方、command_rejected イベントは publish される
+        # (= 操作者が走行中の typo goal に気づける核心挙動)。
+        self.assertTrue(
+            self._wait_for_command_rejected('poi_typo_does_not_exist', timeout_sec=2.0),
+            '走行中の reject で command_rejected が publish されなかった (#354 regression)')

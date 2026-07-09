@@ -6,6 +6,7 @@ config 変更を frontend に push する SSE 経路 (config_path_callback → _
 
 - `config_path_callback`: `mapoi/config_path` 受信時の map 名抽出と broadcast 判定
   (外部切替 / 同一 map 内容変更 / 期待形式外で無駄な reload を避ける判定 / 異常入力耐性)
+- `command_rejected_callback`: `mapoi/nav/command_rejected` 受信 → SSE broadcast 経路 (#354)
 - `_broadcast_sse_event`: 接続中の全 client queue への fanout、event data 形状、Full 吸収
 - `/api/events`: SSE response header、client 登録 → 配信 → 切断時 discard lifecycle (queue leak 防止)
 
@@ -125,6 +126,49 @@ class TestConfigPathCallback(unittest.TestCase):
         _call_config_path(node, 123)  # int.replace は無い → except 経路
         self.assertEqual(node.map_name_, 'mapA')
         self.assertEqual(node.broadcasts, [])
+
+
+class _FakeCommandRejectedNode:
+    """command_rejected_callback が参照する最小 attr を持つ duck-typed node (#354)。
+
+    `_broadcast_sse_event` は呼ばれた (event_type, payload) を記録するだけの stub にして、
+    callback が `mapoi/nav/command_rejected` の payload をどう SSE event に変換するかだけを
+    isolate して検証する。
+    """
+
+    def __init__(self):
+        self.broadcasts = []
+
+    def _broadcast_sse_event(self, event_type, payload=None):
+        self.broadcasts.append((event_type, payload))
+
+
+def _call_command_rejected(node, data):
+    # unbound メソッドに fake self を渡す (node 生成不要)。
+    MapoiWebNode.command_rejected_callback(node, _Msg(data))
+
+
+class TestCommandRejectedCallback(unittest.TestCase):
+    """mapoi/nav/command_rejected 受信 → SSE broadcast 経路 (#354)。
+
+    走行中の reject でも `mapoi/nav/status` (latched snapshot) を汚さず、frontend には
+    一時的な toast として流すためのイベント経路。bridge 側 payload は target 文字列のみ
+    (`std_msgs/String`) なので、callback はそれを `{'target': <文字列>}` に包んで
+    broadcast するだけの薄い変換であることを pin する。
+    """
+
+    def test_broadcasts_target_payload(self):
+        node = _FakeCommandRejectedNode()
+        _call_command_rejected(node, 'poi_typo_does_not_exist')
+        self.assertEqual(
+            node.broadcasts,
+            [('command_rejected', {'target': 'poi_typo_does_not_exist'})])
+
+    def test_empty_target_still_broadcasts(self):
+        # bridge 側で target が空文字のケース (仕様上想定していないが防御的に確認)。
+        node = _FakeCommandRejectedNode()
+        _call_command_rejected(node, '')
+        self.assertEqual(node.broadcasts, [('command_rejected', {'target': ''})])
 
 
 class TestBroadcastSseEvent(unittest.TestCase):

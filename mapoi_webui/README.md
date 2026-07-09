@@ -58,6 +58,7 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 | トピック名 | 型 | 説明 |
 | --- | --- | --- |
 | `mapoi/nav/status` | `std_msgs/String` | ナビゲーション状態の受信（`"status"` / `"status:target"` 形式、transient_local QoS）。`:` split で target を抽出し REST `/api/nav/status` の `target` field として公開 |
+| `mapoi/nav/command_rejected` | `std_msgs/String` | reject コマンドのイベント通知の受信（volatile QoS、payload = target 文字列、#354）。`mapoi/nav/status` の latched snapshot を汚さず、SSE `command_rejected` event として frontend に転送するだけの薄い変換 |
 | `mapoi/config_path` | `std_msgs/String` | 外部からの地図切り替え検知 |
 
 #### TF
@@ -117,6 +118,17 @@ v1.0.0 に向けて URL 階層を editor 系 (`/api/editor/*`)・nav 系 (`/api/
 `POST /api/pois` `/api/routes` `/api/custom-tags` はいずれも同じ yaml (`mapoi_config.yaml`) への書き込みのため、共通の楽観的競合検出に対応しています (`expected_version` フィールド、`/api/pois` は #241、`/api/routes` `/api/custom-tags` への展開は #343)。対応する GET (`/api/pois` `/api/routes` `/api/tag-definitions`) が返す `config_version` (yaml 内容の sha256 ハッシュ) を POST 時に `expected_version` として送り返すと、backend が現在の yaml と比較し、不一致なら `409` + `code: version_mismatch` を返します。WebUI 経由は frontend が自動でハンドリング（確認ダイアログの上でリロード）、外部 POST (curl / 別 client) で `expected_version` 省略時は check skip のため、競合上書きを避けたい場合は呼び出し側が対応する GET の `config_version` を送り返す責任を負う。
 
 `config_version` は yaml ファイル全体の内容ハッシュのため、POI/Route/CustomTags のいずれかを保存すると、他 2 つの GET が返す `config_version` も変わります（同じ yaml を共有しているため意図した挙動です）。詳細仕様は実装コメント (`api_save_pois` / `api_save_routes` / `api_save_custom_tags`) / test (`test_api_save_pois_version_conflict.py`) を参照。
+
+### SSE (`GET /api/events`)
+
+frontend が `EventSource` で接続する server-sent events endpoint です（#135 (B)）。rviz / 外部 save 由来の config 変更や、走行中の reject など「polling では拾いにくい / status snapshot を汚さずに通知したいイベント」を push するために使います。各イベントは `{"type": "<event>", "payload": {...}}` の JSON（`payload` 省略可）。
+
+| `type` | `payload` | 発火契機 |
+| --- | --- | --- |
+| `config_changed` | `{"map_name": "<name>"}` | `mapoi/config_path` 受信（rviz / 外部 save 由来の POI・Route・CustomTags 変更、または外部 map 切替）。frontend は 200ms debounce して `loadPois` / `loadRoutes` / `loadTagDefinitions` を再実行する |
+| `command_rejected` | `{"target": "<文字列>"}` | `mapoi/nav/command_rejected` 受信（#354）。走行中の typo goal 等、`mapoi/nav/status` を汚さずに reject を伝えるイベント通知。frontend は一時的な toast（`Command rejected: <target>`、約 5 秒で自動消滅）を表示する |
+
+接続は 30 秒周期の heartbeat コメント (`:heartbeat`) を挟み、client 切断はサーバ側で自動 discard されます（詳細は `_broadcast_sse_event` / `/api/events` の実装コメント参照）。
 
 ## 起動方法 (3 つのシナリオ)
 

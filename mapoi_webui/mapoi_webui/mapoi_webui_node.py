@@ -208,6 +208,16 @@ class MapoiWebNode(Node):
         self.nav_status_sub_ = self.create_subscription(
             String, 'mapoi/nav/status', self.nav_status_callback, nav_status_qos)
 
+        # Command-rejected イベント通知 (#354): `mapoi/nav/status` は latched な状態
+        # snapshot のため、走行中 (nav_mode_ != IDLE) の reject は publish されない (#339)。
+        # このため走行中の typo goal 等は操作者に伝わらなかった。`mapoi/nav/command_rejected`
+        # は状態と独立したイベント軸で、bridge 側は nav_mode_ に関わらず reject の都度必ず
+        # publish する。QoS は volatile (非 latched、depth 10 = bridge 側 publisher と同じ)。
+        # SSE 経由で frontend に toast として流すだけなので、後起動 subscriber へのリプレイは
+        # 不要 — transient_local にしない。
+        self.command_rejected_sub_ = self.create_subscription(
+            String, 'mapoi/nav/command_rejected', self.command_rejected_callback, 10)
+
         # Navigation / Localization backend readiness (#198 / #209) の QoS は msg contract
         # (#208) に従う: transient_local + liveliness (publisher=MANUAL_BY_TOPIC,
         # subscriber=AUTOMATIC) + lease 5s (両側必須)。subscriber 側 policy を AUTOMATIC に
@@ -290,6 +300,14 @@ class MapoiWebNode(Node):
         # so that succeeded/aborted/canceled still show the target name.
         if len(parts) > 1:
             self.nav_status_target_ = parts[1]
+
+    def command_rejected_callback(self, msg):
+        """Forward a rejected command as an SSE `command_rejected` event (#354).
+
+        `mapoi/nav/status` を汚さない (走行中は書き換えない、#339) ためのイベント通知。
+        frontend はこれを受けて一時的な toast を表示する (latched snapshot とは独立)。
+        """
+        self._broadcast_sse_event('command_rejected', {'target': msg.data})
 
     def backend_status_callback(self, msg):
         """Cache the latest navigation backend readiness payload (#198, #205)."""
@@ -397,7 +415,8 @@ class MapoiWebNode(Node):
 
         各 client の queue.Queue に put_nowait で event を流す。client 切断は
         /api/events generator の finally で自動 discard されるので queue 漏れなし。
-        queue は unbounded (現状) なので Full 例外は通常発火しない。
+        queue は bounded (maxsize=10、#173 の DoS 対策) なので、drain が滞る遅い
+        client では Full で event が黙って drop される (通知系イベントの用途では許容)。
         """
         data = {'type': event_type}
         if payload is not None:
@@ -407,7 +426,7 @@ class MapoiWebNode(Node):
                 try:
                     q.put_nowait(data)
                 except queue.Full:
-                    pass  # bounded queue にした場合の安全弁、現在は unbounded で発火しない
+                    pass  # 遅い client への event は drop する (maxsize=10, #173)
 
     def get_config_path(self, map_name=None):
         """Get the full path to mapoi_config.yaml for a given map."""

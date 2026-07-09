@@ -1601,3 +1601,38 @@ body.ui-overlay #poi-panel {
     min-height: 48px;
   }
 }
+
+/* --- Toast (#354): command_rejected イベント通知の一時表示 --- */
+/* 画面右下に積み上げる。overlay パネル (z-index 1100) より前面に出す。 */
+#toast-container {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  pointer-events: none;
+  max-width: min(360px, 92vw);
+}
+
+.toast {
+  background: rgba(44, 62, 80, 0.95);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  animation: mapoi-toast-in 0.15s ease-out;
+}
+
+@keyframes mapoi-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
