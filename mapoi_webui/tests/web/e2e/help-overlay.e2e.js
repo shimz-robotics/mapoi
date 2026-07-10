@@ -85,11 +85,15 @@ test.describe('Help overlay (#391)', () => {
     await page.keyboard.press('l');
     await page.keyboard.press('h');
     await page.keyboard.press('Delete');
+    // Ctrl+S も保存経路に入らない (clean 時の 'No unsaved changes' toast (#375) が
+    // 出ないことで gate を検証。ブラウザ保存ダイアログの抑止自体は e2e では見えない)
+    await page.keyboard.press('Control+s');
 
     await expect(page.locator('#btn-poi-lock-toggle')).toHaveAttribute('aria-pressed', 'true');
     expect(await bodyHasClass(page, 'ui-hidden')).toBe(false);
     await expect(poiCard(page, 'poi_wedge')).toHaveCount(1);
     await expect(page.locator('#btn-save')).toBeDisabled();
+    await expect(page.locator('.toast')).toHaveCount(0);
 
     // 閉じれば従来どおり効く
     await page.keyboard.press('Escape');
