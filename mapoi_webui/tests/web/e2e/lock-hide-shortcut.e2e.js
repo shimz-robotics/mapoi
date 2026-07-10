@@ -1,4 +1,4 @@
-// POI 位置ロック (L) / UI 一括表示 (H) の単キーショートカット (#390) の browser smoke。
+// POI 位置ロック (L) / UI 一括表示 (U) の単キーショートカット (#390) の browser smoke。
 // document keydown IIFE (app.js) は jsdom で実体テストしない方針 (#300 risk-based) のため、
 // Delete (#374) / Ctrl+S (#375) と同じく e2e 層で配線を pin する。
 // 実装は既存ボタンの .click() 再利用 (single code path) なので、ボタン側の挙動
@@ -22,7 +22,7 @@ function dispatchRepeatKeydown(page, key) {
   }, key);
 }
 
-test.describe('L/H キーボードショートカット (#390)', () => {
+test.describe('L/U キーボードショートカット (#390)', () => {
   test('L がロックボタンと同経路でトグルし、選択中 POI の draggable に反映される', async ({ page }) => {
     await loadApp(page);
 
@@ -44,33 +44,33 @@ test.describe('L/H キーボードショートカット (#390)', () => {
     await expect(page.locator(DRAGGABLE_ARROW)).toHaveCount(0);
   });
 
-  test('H が Hide UI ボタンと同経路で body.ui-hidden をトグルする', async ({ page }) => {
+  test('U が Hide UI ボタンと同経路で body.ui-hidden をトグルする', async ({ page }) => {
     await loadApp(page);
-    await expect(page.locator('#btn-ui-toggle')).toHaveAttribute('title', /\(H\)$/);
+    await expect(page.locator('#btn-ui-toggle')).toHaveAttribute('title', /\(U\)$/);
     expect(await bodyHasClass(page, 'ui-hidden')).toBe(false);
 
-    await page.keyboard.press('h');
+    await page.keyboard.press('u');
     expect(await bodyHasClass(page, 'ui-hidden')).toBe(true);
-    // ui-hidden 中も #ui-controls は残る仕様 (復帰手段) — H での復帰もその一部。
-    // 大文字 (Shift+H) も L 側と対称に pin する (Cursor review low 対応)
-    await page.keyboard.press('Shift+H');
+    // ui-hidden 中も #ui-controls は残る仕様 (復帰手段) — U での復帰もその一部。
+    // 大文字 (Shift+U) も L 側と対称に pin する (Cursor review low 対応)
+    await page.keyboard.press('Shift+U');
     expect(await bodyHasClass(page, 'ui-hidden')).toBe(false);
   });
 
-  test('入力欄 focus 中は L/H とも無視され、文字入力として通る', async ({ page }) => {
+  test('入力欄 focus 中は L/U とも無視され、文字入力として通る', async ({ page }) => {
     await loadApp(page);
     const lockBtn = page.locator('#btn-poi-lock-toggle');
 
     await page.locator('#poi-search').focus();
     await page.keyboard.press('l');
-    await page.keyboard.press('h');
+    await page.keyboard.press('u');
 
-    await expect(page.locator('#poi-search')).toHaveValue('lh');
+    await expect(page.locator('#poi-search')).toHaveValue('lu');
     await expect(lockBtn).toHaveAttribute('aria-pressed', 'true');
     expect(await bodyHasClass(page, 'ui-hidden')).toBe(false);
   });
 
-  test('Ctrl+L / Ctrl+H / Cmd+L / Cmd+H (ブラウザショートカット) は所有しない', async ({ page }) => {
+  test('Ctrl+L / Ctrl+U / Cmd+L / Cmd+U (ブラウザショートカット) は所有しない', async ({ page }) => {
     await loadApp(page);
 
     // headless では実ブラウザ機能 (アドレスバー等) は発火しないが、app 側の
@@ -78,7 +78,7 @@ test.describe('L/H キーボードショートカット (#390)', () => {
     // metaKey (Mac の Cmd) / altKey も同じ guard を通ることを pin する (Cursor review 対応)。
     await page.evaluate(() => {
       for (const mod of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
-        for (const key of ['l', 'h']) {
+        for (const key of ['l', 'u']) {
           document.body.dispatchEvent(
             new KeyboardEvent('keydown', { key, bubbles: true, ...mod }));
         }
@@ -94,7 +94,7 @@ test.describe('L/H キーボードショートカット (#390)', () => {
     const lockBtn = page.locator('#btn-poi-lock-toggle');
 
     await dispatchRepeatKeydown(page, 'l');
-    await dispatchRepeatKeydown(page, 'h');
+    await dispatchRepeatKeydown(page, 'u');
 
     await expect(lockBtn).toHaveAttribute('aria-pressed', 'true');
     expect(await bodyHasClass(page, 'ui-hidden')).toBe(false);
