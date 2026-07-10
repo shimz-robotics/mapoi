@@ -67,6 +67,12 @@ describe('buildReloadConfirmMessage', () => {
     expect(msg).toContain('[OK]');
     expect(msg).toContain('[Cancel]');
   });
+
+  it('says "edits in progress", not "unsaved edits" (open form は未 dirty でも blocker)', () => {
+    const msg = guard.buildReloadConfirmMessage(['POI']);
+    expect(msg).toContain('edits in progress');
+    expect(msg).not.toContain('unsaved edits');
+  });
 });
 
 // 編集続行 (Cancel) を選んで reload が保留されている間、poiEditor.configVersion は
