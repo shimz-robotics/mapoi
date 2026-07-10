@@ -51,8 +51,9 @@ test.describe('L/H キーボードショートカット (#390)', () => {
 
     await page.keyboard.press('h');
     expect(await bodyHasClass(page, 'ui-hidden')).toBe(true);
-    // ui-hidden 中も #ui-controls は残る仕様 (復帰手段) — H での復帰もその一部
-    await page.keyboard.press('h');
+    // ui-hidden 中も #ui-controls は残る仕様 (復帰手段) — H での復帰もその一部。
+    // 大文字 (Shift+H) も L 側と対称に pin する (Cursor review low 対応)
+    await page.keyboard.press('Shift+H');
     expect(await bodyHasClass(page, 'ui-hidden')).toBe(false);
   });
 
@@ -69,16 +70,19 @@ test.describe('L/H キーボードショートカット (#390)', () => {
     expect(await bodyHasClass(page, 'ui-hidden')).toBe(false);
   });
 
-  test('Ctrl+L / Ctrl+H (ブラウザショートカット) は所有しない', async ({ page }) => {
+  test('Ctrl+L / Ctrl+H / Cmd+L / Cmd+H (ブラウザショートカット) は所有しない', async ({ page }) => {
     await loadApp(page);
 
     // headless では実ブラウザ機能 (アドレスバー等) は発火しないが、app 側の
     // ハンドラが修飾キー付きを無視することは合成 dispatch で検証できる。
+    // metaKey (Mac の Cmd) も同じ guard を通ることを pin する (Cursor review medium 対応)。
     await page.evaluate(() => {
-      document.body.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'l', ctrlKey: true, bubbles: true }));
-      document.body.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'h', ctrlKey: true, bubbles: true }));
+      for (const mod of [{ ctrlKey: true }, { metaKey: true }]) {
+        for (const key of ['l', 'h']) {
+          document.body.dispatchEvent(
+            new KeyboardEvent('keydown', { key, bubbles: true, ...mod }));
+        }
+      }
     });
 
     await expect(page.locator('#btn-poi-lock-toggle')).toHaveAttribute('aria-pressed', 'true');
