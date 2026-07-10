@@ -164,6 +164,7 @@ class PoiEditor {
       const delBtn = document.createElement('button');
       delBtn.className = 'btn-delete';
       delBtn.textContent = 'Del';
+      delBtn.title = 'Delete POI (Delete)';
       delBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         this.deletePoi(i);
