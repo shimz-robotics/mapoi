@@ -1030,6 +1030,22 @@
     const t = e.target;
     const isEditableTarget = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'
         || t.tagName === 'SELECT' || t.isContentEditable);
+    // Help overlay (#391) 表示中は modal として振る舞う: Escape は「閉じる」を最優先
+    // (フォーム Cancel 等の段階挙動より先、stopImmediatePropagation で pose tool の
+    // 独立 handler にも波及させない)。Ctrl+S はブラウザの保存ダイアログ抑止だけ行い
+    // 保存はしない。他の owned key (L/H/Delete/undo 系/?) は閲覧中の誤操作 (見えない
+    // POI 削除等) を防ぐため不発にする。所有しないキーには干渉しない。
+    if (MapoiHelp.isOpen()) {
+      if (e.key === 'Escape' && !e.isComposing) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        MapoiHelp.close();
+      } else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey
+          && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+      }
+      return;
+    }
     // Ctrl+S / Cmd+S で dirty なエディタを Save (#375)。ブラウザ既定の「ページを保存」は
     // どの状態でも誤って出したくないため、入力欄 focus 中 (フォーム入力途中の確定 → save
     // も #375 の仕様) や保存対象が無い時も含め常に preventDefault する。このため
@@ -1045,15 +1061,6 @@
     }
     if (e.key === 'Escape') {
       if (e.isComposing) return;
-      // Help overlay (#391) が開いていれば最優先で閉じるだけで return する。
-      // フォーム Cancel 等の段階挙動より先に判定する — Help を見ながらフォームを
-      // 編集していても、Escape 1 回目は Help だけを閉じフォームは巻き込まない。
-      if (MapoiHelp.isOpen()) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        MapoiHelp.close();
-        return;
-      }
       if (routeEditor.editingIndex !== -1) {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -1124,9 +1131,10 @@
         if (btnUiToggle) btnUiToggle.click();
         return;
       }
-      // Help overlay (#391)。e.key === '?' は Shift+/ (US/JIS とも) を含む layout
-      // 非依存の判定 (e.code は見ない)。開くだけの idempotent 操作 (閉じるのは Escape /
-      // × / 背景 click)。shiftKey は '?' の入力自体に要るので guard しない。
+      // Help overlay (#391)。key ('?' は toLowerCase 不変) での判定は Shift+/ (US/JIS
+      // とも) を含む layout 非依存 (e.code は見ない)。開くだけの idempotent 操作
+      // (閉じるのは Escape / × / 背景 click)。shiftKey は '?' の入力自体に要るので
+      // guard しない。
       if (key === '?') {
         e.preventDefault();
         MapoiHelp.open();

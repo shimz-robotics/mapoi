@@ -2,7 +2,7 @@
 // 開閉配線 (help.js) と keydown funnel (app.js) の「Escape は help open が最優先」を
 // e2e 層で pin する (document keydown を jsdom で実体テストしない方針 #300 の続き)。
 const { test, expect } = require('@playwright/test');
-const { loadApp, poiCard, setSectionOpen } = require('./helpers');
+const { loadApp, poiCard, selectPoi, setSectionOpen } = require('./helpers');
 
 function overlay(page) {
   return page.locator('#help-overlay');
@@ -71,6 +71,30 @@ test.describe('Help overlay (#391)', () => {
     // 2 回目: 従来どおりフォーム Cancel に落ちる
     await page.keyboard.press('Escape');
     await expect(page.locator('#poi-edit-form')).toHaveClass(/(^|\s)hidden(\s|$)/);
+  });
+
+  test('Help 表示中は他のショートカット (L / H / Delete) が不発になる', async ({ page }) => {
+    await loadApp(page);
+    await setSectionOpen(page, '#btn-poi-toggle', '#poi-body', true);
+    await selectPoi(page, 'poi_wedge');
+
+    await page.keyboard.press('?');
+    await expect(overlay(page)).toBeVisible();
+
+    // 閲覧中の誤操作防止: toggle も選択 POI の削除も走らない
+    await page.keyboard.press('l');
+    await page.keyboard.press('h');
+    await page.keyboard.press('Delete');
+
+    await expect(page.locator('#btn-poi-lock-toggle')).toHaveAttribute('aria-pressed', 'true');
+    expect(await bodyHasClass(page, 'ui-hidden')).toBe(false);
+    await expect(poiCard(page, 'poi_wedge')).toHaveCount(1);
+    await expect(page.locator('#btn-save')).toBeDisabled();
+
+    // 閉じれば従来どおり効く
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('l');
+    await expect(page.locator('#btn-poi-lock-toggle')).toHaveAttribute('aria-pressed', 'false');
   });
 
   test('入力欄 focus 中の ? は無視され、文字入力として通る', async ({ page }) => {
