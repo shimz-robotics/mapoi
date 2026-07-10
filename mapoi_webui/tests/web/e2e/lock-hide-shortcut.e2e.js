@@ -75,9 +75,9 @@ test.describe('L/H キーボードショートカット (#390)', () => {
 
     // headless では実ブラウザ機能 (アドレスバー等) は発火しないが、app 側の
     // ハンドラが修飾キー付きを無視することは合成 dispatch で検証できる。
-    // metaKey (Mac の Cmd) も同じ guard を通ることを pin する (Cursor review medium 対応)。
+    // metaKey (Mac の Cmd) / altKey も同じ guard を通ることを pin する (Cursor review 対応)。
     await page.evaluate(() => {
-      for (const mod of [{ ctrlKey: true }, { metaKey: true }]) {
+      for (const mod of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
         for (const key of ['l', 'h']) {
           document.body.dispatchEvent(
             new KeyboardEvent('keydown', { key, bubbles: true, ...mod }));
