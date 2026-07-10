@@ -47,6 +47,26 @@ class PoiEditor {
     this.dirtyIndicator = document.getElementById('dirty-indicator');
     this.btnUndo = document.getElementById('btn-undo');
     this.btnRedo = document.getElementById('btn-redo');
+    // POI list の名前絞り込み (#383)。query の真実は入力欄の DOM value 一本
+    // (_filterQuery で読む) で、editor 側に鏡写しの state を持たない — 二重管理は
+    // プログラム的な value 変更で不整合の温床になる。renderList が card 生成を skip
+    // する判定 (matchesPoiName) にだけ使い、map marker の可視状態 (visiblePois) とは
+    // 独立。入力欄は DOM harness 等で無くてもインスタンス化できるよう null guard
+    // (#300 と同流儀)。type="search" のクリアボタン (×) も input event を発火するので
+    // この配線だけで同期する。
+    this.inputSearch = document.getElementById('poi-search');
+    if (this.inputSearch) {
+      this.inputSearch.addEventListener('input', () => this.renderList());
+      // Escape は入力があればクリア (選択解除 #309 には流さない)。空なら素通しさせ、
+      // app.js 側の isEditableTarget guard で無視される (= 何も起きない)。
+      this.inputSearch.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape' || e.isComposing || !this.inputSearch.value) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.inputSearch.value = '';
+        this.renderList();
+      });
+    }
 
     // Form inputs
     this.inputName = document.getElementById('poi-name');
@@ -93,9 +113,24 @@ class PoiEditor {
   /**
    * Render the POI card list.
    */
+  /**
+   * 検索ボックスの現在 query (#383)。真実は DOM value のみ (入力欄が無い harness では
+   * 常に '' = 絞り込みなし)。
+   */
+  _filterQuery() {
+    return this.inputSearch ? this.inputSearch.value : '';
+  }
+
   renderList() {
     this.listEl.innerHTML = '';
+    const query = this._filterQuery();
     this.pois.forEach((poi, i) => {
+      // 検索絞り込み (#383): 名前部分一致 (大文字小文字不区別)。card 生成を skip する
+      // だけで forEach の実 index (i) は保たれるので、selectPoi / deletePoi / visibility
+      // checkbox の index 整合はずれない。選択中 POI が query に一致しない場合も選択は
+      // 解除しない (card は隠れるが map の highlight / nav dropdown は選択を保持する —
+      // 絞り込みは list の見た目だけ、が一貫規則)。
+      if (!MapoiPoiFilter.matchesPoiName(poi, query)) return;
       const card = document.createElement('div');
       card.className = 'poi-card' + (i === this.selectedIndex ? ' selected' : '');
       card.dataset.index = i;
@@ -492,11 +527,15 @@ class PoiEditor {
 
   showForm() {
     this.formEl.classList.remove('hidden');
+    // 編集フォーム中は app.js の sidebar focus (#240) が #poi-list を隠すので、
+    // list 専用の検索ボックス (#383) も一緒に隠して form に集中させる。
+    if (this.inputSearch) this.inputSearch.classList.add('hidden');
     if (this.onEditFormVisibilityChange) this.onEditFormVisibilityChange(true);
   }
 
   hideForm() {
     this.formEl.classList.add('hidden');
+    if (this.inputSearch) this.inputSearch.classList.remove('hidden');
     if (this.onEditFormVisibilityChange) this.onEditFormVisibilityChange(false);
   }
 

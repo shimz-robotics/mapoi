@@ -238,6 +238,19 @@ main {
   color: #e74c3c;
 }
 
+/* POI list 検索ボックス (#383)。.section-body の横 padding (16px) に合わせて置く。
+   絞り込みは list 表示のみで map marker の可視状態とは独立 (poi-editor.js)。 */
+#poi-search {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 4px 16px 0;
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  min-height: 36px;
+}
+
 /* POI List */
 #poi-list {
   flex: 1;

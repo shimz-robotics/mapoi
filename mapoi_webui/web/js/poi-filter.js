@@ -104,6 +104,23 @@
   }
 
   /**
+   * POI list 検索ボックス (#383) の名前フィルタ判定。大文字小文字不区別の部分一致。
+   * 空 / 空白のみの query は全件 match (= 絞り込みなし)。名前なし POI は query が
+   * ある間は match しない。絞り込みは list 表示のみで、map marker の可視状態
+   * (visiblePois) とは独立 (poi-editor.js renderList が card 生成を skip するだけ)。
+   *
+   * @param {object} poi POI object ({ name, ... })
+   * @param {string} query 検索文字列 (未 trim で良い)
+   * @returns {boolean} 表示すべきなら true
+   */
+  function matchesPoiName(poi, query) {
+    const q = String(query == null ? '' : query).trim().toLowerCase();
+    if (!q) return true;
+    const name = poi && poi.name ? String(poi.name) : '';
+    return name.toLowerCase().includes(q);
+  }
+
+  /**
    * Map cursor readout 用に world 座標を整形する純関数 (#381)。
    * POI yaml の座標桁数 (POSE_XY_DIGITS) に合わせて toFixed で桁を固定し、
    * mousemove 中に小数部の桁数が揺れて文字幅がちらつくのを防ぐ (roundTo だと
@@ -171,6 +188,7 @@
     filterWaypointCandidates,
     filterInitialPoseCandidates,
     filterRouteWaypointCandidates,
+    matchesPoiName,
     validatePoiTags,
     parseTolerance,
     degToRad,
