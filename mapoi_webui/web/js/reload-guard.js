@@ -61,6 +61,8 @@
 
   /**
    * prompt 用メッセージ。#343 の 409 conflict ダイアログと同じ言い回しに揃える。
+   * blocker は「未保存変更」だけでなく「開いている edit form」も含むため、
+   * "unsaved edits" と断定せず "edits in progress" と表現する。
    *
    * @param {string[]} blockers collectReloadBlockers() の結果 (1 件以上)
    * @returns {string} window.confirm に渡すメッセージ
@@ -68,8 +70,8 @@
   function buildReloadConfirmMessage(blockers) {
     return (
       'The YAML file was changed outside this page.\n'
-      + 'You have unsaved edits: ' + blockers.join(', ') + '.\n'
-      + '\n[OK] Load the latest file. Unsaved edits and undo history will be lost.'
+      + 'You have edits in progress: ' + blockers.join(', ') + '.\n'
+      + '\n[OK] Load the latest file. Edits in progress and undo history will be lost.'
       + '\n[Cancel] Keep editing. Reload stays postponed; Save will warn on conflict.'
     );
   }
