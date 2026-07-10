@@ -24,6 +24,7 @@ class TagEditor {
 
     this.onReload = null;         // async callback() — save 成功 / discard 後の再取得
     this.onConflictReload = null; // async callback() — 409 確認後の全体 reload
+    this.onDirtyChange = null;    // callback(isDirty) — 保留中 SSE reload の再開判定 (#373)
 
     this.listEl = document.getElementById('tag-list');
     this.addNameEl = document.getElementById('tag-add-name');
@@ -44,6 +45,9 @@ class TagEditor {
   setTagDefinitions(tags, configVersion) {
     this.tags = (tags || []).map((t) => ({ ...t }));
     this.configVersion = configVersion || null;
+    // 全 reload の単一 funnel (poi-editor.js loadPois / route-editor.js loadRoutes と同じ)。
+    // working copy を置き換えたのに dirty (Save 有効) が残る非一貫を防ぐ (#373)。
+    this.setDirty(false);
     this.render();
   }
 
@@ -52,6 +56,7 @@ class TagEditor {
     this.btnSave.disabled = !dirty;
     this.btnDiscard.disabled = !dirty;
     this.dirtyIndicator.textContent = dirty ? 'unsaved changes' : '';
+    if (this.onDirtyChange) this.onDirtyChange(dirty);
   }
 
   render() {
