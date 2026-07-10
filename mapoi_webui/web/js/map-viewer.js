@@ -458,6 +458,24 @@ class MapViewer {
   }
 
   /**
+   * 選択 POI が viewport 外なら中心へパンする (#382)。ズームは変えない (panTo)。
+   *
+   * 「既に viewport 内なら動かさない」判定で選択経路を一本化する (issue #382 の
+   * 実装時判断): map クリック由来の選択はクリックした POI が必ず見えているので
+   * パンせず視点が飛ばない。list / nav dropdown (#262) 由来で画面外の POI を
+   * 選んだ時だけ寄せる。可視性 checkbox が off の POI は marker が無い (= 地図に
+   * 出ていない) のでパンしない。
+   */
+  panToPoiIfHidden(index) {
+    if (!this.metadata) return;
+    const item = this.poiMarkers.find((m) => m.index === index);
+    if (!item) return;
+    const latlng = item.marker.getLatLng();
+    if (this.map.getBounds().contains(latlng)) return;
+    this.map.panTo(latlng);
+  }
+
+  /**
    * 選択中 (highlighted) の POI marker だけドラッグ可能にする (#239)。_poiDraggingAllowed が
    * false (route 編集中等) のときは選択中でも無効。setIcon で DOM 要素が差し替わっても
    * Leaflet の dragging handler は marker に紐づくので enable/disable はそのまま効く。
