@@ -323,6 +323,12 @@
       mapViewer.showPois(poiEditor.pois, poiEditor.visiblePois);
       if (index >= 0) mapViewer.highlightPoi(index);
     }
+    // 画面外の POI を選んだら map をパンして見せる (#382)。map クリック由来の選択は
+    // クリックした POI が必ず viewport 内なのでパンしない (視点が飛ばない)。dirty 時の
+    // showPois 再描画より後に呼び、再生成後の実 marker 位置で判定する。
+    if (index >= 0) {
+      mapViewer.panToPoiIfHidden(index);
+    }
     // Enable pose tool when editing, disable when form closes
     if (poiEditor.editingIndex >= 0) {
       enablePoseToolForEditing();
