@@ -143,8 +143,6 @@
 
     const body = doc.body;
     const toggleBtn = doc.getElementById('btn-ui-toggle');
-    const iconHide = doc.getElementById('ui-toggle-icon-hide');
-    const iconShow = doc.getElementById('ui-toggle-icon-show');
     const displayToggleBtn = doc.getElementById('btn-display-toggle');
     const displayBody = doc.getElementById('display-body');
     const overlayChk = doc.getElementById('ui-overlay-toggle');
@@ -173,13 +171,12 @@
       }
     }
 
-    // action-based icon: 表示中は eye-off (「隠す」)、非表示中は eye (「戻す」)。
+    // アイコンは固定の ☰ (#390、index.html 側)。状態は aria-pressed (青ハイライト) と
+    // title だけを同期し、icon swap はしない — Gmail/YouTube の sidebar トグルと同じ流儀。
     function syncToggleBtn() {
       if (!toggleBtn) return;
       toggleBtn.setAttribute('aria-pressed', settings.hidden ? 'true' : 'false');
-      toggleBtn.title = settings.hidden ? 'Show UI' : 'Hide UI';
-      if (iconHide) iconHide.classList.toggle('hidden', settings.hidden);
-      if (iconShow) iconShow.classList.toggle('hidden', !settings.hidden);
+      toggleBtn.title = settings.hidden ? 'Show UI (U)' : 'Hide UI (U)';
     }
 
     function syncAlphaControls() {

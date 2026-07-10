@@ -30,24 +30,27 @@ async function setAlphaPercent(page, percent) {
 }
 
 test.describe('UI 表示コントロール (#323 / #324)', () => {
-  test('トグルで header/panel を隠し、再クリックで戻す。#ui-controls は残り icon が swap する', async ({ page }) => {
+  test('トグルで header/panel を隠し、再クリックで戻す。#ui-controls は残り pressed 状態が同期する', async ({ page }) => {
     await loadApp(page);
+    const toggleBtn = page.locator('#btn-ui-toggle');
     expect(await displayOf(page, 'header')).not.toBe('none');
     expect(await displayOf(page, '#poi-panel')).not.toBe('none');
-    // 表示中は「隠す」action の eye-off icon
-    expect(await displayOf(page, '#ui-toggle-icon-hide')).not.toBe('none');
-    expect(await displayOf(page, '#ui-toggle-icon-show')).toBe('none');
+    // アイコンは固定の ☰ (#390、swap しない)。状態は aria-pressed と title で示す
+    await expect(toggleBtn.locator('.ui-control-glyph')).toHaveText('☰');
+    await expect(toggleBtn).toHaveAttribute('aria-pressed', 'false');
+    await expect(toggleBtn).toHaveAttribute('title', 'Hide UI (U)');
 
-    await page.locator('#btn-ui-toggle').click();
+    await toggleBtn.click();
     expect(await bodyHasClass(page, 'ui-hidden')).toBe(true);
     expect(await displayOf(page, 'header')).toBe('none');
     expect(await displayOf(page, '#poi-panel')).toBe('none');
-    // UI を復帰できるようコントロール自身は残し、icon は「戻す」action の eye に swap
+    // UI を復帰できるようコントロール自身は残し、pressed (青) + title が「戻す」側へ同期
     expect(await displayOf(page, '#ui-controls')).not.toBe('none');
-    expect(await displayOf(page, '#ui-toggle-icon-hide')).toBe('none');
-    expect(await displayOf(page, '#ui-toggle-icon-show')).not.toBe('none');
+    await expect(toggleBtn.locator('.ui-control-glyph')).toHaveText('☰');
+    await expect(toggleBtn).toHaveAttribute('aria-pressed', 'true');
+    await expect(toggleBtn).toHaveAttribute('title', 'Show UI (U)');
 
-    await page.locator('#btn-ui-toggle').click();
+    await toggleBtn.click();
     expect(await bodyHasClass(page, 'ui-hidden')).toBe(false);
     expect(await displayOf(page, 'header')).not.toBe('none');
     expect(await displayOf(page, '#poi-panel')).not.toBe('none');
