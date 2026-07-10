@@ -47,6 +47,27 @@ class PoiEditor {
     this.dirtyIndicator = document.getElementById('dirty-indicator');
     this.btnUndo = document.getElementById('btn-undo');
     this.btnRedo = document.getElementById('btn-redo');
+    // POI list の名前絞り込み (#383)。filterText は renderList が card 生成を skip する
+    // 判定 (matchesPoiName) に使うだけで、map marker の可視状態 (visiblePois) とは独立。
+    // 入力欄は DOM harness 等で無くてもインスタンス化できるよう null guard (#300 と同流儀)。
+    this.filterText = '';
+    this.inputSearch = document.getElementById('poi-search');
+    if (this.inputSearch) {
+      this.inputSearch.addEventListener('input', () => {
+        this.filterText = this.inputSearch.value;
+        this.renderList();
+      });
+      // Escape は入力があればクリア (選択解除 #309 には流さない)。空なら素通しさせ、
+      // app.js 側の isEditableTarget guard で無視される (= 何も起きない)。
+      this.inputSearch.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape' || e.isComposing || !this.inputSearch.value) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.inputSearch.value = '';
+        this.filterText = '';
+        this.renderList();
+      });
+    }
 
     // Form inputs
     this.inputName = document.getElementById('poi-name');
@@ -96,6 +117,10 @@ class PoiEditor {
   renderList() {
     this.listEl.innerHTML = '';
     this.pois.forEach((poi, i) => {
+      // 検索絞り込み (#383): 名前部分一致 (大文字小文字不区別)。card 生成を skip する
+      // だけで forEach の実 index (i) は保たれるので、selectPoi / deletePoi / visibility
+      // checkbox の index 整合はずれない。
+      if (!MapoiPoiFilter.matchesPoiName(poi, this.filterText)) return;
       const card = document.createElement('div');
       card.className = 'poi-card' + (i === this.selectedIndex ? ' selected' : '');
       card.dataset.index = i;
@@ -492,11 +517,15 @@ class PoiEditor {
 
   showForm() {
     this.formEl.classList.remove('hidden');
+    // 編集フォーム中は app.js の sidebar focus (#240) が #poi-list を隠すので、
+    // list 専用の検索ボックス (#383) も一緒に隠して form に集中させる。
+    if (this.inputSearch) this.inputSearch.classList.add('hidden');
     if (this.onEditFormVisibilityChange) this.onEditFormVisibilityChange(true);
   }
 
   hideForm() {
     this.formEl.classList.add('hidden');
+    if (this.inputSearch) this.inputSearch.classList.remove('hidden');
     if (this.onEditFormVisibilityChange) this.onEditFormVisibilityChange(false);
   }
 

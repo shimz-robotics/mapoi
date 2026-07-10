@@ -104,6 +104,23 @@
   }
 
   /**
+   * POI list 検索ボックス (#383) の名前フィルタ判定。大文字小文字不区別の部分一致。
+   * 空 / 空白のみの query は全件 match (= 絞り込みなし)。名前なし POI は query が
+   * ある間は match しない。絞り込みは list 表示のみで、map marker の可視状態
+   * (visiblePois) とは独立 (poi-editor.js renderList が card 生成を skip するだけ)。
+   *
+   * @param {object} poi POI object ({ name, ... })
+   * @param {string} query 検索文字列 (未 trim で良い)
+   * @returns {boolean} 表示すべきなら true
+   */
+  function matchesPoiName(poi, query) {
+    const q = String(query == null ? '' : query).trim().toLowerCase();
+    if (!q) return true;
+    const name = poi && poi.name ? String(poi.name) : '';
+    return name.toLowerCase().includes(q);
+  }
+
+  /**
    * POI form の tolerance round-trip を保つ純関数 (#87 / #138)。
    * `||` だと意図的な小さい値も default で上書きされるので Number.isFinite で判定。
    * 最終 xy / yaw は msg spec に従い `>= TOLERANCE_MIN` を保証する (UI HTML min を
@@ -155,6 +172,7 @@
     filterWaypointCandidates,
     filterInitialPoseCandidates,
     filterRouteWaypointCandidates,
+    matchesPoiName,
     validatePoiTags,
     parseTolerance,
     degToRad,

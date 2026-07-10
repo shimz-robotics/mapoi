@@ -171,6 +171,10 @@
           </div>
         </div>
         <div id="poi-body">
+          <!-- POI list の名前絞り込み (#383)。list 表示のみをフィルタし、map marker の
+               可視状態 (checkbox / All / None) とは独立。配線は poi-editor.js。 -->
+          <input type="search" id="poi-search" placeholder="Filter POIs by name"
+                 autocomplete="off" aria-label="Filter POIs by name" />
           <div id="poi-list" class="section-body"></div>
           <div id="poi-edit-form" class="hidden">
             <h3 id="form-title">Edit POI</h3>

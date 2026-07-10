@@ -19,6 +19,7 @@ const {
   degToRad,
   radToDeg,
   formatToleranceYawDeg,
+  matchesPoiName,
   roundTo,
   TOLERANCE_MIN,
   POSE_XY_DIGITS,
@@ -67,6 +68,32 @@ describe('roundTo (#242)', () => {
     expect(roundTo(0.7850002283279937, TOLERANCE_YAW_DIGITS)).toBe(0.785);
     expect(roundTo(1.2345, 2)).toBe(1.23);
     expect(roundTo(1.2355, 2)).toBe(1.24);
+  });
+});
+
+describe('matchesPoiName (#383)', () => {
+  // POI list 検索の絞り込み判定。card 生成 skip の是非を決める唯一の関数なので、
+  // 大文字小文字不区別・部分一致・空 query 全件 match をここで pin する
+  // (list DOM との index 整合は e2e poi-search.e2e.js 側)。
+  it('matches case-insensitive substrings of the name', () => {
+    const poi = { name: 'Kitchen_Door' };
+    expect(matchesPoiName(poi, 'door')).toBe(true);
+    expect(matchesPoiName(poi, 'KITCHEN')).toBe(true);
+    expect(matchesPoiName(poi, 'hen_d')).toBe(true);
+    expect(matchesPoiName(poi, 'dining')).toBe(false);
+  });
+
+  it('empty / whitespace-only / null query matches everything (絞り込みなし)', () => {
+    expect(matchesPoiName({ name: 'a' }, '')).toBe(true);
+    expect(matchesPoiName({ name: 'a' }, '   ')).toBe(true);
+    expect(matchesPoiName({ name: 'a' }, null)).toBe(true);
+    expect(matchesPoiName({}, undefined)).toBe(true);
+  });
+
+  it('unnamed POI does not match a non-empty query', () => {
+    expect(matchesPoiName({}, 'a')).toBe(false);
+    expect(matchesPoiName({ name: '' }, 'a')).toBe(false);
+    expect(matchesPoiName(null, 'a')).toBe(false);
   });
 });
 
