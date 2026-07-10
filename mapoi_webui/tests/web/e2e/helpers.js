@@ -3,10 +3,13 @@ const { expect } = require('@playwright/test');
 
 // app 起動を明示待ちする。SSE (/api/events) が開きっぱなしで 'networkidle' は来ないため、
 // 代わりに「全 POI marker が描画される」= loadMaps→switchMap→loadPois→showPois 完了 を待つ。
+// marker は初期化の途中 (loadPois) で描画され、keydown listener 登録は IIFE 末尾なので、
+// load 直後に keyboard 操作するテストが race しないよう data-mapoi-ready も併せて待つ (#375)。
 async function loadApp(page) {
   const resp = await page.goto('/');
   expect(resp.status()).toBe(200);
   await expect(page.locator('.poi-arrow-icon')).toHaveCount(5);
+  await expect(page.locator('body[data-mapoi-ready="1"]')).toHaveCount(1);
 }
 
 // POI 名の完全一致で card を返す。'poi_wedge' が 'poi_wedge2' に部分一致しないよう anchored regex。
