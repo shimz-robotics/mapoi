@@ -121,6 +121,22 @@
   }
 
   /**
+   * Map cursor readout 用に world 座標を整形する純関数 (#381)。
+   * POI yaml の座標桁数 (POSE_XY_DIGITS) に合わせて toFixed で桁を固定し、
+   * mousemove 中に小数部の桁数が揺れて文字幅がちらつくのを防ぐ (roundTo だと
+   * 末尾ゼロが落ちて "1.2" ⇄ "1.234" と幅が変わる)。非有限入力は空文字 =
+   * 呼び出し側 (map-viewer.js) は表示を更新しない。
+   *
+   * @param {number} x world x (m)
+   * @param {number} y world y (m)
+   * @returns {string} 例 "x: -1.234, y: 5.678"、非有限入力は ''
+   */
+  function formatCursorCoords(x, y) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return '';
+    return `x: ${x.toFixed(POSE_XY_DIGITS)}, y: ${y.toFixed(POSE_XY_DIGITS)}`;
+  }
+
+  /**
    * POI form の tolerance round-trip を保つ純関数 (#87 / #138)。
    * `||` だと意図的な小さい値も default で上書きされるので Number.isFinite で判定。
    * 最終 xy / yaw は msg spec に従い `>= TOLERANCE_MIN` を保証する (UI HTML min を
@@ -178,6 +194,7 @@
     degToRad,
     radToDeg,
     formatToleranceYawDeg,
+    formatCursorCoords,
     roundTo,
     TOLERANCE_MIN,
     POSE_XY_DIGITS,

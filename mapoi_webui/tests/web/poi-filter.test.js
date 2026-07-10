@@ -20,6 +20,7 @@ const {
   radToDeg,
   formatToleranceYawDeg,
   matchesPoiName,
+  formatCursorCoords,
   roundTo,
   TOLERANCE_MIN,
   POSE_XY_DIGITS,
@@ -46,6 +47,20 @@ describe('formatToleranceYawDeg (#267)', () => {
       const resavedRad = roundTo(degToRad(shownDeg), TOLERANCE_YAW_DIGITS);
       expect(resavedRad).toBe(storedRad);
     });
+  });
+});
+
+describe('formatCursorCoords (#381)', () => {
+  it('formats with fixed POSE_XY_DIGITS decimals (幅が揺れない)', () => {
+    // toFixed 固定桁: 末尾ゼロを保持し、mousemove 中の文字幅ちらつきを防ぐ
+    expect(formatCursorCoords(1.2, -3.45678)).toBe('x: 1.200, y: -3.457');
+    expect(formatCursorCoords(0, 0)).toBe('x: 0.000, y: 0.000');
+  });
+
+  it('returns empty string for non-finite input (呼び出し側は readout を隠す)', () => {
+    expect(formatCursorCoords(NaN, 1)).toBe('');
+    expect(formatCursorCoords(1, Infinity)).toBe('');
+    expect(formatCursorCoords(undefined, 1)).toBe('');
   });
 });
 
