@@ -101,7 +101,11 @@ class MapViewer {
       if (!this._cursorReadoutEl || !this.metadata) return;
       const world = this.latLngToWorld(e.latlng);
       const text = MapoiPoiFilter.formatCursorCoords(world.x, world.y);
-      if (!text) return;
+      // 非有限座標 (metadata 異常等) では古い値を残さず隠す (Cursor review medium 対応)。
+      if (!text) {
+        this._cursorReadoutEl.classList.add('hidden');
+        return;
+      }
       this._cursorReadoutEl.textContent = text;
       this._cursorReadoutEl.classList.remove('hidden');
     });

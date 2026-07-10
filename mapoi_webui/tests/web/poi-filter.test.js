@@ -56,7 +56,7 @@ describe('formatCursorCoords (#381)', () => {
     expect(formatCursorCoords(0, 0)).toBe('x: 0.000, y: 0.000');
   });
 
-  it('returns empty string for non-finite input (呼び出し側は表示を更新しない)', () => {
+  it('returns empty string for non-finite input (呼び出し側は readout を隠す)', () => {
     expect(formatCursorCoords(NaN, 1)).toBe('');
     expect(formatCursorCoords(1, Infinity)).toBe('');
     expect(formatCursorCoords(undefined, 1)).toBe('');
