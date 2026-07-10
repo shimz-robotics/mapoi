@@ -25,6 +25,17 @@
   // ナビゲーション/監視に対して「たまに行う設定変更」なので既定はロック (安全側)。
   // リロードで再度ロックへ戻り、解除状態は永続化しない。
   let poiPositionLocked = true;
+  // SSE config_changed reload の debounce timer と dirty guard の保留 state (#373)。
+  // 保留 (deferred) = 「blocker (未保存編集 / 開いている edit form) があり、ユーザーが
+  // 編集続行 (Cancel) を選んだ」状態。blocker 解消時に保留分の reload を再開する。
+  // in-flight/queued は reload 実行中に届いた次の config_changed の扱い: dirty クリアが
+  // fetch 完了後になるため、実行中に再判定すると直後に同じ prompt を重ねて出してしまう。
+  // 実行中は queue に積み、完了後に 1 回だけ再判定する。
+  // 初期 load 中の onDirtyChange からも参照されるため IIFE 冒頭で宣言する。
+  let configChangedTimer = null;
+  let configReloadDeferred = false;
+  let configReloadInFlight = false;
+  let configReloadQueued = false;
 
   // --- Tag editor (tag-editor.js に切り出し、#346) ---
   // save 成功 / discard 後は tag 定義の再取得のみ、409 確認後は全体 reload
@@ -35,6 +46,9 @@
     await loadTagDefinitions();
     await loadPois();
     await loadRoutes();
+  };
+  tagEditor.onDirtyChange = (isDirty) => {
+    if (!isDirty) maybeResumeDeferredConfigReload();
   };
 
   // --- Load maps list ---
@@ -357,6 +371,7 @@
           routeEditor.populateLandmarkSelect();
         }
       }
+      maybeResumeDeferredConfigReload();
     }
   };
 
@@ -479,6 +494,7 @@
       // populate で options が rebuild されるが、選択中なら value を再同期して
       // ユーザーの選択 state を保持する。
       syncNavRouteSelect();
+      maybeResumeDeferredConfigReload();
     }
   };
 
@@ -843,11 +859,14 @@
     if (isOpen) activateSidebarFocus('poi');
     else restoreSidebarFocus('poi');
     updateMapLayerPriority();
+    // edit form open は dirty と独立した reload blocker (#373)。close 時に保留分を再開判定。
+    if (!isOpen) maybeResumeDeferredConfigReload();
   };
   routeEditor.onEditFormVisibilityChange = (isOpen) => {
     if (isOpen) activateSidebarFocus('route');
     else restoreSidebarFocus('route');
     updateMapLayerPriority();
+    if (!isOpen) maybeResumeDeferredConfigReload();
   };
 
   // --- Initialize ---
@@ -859,14 +878,52 @@
   // なるのを回避)。mapoi_webui_node が mapoi/config_path topic 受信時に push する。
   // EventSource は browser が自動 reconnect するので最初の setup のみ。
   // 短時間のバースト時は 200ms にまとめて 1 回だけ fetch する debounce (#173 Round 1 medium)。
-  let configChangedTimer = null;
+  // 未保存編集や開いている edit form があるうちは黙って loadMaps() せず、conflict
+  // ダイアログ相当の選択 (最新読込 or 編集続行) を挟む (#373)。判定は reload-guard.js。
   function scheduleConfigChangedReload() {
     if (configChangedTimer) clearTimeout(configChangedTimer);
     configChangedTimer = setTimeout(() => {
       configChangedTimer = null;
+      if (configReloadInFlight) {
+        configReloadQueued = true;
+        return;
+      }
+      const blockers = MapoiReloadGuard.collectReloadBlockers({
+        poiDirty: poiEditor.dirty,
+        routeDirty: routeEditor.dirty,
+        tagDirty: tagEditor.dirty,
+        poiFormOpen: poiEditor.editingIndex !== -1,
+        routeFormOpen: routeEditor.editingIndex !== -1,
+      });
+      const action = MapoiReloadGuard.decideReloadAction(blockers, configReloadDeferred);
+      if (action === 'hold') return;
+      if (action === 'prompt'
+          && !window.confirm(MapoiReloadGuard.buildReloadConfirmMessage(blockers))) {
+        // 編集続行: reload を保留。configVersion が古いまま残るので、後続の Save は
+        // #343 の 409 安全網 (version_mismatch conflict ダイアログ) に落ちる。
+        configReloadDeferred = true;
+        return;
+      }
+      configReloadDeferred = false;
+      configReloadInFlight = true;
       loadMaps()
-        .catch((err) => console.error('SSE reload failed:', err));
+        .catch((err) => console.error('SSE reload failed:', err))
+        .finally(() => {
+          configReloadInFlight = false;
+          if (configReloadQueued) {
+            configReloadQueued = false;
+            scheduleConfigChangedReload();
+          }
+        });
     }, 200);
+  }
+
+  // 保留中 reload の再開点 (#373)。blocker になり得る state の解消時 (dirty クリア /
+  // edit form close) に呼ぶ。判定は scheduleConfigChangedReload の decide に集約して
+  // いるので、blocker が残っていれば hold のまま、全て解消済みなら reload が走る。
+  function maybeResumeDeferredConfigReload() {
+    if (!configReloadDeferred) return;
+    scheduleConfigChangedReload();
   }
 
   const evtSrc = new EventSource('/api/events');

@@ -356,6 +356,9 @@
   <!-- toast.js は MapoiToast を window に attach する auto-dismiss 通知 helper (#354)。
        app.js の SSE ハンドラより前に読み込む。 -->
   <script src="/js/toast.js"></script>
+  <!-- reload-guard.js は MapoiReloadGuard を window に attach する pure helper 群 (#373)。
+       app.js の SSE ハンドラより前に読み込む (config_changed reload の dirty guard 判定)。 -->
+  <script src="/js/reload-guard.js"></script>
   <!-- tag-editor.js は TagEditor クラス (タグ定義エディタ、#346)。app.js が `new TagEditor()` する
        ため、app.js より前に読み込む。 -->
   <script src="/js/tag-editor.js"></script>
