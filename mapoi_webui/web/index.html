@@ -25,10 +25,12 @@
       <div id="cursor-readout" class="hidden"></div>
 
       <!-- 地図上にフロートする UI 一括表示/非表示トグル (#324)。ui-hidden 時も残る
-           ので UI を復帰できる。アイコンは action-based の eye SVG (表示中 = eye-off
-           「隠す」、非表示中 = eye「戻す」)。◑/⚙ グリフはダークモード/アプリ設定と
-           誤読されるため不採用。overlay / 不透明度の設定はパネル内 Display section
-           (#323)。配線は ui-settings.js。 -->
+           ので UI を復帰できる。アイコンは固定の ☰ (Gmail/YouTube の sidebar トグルと
+           同じ流儀、#390)。状態は swap でなく aria-pressed (青ハイライト) とパネル自体の
+           有無で示す — 当初の eye/eye-off swap (#324) は「アイコンが状態か操作か」の
+           両義性に加え、地図文脈では marker/レイヤー可視と誤読され得るため置換。
+           ◑/⚙ グリフはダークモード/アプリ設定と誤読されるため不採用 (#324)。
+           overlay / 不透明度の設定はパネル内 Display section (#323)。配線は ui-settings.js。 -->
       <div id="ui-controls">
         <!-- 選択中 POI の位置編集 (drag + yaw ハンドル) を明示的にロック/アンロックする
              (#333)。位置編集はロボット運用の主作業 (ナビゲーション/監視) に対して「たまに
@@ -63,20 +65,7 @@
         </button>
         <button id="btn-ui-toggle" type="button" class="ui-control-btn"
                 aria-pressed="false" title="Hide UI (U)" aria-label="Toggle UI visibility">
-          <svg id="ui-toggle-icon-hide" class="ui-control-icon-svg" viewBox="0 0 24 24"
-               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-               stroke-linejoin="round" aria-hidden="true">
-            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-            <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-            <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/>
-            <line x1="1" y1="1" x2="23" y2="23"/>
-          </svg>
-          <svg id="ui-toggle-icon-show" class="ui-control-icon-svg hidden" viewBox="0 0 24 24"
-               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-               stroke-linejoin="round" aria-hidden="true">
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-            <circle cx="12" cy="12" r="3"/>
-          </svg>
+          <span class="ui-control-glyph" aria-hidden="true">&#9776;</span>
         </button>
         <!-- Help overlay (#391) を開く。ui-hidden 中も #ui-controls は残る仕様なので、
              UI を隠した状態からでも Help に到達できる。配線は help.js。 -->
