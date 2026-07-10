@@ -888,6 +888,21 @@
   // を失わせるだけで、working copy は既に最新のため。
   // version 引数は event 受信時のみ渡す (null = version 不明)。maybeResume からの再呼び出し
   // は引数なしで、保留中 event の version をそのまま使う。
+
+  // collectReloadBlockers に渡す現在の editor state (#373 / #380 共通)。SSE reload guard と
+  // beforeunload guard は「失われるもの」の定義を共有するので、state の収集も一本化して
+  // 片方だけの更新漏れ (定義乖離) を防ぐ。tag editor は inline の add form のみで開閉式
+  // edit form を持たないため *FormOpen は POI / route の 2 つ (tag は dirty のみ blocker)。
+  function currentEditorBlockerState() {
+    return {
+      poiDirty: poiEditor.dirty,
+      routeDirty: routeEditor.dirty,
+      tagDirty: tagEditor.dirty,
+      poiFormOpen: poiEditor.editingIndex !== -1,
+      routeFormOpen: routeEditor.editingIndex !== -1,
+    };
+  }
+
   function scheduleConfigChangedReload(version) {
     if (version !== undefined) configChangedVersion = version;
     if (configChangedTimer) clearTimeout(configChangedTimer);
@@ -908,13 +923,7 @@
         tagEditor.configVersion = configChangedVersion;
         return;
       }
-      const blockers = MapoiReloadGuard.collectReloadBlockers({
-        poiDirty: poiEditor.dirty,
-        routeDirty: routeEditor.dirty,
-        tagDirty: tagEditor.dirty,
-        poiFormOpen: poiEditor.editingIndex !== -1,
-        routeFormOpen: routeEditor.editingIndex !== -1,
-      });
+      const blockers = MapoiReloadGuard.collectReloadBlockers(currentEditorBlockerState());
       const action = MapoiReloadGuard.decideReloadAction(blockers, configReloadDeferred);
       if (action === 'hold') return;
       if (action === 'prompt'
@@ -1101,13 +1110,7 @@
   // clean 時は必ず素通し (常時ブロックはブラウザにダイアログ自体を抑止される + UX 悪)。
   // 文言はブラウザ標準でカスタム不可。preventDefault + returnValue 設定が互換のお作法。
   window.addEventListener('beforeunload', (e) => {
-    const blockers = MapoiReloadGuard.collectReloadBlockers({
-      poiDirty: poiEditor.dirty,
-      routeDirty: routeEditor.dirty,
-      tagDirty: tagEditor.dirty,
-      poiFormOpen: poiEditor.editingIndex !== -1,
-      routeFormOpen: routeEditor.editingIndex !== -1,
-    });
+    const blockers = MapoiReloadGuard.collectReloadBlockers(currentEditorBlockerState());
     if (!MapoiReloadGuard.shouldBlockUnload(blockers)) return;
     e.preventDefault();
     e.returnValue = '';

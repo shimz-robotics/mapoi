@@ -82,6 +82,8 @@
    *
    * blocker の定義は collectReloadBlockers と同一 — 「reload で失われるもの」と
    * 「unload で失われるもの」は同じ (dirty 3 editor + 開いている edit form)。
+   * この同一性は今後も維持する前提: unload だけの別条件が必要になったら、この
+   * 関数に分岐を足すのではなく別の判定関数を切ること。
    * clean (blocker なし) 時に必ず素通しさせるのが不変条件: 常時ブロックすると
    * ブラウザがダイアログ自体を抑止するようになる + UX が悪い。
    *
