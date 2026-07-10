@@ -87,6 +87,23 @@ main {
   pointer-events: none;
 }
 
+/* Cursor 位置の world 座標 readout (#381)。#map-status と同じ見た目で右下に置く
+   (右上の #ui-controls とは重ならない)。等幅フォントで mousemove 中の桁揺れを抑え、
+   pointer-events: none で真下の map 操作を邪魔しない。 */
+#cursor-readout {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  z-index: 1000;
+  pointer-events: none;
+}
+
 /* Sidebar drag-resize handle (#122 PR-2)。
    #map-container と #poi-panel の間に置く 6px 幅のスプリッタ。drag で
    #poi-panel 幅を変更し、localStorage に永続化する (sidebar-resizer.js)。
