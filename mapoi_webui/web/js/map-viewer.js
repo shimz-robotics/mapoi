@@ -91,6 +91,24 @@ class MapViewer {
       }
     });
 
+    // Cursor 位置の world 座標 readout (#381)。mousemove で常時更新し、map 外へ出たら
+    // (mouseout) 非表示に戻す。touch 端末は mousemove が来ないので出ないまま (タップ時
+    // 表示は scope 外)。表示要素は index.html の #cursor-readout (右下固定 div —
+    // #map-status は左下、#ui-controls は右上で重ならない)。metadata 未 load 中は
+    // 座標変換できないので表示しない。桁は POI yaml の丸め (POSE_XY_DIGITS) に揃える。
+    this._cursorReadoutEl = document.getElementById('cursor-readout');
+    this.map.on('mousemove', (e) => {
+      if (!this._cursorReadoutEl || !this.metadata) return;
+      const world = this.latLngToWorld(e.latlng);
+      const text = MapoiPoiFilter.formatCursorCoords(world.x, world.y);
+      if (!text) return;
+      this._cursorReadoutEl.textContent = text;
+      this._cursorReadoutEl.classList.remove('hidden');
+    });
+    this.map.on('mouseout', () => {
+      if (this._cursorReadoutEl) this._cursorReadoutEl.classList.add('hidden');
+    });
+
     // zoom が変わると 1m あたりの pixel が変わるので、robot marker のピクセル
     // サイズを再計算するために再描画する (#116)。pose 未受信時は updateRobotMarker
     // が early return するので safe。

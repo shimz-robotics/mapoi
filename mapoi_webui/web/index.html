@@ -20,6 +20,9 @@
     <div id="map-container">
       <div id="map"></div>
       <div id="map-status"></div>
+      <!-- Cursor 位置の world 座標 readout (#381)。map 上の mousemove 中のみ表示
+           (map-viewer.js が更新)。#map-status (左下) と対になる右下配置。 -->
+      <div id="cursor-readout" class="hidden"></div>
 
       <!-- 地図上にフロートする UI 一括表示/非表示トグル (#324)。ui-hidden 時も残る
            ので UI を復帰できる。アイコンは action-based の eye SVG (表示中 = eye-off
