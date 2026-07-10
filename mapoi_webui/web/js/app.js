@@ -36,6 +36,9 @@
   let configReloadDeferred = false;
   let configReloadInFlight = false;
   let configReloadQueued = false;
+  // 直近の config_changed event が運んできた config_version (#384)。debounce や in-flight
+  // queue を跨いで保持し、自タブ発の変更 (= 既知 version) なら reload を skip する判定に使う。
+  let configChangedVersion = null;
 
   // --- Tag editor (tag-editor.js に切り出し、#346) ---
   // save 成功 / discard 後は tag 定義の再取得のみ、409 確認後は全体 reload
@@ -880,12 +883,29 @@
   // 短時間のバースト時は 200ms にまとめて 1 回だけ fetch する debounce (#173 Round 1 medium)。
   // 未保存編集や開いている edit form があるうちは黙って loadMaps() せず、conflict
   // ダイアログ相当の選択 (最新読込 or 編集続行) を挟む (#373)。判定は reload-guard.js。
-  function scheduleConfigChangedReload() {
+  // 自タブ発の変更 (save 応答で受領済みの config_version と一致) は reload 自体を skip
+  // する (#384) — reload は undo 履歴 (loadPois が破棄) と map 視点 (loadMap の fitBounds)
+  // を失わせるだけで、working copy は既に最新のため。
+  // version 引数は event 受信時のみ渡す (null = version 不明)。maybeResume からの再呼び出し
+  // は引数なしで、保留中 event の version をそのまま使う。
+  function scheduleConfigChangedReload(version) {
+    if (version !== undefined) configChangedVersion = version;
     if (configChangedTimer) clearTimeout(configChangedTimer);
     configChangedTimer = setTimeout(() => {
       configChangedTimer = null;
       if (configReloadInFlight) {
         configReloadQueued = true;
+        return;
+      }
+      if (MapoiReloadGuard.isSelfConfigChange(configChangedVersion, [
+        poiEditor.configVersion, routeEditor.configVersion, tagEditor.configVersion,
+      ])) {
+        // 従来この同期は reload の GET 群が担っていた: version は yaml 全体の hash なので
+        // 一 section の save で他 section の保持 version も古くなる。skip する場合もここで
+        // 配っておかないと、直後の別 section save が誤って 409 conflict に落ちる。
+        poiEditor.configVersion = configChangedVersion;
+        routeEditor.configVersion = configChangedVersion;
+        tagEditor.configVersion = configChangedVersion;
         return;
       }
       const blockers = MapoiReloadGuard.collectReloadBlockers({
@@ -931,7 +951,9 @@
     try {
       const data = JSON.parse(e.data);
       if (data.type === 'config_changed') {
-        scheduleConfigChangedReload();
+        // config_version 無し (旧 backend / config 不在) は null で上書きし、前 event の
+        // version で誤って self 判定しないようにする (#384)。
+        scheduleConfigChangedReload((data.payload && data.payload.config_version) || null);
       } else if (data.type === 'command_rejected') {
         // #354: mapoi/nav/command_rejected 経由の非破壊イベント通知。走行中の typo goal 等
         // でも mapoi/nav/status (latched snapshot) を汚さず、一時的な toast だけで知らせる。
@@ -980,6 +1002,12 @@
     if (poiEditor.dirty) await poiEditor.save();
     if (routeEditor.dirty) await routeEditor.save();
     if (tagEditor.dirty) await tagEditor.save();
+    // 保存完了の合図 (#384)。従来は自タブ save 起因の SSE reload のちらつきが事実上の
+    // 合図になっていたが、その reload を skip したので明示のフィードバックを出す。
+    // 409 conflict 等で dirty が残った場合は出さない (各 save() のダイアログが出ている)。
+    if (!(poiEditor.dirty || routeEditor.dirty || tagEditor.dirty)) {
+      MapoiToast.showToast(document, 'Saved');
+    }
   }
 
   document.addEventListener('keydown', (e) => {

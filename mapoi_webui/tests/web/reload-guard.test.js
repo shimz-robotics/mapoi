@@ -42,6 +42,31 @@ describe('collectReloadBlockers', () => {
   });
 });
 
+describe('isSelfConfigChange', () => {
+  it('recognizes a version any editor already holds as self-change (skip reload)', () => {
+    // save 応答で受領済み = 自タブ発。reload は undo 履歴と map 視点を失わせるだけ (#384)。
+    expect(guard.isSelfConfigChange('v2', ['v2', 'v1', 'v1'])).toBe(true);
+    expect(guard.isSelfConfigChange('v1', ['v2', 'v1', null])).toBe(true);
+  });
+
+  it('treats an unknown version as external change (reload)', () => {
+    expect(guard.isSelfConfigChange('v9', ['v1', 'v2', 'v3'])).toBe(false);
+  });
+
+  it('falls back to reload when the event carries no version (old backend / config missing)', () => {
+    expect(guard.isSelfConfigChange(null, ['v1'])).toBe(false);
+    expect(guard.isSelfConfigChange(undefined, ['v1'])).toBe(false);
+    expect(guard.isSelfConfigChange('', ['v1'])).toBe(false);
+  });
+
+  it('never matches editors that have no version yet (null must not equal null)', () => {
+    // 初期 load 前 (configVersion=null) に version 無し event が来ても self 判定しない。
+    expect(guard.isSelfConfigChange(null, [null, null, null])).toBe(false);
+    expect(guard.isSelfConfigChange('v1', [])).toBe(false);
+    expect(guard.isSelfConfigChange('v1', undefined)).toBe(false);
+  });
+});
+
 describe('decideReloadAction', () => {
   it('reloads immediately when there is no blocker', () => {
     expect(guard.decideReloadAction([], false)).toBe('reload');

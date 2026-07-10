@@ -12,12 +12,16 @@ rclpy / mapoi_interfaces を要し CI が重く、フィクスチャも制御で
 - API POST: /api/pois ほか -> {"success": true, ...} (テストは save を踏まないが契約上用意)
 - SSE: /api/events -> text/event-stream を張りっぱなしにし keepalive (フロントの
        EventSource が onerror で再接続を繰り返さないように 200 を返し続ける)
+- test 専用: POST /test/sse-event -> body の JSON を接続中の全 SSE client へ配信 (#384)。
+       e2e から config_changed 等のイベント受信をシミュレートする (実 backend には無い)
 """
 import argparse
 import json
+import queue
 import re
 import struct
 import sys
+import threading
 import time
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -83,6 +87,11 @@ def make_png(width, height):
 _meta = STATE["metadata"]
 MAP_PNG = make_png(int(_meta["width"]), int(_meta["height"]))
 
+# POST /test/sse-event で e2e からイベントを注入するための接続中 SSE client 一覧 (#384)。
+# 実 backend (mapoi_webui_node) の _sse_clients と同じ queue fanout 構造の最小版。
+SSE_CLIENTS = set()
+SSE_LOCK = threading.Lock()
+
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -128,15 +137,27 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command == "HEAD":
             return  # HEAD は header のみ。stream loop に入らない (無限ループ回避)。
+        # /test/sse-event からの注入を受け取る client queue を登録 (#384)。イベントが無い間は
+        # 従来どおり 1 秒間隔の keepalive comment を流す (queue.get の timeout で兼ねる)。
+        q = queue.Queue(maxsize=10)
+        with SSE_LOCK:
+            SSE_CLIENTS.add(q)
         try:
             self.wfile.write(b": connected\n\n")
             self.wfile.flush()
             while True:
-                time.sleep(1.0)
-                self.wfile.write(b": keepalive\n\n")
+                try:
+                    event = q.get(timeout=1.0)
+                    body = json.dumps(event).encode("utf-8")
+                    self.wfile.write(b"data: " + body + b"\n\n")
+                except queue.Empty:
+                    self.wfile.write(b": keepalive\n\n")
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, OSError):
             return
+        finally:
+            with SSE_LOCK:
+                SSE_CLIENTS.discard(q)
 
     # ---- routing ----
     def do_GET(self):
@@ -197,8 +218,23 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = unquote(urlparse(self.path).path)
         length = int(self.headers.get("Content-Length", 0) or 0)
-        if length:
-            self.rfile.read(length)  # body は破棄 (テストは結果を踏まない)
+        body = self.rfile.read(length) if length else b""
+        if path == "/test/sse-event":
+            # e2e 専用: body の JSON event を接続中の全 SSE client へ配信 (#384)。
+            try:
+                event = json.loads(body)
+            except (ValueError, UnicodeDecodeError):
+                self._send_json({"error": "invalid json"}, 400)
+                return
+            with SSE_LOCK:
+                clients = list(SSE_CLIENTS)
+            for q in clients:
+                try:
+                    q.put_nowait(event)
+                except queue.Full:
+                    pass
+            self._send_json({"success": True, "clients": len(clients)})
+            return
         if path == "/api/pois":
             self._send_json({"success": True, "config_version": STATE["config_version"]})
             return
