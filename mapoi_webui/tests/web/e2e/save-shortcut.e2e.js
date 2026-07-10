@@ -94,6 +94,45 @@ test.describe('Save shortcut Ctrl+S (#375)', () => {
     expect(posted).toBe(false);
   });
 
+  test('Ctrl+S does not save when the open route form fails validation', async ({ page }) => {
+    await loadApp(page);
+    await setSectionOpen(page, '#btn-route-toggle', '#route-body', true);
+    await page.locator('.route-item .btn-edit').first().click();
+    await expect(page.locator('#route-edit-form')).not.toHaveClass(/(^|\s)hidden(\s|$)/);
+    await page.locator('#route-name').fill('');
+
+    let alertMessage = '';
+    page.once('dialog', async (dialog) => {
+      alertMessage = dialog.message();
+      await dialog.accept();
+    });
+    let posted = false;
+    page.on('request', (req) => {
+      if (req.method() === 'POST' && req.url().includes('/api/routes')) posted = true;
+    });
+    await page.keyboard.press('Control+s');
+
+    // routeEditor.formOk の validation alert が出てフォームは開いたまま、save へは進まない。
+    await expect(page.locator('#route-edit-form')).not.toHaveClass(/(^|\s)hidden(\s|$)/);
+    expect(alertMessage).toContain('required');
+    expect(posted).toBe(false);
+  });
+
+  test('Ctrl+S saves a dirty tag editor', async ({ page }) => {
+    await loadApp(page);
+    await setSectionOpen(page, '#btn-tag-toggle', '#tag-body', true);
+    await page.locator('#tag-add-name').fill('temp_tag');
+    await page.locator('#btn-tag-add').click();
+    await expect(page.locator('#btn-save-tags')).toBeEnabled();
+
+    const post = page.waitForRequest((req) =>
+      req.url().includes('/api/custom-tags') && req.method() === 'POST');
+    await page.keyboard.press('Control+s');
+    await post;
+
+    await expect(page.locator('#btn-save-tags')).toBeDisabled();
+  });
+
   test('Ctrl+S saves multiple dirty editors in one press', async ({ page }) => {
     await loadApp(page);
     // route を先に dirty にする: rename して OK (フォームは閉じるが Save routes はまだ)。
