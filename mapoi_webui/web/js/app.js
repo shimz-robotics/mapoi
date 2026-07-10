@@ -1092,6 +1092,27 @@
     }
   });
 
+  // --- 未保存編集の離脱ガード (#380) ---
+  // dirty なエディタ / 開いている edit form があるままタブを閉じる・F5 リロード・ページ
+  // 遷移すると、編集内容と undo 履歴が黙って消える。map 切替 (既存 confirm) と SSE 全体
+  // reload (#373 の reload guard) は既にガード済みで、タブ閉じ / リロードが最後の無防備
+  // 経路。blocker の定義は reload-guard.js の collectReloadBlockers (「reload で失われる
+  // もの」と同一 = dirty 3 editor + 開いている edit form) をそのまま再利用する。
+  // clean 時は必ず素通し (常時ブロックはブラウザにダイアログ自体を抑止される + UX 悪)。
+  // 文言はブラウザ標準でカスタム不可。preventDefault + returnValue 設定が互換のお作法。
+  window.addEventListener('beforeunload', (e) => {
+    const blockers = MapoiReloadGuard.collectReloadBlockers({
+      poiDirty: poiEditor.dirty,
+      routeDirty: routeEditor.dirty,
+      tagDirty: tagEditor.dirty,
+      poiFormOpen: poiEditor.editingIndex !== -1,
+      routeFormOpen: routeEditor.editingIndex !== -1,
+    });
+    if (!MapoiReloadGuard.shouldBlockUnload(blockers)) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+
   // 初期化完了 (keydown listener 登録まで済み) の目印 (#375)。POI marker は初期化途中
   // (loadMaps 内の loadPois) で描画されるため、marker 出現だけを待って直後に keyboard
   // 操作すると listener 未登録に当たる race がある。e2e はこの flag で完了を待つ。

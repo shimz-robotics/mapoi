@@ -42,6 +42,23 @@ describe('collectReloadBlockers', () => {
   });
 });
 
+describe('shouldBlockUnload (#380)', () => {
+  it('blocks unload while any blocker exists (collectReloadBlockers と同じ定義)', () => {
+    expect(guard.shouldBlockUnload(
+      guard.collectReloadBlockers({ ...CLEAN_STATE, poiDirty: true }),
+    )).toBe(true);
+    expect(guard.shouldBlockUnload(
+      guard.collectReloadBlockers({ ...CLEAN_STATE, routeFormOpen: true }),
+    )).toBe(true);
+  });
+
+  it('passes through when clean (常時ブロックはブラウザに抑止される)', () => {
+    expect(guard.shouldBlockUnload(guard.collectReloadBlockers(CLEAN_STATE))).toBe(false);
+    expect(guard.shouldBlockUnload([])).toBe(false);
+    expect(guard.shouldBlockUnload(null)).toBe(false);
+  });
+});
+
 describe('isSelfConfigChange', () => {
   it('recognizes a version any editor already holds as self-change (skip reload)', () => {
     // save 応答で受領済み = 自タブ発。reload は undo 履歴と map 視点を失わせるだけ (#384)。

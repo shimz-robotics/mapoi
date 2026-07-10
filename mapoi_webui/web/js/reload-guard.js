@@ -78,6 +78,21 @@
   }
 
   /**
+   * beforeunload (#380) でタブ閉じ / リロードをブロックすべきかの判定。
+   *
+   * blocker の定義は collectReloadBlockers と同一 — 「reload で失われるもの」と
+   * 「unload で失われるもの」は同じ (dirty 3 editor + 開いている edit form)。
+   * clean (blocker なし) 時に必ず素通しさせるのが不変条件: 常時ブロックすると
+   * ブラウザがダイアログ自体を抑止するようになる + UX が悪い。
+   *
+   * @param {string[]} blockers collectReloadBlockers() の結果
+   * @returns {boolean} true なら e.preventDefault() + e.returnValue でブロック
+   */
+  function shouldBlockUnload(blockers) {
+    return (blockers || []).length > 0;
+  }
+
+  /**
    * prompt 用メッセージ。#343 の 409 conflict ダイアログと同じ言い回しに揃える。
    * blocker は「未保存変更」だけでなく「開いている edit form」も含むため、
    * "unsaved edits" と断定せず "edits in progress" と表現する。
@@ -98,6 +113,7 @@
     collectReloadBlockers,
     decideReloadAction,
     isSelfConfigChange,
+    shouldBlockUnload,
     buildReloadConfirmMessage,
   };
 
