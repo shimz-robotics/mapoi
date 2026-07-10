@@ -150,6 +150,15 @@ class TagEditor {
     this.render();
   }
 
+  /**
+   * Ctrl+S (#375) 用の公開 entry。Save ボタンと同じ経路 (_handleSave) で、
+   * poi-editor.js / route-editor.js の save() と同じく dirty でなければ no-op。
+   */
+  async save() {
+    if (!this.dirty) return;
+    await this._handleSave();
+  }
+
   async _handleSave() {
     const customTags = this.tags
       .filter((t) => !t.is_system)

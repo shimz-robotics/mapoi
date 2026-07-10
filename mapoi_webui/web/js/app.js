@@ -949,15 +949,56 @@
     console.warn('SSE connection error, browser will auto-reconnect:', err);
   };
 
-  // --- Keyboard shortcuts (#300 / #303 / #321 / #374) ---
-  // active editor の Escape / Undo/Redo / Delete を document レベルで拾う。
+  // --- Keyboard shortcuts (#300 / #303 / #321 / #374 / #375) ---
+  // active editor の Escape / Undo/Redo / Delete / Ctrl+S を document レベルで拾う。
   // Escape はフォームの Cancel 相当として編集モードを抜ける。Undo/Redo は入力欄
   // (name / x / y / tags 等) の編集中はブラウザ標準の text undo を優先するため無視する。
   // owned key のみ preventDefault し、他ハンドラを妨げない。
+
+  // Ctrl+S の保存対象決定 (#375)。編集フォームが開いていればまずフォーム内容を working
+  // copy に確定 (OK ボタン相当の formOk) してから save する — フォーム内の入力は OK まで
+  // working copy に載らないため、確定せずに save すると「見えている編集が保存されない」
+  // 齟齬が起きる。formOk は validation 失敗時に alert を出してフォームを開いたまま返る
+  // ので、editingIndex が -1 に戻らなかったら保存へ進まない。フォームが無ければ dirty な
+  // エディタを全て保存する (POI / route / tag は別 endpoint で独立、各 save() は 409
+  // conflict ダイアログ (#241/#343) 含め既存経路をそのまま通す)。
+  // 保存対象が無い時は toast で応答を返す: ショートカットが「効かない」ように見える
+  // 無反応を避ける (ブラウザ拡張のキー横取り等との切り分けにもなる)。
+  let saveShortcutInFlight = false;
+  async function saveViaShortcut() {
+    if (routeEditor.editingIndex !== -1) {
+      routeEditor.formOk();
+      if (routeEditor.editingIndex !== -1) return;
+    } else if (poiEditor.editingIndex !== -1) {
+      poiEditor.formOk();
+      if (poiEditor.editingIndex !== -1) return;
+    }
+    if (!(poiEditor.dirty || routeEditor.dirty || tagEditor.dirty)) {
+      MapoiToast.showToast(document, 'No unsaved changes');
+      return;
+    }
+    if (poiEditor.dirty) await poiEditor.save();
+    if (routeEditor.dirty) await routeEditor.save();
+    if (tagEditor.dirty) await tagEditor.save();
+  }
+
   document.addEventListener('keydown', (e) => {
     const t = e.target;
     const isEditableTarget = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'
         || t.tagName === 'SELECT' || t.isContentEditable);
+    // Ctrl+S / Cmd+S で dirty なエディタを Save (#375)。ブラウザ既定の「ページを保存」は
+    // どの状態でも誤って出したくないため、入力欄 focus 中 (フォーム入力途中の確定 → save
+    // も #375 の仕様) や保存対象が無い時も含め常に preventDefault する。このため
+    // isEditableTarget guard より前に置く。Ctrl+Shift+S (ブラウザの別機能) は所有しない。
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      // 長押し repeat / 保存中の再入は無視: dirty クリアが fetch 完了後のため、再入する
+      // と同じ configVersion で二重 POST になり直後に 409 conflict を踏む。
+      if (e.repeat || saveShortcutInFlight) return;
+      saveShortcutInFlight = true;
+      saveViaShortcut().finally(() => { saveShortcutInFlight = false; });
+      return;
+    }
     if (e.key === 'Escape') {
       if (e.isComposing) return;
       if (routeEditor.editingIndex !== -1) {
@@ -1022,4 +1063,9 @@
       else poiEditor.redo();
     }
   });
+
+  // 初期化完了 (keydown listener 登録まで済み) の目印 (#375)。POI marker は初期化途中
+  // (loadMaps 内の loadPois) で描画されるため、marker 出現だけを待って直後に keyboard
+  // 操作すると listener 未登録に当たる race がある。e2e はこの flag で完了を待つ。
+  document.body.dataset.mapoiReady = '1';
 })();
