@@ -13,7 +13,7 @@ function bodyHasClass(page, cls) {
 }
 
 test.describe('Help overlay (#391)', () => {
-  test('? ボタンで開き × で閉じる。ショートカット一覧に L/H/? が載っている', async ({ page }) => {
+  test('? ボタンで開き × で閉じる。ショートカット一覧に L/U/? が載っている', async ({ page }) => {
     await loadApp(page);
     await expect(overlay(page)).toBeHidden();
 
@@ -22,7 +22,7 @@ test.describe('Help overlay (#391)', () => {
 
     // #390 とのメンテ規約 pin: funnel のショートカットが一覧に揃っている
     const table = page.locator('#help-shortcut-table');
-    for (const key of ['Ctrl', 'Delete', 'Escape', 'L', 'H', '?']) {
+    for (const key of ['Ctrl', 'Delete', 'Escape', 'L', 'U', '?']) {
       await expect(table.locator('kbd', { hasText: new RegExp(`^${key.replace('?', '\\?')}$`) }).first())
         .toBeVisible();
     }
@@ -73,7 +73,7 @@ test.describe('Help overlay (#391)', () => {
     await expect(page.locator('#poi-edit-form')).toHaveClass(/(^|\s)hidden(\s|$)/);
   });
 
-  test('Help 表示中は他のショートカット (L / H / Delete) が不発になる', async ({ page }) => {
+  test('Help 表示中は他のショートカット (L / U / Delete) が不発になる', async ({ page }) => {
     await loadApp(page);
     await setSectionOpen(page, '#btn-poi-toggle', '#poi-body', true);
     await selectPoi(page, 'poi_wedge');
@@ -83,7 +83,7 @@ test.describe('Help overlay (#391)', () => {
 
     // 閲覧中の誤操作防止: toggle も選択 POI の削除も走らない
     await page.keyboard.press('l');
-    await page.keyboard.press('h');
+    await page.keyboard.press('u');
     await page.keyboard.press('Delete');
     // Ctrl+S も保存経路に入らない (clean 時の 'No unsaved changes' toast (#375) が
     // 出ないことで gate を検証。ブラウザ保存ダイアログの抑止自体は e2e では見えない)
@@ -113,7 +113,7 @@ test.describe('Help overlay (#391)', () => {
 
   test('ui-hidden 中も ? ボタンから Help に到達できる', async ({ page }) => {
     await loadApp(page);
-    await page.keyboard.press('h');
+    await page.keyboard.press('u');
     expect(await bodyHasClass(page, 'ui-hidden')).toBe(true);
 
     await expect(page.locator('#btn-help')).toBeVisible();

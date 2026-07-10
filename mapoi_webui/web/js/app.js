@@ -1033,7 +1033,7 @@
     // Help overlay (#391) 表示中は modal として振る舞う: Escape は「閉じる」を最優先
     // (フォーム Cancel 等の段階挙動より先、stopImmediatePropagation で pose tool の
     // 独立 handler にも波及させない)。Ctrl+S はブラウザの保存ダイアログ抑止だけ行い
-    // 保存はしない。他の owned key (L/H/Delete/undo 系/?) は閲覧中の誤操作 (見えない
+    // 保存はしない。他の owned key (L/U/Delete/undo 系/?) は閲覧中の誤操作 (見えない
     // POI 削除等) を防ぐため不発にする。所有しないキーには干渉しない。
     if (MapoiHelp.isOpen()) {
       if (e.key === 'Escape' && !e.isComposing) {
