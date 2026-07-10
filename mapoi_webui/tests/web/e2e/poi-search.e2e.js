@@ -59,6 +59,24 @@ test.describe('POI list search box (#383)', () => {
     await expect(poiCard(page, 'poi_wedge')).toHaveClass(/(^|\s)selected(\s|$)/);
   });
 
+  test('filtering out the selected POI hides its card but keeps the selection', async ({ page }) => {
+    await loadApp(page);
+    await setSectionOpen(page, '#btn-poi-toggle', '#poi-body', true);
+    await selectPoi(page, 'poi_pause');
+    await expect(page.locator('#nav-goal-select')).toHaveValue('poi_pause');
+
+    await page.locator('#poi-search').fill('wedge');
+    await expect(poiCard(page, 'poi_pause')).toHaveCount(0);
+    // 絞り込みは list の見た目だけ (一貫規則): map の highlight (選択 marker は
+    // stroke #e67e22) と nav dropdown は選択を保持し続ける
+    await expect(page.locator('.poi-arrow-icon:has(path[stroke="#e67e22"])')).toHaveCount(1);
+    await expect(page.locator('#nav-goal-select')).toHaveValue('poi_pause');
+
+    // クリアすると card が選択状態のまま戻る
+    await page.locator('#poi-search').fill('');
+    await expect(poiCard(page, 'poi_pause')).toHaveClass(/(^|\s)selected(\s|$)/);
+  });
+
   test('the search box hides while the POI edit form is open', async ({ page }) => {
     await loadApp(page);
     await setSectionOpen(page, '#btn-poi-toggle', '#poi-body', true);
