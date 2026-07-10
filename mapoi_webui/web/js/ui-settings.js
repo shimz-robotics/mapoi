@@ -177,7 +177,7 @@
     function syncToggleBtn() {
       if (!toggleBtn) return;
       toggleBtn.setAttribute('aria-pressed', settings.hidden ? 'true' : 'false');
-      toggleBtn.title = settings.hidden ? 'Show UI' : 'Hide UI';
+      toggleBtn.title = settings.hidden ? 'Show UI (H)' : 'Hide UI (H)';
       if (iconHide) iconHide.classList.toggle('hidden', settings.hidden);
       if (iconShow) iconShow.classList.toggle('hidden', !settings.hidden);
     }

@@ -423,7 +423,8 @@
   function applyPoiLockUi() {
     if (btnPoiLockToggle) {
       btnPoiLockToggle.setAttribute('aria-pressed', String(poiPositionLocked));
-      btnPoiLockToggle.title = poiPositionLocked ? 'Unlock POI position editing' : 'Lock POI position editing';
+      btnPoiLockToggle.title = poiPositionLocked
+        ? 'Unlock POI position editing (L)' : 'Lock POI position editing (L)';
     }
     if (poiLockIconLocked) poiLockIconLocked.classList.toggle('hidden', !poiPositionLocked);
     if (poiLockIconUnlocked) poiLockIconUnlocked.classList.toggle('hidden', poiPositionLocked);
@@ -1093,6 +1094,27 @@
       MapoiToast.showToast(
         document, name ? `Deleted POI "${name}" (Ctrl+Z to undo)` : 'Deleted POI (Ctrl+Z to undo)');
       return;
+    }
+    // POI 位置ロック / UI 一括表示の単キートグル (#390)。地図右上の既存ボタンの .click()
+    // を呼ぶだけの single code path (状態同期・永続化は各 click handler に集約済み)。
+    // Ctrl+L (アドレスバー) / Ctrl+H (履歴) 等のブラウザショートカットは所有しないため
+    // 修飾キーなしに限定。toggle なので長押し repeat で状態が暴れないよう e.repeat は
+    // 無視する。toast は出さない: どちらのボタンも地図上に常時見えており (ui-hidden 中も
+    // #ui-controls は残る)、icon / aria-pressed の変化で足りる。
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
+      const key = e.key.toLowerCase();
+      if (key === 'l') {
+        e.preventDefault();
+        if (btnPoiLockToggle) btnPoiLockToggle.click();
+        return;
+      }
+      if (key === 'h') {
+        e.preventDefault();
+        // 配線は ui-settings.js initDom。app.js は要素を掴むだけで状態を持たない。
+        const btnUiToggle = document.getElementById('btn-ui-toggle');
+        if (btnUiToggle) btnUiToggle.click();
+        return;
+      }
     }
     if (!(e.ctrlKey || e.metaKey)) return;
     const key = e.key.toLowerCase();
