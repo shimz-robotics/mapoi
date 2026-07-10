@@ -1045,6 +1045,15 @@
     }
     if (e.key === 'Escape') {
       if (e.isComposing) return;
+      // Help overlay (#391) が開いていれば最優先で閉じるだけで return する。
+      // フォーム Cancel 等の段階挙動より先に判定する — Help を見ながらフォームを
+      // 編集していても、Escape 1 回目は Help だけを閉じフォームは巻き込まない。
+      if (MapoiHelp.isOpen()) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        MapoiHelp.close();
+        return;
+      }
       if (routeEditor.editingIndex !== -1) {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -1113,6 +1122,14 @@
         // 配線は ui-settings.js initDom。app.js は要素を掴むだけで状態を持たない。
         const btnUiToggle = document.getElementById('btn-ui-toggle');
         if (btnUiToggle) btnUiToggle.click();
+        return;
+      }
+      // Help overlay (#391)。e.key === '?' は Shift+/ (US/JIS とも) を含む layout
+      // 非依存の判定 (e.code は見ない)。開くだけの idempotent 操作 (閉じるのは Escape /
+      // × / 背景 click)。shiftKey は '?' の入力自体に要るので guard しない。
+      if (key === '?') {
+        e.preventDefault();
+        MapoiHelp.open();
         return;
       }
     }

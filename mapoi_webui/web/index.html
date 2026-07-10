@@ -78,6 +78,12 @@
             <circle cx="12" cy="12" r="3"/>
           </svg>
         </button>
+        <!-- Help overlay (#391) を開く。ui-hidden 中も #ui-controls は残る仕様なので、
+             UI を隠した状態からでも Help に到達できる。配線は help.js。 -->
+        <button id="btn-help" type="button" class="ui-control-btn"
+                title="Help (?)" aria-label="Open help">
+          <span class="ui-control-glyph" aria-hidden="true">?</span>
+        </button>
       </div>
     </div>
 
@@ -330,6 +336,92 @@
     </div>
   </main>
 
+  <!-- Help overlay (#391): 操作方法とショートカット一覧の静的 modal。既定 hidden。
+       サイドパネル案は #poi-panel と場所を取り合い、外部 README リンク案はロボット LAN 等の
+       オフライン環境で開けないため、必須情報は modal 内に自己完結させる (README link は補助)。
+       開閉配線は help.js、`?` キー / Escape は app.js の keydown funnel。
+       focus trap / aria-modal の本格対応は MVP 外 (role="dialog" + aria-label のみ)。
+       メンテ規約: ショートカットや操作を追加する PR は下の該当 table/list も更新する (#391)。 -->
+  <div id="help-overlay" class="hidden" role="dialog" aria-label="Help">
+    <div id="help-dialog">
+      <div id="help-header">
+        <h2>mapoi Web UI — Help</h2>
+        <button id="btn-help-close" type="button" aria-label="Close help">&times;</button>
+      </div>
+      <div id="help-body">
+        <section>
+          <h3>Keyboard shortcuts</h3>
+          <table id="help-shortcut-table">
+            <tbody>
+              <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td>
+                  <td>Save all unsaved changes (an open edit form is confirmed first)</td></tr>
+              <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td>
+                  <td>Undo (POI edits, or route edits while the route form is open)</td></tr>
+              <tr><td><kbd>Ctrl</kbd>+<kbd>Y</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td>
+                  <td>Redo</td></tr>
+              <tr><td><kbd>Delete</kbd></td>
+                  <td>Delete the selected POI (revert with <kbd>Ctrl</kbd>+<kbd>Z</kbd>)</td></tr>
+              <tr><td><kbd>Escape</kbd></td>
+                  <td>Step back: close this help &rarr; cancel the open edit form / pose placement
+                      &rarr; clear the search box (while typing in it) &rarr; clear the selection</td></tr>
+              <tr><td><kbd>L</kbd></td><td>Lock / unlock POI position editing</td></tr>
+              <tr><td><kbd>H</kbd></td><td>Hide / show the UI panels</td></tr>
+              <tr><td><kbd>?</kbd></td><td>Open this help</td></tr>
+            </tbody>
+          </table>
+          <p class="help-note">On Mac, <kbd>Cmd</kbd> works in place of <kbd>Ctrl</kbd>.
+             If a shortcut does nothing, a Vim-style browser extension (Vimium etc.) may be
+             intercepting keys &mdash; add this site to the extension's exclusion list.</p>
+        </section>
+        <section>
+          <h3>Map operations</h3>
+          <ul>
+            <li>Click a POI marker to select it; double-click to open its edit form.</li>
+            <li>Drag a selected marker to move it, drag the sector handle to rotate its yaw
+                (both need position editing unlocked &mdash; <kbd>L</kbd> or the lock button).</li>
+            <li>While a POI edit form is open, click the map to set the position, then click
+                again to set the yaw (2-click pose tool; <kbd>Escape</kbd> aborts).</li>
+            <li>Click a route line to select the route.</li>
+            <li>Zoom with the mouse wheel or pinch.</li>
+          </ul>
+        </section>
+        <section>
+          <h3>Editing &amp; saving</h3>
+          <ul>
+            <li>Edits change a local working copy only; nothing is written until
+                <strong>Save</strong> (<kbd>Ctrl</kbd>+<kbd>S</kbd>). <strong>Discard</strong>
+                drops the unsaved changes.</li>
+            <li>POIs and routes keep separate undo histories.</li>
+            <li>If the YAML file changed outside this page (another client or a direct edit),
+                Save warns you and lets you reload the latest file or keep editing.</li>
+          </ul>
+        </section>
+        <section>
+          <h3>POI list</h3>
+          <ul>
+            <li>The search box filters the list by name (map markers stay as they are).</li>
+            <li>Checkboxes and <strong>All</strong> / <strong>None</strong> control marker
+                visibility on the map.</li>
+            <li>Selecting a list entry pans the map to an off-screen POI.</li>
+          </ul>
+        </section>
+        <section>
+          <h3>Navigation</h3>
+          <ul>
+            <li>Send the robot to a POI (<strong>Go</strong>), run a route
+                (<strong>Run</strong>), or set the initial pose (<strong>Set Pose</strong>).</li>
+            <li><strong>Pause</strong> / <strong>Resume</strong> / <strong>Stop Navigation</strong>
+                control the current run.</li>
+            <li><strong>Robot Map</strong> switches the map used by the robot &mdash; unsaved
+                edits may be replaced, so save first.</li>
+          </ul>
+        </section>
+        <p class="help-note">Details: <a href="https://github.com/shimz-robotics/mapoi#readme"
+           target="_blank" rel="noopener">README on GitHub</a> (needs internet access).</p>
+      </div>
+    </div>
+  </div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="/js/api.js"></script>
   <!-- geometry.js は MapoiGeometry を window に attach する pure helper 群。
@@ -366,6 +458,9 @@
   <!-- reload-guard.js は MapoiReloadGuard を window に attach する pure helper 群 (#373)。
        app.js の SSE ハンドラより前に読み込む (config_changed reload の dirty guard 判定)。 -->
   <script src="/js/reload-guard.js"></script>
+  <!-- help.js は #help-overlay (#391) の開閉を配線し MapoiHelp を window に attach する。
+       `?` キー / Escape の keyboard 配線は app.js の keydown funnel 側。 -->
+  <script src="/js/help.js"></script>
   <!-- tag-editor.js は TagEditor クラス (タグ定義エディタ、#346)。app.js が `new TagEditor()` する
        ため、app.js より前に読み込む。 -->
   <script src="/js/tag-editor.js"></script>
