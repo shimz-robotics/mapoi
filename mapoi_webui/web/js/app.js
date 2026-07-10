@@ -949,8 +949,8 @@
     console.warn('SSE connection error, browser will auto-reconnect:', err);
   };
 
-  // --- Keyboard shortcuts (#300 / #303 / #321) ---
-  // active editor の Escape / Undo/Redo を document レベルで拾う。
+  // --- Keyboard shortcuts (#300 / #303 / #321 / #374) ---
+  // active editor の Escape / Undo/Redo / Delete を document レベルで拾う。
   // Escape はフォームの Cancel 相当として編集モードを抜ける。Undo/Redo は入力欄
   // (name / x / y / tags 等) の編集中はブラウザ標準の text undo を優先するため無視する。
   // owned key のみ preventDefault し、他ハンドラを妨げない。
@@ -994,6 +994,22 @@
       return;
     }
     if (isEditableTarget) return;
+    // 選択中 POI の Delete キー削除 (#374)。削除前 confirm は置かない: 削除は working
+    // copy への変更で Save まで永続化されず Ctrl+Z (#300) で 1 手で戻せるため、
+    // toast + undo 案内で足りる (issue #374 の選択肢のうち後者)。route 編集中は map
+    // クリックが waypoint 操作の文脈なので発火しない (waypoint 削除への適用は scope 外)。
+    // POI form 編集中・配置中も、フォーム入力途中の誤爆と選択対象の曖昧さを避け無視する。
+    if (e.key === 'Delete' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      if (isRouteEditingActive() || isPoiEditingActive()) return;
+      const index = poiEditor.selectedIndex;
+      if (index < 0) return;
+      e.preventDefault();
+      const name = poiEditor.pois[index]?.name;
+      poiEditor.deletePoi(index);
+      MapoiToast.showToast(
+        document, name ? `Deleted POI "${name}" (Ctrl+Z to undo)` : 'Deleted POI (Ctrl+Z to undo)');
+      return;
+    }
     if (!(e.ctrlKey || e.metaKey)) return;
     const key = e.key.toLowerCase();
     if (key === 'z' && !e.shiftKey) {
