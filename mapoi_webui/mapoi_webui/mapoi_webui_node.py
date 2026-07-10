@@ -406,7 +406,18 @@ class MapoiWebNode(Node):
                 # loadPois / loadRoutes / loadTagDefinitions を再実行させる (#135 (B))。
                 # map 名が正しく解釈できた時のみ broadcast: 期待形式に部分一致するが map 特定でき
                 # ないケースで無駄な reload を避ける (#173 Round 1 / 2 medium)。
-                self._broadcast_sse_event('config_changed', {'map_name': map_name_parsed})
+                payload = {'map_name': map_name_parsed}
+                # yaml 全体の内容 hash (#241 の config_version) を同梱する (#384)。保存した
+                # タブは save 応答で同じ値を既に持っており、frontend はこれと照合して自タブ発
+                # の変更なら reload (undo 履歴・map 視点の破棄) を skip できる。計算できない
+                # 場合 (config 不在等) は省略し、frontend は従来どおり reload する (安全側)。
+                try:
+                    version = compute_config_version(path)
+                except OSError:
+                    version = None
+                if version:
+                    payload['config_version'] = version
+                self._broadcast_sse_event('config_changed', payload)
         except Exception as e:
             self.get_logger().warn(f'Failed to parse config path: {e}')
 

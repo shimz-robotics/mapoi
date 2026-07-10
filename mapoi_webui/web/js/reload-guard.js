@@ -60,6 +60,24 @@
   }
 
   /**
+   * config_changed が自タブ発 (または取り込み済み) の変更かを判定する (#384)。
+   *
+   * version は yaml 全体の内容 hash (#241 の config_version)。save 応答か前回 load で
+   * このタブが既に知っている値なら working copy は最新で、reload は undo 履歴
+   * (loadPois が破棄) と map 視点 (loadMap の fitBounds) を失わせるだけなので skip
+   * してよい。version が取れない event (旧 backend / config 不在) は常に false =
+   * 従来どおり reload に回す (安全側)。
+   *
+   * @param {string|null|undefined} version SSE payload の config_version
+   * @param {Array<string|null>} knownVersions 各 editor が保持中の configVersion
+   * @returns {boolean} true なら reload 不要 (自タブ発 / 取り込み済み)
+   */
+  function isSelfConfigChange(version, knownVersions) {
+    if (!version) return false;
+    return (knownVersions || []).indexOf(version) !== -1;
+  }
+
+  /**
    * prompt 用メッセージ。#343 の 409 conflict ダイアログと同じ言い回しに揃える。
    * blocker は「未保存変更」だけでなく「開いている edit form」も含むため、
    * "unsaved edits" と断定せず "edits in progress" と表現する。
@@ -79,6 +97,7 @@
   const api = {
     collectReloadBlockers,
     decideReloadAction,
+    isSelfConfigChange,
     buildReloadConfirmMessage,
   };
 

@@ -15,8 +15,11 @@ unbound メソッドに渡して呼ぶ (node 生成不要)。`/api/events` の g
 で blocking するため、view を直接呼んで Response を取り出し、別スレッドで 1 frame だけ drain して
 deterministically に検証する (put→get は即時なので client 登録さえ確認できれば race しない)。
 """
+import hashlib
 import json
+import os
 import queue
+import tempfile
 import threading
 import time
 import unittest
@@ -95,6 +98,26 @@ class TestConfigPathCallback(unittest.TestCase):
         self.assertEqual(node.map_name_, 'mapA')
         self.assertEqual(
             node.broadcasts, [('config_changed', {'map_name': 'mapA'})])
+
+    def test_broadcast_includes_config_version_when_file_readable(self):
+        # yaml が実在する場合は payload に config_version (yaml 全体の sha256, #241) を
+        # 同梱する (#384)。frontend はこれを save 応答の version と照合し、自タブ発の
+        # 変更なら reload (undo 履歴・map 視点の破棄) を skip する。
+        # 既存の他 test は実在しない path を使うため version は計算不能 → 省略 (後方互換)。
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dir = os.path.join(tmp, 'maps', 'mapB')
+            os.makedirs(config_dir)
+            config_path = os.path.join(config_dir, 'mapoi_config.yaml')
+            content = b'poi: []\n'
+            with open(config_path, 'wb') as f:
+                f.write(content)
+            expected_version = hashlib.sha256(content).hexdigest()
+            node = _FakeConfigNode(map_name='mapA')
+            _call_config_path(node, config_path)
+            self.assertEqual(node.broadcasts, [('config_changed', {
+                'map_name': 'mapB',
+                'config_version': expected_version,
+            })])
 
     def test_path_without_config_file_does_not_broadcast(self):
         # config_file が path に現れない → map 特定不可 → 無駄な reload を避けて broadcast しない

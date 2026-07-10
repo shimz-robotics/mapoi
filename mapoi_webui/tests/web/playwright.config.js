@@ -28,7 +28,21 @@ module.exports = defineConfig({
     trace: 'on-first-retry',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+      testIgnore: '**/sse-*.e2e.js',
+    },
+    // SSE 注入 (POST /test/sse-event) は接続中の全 client への broadcast で、並走中の
+    // 他テストの page にも届いて reload を誘発し得る。chromium project の完了後に
+    // 単独 (直列) で走らせて隔離する (#384)。
+    {
+      name: 'chromium-sse',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: '**/sse-*.e2e.js',
+      dependencies: ['chromium'],
+      fullyParallel: false,
+    },
   ],
   webServer: {
     command: `python3 e2e/server/mock_server.py --port ${PORT}`,
