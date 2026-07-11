@@ -136,6 +136,12 @@ protected:
   // config_path イベントは drop する。再読込を選べば最新状態が fetch されるので欠損しない)。
   bool config_dialog_open_ = false;
 
+  // 内容 diff ガード (#403)。直前に処理した config_path イベントの path と mtime を保持し、
+  // path も mtime も変わっていない再 publish (= 内容変化なし) を Noop に落とす。
+  // UI (Qt メイン) スレッド上でのみ読み書きする (#399 の table_dirty_ 等と同じ規約)。
+  std::string last_seen_config_path_;
+  std::filesystem::file_time_type last_seen_config_mtime_{};
+
   // Functions
   void InitConfigs(std::string map_name);
   void UpdatePoiTable();

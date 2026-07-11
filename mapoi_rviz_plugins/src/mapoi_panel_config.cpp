@@ -13,22 +13,46 @@ static const rclcpp::Logger LOGGER = rclcpp::get_logger("mapoi_rviz_plugins.mapo
 
 void MapoiPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
 {
-  std::filesystem::path config_path(msg->data);
+  // map 名の抽出は ROS スレッドで行ってよい (std::filesystem::path は const 操作のみ)。
+  // action 判定 / current_map_ 更新 / dedup 判定 / last_seen_* 更新は queued lambda 内
+  // (UI スレッド) で行う。理由: UI スレッド所有規約 (PR #412/#414 と同じ) に加え、lambda は
+  // Qt イベントキューの FIFO で適用されるため、連続イベントでもメンバは常に最新へ進む。
+  const std::string path = msg->data;
+  std::filesystem::path config_path(path);
   std::string map_name = config_path.parent_path().filename().string();
-  const auto action = detail::decide_mapoi_panel_config_path_action(current_map_, map_name);
-  current_map_ = map_name;
 
   // 同じ map で path も同じ場合 (= save 後の reload_map_info で再 publish される flow) でも
   // POI / route list が変わっている可能性があるため Nav2GoalComboBox / MapoiRouteComboBox を
   // 再 fetch する (#135)。map 切替時は highlight クリア + MapComboBox 同期も必要なので
   // SetMapComboBox を呼ぶ。
-  QMetaObject::invokeMethod(this, [this, map_name, action]() {
+  QMetaObject::invokeMethod(this, [this, path, map_name]() {
+    const auto base_action = detail::decide_mapoi_panel_config_path_action(current_map_, map_name);
+    current_map_ = map_name;
+
+    // 内容 diff ガード (#403): Refresh かつ path/mtime 不変の再 publish を Noop に落とす。
+    // stat 失敗は dedup 不能として従来挙動 (素通し) — publisher と同じ方針。
+    std::error_code mtime_ec;
+    const auto mtime = std::filesystem::last_write_time(path, mtime_ec);
+    const auto action = detail::apply_config_content_dedup(
+      base_action, !mtime_ec,
+      path, mtime,
+      last_seen_config_path_, last_seen_config_mtime_);
+
+    // dedup で Noop にならなかった場合 = イベントを処理する場合に last_seen_* を更新する。
+    if (action != detail::ConfigPathUpdateAction::Noop) {
+      last_seen_config_path_ = path;
+      if (!mtime_ec) {
+        last_seen_config_mtime_ = mtime;
+      }
+    }
+
     if (action == detail::ConfigPathUpdateAction::ReinitializeMap) {
       SetMapComboBox(map_name);
-    } else {
+    } else if (action == detail::ConfigPathUpdateAction::RefreshCurrentMap) {
       SetNav2GoalComboBox();
       SetMapoiRouteComboBox();
     }
+    // Noop: 再 fetch せずスキップ
   }, Qt::QueuedConnection);
 }
 
