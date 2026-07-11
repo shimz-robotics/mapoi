@@ -289,6 +289,13 @@ void MapoiRviz2Publisher::timer_callback(){
   const bool pois_has_sub = marker_pois_pub_->get_subscription_count() > 0;
   const bool routes_has_sub = marker_routes_pub_->get_subscription_count() > 0;
 
+  // 両 topic とも購読者ゼロなら dirty の有無に関わらず即 return する (RViz 未接続時の
+  // 毎 tick コストを default marker 構築含めゼロにする)。dirty はここでも消費しないため、
+  // 購読者復帰後の最初の tick で必ずフル構築される。
+  if (!pois_has_sub && !routes_has_sub) {
+    return;
+  }
+
   // clean tick (dirty=false): 幾何再計算せず cache の stamp だけ更新して再 publish する。
   // marker 数は不変なので DELETEALL 分岐 (id_buf_ / route_id_buf_) は通らない
   // (id_buf_ / route_id_buf_ は dirty tick でのみ更新されるため整合する)。
