@@ -45,7 +45,7 @@ flowchart LR
     SERVER <--> CFG
 ```
 
-See [docs/architecture.md](./docs/architecture.md) for the full node/topic/service breakdown.
+The diagram above is simplified (localization, RViz markers, and status/event details are omitted) — see [docs/architecture.md](./docs/architecture.md) for the full node/topic/service breakdown.
 
 ## Docker quickstart
 

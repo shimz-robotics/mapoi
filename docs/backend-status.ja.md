@@ -53,7 +53,7 @@ bridge 実装者の必須実装は **`backend_ready` を真にする** ことだ
 
 `mapoi_amcl_localization_bridge` は AMCL 互換 localization (`/initialpose` を `geometry_msgs/PoseWithCovarianceStamped` で受ける構成) 用の bridge ノードです。slam_toolbox / NDT / 自前 localization 等を mapoi の UI（WebUI / RViz panel）から扱いたい場合は、bridge ノードを自作して以下の topic 仕様を満たしてください。Navigation backend と独立した仕様として運用されるため、両方の bridge は同時に動かせます。
 
-**Subscribe する command topics**（mapoi の UI / mapoi_nav2_bridge / mapoi_server が publish する）:
+**Subscribe する command topics**（唯一の writer である `mapoi_server` が publish する。WebUI / RViz panel / `mapoi_nav2_bridge` からは `mapoi/request_initial_pose` service 経由で依頼する、#211）:
 
 | topic | 型 |
 | --- | --- |

@@ -46,7 +46,7 @@ flowchart LR
     SERVER <--> CFG
 ```
 
-ノード・topic・service の全体像は [docs/architecture.ja.md](./docs/architecture.ja.md) を参照してください。
+上図は簡略版です (localization・RViz マーカー・status/event の詳細は省略)。ノード・topic・service の全体像は [docs/architecture.ja.md](./docs/architecture.ja.md) を参照してください。
 
 ## Docker quickstart
 

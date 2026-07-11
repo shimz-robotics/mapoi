@@ -101,7 +101,7 @@ WebUI の Navigation バッジは nav バックエンド (Nav2 action server + m
 > - **注意**: `docker compose up` では `--env` flag は使えないため、`up` 経由で override が必要なら `docker-compose.yml` 編集または compose override file を使う
 
 ```sh
-git clone git@github.com:shimz-robotics/mapoi.git
+git clone https://github.com/shimz-robotics/mapoi.git
 cd mapoi
 xhost +local:docker
 docker compose up demo

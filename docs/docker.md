@@ -100,7 +100,7 @@ To try local changes, clone the repository and build with compose.
 > - **Note**: `docker compose up` does not accept the `--env` flag, so if you need an override via `up`, edit `docker-compose.yml` or use a compose override file
 
 ```sh
-git clone git@github.com:shimz-robotics/mapoi.git
+git clone https://github.com/shimz-robotics/mapoi.git
 cd mapoi
 xhost +local:docker
 docker compose up demo

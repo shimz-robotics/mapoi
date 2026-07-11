@@ -52,7 +52,7 @@ The only mandatory obligation for bridge implementers is **to make `backend_read
 
 `mapoi_amcl_localization_bridge` is the bridge node for AMCL-compatible localization (configurations that receive `/initialpose` as `geometry_msgs/PoseWithCovarianceStamped`). To drive slam_toolbox / NDT / your own localization, etc. from the mapoi UI (WebUI / RViz panel), implement your own bridge node that satisfies the topic specification below. It is operated as a specification independent of the Navigation backend, so both bridges can run at the same time.
 
-**Subscribed command topics** (published by the mapoi UI / mapoi_nav2_bridge / mapoi_server):
+**Subscribed command topics** (published by `mapoi_server`, the topic's sole writer — the WebUI / RViz panel / `mapoi_nav2_bridge` trigger it via the `mapoi/request_initial_pose` service, #211):
 
 | topic | type |
 | --- | --- |
