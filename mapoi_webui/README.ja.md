@@ -14,7 +14,8 @@ mapoi の Web UI パッケージです。
 - **ルート表示**: ルートのポリライン表示、矢印マーカー、表示/非表示の切り替え
 - **ナビゲーション操作**: POI へのゴール走行、ルート走行、一時停止・再開、停止
 - **スマホ表示**: Navigation を優先して開き、地図は画面の半分程度を確保
-- **ナビゲーション backend 検出**: command topic の subscriber 数から navigation 機能の有効/無効を UI に表示
+- **ナビゲーション backend 検出**: `mapoi/nav/backend_status` readiness topic (#198) 駆動で Navigation connected / unavailable バッジを UI に表示。command topic の subscriber 数による検出は、readiness topic 未受信時の capabilities payload (`/api/mode` および `/api/nav/status` の `navigation` フィールド) の best-effort フォールバックとしてのみ残る
+- **自己位置推定 backend 検出**: `mapoi/localization/backend_status` readiness topic (#209) 駆動で Localization connected バッジを表示し、Set Initial Pose UI を gate する
 - **自己位置推定リセット**: POI 選択による Initial Pose の設定
 - **ロボット位置表示**: TF (`map` → `base_link`) によるリアルタイムのロボット位置マーカー表示
 - **タグシステム**: システムタグ・ユーザータグの表示、タグによる POI 色分け
@@ -62,6 +63,8 @@ Flask ベースの HTTP サーバーを内蔵した ROS2 ノードです。
 | --- | --- | --- |
 | `mapoi/nav/status` | `std_msgs/String` | ナビゲーション状態の受信（`"status"` / `"status:target"` 形式、transient_local QoS）。`:` split で target を抽出し REST `/api/nav/status` の `target` field として公開 |
 | `mapoi/nav/command_rejected` | `std_msgs/String` | reject コマンドのイベント通知の受信（volatile QoS、payload = target 文字列、#354）。`mapoi/nav/status` の latched snapshot を汚さず、SSE `command_rejected` event として frontend に転送するだけの薄い変換 |
+| `mapoi/nav/backend_status` | `mapoi_interfaces/NavigationBackendStatus` | `mapoi_nav2_bridge` が 1Hz で publish する navigation backend readiness summary の受信（#198）。Navigation connected バッジの表示と navigation 操作 UI の gate に使う。QoS は transient_local + liveliness（lease 5s、#208）で、publisher 死亡時は UI を disable する |
+| `mapoi/localization/backend_status` | `mapoi_interfaces/LocalizationBackendStatus` | `mapoi_amcl_localization_bridge`（または custom localization bridge）が 1Hz で publish する localization backend readiness summary の受信（#209）。Localization connected バッジの表示と Set Initial Pose UI の gate に使う。QoS は `mapoi/nav/backend_status` と同一 |
 | `mapoi/config_path` | `std_msgs/String` | 外部からの地図切り替え検知 |
 
 #### TF

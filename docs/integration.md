@@ -1,31 +1,35 @@
-# 自分のロボットへの導入方法
+# Integrating with your own robot
 
-現状は本リポジトリを clone して colcon build で組み込んでください。**将来的に apt/rosdep での提供を予定しています**（[#20](https://github.com/shimz-robotics/mapoi/issues/20)）。
+> Japanese version: [integration.ja.md](./integration.ja.md)
 
-## 1. 地図ディレクトリの作成
+For now, clone this repository and build it with colcon. **Distribution via apt/rosdep is planned** ([#20](https://github.com/shimz-robotics/mapoi/issues/20)).
 
-パッケージ内に `maps/<地図名>/` ディレクトリを作成し、地図ファイルと設定ファイルを配置します。
+See [docs/architecture.md](./architecture.md) for the big picture of how the packages and nodes fit together.
+
+## 1. Creating the map directory
+
+Create a `maps/<map_name>/` directory inside your package and place the map files and the config file there.
 
 ```
 maps/
 ├── site_a/
-│   ├── mapoi_config.yaml    # POI・ルート・ユーザータグ設定
-│   ├── map.pgm              # 地図画像
-│   └── map.yaml             # 地図メタデータ
+│   ├── mapoi_config.yaml    # POI / route / user tag settings
+│   ├── map.pgm              # map image
+│   └── map.yaml             # map metadata
 └── site_b/
     ├── mapoi_config.yaml
     ├── map.pgm
     └── map.yaml
 ```
 
-`mapoi_config.yaml` のフォーマットについては [`mapoi_server` の README](../mapoi_server/README.md) を参照してください。
+For the `mapoi_config.yaml` format, see the [`mapoi_server` README](../mapoi_server/README.md).
 
-## 2. launch ファイルへの追加
+## 2. Adding mapoi to your launch file
 
-`your_robot_launch.yaml` に mapoi のノードを追加します。
+Add the mapoi nodes to `your_robot_launch.yaml`.
 
 ```yaml
-# Mapoi Server
+# mapoi_server: manages map/POI information and provides the mapoi services
 - node:
     pkg: mapoi_server
     exec: mapoi_server
@@ -34,19 +38,22 @@ maps/
       - {name: map_name, value: "site_a"}
       - {name: config_file, value: "mapoi_config.yaml"}
 
+# mapoi_nav2_bridge: bridges POI-name-based goals to Nav2 (autonomous navigation + POI radius event detection)
 - node:
     pkg: mapoi_server
     exec: mapoi_nav2_bridge
 
+# mapoi_amcl_localization_bridge: feeds the initial pose to AMCL via /initialpose
 - node:
     pkg: mapoi_server
     exec: mapoi_amcl_localization_bridge
 
+# mapoi_rviz2_publisher: publishes POI markers for RViz2
 - node:
     pkg: mapoi_server
     exec: mapoi_rviz2_publisher
 
-# Mapoi Web UI（オプション）
+# Mapoi Web UI (optional): map display, POI editing, and navigation operation from a browser
 - node:
     pkg: mapoi_webui
     exec: mapoi_webui_node.py
@@ -56,28 +63,30 @@ maps/
       - {name: web_port, value: 8765}
 ```
 
-CLI から `mapoi_bringup.launch.yaml` を直接起動する例 (引数 semantics 含む) は [`mapoi_server/README.md`](../mapoi_server/README.md) を参照してください。
+For an example of launching `mapoi_bringup.launch.yaml` directly from the CLI (including the argument semantics), see [`mapoi_server/README.md`](../mapoi_server/README.md).
 
-## 3. AMCL パラメータの設定
+## 3. Configuring AMCL parameters
 
-初期位置は `mapoi_config.yaml` の **POI list 先頭の非 landmark POI** を default として `mapoi_amcl_localization_bridge` が `/initialpose` topic に自動配信します（#144 で旧 `initial_pose` system tag を廃止し、yaml 順序で表現する semantics に統一。#209 で `mapoi_nav2_bridge` から AMCL adapter を分離）。明示的に POI を指定したい場合は `mapoi/select_map` service の `initial_poi_name` 引数を使ってください。AMCL の `set_initial_pose` (Nav2 native の self-init) と二重管理にならないよう、AMCL 側はそれを無効化し、地図切り替えは `first_map_only_` を `False` にしてください。
+`mapoi_amcl_localization_bridge` automatically publishes the initial pose to the `/initialpose` topic, using the **first non-landmark POI in the POI list** of `mapoi_config.yaml` as the default (#144 removed the old `initial_pose` system tag and unified the semantics into yaml ordering; #209 split the AMCL adapter out of `mapoi_nav2_bridge`). To pick a POI explicitly, use the `initial_poi_name` argument of the `mapoi/select_map` service. To avoid managing the initial pose twice with AMCL's `set_initial_pose` (Nav2-native self-init), disable it on the AMCL side, and set `first_map_only_` to `False` to enable map switching.
+
+> **Note (distro difference)**: on Humble the AMCL parameter is named `first_map_only_` (with a trailing underscore); on Jazzy it is `first_map_only`. See `mapoi_turtlebot3_example/param/humble/burger.yaml` and `mapoi_turtlebot3_example/param/jazzy/burger.yaml` for working examples of each.
 
 ```yaml
 amcl:
   ros__parameters:
-    # 初期位置は mapoi_amcl_localization_bridge から /initialpose topic 経由で配信される
-    # POI single source of truth 化のため AMCL native の self-init は使わない
+    # The initial pose is delivered by mapoi_amcl_localization_bridge via the /initialpose topic
+    # AMCL-native self-init is disabled to keep POIs the single source of truth
     set_initial_pose: False
-    # 地図切り替えの有効化
+    # Enable map switching (Humble spelling; on Jazzy the parameter is first_map_only)
     first_map_only_: False
 ```
 
-`mapoi_config.yaml` 側は普通の POI 定義のままで OK (default initial pose に使う POI を yaml の **先頭** に置くだけ):
+On the `mapoi_config.yaml` side, plain POI definitions are all you need (just place the POI to use as the default initial pose at the **top** of the yaml):
 
 ```yaml
 poi:
-  # POI 名は構造を示す汎用例 (turtlebot3 demo の実 POI 名とは独立)
-  - name: entrance        # この POI が default 初期位置になる (POI list 先頭)
+  # POI names are generic examples showing the structure (independent of the actual turtlebot3 demo POI names)
+  - name: entrance        # this POI becomes the default initial pose (first in the POI list)
     pose: {x: -2.0, y: -0.5, yaw: 0.0}
     tags: [waypoint]
   - name: room_a
@@ -85,15 +94,15 @@ poi:
     tags: [waypoint]
 ```
 
-別 topic 名・別 message 型を使う localization パッケージへの対応については [`mapoi_server/README.md`](../mapoi_server/README.md) の「対応 localization パッケージの要件」節を参照してください。
+For supporting localization packages that use a different topic name or message type, see the ["Requirements for a compatible localization package"](../mapoi_server/README.md#requirements-for-a-compatible-localization-package) section of `mapoi_server/README.md`.
 
-## 4. POI 半径イベントの利用（オプション）
+## 4. Using POI radius events (optional)
 
-route 走行中に route 登録 POI に入ると `mapoi/events` トピックに `EVENT_ENTER` / `EVENT_PAUSED` (pause タグのみ) / `EVENT_EXIT` の 3 種別 event が配信されます。route 走行外 (IDLE / GOAL mode、`NavigateToPose` 単発 goal や手動操縦) では発火しません。
+While driving a route, entering a route-registered POI publishes three event types — `EVENT_ENTER` / `EVENT_PAUSED` (pause tag only) / `EVENT_EXIT` — to the `mapoi/events` topic. Events do not fire outside route driving (IDLE / GOAL mode, standalone `NavigateToPose` goals, or manual teleoperation).
 
 ```sh
-# イベントの確認
+# Check the events
 ros2 topic echo /mapoi/events
 ```
 
-詳細仕様は [`mapoi_server` の README](../mapoi_server/README.md) の「POI 半径イベント検知」節を参照してください。
+For the detailed spec, see the ["POI radius event detection"](../mapoi_server/README.md#poi-radius-event-detection-poievent) section of the `mapoi_server` README.

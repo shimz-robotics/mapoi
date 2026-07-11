@@ -36,7 +36,7 @@ ros2 launch mapoi_server mapoi_bringup.launch.yaml \
   map_name:=turtlebot3_world
 
 # Directly from a source tree (after sourcing inside ros2_ws)
-# Note: assumes this repo is checked out at `<ws>/src/mapoi/` (`git clone .../mapoi.git`).
+# Note: assumes this repo is cloned to `<ws>/src/mapoi/` (`git clone .../mapoi.git src/mapoi` at the ws root).
 # If you've laid packages out flat, e.g. `<ws>/src/mapoi_turtlebot3_example/`,
 # adjust the path accordingly, or use the `pkg prefix --share` form above for reliability.
 ros2 launch mapoi_server mapoi_bringup.launch.yaml \
@@ -67,10 +67,10 @@ ros2 launch mapoi_server mapoi_bringup.launch.yaml \
   map_name:=turtlebot3_dqn_stage1
 ```
 
-→ On startup, the `mapoi_server` node prints the following in a single line and exits FATAL (the full text of the `RCLCPP_FATAL` log in `mapoi_server.cpp`):
+→ On startup, the `mapoi_server` node prints the following in a single line and exits FATAL — actual log text (partly Japanese; the Japanese sentence asks you to specify a valid maps directory path), quoted verbatim from the `RCLCPP_FATAL` in `mapoi_server.cpp`:
 
 ```
-[FATAL] maps_path '...mapoi_config.yaml' does not exist or is not a directory. Please specify a valid maps directory path (e.g. $(find-pkg-share mapoi_turtlebot3_example)/maps).
+[FATAL] maps_path '...mapoi_config.yaml' does not exist or is not a directory. 正しい maps ディレクトリ path を指定してください (例: $(find-pkg-share mapoi_turtlebot3_example)/maps)。
 ```
 
 `maps_path` is **the parent directory that bundles the map collection**, not a specific map directory or file. See the [Directory structure](#directory-structure) section at the end of this README for the directory layout.
@@ -259,7 +259,7 @@ The demo defaults to `mapoi` mode (#263). The sample config (`turtlebot3_world/m
 
 #### POI radius event detection (`PoiEvent`)
 
-Publishes 3 kinds of events on the `mapoi/events` topic (#220 simplified this from 4 types to 3). Detection is limited to **during route navigation (`nav_mode == ROUTE`, driven by `FollowWaypoints`)** + **route-registered POIs**; events do not fire outside route navigation (in `IDLE` / `GOAL` mode).
+Publishes 3 kinds of events on the `mapoi/events` topic (#220 simplified this from 4 types to 3). Detection is limited to **during route navigation (`nav_mode == ROUTE`)** + **route-registered POIs**; events do not fire outside route navigation (in `IDLE` / `GOAL` mode). This does not depend on `waypoint_arrival_mode`: events fire both on the `FollowWaypoints` path (`nav2` mode) and on the per-waypoint `NavigateToPose` path (`mapoi` mode, the demo default).
 
 | event_type | Fires when |
 | --- | --- |
@@ -363,7 +363,7 @@ POIs can be tagged to classify their purpose. There are two kinds of tags: **sys
 
 ### System tags
 
-Global tags defined as constants inside `mapoi_server.cpp` (`kSystemTags`). Served via the `mapoi/get_tag_definitions` service. Since system tags are tied to core functionality, changing them is discouraged, and adding/removing one is treated as a core modification.
+Global tags defined as compile-time constants in `include/mapoi_server/system_tags.hpp` (`mapoi::kSystemTags`). Served via the `mapoi/get_tag_definitions` service. Since system tags are tied to core functionality, changing them is discouraged, and adding/removing one is treated as a core modification.
 
 | Tag | Description |
 | --- | --- |
@@ -443,7 +443,7 @@ route:
 
 ## Directory structure
 
-Under `maps_path` is a subdirectory per map (system tag definitions are held as constants inside `mapoi_server.cpp`, so they are not part of this directory).
+Under `maps_path` is a subdirectory per map (system tag definitions are held as constants in `include/mapoi_server/system_tags.hpp`, so they are not part of this directory).
 
 ```
 maps/

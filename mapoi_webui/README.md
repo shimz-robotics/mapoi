@@ -13,7 +13,8 @@ It also works from smartphones and tablets.
 - **Route display**: shows routes as polylines with arrow markers, with a show/hide toggle
 - **Navigation operation**: goal navigation to a POI, route navigation, pause/resume, cancel
 - **Mobile display**: opens with Navigation prioritized, with the map taking up about half the screen
-- **Navigation backend detection**: shows navigation availability in the UI based on the command topic's subscriber count
+- **Navigation backend detection**: shows the Navigation connected / unavailable badge in the UI, driven by the `mapoi/nav/backend_status` readiness topic (#198). Detection from the command topics' subscriber counts remains only as the best-effort fallback in the capabilities payload (`/api/mode` and the `navigation` field of `/api/nav/status`), used when the readiness topic has never been received
+- **Localization backend detection**: shows the Localization connected badge and gates the Set Initial Pose UI, driven by the `mapoi/localization/backend_status` readiness topic (#209)
 - **Localization reset**: sets the Initial Pose by selecting a POI
 - **Robot position display**: real-time robot position marker via TF (`map` → `base_link`)
 - **Tag system**: displays system tags and user tags, color-codes POIs by tag
@@ -61,6 +62,8 @@ A ROS2 node with a built-in Flask-based HTTP server.
 | --- | --- | --- |
 | `mapoi/nav/status` | `std_msgs/String` | Receives navigation status (`"status"` / `"status:target"` format, transient_local QoS). Splits on `:` to extract the target and exposes it as the `target` field of REST `/api/nav/status` |
 | `mapoi/nav/command_rejected` | `std_msgs/String` | Receives the reject-command event notification (volatile QoS, payload = target string, #354). A thin conversion that forwards it to the frontend as an SSE `command_rejected` event, without touching the latched snapshot of `mapoi/nav/status` |
+| `mapoi/nav/backend_status` | `mapoi_interfaces/NavigationBackendStatus` | Receives the navigation backend readiness summary published at 1Hz by `mapoi_nav2_bridge` (#198). Drives the Navigation connected badge and gates the navigation operation UI. QoS: transient_local + liveliness (lease 5s, #208); if the publisher dies, the UI is disabled |
+| `mapoi/localization/backend_status` | `mapoi_interfaces/LocalizationBackendStatus` | Receives the localization backend readiness summary published at 1Hz by `mapoi_amcl_localization_bridge` (or a custom localization bridge) (#209). Drives the Localization connected badge and gates the Set Initial Pose UI. Same QoS as `mapoi/nav/backend_status` |
 | `mapoi/config_path` | `std_msgs/String` | Detects an external map switch |
 
 #### TF

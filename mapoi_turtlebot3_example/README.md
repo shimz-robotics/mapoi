@@ -152,7 +152,7 @@ ros2 run mapoi_turtlebot3_example get_pois_info_client
 
 A reference implementation that receives PoiEvent (`EVENT_ENTER` / `EVENT_PAUSED` / `EVENT_EXIT`) from `mapoi/events` and executes an action based on a custom tag. It serves as a template for scenarios like "play a voice guide" or "capture a photo + auto-resume" at specific POIs during route navigation.
 
-This PR includes 2 such nodes:
+This package includes the following nodes:
 - `audio_guide_node` — `EVENT_ENTER` + `audio_info` tag → mock voice-guide playback (#88)
 - `camera_node` — `EVENT_PAUSED` + `capture_trigger` tag → mock capture + `/mapoi/nav/resume` publish (#238)
 
@@ -228,7 +228,7 @@ Two samples are included, together covering every combination of POI placement +
 | Map | Scenario | Key features it exercises |
 | --- | --- | --- |
 | `turtlebot3_world` | A feature-catalog demo (one route per feature + a combined `tour_full`) | System tags alone / combined, strict vs. loose `tolerance.yaw`, POIs with both `route.waypoints` + `landmarks`, `pause` with manual/auto resume, custom tags (`audio_info` / `capture_trigger`) working with the demo subscribers |
-| `turtlebot3_dqn_stage1` | Obstacle-avoidance driving in a hazard sandbox (hazard / observation / pass-through points) | Combined tags (`event + landmark + custom`), a yaw-agnostic pass-through point via `tolerance.yaw=π` (a stand-in for pass_through), relaying through `pause`, use of `route.landmarks` |
+| `turtlebot3_dqn_stage1` | Obstacle-avoidance driving in a hazard sandbox (hazard / observation / pass-through points) | Combined tags (`landmark + custom`), a yaw-agnostic pass-through point via `tolerance.yaw=π` (a stand-in for pass_through), relaying through `pause`, use of `route.landmarks` |
 
 ### POI / tag composition
 
@@ -236,7 +236,7 @@ Two samples are included, together covering every combination of POI placement +
 
 | POI | tags | `tolerance` (xy / yaw) | Role |
 | --- | --- | --- | --- |
-| `start` | `waypoint` | 0.50 / 0.785 | First in the POI list = default initial pose (#149); starting point for all routes; matches the Gazebo spawn position (-2.0, -0.5) |
+| `start` | `waypoint` | 0.50 / 0.785 | First in the POI list = default initial pose (#144); starting point for all routes; matches the Gazebo spawn position (-2.0, -0.5) |
 | `basic_waypoint` | `waypoint` | 0.35 / 0.785 | A southern relay point for `tutorial_01` / `02` / `tour_full` (a pure waypoint) |
 | `pause_waypoint` | `waypoint`, `pause`, `capture_trigger` | 0.30 / 3.14 | The `pause` POI for `tutorial_03` / `tour_full`; when the demo subscriber is running, `camera_node` mocks a capture while paused |
 | `goal` | `waypoint` | 0.40 / **0.10** | The end point of `tutorial_01` / `02` / `tour_full` (**strict yaw**) |
@@ -252,13 +252,15 @@ Two samples are included, together covering every combination of POI placement +
 
 | POI | tags | Role |
 | --- | --- | --- |
-| `start_zone` | `waypoint` | First in the POI list = default initial pose (#149) |
+| `start_zone` | `waypoint` | First in the POI list = default initial pose (#144) |
 | `checkpoint_west` | `waypoint`, `checkpoint` | A yaw-agnostic pass-through point (`tolerance.yaw=π`) |
 | `checkpoint_east` | `waypoint`, `checkpoint` | A yaw-agnostic pass-through point (`tolerance.yaw=π`) |
 | `pause_intersection` | `waypoint`, `pause` | Auto-stops at the intersection |
 | `north_goal` | `waypoint` | The northern goal, strict with `tolerance.yaw=0.10` |
-| `hazard_south` | `event`, `landmark`, `hazard` | A hazard with combined tags (not a valid Nav2 goal) |
+| `hazard_south` | `landmark`, `hazard` | A hazard with combined tags (not a valid Nav2 goal) |
 | `observation_point` | `landmark`, `observation` | An observation target (a reference point during route navigation) |
+
+> **NOTE**: `hazard` / `checkpoint` / `observation` are user-defined custom tags declared in this map's `custom_tags` (not system tags; the system tags are `waypoint` / `landmark` / `pause`).
 
 > **NOTE**: `landmark × pause` is not combined here, since it's rejected by the #143 validation.
 

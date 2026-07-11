@@ -24,7 +24,7 @@ Message representing a POI (Point of Interest).
 | `name` | `string` | POI name. Serves as the effective unique key |
 | `pose` | `geometry_msgs/Pose` | Position and orientation of the POI |
 | `tolerance` | `mapoi_interfaces/Tolerance` | xy / yaw tolerance (replaced the old `radius` field in v0.3.0) |
-| `tags` | `string[]` | Tags associated with the POI (e.g. `goal`, `audio_info`) |
+| `tags` | `string[]` | Tags associated with the POI (e.g. system tags `waypoint` / `landmark` / `pause`, or a user-defined tag such as `audio_info`) |
 | `description` | `string` | Description of the POI |
 
 ### PoiEvent.msg
@@ -47,7 +47,7 @@ EVENT_ENTER -> [EVENT_PAUSED (only if pause-tagged + nav stops)] -> EVENT_EXIT
 
 Prerequisites for `EVENT_PAUSED`:
 - The controller in use must **keep publishing cmd_vel = 0 while navigation is stopped** (the Nav2 default behavior). If the controller stops publishing cmd_vel while stationary, `EVENT_PAUSED` will not fire.
-- The pause auto-trigger is performed on the `mapoi_server` side, and resume is triggered by a client-side `mapoi/nav/resume` request, so there is no `RESUMED`-equivalent event in this spec (resume can be observed via the status topic).
+- The pause auto-trigger (and the `EVENT_PAUSED` publish) is performed on the `mapoi_nav2_bridge` side, and resume is triggered by a client-side `mapoi/nav/resume` request, so there is no `RESUMED`-equivalent event in this spec (resume can be observed via the status topic).
 
 ### TagDefinition.msg
 
@@ -55,13 +55,13 @@ Message representing a single POI classification tag definition (system tag / us
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `name` | `string` | Tag name (e.g. `goal`, `event`) |
+| `name` | `string` | Tag name (e.g. system tags `waypoint` / `landmark` / `pause`, or a user-defined tag such as `audio_info`) |
 | `description` | `string` | Human-readable description of the tag's purpose |
 | `is_system` | `bool` | `true` = system tag, `false` = user-defined tag |
 
 ### InitialPoseRequest.msg
 
-Notification message for the "candidate initial-pose POI" accompanying an operator's map switch / reload (typed in #149 round 8, previously a pair of strings). Published by `mapoi_nav2_bridge` after a successful Nav2 `LoadMap`, and subscribed to by the localization bridges. See the header comment in `msg/InitialPoseRequest.msg` for details and the stale-rejection strategy.
+Notification message for the "candidate initial-pose POI" accompanying an operator's map switch / reload (typed in #149 round 8, previously a pair of strings). Published by `mapoi_server`, the topic's sole writer, on request via the `mapoi/request_initial_pose` service (#211) — e.g. `mapoi_nav2_bridge` requests it after a successful Nav2 `LoadMap` — as well as on its own at startup (default POI adoption) and on reload (stale clear), and subscribed to by the localization bridges. See the header comment in `msg/InitialPoseRequest.msg` for details and the stale-rejection strategy.
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -97,6 +97,8 @@ See the header comment in `msg/NavigationBackendStatus.msg` for details and viol
 Each bridge should compute `backend_ready` as the AND of the capabilities it *actually* exposes. `mapoi_nav2_bridge`'s (Nav2 bridge) `goal_ready && route_ready && switch_map_ready` is **only correct for a bridge that exposes all 3 capabilities**. If a bridge that only exposes a single capability (e.g. NavigateToPose only) mimics this, the capability it doesn't expose is always false → `backend_ready` is also always false → the UI always shows "Navigation unavailable".
 
 See the header comment in `msg/NavigationBackendStatus.msg` for concrete examples and the field-population conventions (including the `reason` phrasing convention).
+
+`reason` is shown in the operator UI and can be recorded in bags or remote dashboards, so it must not contain sensitive information such as credentials, tokens, absolute paths, internal hostnames, IP addresses, user identifiers, or stack traces. Keep it to a capability name plus a short state verb (e.g. `not ready: navigate_to_pose action`).
 
 > **Scope of the CI lint** (`scripts/check_docs_consistency.py`, PR #217 / Closes #216): the static check only scans **explicit string literals** in `publish_backend_status`-family functions. Dynamically-assembled strings (e.g. `reason = "ip=" + this->get_parameter(...).as_string()`) and raw string literals (`R"(...)"`) are out of scope. Passing the lint does *not* guarantee complete redaction. Bridge implementers must apply this section's prohibitions to dynamic parts as well.
 
@@ -159,14 +161,15 @@ A service to get all POIs registered on the current map.
 
 ### GetRoutePois.srv
 
-A service to get the POIs included in a given route.
+A service to get the POIs included in a given route, separated into navigated waypoints and reference-only landmarks (#143).
 
 | Direction | Field | Type | Description |
 | --- | --- | --- | --- |
 | Request | `route_name` | `string` | Route name |
 | Response | `success` | `bool` | `true` if the route was found (also `true` when the route exists but has 0 POIs) (#342) |
 | Response | `error_message` | `string` | Non-empty only when `success=false`. Explains that the route doesn't exist (#342) |
-| Response | `pois_list` | `PointOfInterest[]` | List of POIs on the route |
+| Response | `pois_list` | `PointOfInterest[]` | Ordered waypoints on the route (sent to Nav2 as `FollowWaypoints`, or one `NavigateToPose` per waypoint when `waypoint_arrival_mode=mapoi`) |
+| Response | `landmark_pois` | `PointOfInterest[]` | Landmarks attached to the route. Not navigated by Nav2, but radius-monitored while the route is active. Order is informational only |
 
 ### GetRoutesInfo.srv
 
