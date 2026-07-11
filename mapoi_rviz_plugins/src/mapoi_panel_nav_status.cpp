@@ -79,4 +79,19 @@ void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
   }, Qt::QueuedConnection);
 }
 
+// #398: mapoi/nav/command_rejected コールバック。payload は target 名のみの文字列
+// (README §Publishers command_rejected 節参照)。NavStatusLabel (latched 状態スナップショット) には
+// 一切触れず、CommandRejectedLabel に一時表示して 5 秒後にクリアする。
+void MapoiPanel::CommandRejectedCallback(std_msgs::msg::String::SharedPtr msg)
+{
+  const std::string target = msg->data;
+  QMetaObject::invokeMethod(this, [this, target]() {
+    const QString text = target.empty()
+      ? QString::fromStdString("コマンド拒否")
+      : QString::fromStdString("コマンド拒否: " + target);
+    ui_->CommandRejectedLabel->setText(text);
+    reject_clear_timer_->start();  // 連続 reject 時は自動リスタートで 5 秒延長
+  }, Qt::QueuedConnection);
+}
+
 }  // namespace mapoi_rviz_plugins
