@@ -105,6 +105,10 @@ protected:
   // 外部ノード起点の走行 (panel 未選択) では総数が不明になるケースがある。
   rclcpp::Subscription<mapoi_interfaces::msg::PoiEvent>::SharedPtr poi_event_sub_;
   void PoiEventCallback(mapoi_interfaces::msg::PoiEvent::SharedPtr msg);
+  // 終了系 nav/status の受信後に遅延到着した events で進捗表示が復活するのを抑制する
+  // (nav/status と events はトピック間で到達順序が保証されない)。navigating 受信で解除。
+  // UI スレッド (queued lambda 内) でのみ読み書きする。
+  bool route_progress_suppressed_ {false};
 
   // Navigation backend readiness subscribe (#198, #205 minimal contract):
   // bridge が `mapoi/nav/backend_status` を publish する場合は backend_ready で navigation

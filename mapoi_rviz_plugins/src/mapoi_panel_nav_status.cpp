@@ -17,7 +17,19 @@ void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
   const std::string status = (colon == std::string::npos) ? raw : raw.substr(0, colon);
   const std::string target = (colon == std::string::npos) ? std::string{} : raw.substr(colon + 1);
   QMetaObject::invokeMethod(this, [this, status, target]() {
+    // 走行終了系の分岐で共通: 進捗表示をクリアし、遅延到着した mapoi/events による
+    // 表示復活を抑制する (#406。抑制解除は navigating 分岐)。
+    auto clear_route_progress = [this]() {
+      route_progress_suppressed_ = true;
+      ui_->RouteProgressLabel->setText(QString{});
+    };
     if (status == "navigating") {
+      // 新しい走行の開始。前回終了時の抑制を解除する。抑制中だった場合のみクリアする
+      // (走行中の navigating 再受信で進行中の進捗表示を消さないため)。
+      if (route_progress_suppressed_) {
+        route_progress_suppressed_ = false;
+        ui_->RouteProgressLabel->setText(QString{});
+      }
       if (!target.empty() && current_nav_mode_ == "idle") {
         // 後起動 panel / 外部ノード発行 nav: payload の target を復元して表示。
         current_nav_target_ = target;
@@ -36,19 +48,19 @@ void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
       ui_->NavStatusLabel->setText(
           target.empty() ? QString::fromStdString("到着")
                          : QString::fromStdString("到着: " + target));
-      ui_->RouteProgressLabel->setText(QString{});
+      clear_route_progress();
     } else if (status == "aborted") {
       current_nav_mode_ = "idle";
       ui_->NavStatusLabel->setText(
           target.empty() ? QString::fromStdString("走行失敗")
                          : QString::fromStdString("走行失敗: " + target));
-      ui_->RouteProgressLabel->setText(QString{});
+      clear_route_progress();
     } else if (status == "canceled") {
       current_nav_mode_ = "idle";
       ui_->NavStatusLabel->setText(
           target.empty() ? QString::fromStdString("走行キャンセル")
                          : QString::fromStdString("走行キャンセル: " + target));
-      ui_->RouteProgressLabel->setText(QString{});
+      clear_route_progress();
     } else if (status == "paused") {
       ui_->NavStatusLabel->setText(
           target.empty() ? QString::fromStdString("一時停止中")
@@ -62,19 +74,19 @@ void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
       ui_->NavStatusLabel->setText(
           target.empty() ? QString::fromStdString("地図切替完了")
                          : QString::fromStdString("地図切替完了: " + target));
-      ui_->RouteProgressLabel->setText(QString{});
+      clear_route_progress();
     } else if (status == "map_switch_failed") {
       current_nav_mode_ = "idle";
       ui_->NavStatusLabel->setText(
           target.empty() ? QString::fromStdString("地図切替失敗")
                          : QString::fromStdString("地図切替失敗: " + target));
-      ui_->RouteProgressLabel->setText(QString{});
+      clear_route_progress();
     } else if (status == "backend_unavailable") {
       current_nav_mode_ = "idle";
       ui_->NavStatusLabel->setText(
           target.empty() ? QString::fromStdString("ナビゲーション利用不可")
                          : QString::fromStdString("ナビゲーション利用不可: " + target));
-      ui_->RouteProgressLabel->setText(QString{});
+      clear_route_progress();
     } else if (status == "rejected") {
       // #339: 受理前に拒否されたコマンド (存在しない POI 名、landmark POI を goal 指定、
       // 空 route 等)。直前の status が居座って誤操作に気づけない事態を防ぐ。
@@ -82,7 +94,7 @@ void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
       ui_->NavStatusLabel->setText(
           target.empty() ? QString::fromStdString("コマンド拒否")
                          : QString::fromStdString("コマンド拒否: " + target));
-      ui_->RouteProgressLabel->setText(QString{});
+      clear_route_progress();
     }
   }, Qt::QueuedConnection);
 }
@@ -101,9 +113,16 @@ void MapoiPanel::PoiEventCallback(mapoi_interfaces::msg::PoiEvent::SharedPtr msg
     return;
   }
   const std::string poi_name = msg->poi.name;
+  if (poi_name.empty()) {
+    return;  // bridge 契約上は非空だが、空名は表示価値が無いため防御的に無視
+  }
   QMetaObject::invokeMethod(this, [this, event_type, poi_name]() {
+    if (route_progress_suppressed_) {
+      return;  // 走行終了後に遅延到着した event。表示を復活させない
+    }
     // n/総数: panel で選択したルートの POI リスト内での先頭一致 index + 1。
     // リストが空 (外部ノード起点) または見つからない場合は n/総数 を省略する。
+    // 同名 POI がルートに複数回現れる場合は常に先頭の index を示す (単純表示の割り切り)。
     // highlighted_route_poi_names_ は UI スレッドが書き換えるメンバのため、参照も
     // queued lambda 内 (UI スレッド) で行う (NavStatusCallback の current_nav_mode_ と同じ規約)。
     const auto & names = highlighted_route_poi_names_;
