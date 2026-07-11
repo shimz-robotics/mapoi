@@ -116,6 +116,25 @@ private:
   size_t routes_fetch_generation_ = 0;
   // 前回 publish 時の route marker max id (DELETEALL 判定用、id_buf_ と独立)
   int route_id_buf_ = 0;
+
+  // --- 差分ゲート (#402) ---
+  // 1Hz の timer_callback で毎 tick フル再構築 (cos/sin/頂点列生成) するのが無駄なため、
+  // データ (pois_list_ / all_routes_ / highlight / 描画 parameter) が変わった tick だけ
+  // marker を再構築し、変化なしの tick は cache の header.stamp だけ更新して再 publish する。
+  // 再 publish 自体は継続する: 購読側 QoS が volatile なので、後着 RViz へ marker を届けるには
+  // 1Hz 再送を保つ必要がある (issue #402 の要件)。
+  // dirty フラグはデータ書き込み点 (subscription callback / service callback) で立て、
+  // timer_callback がフル構築した tick で消費 (クリア) する。data_mutex_ 下で読み書きする。
+  bool marker_data_dirty_ = true;  // 初期 true で初回 tick は必ずフル構築する
+  // 直近のフル構築結果 (dirty tick でここに保存、clean tick は stamp のみ更新して再 publish)
+  visualization_msgs::msg::MarkerArray cached_ma_pois_;
+  visualization_msgs::msg::MarkerArray cached_ma_routes_;
+
+  // 描画 parameter の前回値 (timer_callback 冒頭で現値と比較し、変化していたら dirty を立てる)。
+  // parameter callback 機構は追加せず、get_parameter (現状も毎 tick 呼んでいる) の結果で検出する。
+  bool last_show_sector_ = true;               // show_tolerance_sector の default
+  std::string last_poi_label_format_ = "index";  // poi_label_format の default
+  std::string last_route_display_mode_ = "selected";  // route_display_mode の default
 };
 
 #endif  // MAPOI_SERVER__MAPOI_RVIZ2_PUBLISHER_HPP_

@@ -107,8 +107,9 @@ void MapoiGzBridge::on_initialpose_poi(
 void MapoiGzBridge::on_config_path(const std_msgs::msg::String::SharedPtr msg)
 {
   // 軽量。queue に push して即 return。state 操作と service call は worker。
-  // mapoi_server は config_path を 500ms 周期で re-publish するため、worker が
-  // service 不達などで blocking 中だと queue が際限なく膨らむ。常に latest 1 件のみ
+  // mapoi_server は config_path を event 駆動で publish する (周期 re-publish は #135 で廃止し
+  // transient_local QoS に移行。起動時 / select_map / reload_map_info の 3 箇所)。それでも worker が
+  // service 不達などで blocking 中に複数 event が来ると queue が膨らみ得るため、常に latest 1 件のみ
   // 保持する coalesce 戦略で、stale な path は破棄する。
   {
     std::lock_guard<std::mutex> lock(queue_mutex_);
