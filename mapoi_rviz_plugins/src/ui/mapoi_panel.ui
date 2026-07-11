@@ -132,6 +132,16 @@
     </widget>
    </item>
    <item>
+    <widget class="QLabel" name="RouteProgressLabel">
+     <property name="text">
+      <string></string>
+     </property>
+     <property name="textFormat">
+      <enum>Qt::PlainText</enum>
+     </property>
+    </widget>
+   </item>
+   <item>
     <widget class="QLabel" name="CommandRejectedLabel">
      <property name="text">
       <string></string>

@@ -133,7 +133,7 @@ All interfaces of the core nodes. Types are `mapoi_interfaces` unless another pa
 | `mapoi/nav/command_rejected` | `std_msgs/msg/String` | `mapoi_nav2_bridge` → WebUI, MapoiPanel | volatile depth 10; reject events (#354, #398) |
 | `mapoi/nav/backend_status` | `msg/NavigationBackendStatus` | `mapoi_nav2_bridge` → WebUI, MapoiPanel | 1 Hz; `transient_local` + `MANUAL_BY_TOPIC` liveliness, 5 s lease (#208) |
 | `mapoi/localization/backend_status` | `msg/LocalizationBackendStatus` | `mapoi_amcl_localization_bridge` → WebUI, MapoiPanel | same QoS contract as above |
-| `mapoi/events` | `msg/PoiEvent` | `mapoi_nav2_bridge` → user nodes (see example nodes) | depth 10; `EVENT_ENTER`/`EVENT_PAUSED`/`EVENT_EXIT`, route driving only |
+| `mapoi/events` | `msg/PoiEvent` | `mapoi_nav2_bridge` → MapoiPanel, user nodes (see example nodes) | depth 10; `EVENT_ENTER`/`EVENT_PAUSED`/`EVENT_EXIT`, route driving only |
 | `mapoi/markers/pois` / `mapoi/markers/routes` | `visualization_msgs/msg/MarkerArray` | `mapoi_rviz2_publisher` → RViz2 | 1 Hz; POI labels, tolerance circles/sectors, route lines |
 | `mapoi/highlight/goal` / `mapoi/highlight/route` | `std_msgs/msg/String` | MapoiPanel → `mapoi_rviz2_publisher` | highlight selection |
 | `mapoi_rviz_pose` | `geometry_msgs/msg/PoseStamped` | MapoiPoseTool → PoiEditorPanel | pose input by click & drag in RViz |
