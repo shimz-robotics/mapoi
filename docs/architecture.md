@@ -130,7 +130,7 @@ All interfaces of the core nodes. Types are `mapoi_interfaces` unless another pa
 | `mapoi/nav/switch_map` | `std_msgs/msg/String` | WebUI, MapoiPanel, example client → `mapoi_nav2_bridge` | map name (operator map switch) |
 | `mapoi/nav/cancel` / `pause` / `resume` | `std_msgs/msg/String` | WebUI, MapoiPanel (resume also from `camera_node` demo) → `mapoi_nav2_bridge` | |
 | `mapoi/nav/status` | `std_msgs/msg/String` | `mapoi_nav2_bridge` → WebUI, MapoiPanel | `transient_local` depth 1; payload `status[:target]` |
-| `mapoi/nav/command_rejected` | `std_msgs/msg/String` | `mapoi_nav2_bridge` → WebUI | volatile depth 10; reject events (#354) |
+| `mapoi/nav/command_rejected` | `std_msgs/msg/String` | `mapoi_nav2_bridge` → WebUI, MapoiPanel | volatile depth 10; reject events (#354, #398) |
 | `mapoi/nav/backend_status` | `msg/NavigationBackendStatus` | `mapoi_nav2_bridge` → WebUI, MapoiPanel | 1 Hz; `transient_local` + `MANUAL_BY_TOPIC` liveliness, 5 s lease (#208) |
 | `mapoi/localization/backend_status` | `msg/LocalizationBackendStatus` | `mapoi_amcl_localization_bridge` → WebUI, MapoiPanel | same QoS contract as above |
 | `mapoi/events` | `msg/PoiEvent` | `mapoi_nav2_bridge` → user nodes (see example nodes) | depth 10; `EVENT_ENTER`/`EVENT_PAUSED`/`EVENT_EXIT`, route driving only |

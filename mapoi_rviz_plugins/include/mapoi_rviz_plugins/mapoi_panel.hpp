@@ -4,6 +4,7 @@
 #include <rclcpp/rclcpp.hpp>
 #endif
 
+#include <QTimer>
 #include <rviz_common/panel.hpp>
 #include <rviz_common/display_context.hpp>
 #include <geometry_msgs/msg/pose.hpp>
@@ -89,6 +90,13 @@ protected:
   void NavStatusCallback(std_msgs::msg::String::SharedPtr msg);
   std::string current_nav_mode_;
   std::string current_nav_target_;
+
+  // #398: mapoi/nav/command_rejected 購読。latched な NavStatusLabel とは別 label (CommandRejectedLabel)
+  // に一時表示することで、権威的な状態スナップショットと揮発的なイベント通知を分離する。
+  // nav_mode を問わず全 reject で publish される (#354 設計) ので走行中の誤操作にも気づける。
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr command_rejected_sub_;
+  void CommandRejectedCallback(std_msgs::msg::String::SharedPtr msg);
+  QTimer* reject_clear_timer_ {nullptr};
 
   // Navigation backend readiness subscribe (#198, #205 minimal contract):
   // bridge が `mapoi/nav/backend_status` を publish する場合は backend_ready で navigation

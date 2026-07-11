@@ -91,6 +91,21 @@ void MapoiPanel::onInitialize()
       "mapoi/nav/status", rclcpp::QoS(1).transient_local(),
       std::bind(&MapoiPanel::NavStatusCallback, this, std::placeholders::_1));
 
+  // #398: command_rejected は volatile depth 10 (publisher と整合)。latched 不要 (イベント通知)。
+  command_rejected_sub_ = node_->create_subscription<std_msgs::msg::String>(
+      "mapoi/nav/command_rejected", rclcpp::QoS(10),
+      std::bind(&MapoiPanel::CommandRejectedCallback, this, std::placeholders::_1));
+
+  // reject_clear_timer_: 受信から 5 秒後に CommandRejectedLabel をクリアする。
+  // singleShot=true かつ再受信時に start() を呼ぶことで連続 reject でも先行タイマーが
+  // 後続表示を早期クリアする race を防ぐ (start() は未満了タイマーを自動リスタートする)。
+  reject_clear_timer_ = new QTimer(this);
+  reject_clear_timer_->setSingleShot(true);
+  reject_clear_timer_->setInterval(5000);
+  connect(reject_clear_timer_, &QTimer::timeout, this, [this]() {
+    ui_->CommandRejectedLabel->setText(QString{});
+  });
+
   // Navigation / Localization backend readiness (#198, #209) の QoS は msg contract (#208)
   // に従う: transient_local + liveliness (publisher=MANUAL_BY_TOPIC, subscriber=AUTOMATIC)
   // + lease 5s (両側必須)。subscriber 側 policy を AUTOMATIC にするのは pub=MANUAL_BY_TOPIC
