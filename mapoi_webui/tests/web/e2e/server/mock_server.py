@@ -6,7 +6,8 @@
 rclpy / mapoi_interfaces を要し CI が重く、フィクスチャも制御できないため再利用しない。
 本サーバは Python 標準ライブラリのみ (CI に Python があれば追加依存ゼロ) で動く。
 
-- 静的: `/` -> web/index.html, `/css/<f>` -> web/css/<f>, `/js/<f>` -> web/js/<f>
+- 静的: `/` -> web/index.html, `/css/<f>` -> web/css/<f>, `/js/<f>` -> web/js/<f>,
+        `/vendor/<f>` -> web/vendor/<f> (#394 同梱 Leaflet)
 - API GET: /api/maps, /api/maps/<n>/metadata, /api/maps/<n>/image (動的生成 PNG),
            /api/pois, /api/routes, /api/tag-definitions, /api/nav/status, /api/mode
 - API POST: /api/pois ほか -> {"success": true, ...} (テストは save を踏まないが契約上用意)
@@ -174,6 +175,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.startswith("/js/"):
             self._send_static("js/" + path[len("/js/"):])
+            return
+        if path.startswith("/vendor/"):
+            # #394: 同梱 Leaflet (web/vendor/leaflet/)。実 backend の /vendor/ route と対応。
+            self._send_static("vendor/" + path[len("/vendor/"):])
             return
 
         if path == "/api/events":

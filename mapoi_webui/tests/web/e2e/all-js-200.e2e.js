@@ -24,7 +24,7 @@ test.describe('A. 全 js 200 smoke', () => {
     const badResponses = [];
     page.on('response', (res) => {
       const p = new URL(res.url()).pathname;
-      if ((p.startsWith('/js/') || p.startsWith('/css/')) && res.status() >= 400) {
+      if ((p.startsWith('/js/') || p.startsWith('/css/') || p.startsWith('/vendor/')) && res.status() >= 400) {
         badResponses.push(`${res.status()} ${p}`);
       }
     });
