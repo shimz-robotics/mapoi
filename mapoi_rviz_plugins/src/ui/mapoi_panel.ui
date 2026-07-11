@@ -139,6 +139,9 @@
      <property name="styleSheet">
       <string notr="true">color: red;</string>
      </property>
+     <property name="textFormat">
+      <enum>Qt::PlainText</enum>
+     </property>
     </widget>
    </item>
   </layout>
