@@ -4,6 +4,7 @@
 #include <class_loader/class_loader.hpp>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 
 #include <QFileDialog>
 #include <QStandardPaths>
@@ -345,6 +346,10 @@ void PoiEditorPanel::TableChanged(int row, int column)
 {
   if(is_table_color_){
     ui_->PoiTable->item(row, column)->setBackground(Qt::green);
+    // ユーザー編集の dirty マーク (#399)。UpdatePoiTable / TagFilterChanged の再構築中は
+    // is_table_color_=false で setItem 由来の cellChanged が飛ぶため、既存の green 着色ガードに
+    // 相乗りしてユーザー編集だけを拾う (再構築由来の cellChanged では dirty を立てない)。
+    table_dirty_ = true;
   }
   ui_->SaveButton->setText("save");
   ui_->SaveButton->setStyleSheet("QPushButton {background-color: white; color: black;}");
@@ -362,6 +367,8 @@ void PoiEditorPanel::NewButton()
   ui_->PoiTable->setItem(new_row, kColTolerance, new QTableWidgetItem("0.5, 0.7854"));  // ≒ π/4 rad
   ui_->PoiTable->setItem(new_row, kColTags, new QTableWidgetItem(""));
   ui_->PoiTable->setItem(new_row, kColDescription, new QTableWidgetItem(""));
+  // insertRow / setItem は cellChanged を確実には発火しないため dirty を明示 set (#399)。
+  table_dirty_ = true;
   UpdatePoiCount();
 }
 
@@ -376,6 +383,8 @@ void PoiEditorPanel::CopyButton()
     QString txt = item ? item->text() : "";
     ui_->PoiTable->setItem(new_row, col, new QTableWidgetItem(txt));
   }
+  // insertRow による行複製は cellChanged を確実には発火しないため dirty を明示 set (#399)。
+  table_dirty_ = true;
   UpdatePoiCount();
 }
 
@@ -383,6 +392,8 @@ void PoiEditorPanel::DeleteButton()
 {
   int current_row = ui_->PoiTable->currentRow();
   ui_->PoiTable->removeRow(current_row);
+  // removeRow は cellChanged を発火しないため dirty を明示 set (#399)。
+  table_dirty_ = true;
   ui_->SaveButton->setText("save");
   ui_->SaveButton->setStyleSheet("QPushButton {background-color: white; color: black;}");
   UpdatePoiCount();
@@ -395,6 +406,8 @@ void PoiEditorPanel::RowMoved(int logicalIndex, int oldVisualIndex, int newVisua
   for (int col = 0; col < numCols; col++){
     ui_->PoiTable->item(logicalIndex, col)->setBackground(Qt::green);
   }
+  // sectionMoved は cellChanged を発火しないため dirty を明示 set (#399)。
+  table_dirty_ = true;
   ui_->SaveButton->setText("save");
   ui_->SaveButton->setStyleSheet("QPushButton {background-color: white; color: black;}");
 }
@@ -446,19 +459,66 @@ void PoiEditorPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
 
   std::filesystem::path resolved_p(resolved_path);
   std::string map_name = resolved_p.parent_path().filename().string();
-  const auto base_action = detail::decide_poi_editor_config_path_action(
-    current_map_, map_name, config_path_);
-  config_path_ = resolved_path;
-  current_map_ = map_name;
 
   // 同じ map で path も同じ場合 (= save 後の reload_map_info で再 publish される flow)
   // でも POI 内容が変わっている可能性があるため UpdatePoiTable で table を再 fetch する (#135)。
   // map 切替 / 初回受信時は MapComboBox 同期 + FileComboBox 再構築も必要なので InitConfigs を呼ぶ。
   // 自分自身が save 直後 (suppress_config_callback_update_) は 1.5 秒の SAVED! feedback を
   // 守るため UpdatePoiTable を skip する。旧挙動と同じく queued lambda 実行時の flag を見る。
-  QMetaObject::invokeMethod(this, [this, map_name, base_action]() {
+  //
+  // メンバ更新 (current_map_ / config_path_) と action 判定は queued lambda 内 (UI スレッド)
+  // で行う (#399, PR #414 review high)。ROS executor スレッドでの読み書きを無くして UI スレッド
+  // 所有の規約 (PR #412 と同じ) に揃えるのに加え、lambda は Qt イベントキューの FIFO で
+  // イベント順に適用されるため、確認ダイアログのネストイベントループ中に後続イベントの
+  // lambda が走ってもメンバは常に最新へ進む (Yes 時の最新メンバ再構築とセットで機能する)。
+  QMetaObject::invokeMethod(this, [this, resolved_path, map_name]() {
+    const auto base_action = detail::decide_poi_editor_config_path_action(
+      current_map_, map_name, config_path_);
+    config_path_ = resolved_path;
+    current_map_ = map_name;
     const auto action = detail::apply_poi_editor_content_update_suppression(
       base_action, suppress_config_callback_update_);
+
+    // 未保存編集ガード (#399)。suppression 適用後の action・dirty・dialog 表示中フラグから
+    // 再構築の可否を純関数で判定する。callback はこの判定を QMessageBox 表示へ写像するだけ。
+    const auto guard = detail::decide_config_reload_guard(
+      action, table_dirty_, config_dialog_open_);
+
+    if (guard == detail::ConfigReloadGuardDecision::kDrop) {
+      // dialog 表示中に届いたイベントは破棄する (QMessageBox のネストイベントループ中に
+      // 後続 queued lambda が積み重なって dialog が重なるのを防ぐ)。ユーザーが「再読込」を
+      // 選べばその時点の最新状態が fetch されるため drop で欠損しない。
+      return;
+    }
+    if (guard == detail::ConfigReloadGuardDecision::kAskUser) {
+      // 未保存編集がある状態で外部変更を検出。破棄可否をユーザーに確認する。
+      // dialog 表示中に届く config_path イベントは config_dialog_open_ で drop させる。
+      config_dialog_open_ = true;
+      const auto answer = QMessageBox::question(
+        this, tr("External Change Detected"),
+        tr("The configuration was changed externally. Reload?\n"
+           "(Unsaved edits will be discarded.)"),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+      config_dialog_open_ = false;
+      if (answer != QMessageBox::Yes) {
+        // 「編集を継続」: 再構築を skip してテーブルを温存する。InitConfigs を呼ばないため
+        // FileComboBox とテーブルは旧 map/path 側で「一貫して」残り、保存も旧 path へ正しく
+        // 対応する (メンバ current_map_ / config_path_ だけが最新へ進む)。次の外部イベントでは
+        // dirty が立ったままなので再度確認され、SaveButton では baseline 比較ガード
+        // (should_confirm_overwrite) が外部変更を再検出して上書き確認を出す。
+        return;
+      }
+      // 「再読込」: dialog 表示中に後続イベントが kDrop で破棄されていても、メンバは
+      // 各イベントの lambda (FIFO) で常に最新へ更新済み。キャプチャした map_name/action で
+      // 部分再構築すると MapComboBox / FileComboBox とテーブルが食い違うため (PR #414 review
+      // high)、最新メンバから full reinit する (InitConfigs は FileComboBox 再構築 +
+      // UpdatePoiTable まで行い、dirty / baseline もそこでリセットされる)。
+      InitConfigs(current_map_);
+      return;
+    }
+
+    // kProceed (dirty でない / Noop): 従来通りキャプチャ値で dispatch する (dialog を挟まない
+    // ため staleness は生じない。連続イベントも FIFO で各 lambda が順に適用され最後が勝つ)。
     if (action == detail::ConfigPathUpdateAction::ReinitializeMap) {
       InitConfigs(map_name);
     } else if (action == detail::ConfigPathUpdateAction::RefreshCurrentMap) {
@@ -695,6 +755,36 @@ void PoiEditorPanel::UpdatePoiTable()
   // green stylesheet が残ったままになる症状 (issue #77 症状 2) を明示リセットで防ぐ。
   ui_->SaveButton->setStyleSheet("QPushButton {background-color: white; color: black;}");
   UpdatePoiCount();
+
+  // 全再構築 = サーバ状態と一致した時点なので dirty をクリアする (#399)。
+  table_dirty_ = false;
+
+  // 外部変更検出 (SaveButton) の baseline スナップショットを取り直す (#399)。
+  // テーブルの元データに対応する config ファイルは FileComboBox->itemText(0) (= config_path_
+  // 由来。SaveButton の LoadFile が読む path と同じ)。std::ifstream で全読みして {path, content}
+  // を保存する。読めない場合は両方 clear = 比較不能 (should_confirm_overwrite がガードを無効化
+  // = 従来挙動になる)。
+  baseline_path_.clear();
+  baseline_content_.clear();
+  if (ui_->FileComboBox->count() > 0) {
+    const std::string base_path = ui_->FileComboBox->itemText(0).toStdString();
+    std::ifstream base_ifs(base_path, std::ios::binary);
+    if (base_ifs) {
+      std::stringstream ss;
+      ss << base_ifs.rdbuf();
+      if (base_ifs.good() || base_ifs.eof()) {
+        baseline_path_ = base_path;
+        baseline_content_ = ss.str();
+      }
+    }
+    if (baseline_path_.empty() && !config_path_.empty()) {
+      // config を把握しているのに baseline を読めなかった場合のみ WARN する (config 未取得で
+      // itemText(0) が "the other" の場合はガード無効が正常なのでログしない)。
+      // ガード無効化 (= 上書き確認が出ない) の切り分け用 (PR #414 review low)。
+      RCLCPP_WARN(LOGGER, "Failed to read baseline config for overwrite guard: %s",
+                  base_path.c_str());
+    }
+  }
 }
 
 double PoiEditorPanel::calcYaw(geometry_msgs::msg::Pose pose)
