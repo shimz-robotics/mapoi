@@ -480,8 +480,9 @@ void PoiEditorPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
       base_action, suppress_config_callback_update_);
 
     // 内容 diff ガード (#403): ゲート適用順 suppression → dedup → dirty guard。
-    // suppression が Noop にした場合は dedup を経由せず kProceed になるのが正しい
-    // (suppression は Save 直後の SAVED! 保護で dedup と目的が異なる)。
+    // suppression が Noop にした場合、dedup は Noop 入力をそのまま素通しし (last_seen も
+    // 更新されない)、guard は kProceed → dispatch は何もしない。suppression (Save 直後の
+    // SAVED! 保護) と dedup (内容不変の抑制) は目的が異なるが、この合成で両立する。
     // dedup が Noop にした場合 = 内容不変の再 publish。dirty でも確認ダイアログを出さない
     // (変化が無いのに編集破棄を問わない)。
     std::error_code mtime_ec;
