@@ -669,6 +669,12 @@ class MapoiWebNode(Node):
         def js_static(filename):
             return send_from_directory(os.path.join(web_dir, 'js'), filename)
 
+        # #394: 同梱 Leaflet (web/vendor/leaflet/) の配信。静的配信はディレクトリ単位の
+        # ホワイトリスト方式のため、vendor/ を追加しないと index.html の参照が 404 になる。
+        @app.route('/vendor/<path:filename>')
+        def vendor_static(filename):
+            return send_from_directory(os.path.join(web_dir, 'vendor'), filename)
+
         @app.route('/api/maps')
         def api_maps():
             maps = node.get_maps_list()
