@@ -12,6 +12,7 @@
 #include <std_msgs/msg/int8.hpp>
 #include <std_msgs/msg/string.hpp>
 #include "mapoi_interfaces/msg/point_of_interest.hpp"
+#include "mapoi_interfaces/msg/poi_event.hpp"
 #include "mapoi_interfaces/srv/request_initial_pose.hpp"
 #include "mapoi_interfaces/msg/navigation_backend_status.hpp"
 #include "mapoi_interfaces/msg/localization_backend_status.hpp"
@@ -97,6 +98,13 @@ protected:
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr command_rejected_sub_;
   void CommandRejectedCallback(std_msgs::msg::String::SharedPtr msg);
   QTimer* reject_clear_timer_ {nullptr};
+
+  // #406: mapoi/events 購読。ROUTE 走行中の通過 POI 進捗を RouteProgressLabel に表示する。
+  // events は ROUTE 走行時のみ発火 (IDLE/GOAL では無音) なのでアイドル時の負荷はゼロ。
+  // 総数は highlighted_route_poi_names_ (panel でルート選択時に取得) を参照するため、
+  // 外部ノード起点の走行 (panel 未選択) では総数が不明になるケースがある。
+  rclcpp::Subscription<mapoi_interfaces::msg::PoiEvent>::SharedPtr poi_event_sub_;
+  void PoiEventCallback(mapoi_interfaces::msg::PoiEvent::SharedPtr msg);
 
   // Navigation backend readiness subscribe (#198, #205 minimal contract):
   // bridge が `mapoi/nav/backend_status` を publish する場合は backend_ready で navigation

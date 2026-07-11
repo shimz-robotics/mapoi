@@ -108,6 +108,11 @@ void MapoiPanel::onInitialize()
       "mapoi/nav/command_rejected", rclcpp::QoS(10),
       std::bind(&MapoiPanel::CommandRejectedCallback, this, std::placeholders::_1));
 
+  // #406: mapoi/events は volatile depth 10 (publisher と整合)。ROUTE 走行時のみ受信される。
+  poi_event_sub_ = node_->create_subscription<mapoi_interfaces::msg::PoiEvent>(
+      "mapoi/events", rclcpp::QoS(10),
+      std::bind(&MapoiPanel::PoiEventCallback, this, std::placeholders::_1));
+
   // Navigation / Localization backend readiness (#198, #209) の QoS は msg contract (#208)
   // に従う: transient_local + liveliness (publisher=MANUAL_BY_TOPIC, subscriber=AUTOMATIC)
   // + lease 5s (両側必須)。subscriber 側 policy を AUTOMATIC にするのは pub=MANUAL_BY_TOPIC
