@@ -115,6 +115,27 @@ protected:
   // rebuild + flag クリアされる。
   bool suppress_config_callback_update_ = false;
 
+  // 未保存編集ガード (#399)。以下 3 メンバは全て UI (Qt メイン) スレッド上でのみ触るため
+  // ロック不要 (TableChanged/New/Copy/Delete/RowMoved/SaveButton/ConfigPathCallback の
+  // queued lambda はいずれも UI スレッドで実行される)。
+  //
+  // ユーザーがセルを編集 / 行を追加削除移動したことを示す dirty フラグ。UpdatePoiTable
+  // (全再構築 = サーバ状態と一致) 末尾と SaveButton 成功直後に clear する。外部で
+  // config_path が再 publish された時、これが true なら再構築前に確認ダイアログを出す。
+  bool table_dirty_ = false;
+
+  // 外部変更検出 (SaveButton) のための baseline スナップショット。UpdatePoiTable 末尾で
+  // テーブルの元データに対応する config ファイル (FileComboBox->itemText(0)) を全読みして
+  // {path, content} を保存する。SaveButton 成功書き込み直後は書き込んだ内容と保存先 path で
+  // 更新する。読めない場合は両方 clear = 比較不能 (ガード無効 = 従来挙動)。
+  std::string baseline_path_;
+  std::string baseline_content_;
+
+  // ConfigPathCallback の確認ダイアログ表示中フラグ (#399)。QMessageBox のネストイベント
+  // ループ中に後続の queued lambda が走って dialog が積み重なるのを防ぐ (dialog 中に届いた
+  // config_path イベントは drop する。再読込を選べば最新状態が fetch されるので欠損しない)。
+  bool config_dialog_open_ = false;
+
   // Functions
   void InitConfigs(std::string map_name);
   void UpdatePoiTable();

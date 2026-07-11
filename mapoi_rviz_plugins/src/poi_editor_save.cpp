@@ -5,6 +5,7 @@
 #include "mapoi_rviz_plugins/poi_editor_helpers.hpp"
 
 #include <fstream>
+#include <sstream>
 
 #include <QTimer>
 
@@ -43,6 +44,35 @@ void PoiEditorPanel::SaveButton()
   // Validate before saving
   if (!ValidatePois()) {
     return;
+  }
+
+  // 外部変更検出 (#399)。保存先ファイルが baseline (最後にテーブルへ読み込んだ / 保存した
+  // 時点の内容) から外部で変更されていたら上書き確認を挟む。WebUI の expected_version
+  // 楽観ロック相当のクライアント側実装 (config_version の厳密共有は不要で内容比較で足りる)。
+  //
+  // 比較は保存先 path (currentText) を基準にする。PR #413 review (low: itemText(0)/currentText
+  // 非対称) を踏まえ、FileComboBox「the other」で別ファイルを保存先に選んだ場合は baseline_path_
+  // と一致せず、should_confirm_overwrite が false を返して比較しない (誤った基準ファイルとの
+  // 比較を避ける)。baseline を読めていない場合もガード無効 = 従来挙動。
+  const std::string save_target_path = ui_->FileComboBox->currentText().toStdString();
+  if (save_target_path == baseline_path_ && !baseline_content_.empty()) {
+    std::string current_disk_content;
+    std::ifstream cur_ifs(save_target_path, std::ios::binary);
+    if (cur_ifs) {
+      std::stringstream ss;
+      ss << cur_ifs.rdbuf();
+      current_disk_content = ss.str();
+    }
+    if (detail::should_confirm_overwrite(
+          save_target_path, baseline_path_, baseline_content_, current_disk_content)) {
+      const auto answer = QMessageBox::question(
+        this, tr("External Change Detected"),
+        tr("The destination configuration file was changed externally. Overwrite?"),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+      if (answer != QMessageBox::Yes) {
+        return;  // キャンセル: 上書きしない
+      }
+    }
   }
 
   int numRows = ui_->PoiTable->rowCount();
@@ -124,6 +154,16 @@ void PoiEditorPanel::SaveButton()
 
   ui_->SaveButton->setText("SAVED!");
   ui_->SaveButton->setStyleSheet("QPushButton {background-color: green; color: black;}");
+
+  // 保存成功: 未保存編集ガードの状態を更新する (#399)。
+  // - dirty clear は書き込み直後に行う (1.5 秒後の UpdatePoiTable を待たず、その間に届く
+  //   config_path 再着信で ConfigPathCallback が確認ダイアログを出さないようにする)。
+  // - baseline も書き込んだ内容 (out.c_str()) と保存先 path で更新する。1.5 秒後の
+  //   UpdatePoiTable が itemText(0) から取り直す baseline と実質同じだが、それを待たずに
+  //   直後の save 連打や外部変更検出が正しい基準を持てるようにここでも更新する。
+  table_dirty_ = false;
+  baseline_path_ = save_path;
+  baseline_content_ = out.c_str();
 
   if (!reload_map_info_client_->wait_for_service(3s)) {
     RCLCPP_ERROR(LOGGER, "mapoi/reload_map_info service not available after 3s timeout.");

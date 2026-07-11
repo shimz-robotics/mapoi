@@ -4,6 +4,7 @@
 #include <class_loader/class_loader.hpp>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 
 #include <QFileDialog>
 #include <QStandardPaths>
@@ -345,6 +346,10 @@ void PoiEditorPanel::TableChanged(int row, int column)
 {
   if(is_table_color_){
     ui_->PoiTable->item(row, column)->setBackground(Qt::green);
+    // ユーザー編集の dirty マーク (#399)。UpdatePoiTable / TagFilterChanged の再構築中は
+    // is_table_color_=false で setItem 由来の cellChanged が飛ぶため、既存の green 着色ガードに
+    // 相乗りしてユーザー編集だけを拾う (再構築由来の cellChanged では dirty を立てない)。
+    table_dirty_ = true;
   }
   ui_->SaveButton->setText("save");
   ui_->SaveButton->setStyleSheet("QPushButton {background-color: white; color: black;}");
@@ -362,6 +367,8 @@ void PoiEditorPanel::NewButton()
   ui_->PoiTable->setItem(new_row, kColTolerance, new QTableWidgetItem("0.5, 0.7854"));  // ≒ π/4 rad
   ui_->PoiTable->setItem(new_row, kColTags, new QTableWidgetItem(""));
   ui_->PoiTable->setItem(new_row, kColDescription, new QTableWidgetItem(""));
+  // insertRow / setItem は cellChanged を確実には発火しないため dirty を明示 set (#399)。
+  table_dirty_ = true;
   UpdatePoiCount();
 }
 
@@ -376,6 +383,8 @@ void PoiEditorPanel::CopyButton()
     QString txt = item ? item->text() : "";
     ui_->PoiTable->setItem(new_row, col, new QTableWidgetItem(txt));
   }
+  // insertRow による行複製は cellChanged を確実には発火しないため dirty を明示 set (#399)。
+  table_dirty_ = true;
   UpdatePoiCount();
 }
 
@@ -383,6 +392,8 @@ void PoiEditorPanel::DeleteButton()
 {
   int current_row = ui_->PoiTable->currentRow();
   ui_->PoiTable->removeRow(current_row);
+  // removeRow は cellChanged を発火しないため dirty を明示 set (#399)。
+  table_dirty_ = true;
   ui_->SaveButton->setText("save");
   ui_->SaveButton->setStyleSheet("QPushButton {background-color: white; color: black;}");
   UpdatePoiCount();
@@ -395,6 +406,8 @@ void PoiEditorPanel::RowMoved(int logicalIndex, int oldVisualIndex, int newVisua
   for (int col = 0; col < numCols; col++){
     ui_->PoiTable->item(logicalIndex, col)->setBackground(Qt::green);
   }
+  // sectionMoved は cellChanged を発火しないため dirty を明示 set (#399)。
+  table_dirty_ = true;
   ui_->SaveButton->setText("save");
   ui_->SaveButton->setStyleSheet("QPushButton {background-color: white; color: black;}");
 }
@@ -459,6 +472,39 @@ void PoiEditorPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
   QMetaObject::invokeMethod(this, [this, map_name, base_action]() {
     const auto action = detail::apply_poi_editor_content_update_suppression(
       base_action, suppress_config_callback_update_);
+
+    // 未保存編集ガード (#399)。suppression 適用後の action・dirty・dialog 表示中フラグから
+    // 再構築の可否を純関数で判定する。callback はこの判定を QMessageBox 表示へ写像するだけ。
+    const auto guard = detail::decide_config_reload_guard(
+      action, table_dirty_, config_dialog_open_);
+
+    if (guard == detail::ConfigReloadGuardDecision::kDrop) {
+      // dialog 表示中に届いたイベントは破棄する (QMessageBox のネストイベントループ中に
+      // 後続 queued lambda が積み重なって dialog が重なるのを防ぐ)。ユーザーが「再読込」を
+      // 選べばその時点の最新状態が fetch されるため drop で欠損しない。
+      return;
+    }
+    if (guard == detail::ConfigReloadGuardDecision::kAskUser) {
+      // 未保存編集がある状態で外部変更を検出。破棄可否をユーザーに確認する。
+      // dialog 表示中に届く config_path イベントは config_dialog_open_ で drop させる。
+      config_dialog_open_ = true;
+      const auto answer = QMessageBox::question(
+        this, tr("External Change Detected"),
+        tr("The configuration was changed externally. Reload?\n"
+           "(Unsaved edits will be discarded.)"),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+      config_dialog_open_ = false;
+      if (answer != QMessageBox::Yes) {
+        // 「編集を継続」: 再構築を skip してテーブルを温存する。current_map_ / config_path_
+        // メンバは既に (queued lambda に入る前に) 最新値へ更新済みのため、表示中の table は
+        // その map/path に対して古くなる。次の SaveButton では baseline 比較ガード
+        // (should_confirm_overwrite) が外部変更を再検出して上書き確認を出す。
+        return;
+      }
+      // 「再読込」: fall through して従来通り再構築する (未保存編集は破棄)。
+    }
+
+    // kProceed (dirty でない / Noop) または kAskUser で「再読込」を選んだ場合: 従来通り。
     if (action == detail::ConfigPathUpdateAction::ReinitializeMap) {
       InitConfigs(map_name);
     } else if (action == detail::ConfigPathUpdateAction::RefreshCurrentMap) {
@@ -695,6 +741,29 @@ void PoiEditorPanel::UpdatePoiTable()
   // green stylesheet が残ったままになる症状 (issue #77 症状 2) を明示リセットで防ぐ。
   ui_->SaveButton->setStyleSheet("QPushButton {background-color: white; color: black;}");
   UpdatePoiCount();
+
+  // 全再構築 = サーバ状態と一致した時点なので dirty をクリアする (#399)。
+  table_dirty_ = false;
+
+  // 外部変更検出 (SaveButton) の baseline スナップショットを取り直す (#399)。
+  // テーブルの元データに対応する config ファイルは FileComboBox->itemText(0) (= config_path_
+  // 由来。SaveButton の LoadFile が読む path と同じ)。std::ifstream で全読みして {path, content}
+  // を保存する。読めない場合は両方 clear = 比較不能 (should_confirm_overwrite がガードを無効化
+  // = 従来挙動になる)。
+  baseline_path_.clear();
+  baseline_content_.clear();
+  if (ui_->FileComboBox->count() > 0) {
+    const std::string base_path = ui_->FileComboBox->itemText(0).toStdString();
+    std::ifstream base_ifs(base_path, std::ios::binary);
+    if (base_ifs) {
+      std::stringstream ss;
+      ss << base_ifs.rdbuf();
+      if (base_ifs.good() || base_ifs.eof()) {
+        baseline_path_ = base_path;
+        baseline_content_ = ss.str();
+      }
+    }
+  }
 }
 
 double PoiEditorPanel::calcYaw(geometry_msgs::msg::Pose pose)

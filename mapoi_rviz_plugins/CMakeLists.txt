@@ -32,8 +32,9 @@ ament_auto_add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${HEADERS} ${UIC_F
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
-  # poi_editor_helpers.hpp の純関数 (try_parse_finite_double / split_and_trim) の unit test (#158)。
-  # header は Qt 不要 (stdlib のみ)。
+  # poi_editor_helpers.hpp の純関数の unit test。try_parse_finite_double / split_and_trim (#158)
+  # に加え、未保存編集ガードの decide_config_reload_guard / should_confirm_overwrite (#399) を含む。
+  # header は Qt/ROS 非依存 (stdlib + config_path_update_policy.hpp のみ)。
   ament_auto_add_gtest(test_poi_editor_helpers
     test/test_poi_editor_helpers.cpp
   )

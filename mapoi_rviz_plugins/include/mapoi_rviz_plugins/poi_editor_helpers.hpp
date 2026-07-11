@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "mapoi_rviz_plugins/config_path_update_policy.hpp"
+
 namespace mapoi_rviz_plugins::detail
 {
 
@@ -189,6 +191,69 @@ inline TagExclusivityResult check_tag_exclusivity(const std::vector<std::string>
   result.waypoint_landmark_conflict = has_waypoint && has_landmark;
   result.pause_landmark_conflict = has_pause && has_landmark;
   return result;
+}
+
+// PoiEditorPanel::ConfigPathCallback の未保存編集ガード判定 (#399)。
+// 外部で mapoi/config_path が再 publish された時に、テーブルを無条件で全再構築すると
+// 未保存のセル編集が黙って消える。suppression 適用後の action・dirty フラグ・dialog 表示中
+// フラグの 3 つから、UI が「そのまま再構築 / 確認ダイアログ / イベント破棄」のいずれを
+// 取るべきかを判定する純関数。Qt 非依存 (callback 側が結果を QMessageBox 表示へ写像する)。
+enum class ConfigReloadGuardDecision
+{
+  kProceed,   // 従来通り再構築 (Noop なら何もしない、それ以外は InitConfigs/UpdatePoiTable)
+  kAskUser,   // 未保存編集ありのため確認ダイアログを出す
+  kDrop,      // dialog 表示中に届いたイベントは破棄 (再入・dialog 積み重ね防止)
+};
+
+// action    : suppression 適用後の ConfigPathUpdateAction (Noop = suppress 中 or 更新不要)
+// table_dirty: UI スレッド上のユーザー編集有無 (未保存編集ガードの主軸)
+// dialog_open: 既に確認ダイアログを表示中か (QMessageBox のネストイベントループ中に
+//              後続 queued lambda が走って dialog が積み重なるのを防ぐ)
+inline ConfigReloadGuardDecision decide_config_reload_guard(
+  ConfigPathUpdateAction action,
+  bool table_dirty,
+  bool dialog_open)
+{
+  // 再構築対象が無い (Noop = suppress 中 or 同一 map で更新不要) なら dirty でも何もしない。
+  // Noop は table を触らないので未保存編集は消えない。
+  if (action == ConfigPathUpdateAction::Noop) {
+    return ConfigReloadGuardDecision::kProceed;
+  }
+  // dialog 表示中に届いたイベントは破棄する。ユーザーが「再読込」を選べばその時点の
+  // 最新状態が fetch されるため drop で欠損しない (再入防止)。
+  if (dialog_open) {
+    return ConfigReloadGuardDecision::kDrop;
+  }
+  // 未保存編集がある状態での外部変更は、破棄可否をユーザーに確認する。
+  if (table_dirty) {
+    return ConfigReloadGuardDecision::kAskUser;
+  }
+  // dirty でなければ従来通り再構築 (サーバ状態に追従)。
+  return ConfigReloadGuardDecision::kProceed;
+}
+
+// PoiEditorPanel::SaveButton の外部変更検出判定 (#399)。保存先ファイルが baseline (最後に
+// テーブルへ読み込んだ / 保存した時点の内容) と食い違う場合に上書き確認を出すべきかを返す。
+// WebUI の expected_version 楽観ロック相当のクライアント側実装で、config_version の厳密共有は
+// 不要で内容比較で目的を達せられる。
+//
+// PR #413 review (low: itemText(0)/currentText 非対称) を踏まえ、比較は **保存先 path**
+// (currentText 由来) が baseline_path と一致する時のみ行う。FileComboBox「the other」で
+// 別ファイルを保存先に指定した場合は基準を持たないため比較しない (誤った基準ファイルとの
+// 比較を避ける)。baseline_content が空 (読めなかった等) の場合もガード無効化 = 従来挙動。
+inline bool should_confirm_overwrite(
+  const std::string & save_path,
+  const std::string & baseline_path,
+  const std::string & baseline_content,
+  const std::string & current_content)
+{
+  if (save_path != baseline_path) {
+    return false;  // 保存先が baseline と別 path: 比較不能 (基準なし)
+  }
+  if (baseline_content.empty()) {
+    return false;  // baseline を読めなかった: ガード無効 (従来挙動)
+  }
+  return baseline_content != current_content;  // path 一致 && baseline 非空 && 内容不一致
 }
 
 }  // namespace mapoi_rviz_plugins::detail

@@ -6,6 +6,12 @@
 using mapoi_rviz_plugins::detail::split_and_trim;
 using mapoi_rviz_plugins::detail::try_parse_finite_double;
 
+// 未保存編集ガード判定 (#399)
+using mapoi_rviz_plugins::detail::ConfigPathUpdateAction;
+using mapoi_rviz_plugins::detail::ConfigReloadGuardDecision;
+using mapoi_rviz_plugins::detail::decide_config_reload_guard;
+using mapoi_rviz_plugins::detail::should_confirm_overwrite;
+
 // --- split_and_trim ---
 
 TEST(SplitAndTrim, BasicTwoParts)
@@ -123,4 +129,124 @@ TEST(TryParseFiniteDouble, AllowsTrailingWhitespace)
   double out = 0.0;
   EXPECT_TRUE(try_parse_finite_double("3.14 ", out));
   EXPECT_DOUBLE_EQ(out, 3.14);
+}
+
+// --- decide_config_reload_guard (#399) ---
+//
+// ConfigPathCallback は外部 config_path 再 publish 時に、この判定を QMessageBox 表示 /
+// 再構築 / drop へ写像するだけ。dirty×action×dialog_open の分岐表をここで pin し、
+// 未保存編集を黙って捨てる回帰 (dirty 判定の抜け・drop 条件の反転等) を安く捕える。
+
+TEST(DecideConfigReloadGuard, NotDirtyProceedsForRefresh)
+{
+  // 未保存編集なし: 従来通り再構築 (サーバ状態に追従)。
+  EXPECT_EQ(
+    decide_config_reload_guard(
+      ConfigPathUpdateAction::RefreshCurrentMap, false, false),
+    ConfigReloadGuardDecision::kProceed);
+}
+
+TEST(DecideConfigReloadGuard, NotDirtyProceedsForReinitialize)
+{
+  EXPECT_EQ(
+    decide_config_reload_guard(
+      ConfigPathUpdateAction::ReinitializeMap, false, false),
+    ConfigReloadGuardDecision::kProceed);
+}
+
+TEST(DecideConfigReloadGuard, DirtyRefreshAsksUser)
+{
+  // 未保存編集あり + 再構築対象あり: 破棄可否を確認する。
+  EXPECT_EQ(
+    decide_config_reload_guard(
+      ConfigPathUpdateAction::RefreshCurrentMap, true, false),
+    ConfigReloadGuardDecision::kAskUser);
+}
+
+TEST(DecideConfigReloadGuard, DirtyReinitializeAsksUser)
+{
+  // map 切替でも未保存編集があれば確認する (Reinitialize も table を捨てるため)。
+  EXPECT_EQ(
+    decide_config_reload_guard(
+      ConfigPathUpdateAction::ReinitializeMap, true, false),
+    ConfigReloadGuardDecision::kAskUser);
+}
+
+TEST(DecideConfigReloadGuard, NoopProceedsEvenWhenDirty)
+{
+  // Noop (suppress 中 or 更新不要) は table を触らないため dirty でも確認不要。
+  EXPECT_EQ(
+    decide_config_reload_guard(
+      ConfigPathUpdateAction::Noop, true, false),
+    ConfigReloadGuardDecision::kProceed);
+}
+
+TEST(DecideConfigReloadGuard, DialogOpenDropsEvent)
+{
+  // dialog 表示中に届いたイベントは破棄する (dialog 積み重ね防止)。dirty でも drop。
+  EXPECT_EQ(
+    decide_config_reload_guard(
+      ConfigPathUpdateAction::RefreshCurrentMap, true, true),
+    ConfigReloadGuardDecision::kDrop);
+}
+
+TEST(DecideConfigReloadGuard, DialogOpenDropsEvenWhenNotDirty)
+{
+  // dirty でなくても dialog 表示中の再構築 (Refresh/Reinit) は drop する
+  // (ネストイベントループ中の再入を一切許さない)。
+  EXPECT_EQ(
+    decide_config_reload_guard(
+      ConfigPathUpdateAction::ReinitializeMap, false, true),
+    ConfigReloadGuardDecision::kDrop);
+}
+
+TEST(DecideConfigReloadGuard, NoopTakesPrecedenceOverDialogOpen)
+{
+  // Noop は最優先で Proceed (table を触らないので dialog 中でも drop 不要 = 無害)。
+  EXPECT_EQ(
+    decide_config_reload_guard(
+      ConfigPathUpdateAction::Noop, true, true),
+    ConfigReloadGuardDecision::kProceed);
+}
+
+// --- should_confirm_overwrite (#399) ---
+
+TEST(ShouldConfirmOverwrite, ContentDiffersConfirms)
+{
+  // path 一致 && baseline 非空 && 内容不一致: 上書き確認が必要。
+  EXPECT_TRUE(should_confirm_overwrite(
+    "/maps/mapA/mapoi_config.yaml", "/maps/mapA/mapoi_config.yaml",
+    "poi: [old]", "poi: [changed_externally]"));
+}
+
+TEST(ShouldConfirmOverwrite, ContentMatchesNoConfirm)
+{
+  // 内容一致: 外部変更なし = 確認不要。
+  EXPECT_FALSE(should_confirm_overwrite(
+    "/maps/mapA/mapoi_config.yaml", "/maps/mapA/mapoi_config.yaml",
+    "poi: [same]", "poi: [same]"));
+}
+
+TEST(ShouldConfirmOverwrite, DifferentPathDoesNotCompare)
+{
+  // 保存先が baseline と別 path (FileComboBox「the other」で別ファイル指定): 比較しない。
+  // 内容が違っても基準を持たないファイルとの比較は無意味なので false。
+  EXPECT_FALSE(should_confirm_overwrite(
+    "/maps/mapB/other.yaml", "/maps/mapA/mapoi_config.yaml",
+    "poi: [baseline_of_A]", "poi: [content_of_B]"));
+}
+
+TEST(ShouldConfirmOverwrite, EmptyBaselineDisablesGuard)
+{
+  // baseline を読めなかった (空): ガード無効 = 従来挙動 (無条件上書き)。
+  EXPECT_FALSE(should_confirm_overwrite(
+    "/maps/mapA/mapoi_config.yaml", "/maps/mapA/mapoi_config.yaml",
+    "", "poi: [anything_on_disk]"));
+}
+
+TEST(ShouldConfirmOverwrite, EmptyBaselinePathDoesNotMatchNonEmptySave)
+{
+  // baseline 未取得 (path も空) の状態で保存先を指定 → path 不一致で比較しない。
+  EXPECT_FALSE(should_confirm_overwrite(
+    "/maps/mapA/mapoi_config.yaml", "", "", "poi: [x]"));
 }
