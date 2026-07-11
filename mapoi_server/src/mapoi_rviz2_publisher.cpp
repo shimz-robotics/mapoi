@@ -120,6 +120,7 @@ void MapoiRviz2Publisher::on_routes_info_received(
   if (result->routes_list.empty()) {
     std::lock_guard<std::mutex> lock(data_mutex_);
     all_routes_.clear();
+    marker_data_dirty_ = true;  // #402: route 全消え → 次 tick で再構築 (DELETEALL 経路含む)
     return;
   }
 
@@ -157,6 +158,7 @@ void MapoiRviz2Publisher::on_routes_info_received(
         if (--(*remaining) == 0) {
           std::lock_guard<std::mutex> lock(data_mutex_);
           all_routes_ = std::move(*pending);
+          marker_data_dirty_ = true;  // #402: route 構成確定 → 次 tick で再構築
         }
       });
   }
@@ -164,9 +166,10 @@ void MapoiRviz2Publisher::on_routes_info_received(
 
 void MapoiRviz2Publisher::on_config_path_changed(const std_msgs::msg::String::SharedPtr msg)
 {
-  // mapoi_server は config path 文字列を周期 publish (default 5s) する。path だけで dedup すると
-  // map switch (path 変更) は拾えるが、WebUI/Panel Save (path 不変、内容のみ変更) を取りこぼす。
-  // YAML ファイルの mtime も併せて比較し、両 case を検出する。
+  // mapoi_server は config path 文字列を event 駆動で publish する (周期 publish は #135 で廃止し、
+  // subscriber を transient_local に揃えた。起動時 / select_map / reload_map_info の 3 箇所)。
+  // このうち reload_map_info (WebUI/Panel Save) は path 不変・内容のみ変更なので、path だけで dedup
+  // すると map switch (path 変更) は拾えるが Save を取りこぼす。YAML の mtime も併せて比較し両 case を検出する。
   const std::string & current_path = msg->data;
   std::filesystem::file_time_type current_mtime{};
   std::error_code ec;
@@ -220,6 +223,7 @@ void MapoiRviz2Publisher::on_poi_received(rclcpp::Client<mapoi_interfaces::srv::
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
     pois_list_ = result->pois_list;
+    marker_data_dirty_ = true;  // #402: POI 更新 → 次 tick でフル再構築
   }
   RCLCPP_INFO(this->get_logger(), "Received %zu POIs.", pois_list_.size());
 }
@@ -232,6 +236,7 @@ void MapoiRviz2Publisher::on_highlight_goal_received(const std_msgs::msg::String
   if (!msg->data.empty()) {
     highlighted_goal_names_.insert(msg->data);
   }
+  marker_data_dirty_ = true;  // #402: goal highlight 変更 → POI 色が変わるので再構築
 }
 
 void MapoiRviz2Publisher::on_highlight_route_received(const std_msgs::msg::String::SharedPtr msg)
@@ -250,10 +255,57 @@ void MapoiRviz2Publisher::on_highlight_route_received(const std_msgs::msg::Strin
       }
     }
   }
+  marker_data_dirty_ = true;  // #402: route highlight 変更 → route 線/方向矢印が変わるので再構築
 }
 
 void MapoiRviz2Publisher::timer_callback(){
   std::lock_guard<std::mutex> lock(data_mutex_);
+
+  // --- 差分ゲート (#402) ---
+  // 1Hz でフル再構築 (cos/sin/頂点列生成) するのは無駄なので、データ (POI/route/highlight/
+  // 描画 parameter) が変わった tick だけ marker を再構築する。それ以外の tick は前回構築を
+  // cache しておき、header.stamp だけ現在時刻に差し替えて再 publish する。
+  // 再 publish を続ける理由: 購読側 QoS が volatile なので、後起動の RViz へ marker を届けるには
+  // marker 自体を 1Hz で送り続ける必要がある (stamp だけ更新すれば形状再計算は不要)。
+  // 描画 parameter (show_tolerance_sector / poi_label_format / route_display_mode) の変化は
+  // subscription を持たないため、ここで前回値と比較して dirty を立てる (get_parameter は元々
+  // 毎 tick 呼んでおりコスト増はない)。
+  const bool show_sector = this->get_parameter("show_tolerance_sector").as_bool();
+  const std::string label_format = this->get_parameter("poi_label_format").as_string();
+  const std::string route_mode = this->get_parameter("route_display_mode").as_string();
+  if (show_sector != last_show_sector_ ||
+      label_format != last_poi_label_format_ ||
+      route_mode != last_route_display_mode_) {
+    marker_data_dirty_ = true;
+    last_show_sector_ = show_sector;
+    last_poi_label_format_ = label_format;
+    last_route_display_mode_ = route_mode;
+  }
+
+  // 購読者ゼロスキップ (#402): pois / routes をそれぞれ独立に判定する。購読者ゼロの間は構築も
+  // publish もしないが、dirty フラグは「消費しない」(= クリアしない)。購読者が復帰した最初の
+  // tick で dirty が立っていれば必ずフル構築される。dirty=false のまま復帰した場合も cache は
+  // データ不変を意味するので、cache を stamp 更新して publish すれば正しい (下の clean 経路)。
+  const bool pois_has_sub = marker_pois_pub_->get_subscription_count() > 0;
+  const bool routes_has_sub = marker_routes_pub_->get_subscription_count() > 0;
+
+  // clean tick (dirty=false): 幾何再計算せず cache の stamp だけ更新して再 publish する。
+  // marker 数は不変なので DELETEALL 分岐 (id_buf_ / route_id_buf_) は通らない
+  // (id_buf_ / route_id_buf_ は dirty tick でのみ更新されるため整合する)。
+  if (!marker_data_dirty_) {
+    const auto now = rclcpp::Clock().now();
+    if (pois_has_sub) {
+      for (auto & m : cached_ma_pois_.markers) m.header.stamp = now;
+      marker_pois_pub_->publish(cached_ma_pois_);
+    }
+    if (routes_has_sub) {
+      for (auto & m : cached_ma_routes_.markers) m.header.stamp = now;
+      marker_routes_pub_->publish(cached_ma_routes_);
+    }
+    return;
+  }
+
+  // --- dirty tick: 従来通りフル構築する ---
   // publish markers on rviz
   visualization_msgs::msg::Marker default_arrow_marker;
   default_arrow_marker.header.frame_id = "map";
@@ -266,14 +318,12 @@ void MapoiRviz2Publisher::timer_callback(){
   default_arrow_marker.color.r = 0.0; default_arrow_marker.color.g = 1.0; default_arrow_marker.color.b = 0.0; default_arrow_marker.color.a = 0.7;
   default_arrow_marker.lifetime.sec = 2.0;
 
-  // tolerance visualization (#136 / #179) の表示制御。false で全 POI の円 + 扇形 + pause overlay を抑制。
-  // `show_tolerance_sector` は現在、yaw sector だけでなく POI tolerance layer 全体を制御する。
-  const bool show_sector = this->get_parameter("show_tolerance_sector").as_bool();
-
-  // POI label の format ("index" / "name" / "both" / "none") を runtime parameter で切替。
-  // 空文字列を返した場合は label を生成しない (none モード)。
-  const std::string label_format =
-    this->get_parameter("poi_label_format").as_string();
+  // tolerance visualization (#136 / #179) の表示制御 (show_sector) と POI label format
+  // (label_format: "index" / "name" / "both" / "none") は timer_callback 冒頭で取得済み
+  // (差分ゲートの parameter 変化検出と共有、#402)。
+  // - show_sector: false で全 POI の円 + 扇形 + pause overlay を抑制。yaw sector だけでなく
+  //   POI tolerance layer 全体を制御する。
+  // - label_format: 空文字列 ("none") を返した場合は label を生成しない。
   auto build_label = [&label_format](size_t index_one_based, const std::string & name) -> std::string {
     if (label_format == "none") return "";
     if (label_format == "name") return name;
@@ -563,6 +613,10 @@ void MapoiRviz2Publisher::timer_callback(){
     return color;
   };
 
+  // 購読者ゼロスキップ (#402): POI marker の購読者がいなければ幾何構築も publish も行わない。
+  // marker_data_dirty_ はこの分岐では消費しないため、購読者復帰後の最初の tick で必ず
+  // フル構築される (下の dirty クリアは pois/routes 双方の publish を経てから行う)。
+  if (pois_has_sub) {
   size_t poi_index_one_based = 0;
   for (const auto & poi : pois_list_) {
     poi_index_one_based += 1;  // POI Editor (mapoi_config.yaml の poi: 順) 行番号、1-based、tag フィルタ非依存
@@ -648,6 +702,9 @@ void MapoiRviz2Publisher::timer_callback(){
   id_buf_ = id;
 
   marker_pois_pub_->publish(ma_pois);
+  // clean tick で stamp 更新して再送するため構築結果を cache する (#402)。
+  cached_ma_pois_ = std::move(ma_pois);
+  }  // if (pois_has_sub)
 
   // Route markers (mapoi/markers/routes topic)。
   // route_display_mode parameter で表示制御:
@@ -668,7 +725,10 @@ void MapoiRviz2Publisher::timer_callback(){
     return ROUTE_PALETTE[h(name) % ROUTE_PALETTE.size()];
   };
 
-  const std::string route_mode = this->get_parameter("route_display_mode").as_string();
+  // route_mode は timer_callback 冒頭で取得済み (差分ゲートの parameter 変化検出と共有、#402)。
+  // 購読者ゼロスキップ (#402): route marker の購読者がいなければ構築も publish も行わない。
+  // marker_data_dirty_ はこの分岐では消費しない (dirty クリアは pois/routes 双方の後で行う)。
+  if (routes_has_sub) {
   visualization_msgs::msg::MarkerArray ma_routes;
   int route_id = 0;
 
@@ -757,6 +817,18 @@ void MapoiRviz2Publisher::timer_callback(){
   }
   route_id_buf_ = route_id;
   marker_routes_pub_->publish(ma_routes);
+  // clean tick で stamp 更新して再送するため構築結果を cache する (#402)。
+  cached_ma_routes_ = std::move(ma_routes);
+  }  // if (routes_has_sub)
+
+  // 差分ゲートの dirty クリア (#402): dirty は pois/routes 共通の単一フラグなので、両方が
+  // 購読者ありで揃って構築・cache 更新できたときだけ落とす。片側が購読者ゼロで skip した場合は
+  // その側の cache が古いままなので、購読者復帰後に再構築させるため dirty を残す
+  // (代償として購読者ありの側は復帰まで毎 tick 再構築されるが、購読者ゼロ運用は一時的とみなす)。
+  // 両側とも購読者ゼロなら次 tick もこの dirty 経路を通り、購読者復帰時に確実にフル構築される。
+  if (pois_has_sub && routes_has_sub) {
+    marker_data_dirty_ = false;
+  }
 }
 
 int main(int argc, char **argv)
