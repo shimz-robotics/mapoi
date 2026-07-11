@@ -25,7 +25,7 @@ POI（Point of Interest）を表すメッセージです。
 | `name` | `string` | POI の名前。実質的な一意キー |
 | `pose` | `geometry_msgs/Pose` | POI の位置・姿勢 |
 | `tolerance` | `mapoi_interfaces/Tolerance` | xy / yaw tolerance（v0.3.0 で旧 `radius` から置換） |
-| `tags` | `string[]` | POI に紐づくタグ（例: `goal`, `audio_info`） |
+| `tags` | `string[]` | POI に紐づくタグ（例: system tag `waypoint` / `landmark` / `pause`、user 定義 tag なら `audio_info` 等） |
 | `description` | `string` | POI の説明 |
 
 ### PoiEvent.msg
@@ -48,7 +48,7 @@ EVENT_ENTER -> [EVENT_PAUSED (only if pause-tagged + nav stops)] -> EVENT_EXIT
 
 `EVENT_PAUSED` の前提:
 - 採用 controller が **navigation 停止中も cmd_vel = 0 を継続 publish する** こと (Nav2 default の挙動)。controller が静止時に cmd_vel publish を止める実装の場合、`EVENT_PAUSED` は発火しません。
-- pause 自動 trigger は `mapoi_server` 側で実施し、resume は client 側 `mapoi/nav/resume` request で発動するため、`RESUMED` 相当の event は本仕様に含めません (resume は status topic で観測可能)。
+- pause 自動 trigger (と `EVENT_PAUSED` の publish) は `mapoi_nav2_bridge` 側で実施し、resume は client 側 `mapoi/nav/resume` request で発動するため、`RESUMED` 相当の event は本仕様に含めません (resume は status topic で観測可能)。
 
 ### TagDefinition.msg
 
@@ -56,13 +56,13 @@ POI 分類タグ (system tag / user tag) の単一定義を表すメッセージ
 
 | フィールド | 型 | 説明 |
 | --- | --- | --- |
-| `name` | `string` | タグ名 (例: `goal`, `event`) |
+| `name` | `string` | タグ名 (例: system tag `waypoint` / `landmark` / `pause`、user 定義 tag なら `audio_info` 等) |
 | `description` | `string` | タグ用途の human-readable 説明 |
 | `is_system` | `bool` | `true` = システムタグ、`false` = ユーザー定義タグ |
 
 ### InitialPoseRequest.msg
 
-operator の map switch / reload に伴う「初期姿勢候補 POI」通知メッセージ (#149 round 8 で文字列ペアから型化)。`mapoi_nav2_bridge` が Nav2 `LoadMap` 成功後に publish し、localization bridge 群が subscribe します。詳細・stale 排除戦略は `msg/InitialPoseRequest.msg` の冒頭コメント参照。
+operator の map switch / reload に伴う「初期姿勢候補 POI」通知メッセージ (#149 round 8 で文字列ペアから型化)。唯一の writer である `mapoi_server` が `mapoi/request_initial_pose` service 経由の依頼を受けて publish するほか (#211。例: `mapoi_nav2_bridge` が Nav2 `LoadMap` 成功後に依頼)、起動時の default POI 採用・reload 時の stale clear でも自発 publish し、localization bridge 群が subscribe します。詳細・stale 排除戦略は `msg/InitialPoseRequest.msg` の冒頭コメント参照。
 
 | フィールド | 型 | 説明 |
 | --- | --- | --- |
@@ -162,14 +162,15 @@ QoS contract (TRANSIENT_LOCAL / RELIABLE / MANUAL_BY_TOPIC publisher / AUTOMATIC
 
 ### GetRoutePois.srv
 
-指定されたルートに含まれる POI を取得するサービスです。
+指定されたルートに含まれる POI を、走行対象の waypoint と参照専用の landmark に分けて取得するサービスです (#143)。
 
 | 方向 | フィールド | 型 | 説明 |
 | --- | --- | --- | --- |
 | Request | `route_name` | `string` | ルート名 |
 | Response | `success` | `bool` | route が見つかった場合 `true`（POI 0 件でも route が存在すれば `true`）(#342) |
 | Response | `error_message` | `string` | `success=false` 時のみ非空。route 不存在の説明 (#342) |
-| Response | `pois_list` | `PointOfInterest[]` | ルート上の POI のリスト |
+| Response | `pois_list` | `PointOfInterest[]` | ルート上の waypoint POI（順序付き。Nav2 へは `FollowWaypoints`、または `waypoint_arrival_mode=mapoi` 時は waypoint 毎の `NavigateToPose` で送られる） |
+| Response | `landmark_pois` | `PointOfInterest[]` | ルートに紐づく landmark POI。Nav2 の走行対象外だが、route 走行中は radius 監視される。順序は参考情報 |
 
 ### GetRoutesInfo.srv
 
