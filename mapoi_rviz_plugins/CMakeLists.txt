@@ -21,6 +21,7 @@ qt5_wrap_ui(UIC_FILES
 )
 set(SOURCE_FILES
   src/mapoi_panel.cpp
+  src/mapoi_panel_nav_status.cpp
   src/poi_editor.cpp
   src/poi_editor_validation.cpp
   src/mapoi_pose_tool.cpp
