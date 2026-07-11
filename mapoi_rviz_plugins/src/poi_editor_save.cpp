@@ -1,0 +1,162 @@
+// PoiEditorPanel::SaveButton の定義 (#397 step 6 で poi_editor.cpp から別 TU へ分離)。
+// クラス構造・宣言 (poi_editor.hpp) は変更なし。yaml-cpp / QMessageBox は poi_editor.hpp
+// 経由で入る。<fstream> / <QTimer> は poi_editor.hpp に無いので明示 include する。
+#include "mapoi_rviz_plugins/poi_editor.hpp"
+#include "mapoi_rviz_plugins/poi_editor_helpers.hpp"
+
+#include <fstream>
+
+#include <QTimer>
+
+// generated UI header: PoiEditorPanel::ui_ (`Ui::PoiEditorUi*`) は poi_editor.hpp では
+// 前方宣言のみなので、`ui_->PoiTable` 等の完全型アクセスにはこの include が要る
+// (poi_editor_validation.cpp と同じ)。
+#include "ui_poi_editor.h"
+
+using namespace std::chrono_literals;
+
+namespace mapoi_rviz_plugins
+{
+static const rclcpp::Logger LOGGER = rclcpp::get_logger("mapoi_rviz_plugins.poi_editor");
+
+// pure helpers (try_parse_finite_double / split_and_trim) は poi_editor_helpers.hpp に
+// 切り出した (#158 で test 容易化のため)。
+using detail::try_parse_finite_double;
+using detail::split_and_trim;
+
+// PoiTable column index 定数は poi_editor_helpers.hpp に集約 (#158 で導入)。
+using detail::kColName;
+using detail::kColPose;
+using detail::kColTolerance;
+using detail::kColTags;
+using detail::kColDescription;
+
+void PoiEditorPanel::SaveButton()
+{
+  // Block save when tag filter is active (not "All")
+  if (ui_->TagFilterComboBox->currentIndex() > 0) {
+    QMessageBox::warning(this, tr("Filter Active"),
+      tr("Cannot save while tag filter is active.\nPlease select \"All\" first to show all POIs."));
+    return;
+  }
+
+  // Validate before saving
+  if (!ValidatePois()) {
+    return;
+  }
+
+  int numRows = ui_->PoiTable->rowCount();
+
+  YAML::Node map_info = YAML::LoadFile(ui_->FileComboBox->itemText(0).toStdString());
+  std::vector<YAML::Node> pois_list;
+
+  for (int row = 0; row < numRows; row++) {
+    int logical_row = ui_->PoiTable->verticalHeader()->logicalIndex(row);
+    YAML::Node poi;
+    // 全 cell の null check (#159 round 2 ヘビー medium): 未生成セルが混じると segfault する。
+    // ValidatePois と同様に「nullptr → 空文字」で扱い、validation で reject されるはずだが、
+    // ここでも防御として null を空に変換する。
+    auto cell_text = [&](int col) -> std::string {
+      auto * item = ui_->PoiTable->item(logical_row, col);
+      return item ? item->text().toStdString() : "";
+    };
+    poi["name"] = cell_text(kColName);
+    // pose も tolerance と同じ厳密 parser (try_parse_finite_double) で 1abc / nan / inf を拒否
+    // (#159 round 1 medium 対応で std::stod から切り替え)。表記揺れ trim は split_and_trim で吸収。
+    auto poses_str = cell_text(kColPose);
+    auto pose_parts = split_and_trim(poses_str, ',');
+    double x_val = 0.0, y_val = 0.0, yaw_val_pose = 0.0;
+    if (pose_parts.size() != 3
+        || !try_parse_finite_double(pose_parts[0], x_val)
+        || !try_parse_finite_double(pose_parts[1], y_val)
+        || !try_parse_finite_double(pose_parts[2], yaw_val_pose)) {
+      RCLCPP_ERROR(LOGGER, "Failed to parse pose at row %d (post-validation race?)", row);
+      QMessageBox::critical(this, tr("Save Error"),
+        tr("Failed to parse pose at row %1.").arg(row + 1));
+      return;
+    }
+    poi["pose"]["x"] = x_val;
+    poi["pose"]["y"] = y_val;
+    poi["pose"]["yaw"] = yaw_val_pose;
+    // tolerance を 1 column "xy m, yaw rad" に統合 (#158): split → xy_val (m), yaw_val (rad)
+    // を抽出して tolerance.xy / tolerance.yaw に書き戻す。yaw は rad で UI と yaml を統一
+    // (旧 deg 入力は #138 の暫定仕様。pose.yaw が rad 表示なので tolerance.yaw も rad に揃える)。
+    auto tolerance_str = cell_text(kColTolerance);
+    auto tolerance_parts = split_and_trim(tolerance_str, ',');
+    double xy_val = 0.0;
+    double yaw_val = 0.0;
+    if (tolerance_parts.size() != 2
+        || !try_parse_finite_double(tolerance_parts[0], xy_val)
+        || !try_parse_finite_double(tolerance_parts[1], yaw_val)) {
+      RCLCPP_ERROR(LOGGER, "Failed to parse tolerance at row %d (post-validation race?)", row);
+      QMessageBox::critical(this, tr("Save Error"),
+        tr("Failed to parse tolerance at row %1.").arg(row + 1));
+      return;
+    }
+    poi["tolerance"]["xy"] = xy_val;
+    poi["tolerance"]["yaw"] = yaw_val;
+    auto tags_str = cell_text(kColTags);
+    poi["tags"] = this->SplitSentence(tags_str, ", ");
+    poi["description"] = cell_text(kColDescription);
+    pois_list.push_back(poi);
+  }
+
+  map_info["poi"] = pois_list;
+  YAML::Emitter out;
+  out << map_info;
+
+  std::string save_path = ui_->FileComboBox->currentText().toStdString();
+  std::ofstream file(save_path);
+  if (!file.is_open()) {
+    RCLCPP_ERROR(LOGGER, "Failed to open file for writing: %s", save_path.c_str());
+    QMessageBox::critical(this, tr("Save Error"),
+      tr("Failed to open file for writing:\n%1").arg(QString::fromStdString(save_path)));
+    return;
+  }
+  file << out.c_str();
+  file.close();
+  if (!file.good()) {
+    RCLCPP_ERROR(LOGGER, "Error occurred while writing file: %s", save_path.c_str());
+    QMessageBox::critical(this, tr("Save Error"),
+      tr("Error occurred while writing file:\n%1").arg(QString::fromStdString(save_path)));
+    return;
+  }
+
+  ui_->SaveButton->setText("SAVED!");
+  ui_->SaveButton->setStyleSheet("QPushButton {background-color: green; color: black;}");
+
+  if (!reload_map_info_client_->wait_for_service(3s)) {
+    RCLCPP_ERROR(LOGGER, "mapoi/reload_map_info service not available after 3s timeout.");
+    return;
+  }
+  auto request_reload_map_info = std::make_shared<std_srvs::srv::Trigger::Request>();
+  auto result_reload_map_info = reload_map_info_client_->async_send_request(request_reload_map_info);
+  rclcpp::spin_until_future_complete(service_node_, result_reload_map_info);
+
+  // Drag による reorder は Qt の visual order だけ変えるため、Save 後も verticalHeader の
+  // 番号は元の logical order のまま (例: [3, 1, 2] のように見える)。
+  // saved YAML を fetch し直して table を再構築することで visual = logical を揃え、
+  // 番号が 1, 2, 3, ... に並ぶようにする。drag 中の background highlight (Qt::green) も解除。
+  //
+  // delay を入れて SAVED + green を 1.5 秒見せてから rebuild する (issue #77)。
+  // 即時 rebuild だと UpdatePoiTable() が text/style を即 reset するため、Save 成功 feedback が
+  // ほぼ見えない (reload service が高速なほど顕著)。QTimer::singleShot で Qt event loop に戻して
+  // SAVED + green の paint を保証してから 1.5 秒後に rebuild。
+  //
+  // 同じ 1.5 秒の間に再 Save 連打されると pending rebuild と新 Save flow が race するため、
+  // SaveButton を disable して連打防止。timer 完了時に setEnabled(true) で復帰。
+  // 注: 1.5 秒間に Reset / MapCombo 等の他 UpdatePoiTable 呼び出しが入ると順序競合あり得るが、
+  // 短い窓 + Save 直後の操作頻度低さから許容。必要なら future PR で member QTimer + cancel
+  // pattern に拡張可能。
+  ui_->SaveButton->setEnabled(false);
+  // SAVED! の green feedback を 1.5 秒見せる間、外部 (mapoi/config_path 再 publish 由来) からの
+  // UpdatePoiTable trigger を抑制する。1.5 秒後に rebuild + flag リセットで通常 flow に戻る。
+  suppress_config_callback_update_ = true;
+  QTimer::singleShot(1500, this, [this]() {
+    UpdatePoiTable();
+    ui_->SaveButton->setEnabled(true);
+    suppress_config_callback_update_ = false;
+  });
+}
+
+}  // namespace mapoi_rviz_plugins
