@@ -459,17 +459,23 @@ void PoiEditorPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
 
   std::filesystem::path resolved_p(resolved_path);
   std::string map_name = resolved_p.parent_path().filename().string();
-  const auto base_action = detail::decide_poi_editor_config_path_action(
-    current_map_, map_name, config_path_);
-  config_path_ = resolved_path;
-  current_map_ = map_name;
 
   // 同じ map で path も同じ場合 (= save 後の reload_map_info で再 publish される flow)
   // でも POI 内容が変わっている可能性があるため UpdatePoiTable で table を再 fetch する (#135)。
   // map 切替 / 初回受信時は MapComboBox 同期 + FileComboBox 再構築も必要なので InitConfigs を呼ぶ。
   // 自分自身が save 直後 (suppress_config_callback_update_) は 1.5 秒の SAVED! feedback を
   // 守るため UpdatePoiTable を skip する。旧挙動と同じく queued lambda 実行時の flag を見る。
-  QMetaObject::invokeMethod(this, [this, map_name, base_action]() {
+  //
+  // メンバ更新 (current_map_ / config_path_) と action 判定は queued lambda 内 (UI スレッド)
+  // で行う (#399, PR #414 review high)。ROS executor スレッドでの読み書きを無くして UI スレッド
+  // 所有の規約 (PR #412 と同じ) に揃えるのに加え、lambda は Qt イベントキューの FIFO で
+  // イベント順に適用されるため、確認ダイアログのネストイベントループ中に後続イベントの
+  // lambda が走ってもメンバは常に最新へ進む (Yes 時の最新メンバ再構築とセットで機能する)。
+  QMetaObject::invokeMethod(this, [this, resolved_path, map_name]() {
+    const auto base_action = detail::decide_poi_editor_config_path_action(
+      current_map_, map_name, config_path_);
+    config_path_ = resolved_path;
+    current_map_ = map_name;
     const auto action = detail::apply_poi_editor_content_update_suppression(
       base_action, suppress_config_callback_update_);
 
@@ -495,16 +501,24 @@ void PoiEditorPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
         QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
       config_dialog_open_ = false;
       if (answer != QMessageBox::Yes) {
-        // 「編集を継続」: 再構築を skip してテーブルを温存する。current_map_ / config_path_
-        // メンバは既に (queued lambda に入る前に) 最新値へ更新済みのため、表示中の table は
-        // その map/path に対して古くなる。次の SaveButton では baseline 比較ガード
+        // 「編集を継続」: 再構築を skip してテーブルを温存する。InitConfigs を呼ばないため
+        // FileComboBox とテーブルは旧 map/path 側で「一貫して」残り、保存も旧 path へ正しく
+        // 対応する (メンバ current_map_ / config_path_ だけが最新へ進む)。次の外部イベントでは
+        // dirty が立ったままなので再度確認され、SaveButton では baseline 比較ガード
         // (should_confirm_overwrite) が外部変更を再検出して上書き確認を出す。
         return;
       }
-      // 「再読込」: fall through して従来通り再構築する (未保存編集は破棄)。
+      // 「再読込」: dialog 表示中に後続イベントが kDrop で破棄されていても、メンバは
+      // 各イベントの lambda (FIFO) で常に最新へ更新済み。キャプチャした map_name/action で
+      // 部分再構築すると MapComboBox / FileComboBox とテーブルが食い違うため (PR #414 review
+      // high)、最新メンバから full reinit する (InitConfigs は FileComboBox 再構築 +
+      // UpdatePoiTable まで行い、dirty / baseline もそこでリセットされる)。
+      InitConfigs(current_map_);
+      return;
     }
 
-    // kProceed (dirty でない / Noop) または kAskUser で「再読込」を選んだ場合: 従来通り。
+    // kProceed (dirty でない / Noop): 従来通りキャプチャ値で dispatch する (dialog を挟まない
+    // ため staleness は生じない。連続イベントも FIFO で各 lambda が順に適用され最後が勝つ)。
     if (action == detail::ConfigPathUpdateAction::ReinitializeMap) {
       InitConfigs(map_name);
     } else if (action == detail::ConfigPathUpdateAction::RefreshCurrentMap) {
@@ -762,6 +776,13 @@ void PoiEditorPanel::UpdatePoiTable()
         baseline_path_ = base_path;
         baseline_content_ = ss.str();
       }
+    }
+    if (baseline_path_.empty() && !config_path_.empty()) {
+      // config を把握しているのに baseline を読めなかった場合のみ WARN する (config 未取得で
+      // itemText(0) が "the other" の場合はガード無効が正常なのでログしない)。
+      // ガード無効化 (= 上書き確認が出ない) の切り分け用 (PR #414 review low)。
+      RCLCPP_WARN(LOGGER, "Failed to read baseline config for overwrite guard: %s",
+                  base_path.c_str());
     }
   }
 }
