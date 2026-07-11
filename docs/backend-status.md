@@ -1,75 +1,77 @@
-# Navigation / Localization backend 仕様
+# Navigation / Localization backend specification
 
-mapoi は navigation と localization の 2 つの backend を **独立した契約** として扱います。両者ごとに専用の bridge ノードを起動し、`backend_status` topic で readiness を WebUI / RViz panel に伝えます。独自スタックを mapoi の UI から扱いたい場合は、bridge ノードを自作して以下の topic 仕様を満たしてください。
+> Japanese version: [backend-status.ja.md](./backend-status.ja.md)
 
-## Navigation backend 仕様
+mapoi treats the navigation and localization backends as **independent contracts**. A dedicated bridge node is launched for each, and readiness is reported to the WebUI / RViz panel via the `backend_status` topics. To drive your own stack from the mapoi UI, implement your own bridge node that satisfies the topic specifications below.
 
-`mapoi_nav2_bridge` は実質的に Nav2 用の bridge ノードです。
+## Navigation backend specification
 
-**Subscribe する command topics**（mapoi の UI が publish する）:
+`mapoi_nav2_bridge` is effectively the bridge node for Nav2.
 
-| topic | 型 |
+**Subscribed command topics** (published by the mapoi UI):
+
+| topic | type |
 | --- | --- |
-| `mapoi/nav/goal_pose_poi` | `std_msgs/String`（POI 名） |
-| `mapoi/nav/route` | `std_msgs/String`（ルート名） |
+| `mapoi/nav/goal_pose_poi` | `std_msgs/String` (POI name) |
+| `mapoi/nav/route` | `std_msgs/String` (route name) |
 | `mapoi/nav/cancel` | `std_msgs/String` |
 | `mapoi/nav/pause` | `std_msgs/String` |
 | `mapoi/nav/resume` | `std_msgs/String` |
-| `mapoi/nav/switch_map` | `std_msgs/String`（map 名） |
+| `mapoi/nav/switch_map` | `std_msgs/String` (map name) |
 
-> Localization 側の `mapoi/initialpose_poi`（`mapoi_interfaces/InitialPoseRequest`）受信と `/initialpose` 配信は #209 で `mapoi_amcl_localization_bridge` に分離されており、Navigation 仕様には含まれません。詳細は下の「Localization backend 仕様」節を参照してください。
+> Receiving `mapoi/initialpose_poi` (`mapoi_interfaces/InitialPoseRequest`) and publishing `/initialpose` were split into `mapoi_amcl_localization_bridge` in #209 and are not part of the Navigation specification. See the "Localization backend specification" section below for details.
 
-**Publish する status topics**（mapoi の UI が subscribe する）:
+**Published status topics** (subscribed by the mapoi UI):
 
-| topic | 型 |
+| topic | type |
 | --- | --- |
-| `mapoi/nav/status` | `std_msgs/String`（`status` または `status:target`） |
-| `mapoi/nav/backend_status` | `mapoi_interfaces/NavigationBackendStatus`（readiness summary、`transient_local`、minimal 3 フィールド） |
+| `mapoi/nav/status` | `std_msgs/String` (`status` or `status:target`) |
+| `mapoi/nav/backend_status` | `mapoi_interfaces/NavigationBackendStatus` (readiness summary, `transient_local`, minimal 3 fields) |
 
-`mapoi_nav2_bridge` が使う `status` 値は `navigating` / `succeeded` / `aborted` / `canceled` / `paused` / `map_switching` / `map_switch_succeeded` / `map_switch_failed` / `backend_unavailable` / `rejected`（詳細は [`mapoi_server` の README](../mapoi_server/README.md) の `mapoi/nav/status` 節）。**bridge 実装上の必須ルール**: goal / route / map switch コマンドを「受理したが実行しなかった」経路（無効な入力、内部 service 未 ready 等）では、必ず何らかの終端 status を publish してください。publish しないまま return すると、WebUI / RViz panel には直前の status（`succeeded` / `navigating` 等）が居座り続け、操作者が誤操作に気づけません（#339）。新規 status 値の追加は既存 subscriber に対して後方互換です。
+The `status` values used by `mapoi_nav2_bridge` are `navigating` / `succeeded` / `aborted` / `canceled` / `paused` / `map_switching` / `map_switch_succeeded` / `map_switch_failed` / `backend_unavailable` / `rejected` (see the `mapoi/nav/status` section of the [`mapoi_server` README](../mapoi_server/README.md) for details). **Mandatory rule for bridge implementations**: on any path where a goal / route / map switch command was "accepted but not executed" (invalid input, internal service not ready, etc.), always publish some terminal status. If you return without publishing, the previous status (`succeeded` / `navigating`, etc.) stays on the WebUI / RViz panel and the operator cannot notice the mistake (#339). Adding new status values is backward compatible for existing subscribers.
 
-**optional topic**: `mapoi_nav2_bridge` は上記の必須 status に加えて `mapoi/nav/command_rejected`（`std_msgs/String`、volatile QoS、payload は target のみ）を reject の都度必ず publish する（#354）。`mapoi/nav/status` が状態 snapshot のため走行中の reject を書けない制約の埋め合わせとして WebUI toast 通知に使うイベント軸で、custom bridge の必須実装ではない（実装しなくても `backend_ready` の contract には影響しない）。
+**Optional topic**: in addition to the mandatory statuses above, `mapoi_nav2_bridge` always publishes `mapoi/nav/command_rejected` (`std_msgs/String`, volatile QoS, payload is the target only) on every reject (#354). It is an event axis used for WebUI toast notifications, compensating for the constraint that `mapoi/nav/status` is a state snapshot and cannot record a reject while navigating; it is not a mandatory part of a custom bridge (leaving it unimplemented does not affect the `backend_ready` contract).
 
-`rejected` と `backend_unavailable` の使い分け: `backend_unavailable` は **Nav2 側**（action server / `/goal_pose` fallback subscriber）が不在で navigation そのものを実行できない場合に限定する。`mapoi/get_pois_info` / `mapoi/get_route_pois` service 未 ready・POI 名 typo・landmark POI 指定・空 route など、**mapoi_server 側** の内部 service 未 ready・入力検証で Nav2 の readiness とは無関係にコマンドを reject する経路は `rejected` を使う（goal / route とも service 呼び出し前に `wait_for_service(2s)` で readiness を確認し、未 ready なら `rejected` を publish する。#339 / #355）。運用上どちらも「今回のコマンドは実行されなかった」点は同じだが、`backend_unavailable` を Nav2 readiness 専用に保つことで、WebUI の `Navigation connected` バッジ (`mapoi/nav/backend_status`) との対応関係を崩さない。
+Distinguishing `rejected` from `backend_unavailable`: reserve `backend_unavailable` for cases where the **Nav2 side** (action server / `/goal_pose` fallback subscriber) is absent and navigation itself cannot be executed. Use `rejected` on paths that reject a command for reasons unrelated to Nav2 readiness — internal service not ready or input validation on the **mapoi_server side**, such as `mapoi/get_pois_info` / `mapoi/get_route_pois` services not ready, a POI name typo, a landmark POI given as a goal, an empty route, etc. (for both goal and route, check readiness with `wait_for_service(2s)` before calling the service, and publish `rejected` if not ready. #339 / #355). Operationally both mean "this command was not executed", but keeping `backend_unavailable` dedicated to Nav2 readiness preserves its correspondence with the WebUI `Navigation connected` badge (`mapoi/nav/backend_status`).
 
-`mapoi/nav/backend_status` の `backend_ready=true` を出した時のみ WebUI が `Navigation connected` 状態になり、ナビ操作 UI が enable されます。bridge は POI / route / map 情報を `mapoi_server` の service（`mapoi/get_pois_info` / `mapoi/get_route_pois` / `mapoi/select_map`）から取得し、自前の navigation API に変換します。各 topic / service の詳細は [`mapoi_server` の README](../mapoi_server/README.md) を参照してください。
+Only while `mapoi/nav/backend_status` reports `backend_ready=true` does the WebUI enter the `Navigation connected` state and enable the navigation UI. The bridge obtains POI / route / map information from the `mapoi_server` services (`mapoi/get_pois_info` / `mapoi/get_route_pois` / `mapoi/select_map`) and translates it into its own navigation API. See the [`mapoi_server` README](../mapoi_server/README.md) for details on each topic / service.
 
-**`NavigationBackendStatus` 各フィールドの埋め方**（minimal 仕様）:
+**How to populate each `NavigationBackendStatus` field** (minimal specification):
 
-- `backend_type`: 自前 bridge を識別する短い文字列（例: `nav2`, `custom_lidar_planner`）。WebUI の tooltip に表示されるだけで挙動には影響しないが、複数 bridge が混在する環境で運用者が見分けられるように一意にする
-- `backend_ready`: navigation 操作（goal / route / cancel / pause / resume / map switch）を **今この瞬間に** 受け付けられるかの真偽値。実装内部で複数 capability の readiness を AND 合成しても、必要な 1 機能だけ見ても可
-- `reason`: `backend_ready=false` の時の人間可読な理由文字列（例: `"navigate_to_pose action not available"`）。空文字も許容するが、トラブルシュート支援のために理由を入れることを推奨。WebUI / panel は tooltip にプレーンテキストとして表示する想定で、HTML を解釈しません
+- `backend_type`: a short string identifying your bridge (e.g. `nav2`, `custom_lidar_planner`). It is only shown in the WebUI tooltip and does not affect behavior, but keep it unique so operators can tell bridges apart in environments where multiple bridges coexist
+- `backend_ready`: a boolean indicating whether navigation operations (goal / route / cancel / pause / resume / map switch) can be accepted **right now**. Internally you may AND-combine the readiness of multiple capabilities, or look at only the single capability you need
+- `reason`: a human-readable reason string for when `backend_ready=false` (e.g. `"navigate_to_pose action not available"`). An empty string is allowed, but providing a reason is recommended to aid troubleshooting. The WebUI / panel is expected to display it as plain text in a tooltip and does not interpret HTML
 
-bridge 実装者の必須実装は **`backend_ready` を真にする** ことだけです。per-capability の内訳が必要なら `reason` 文字列に詰めるか、bridge 固有の追加 topic で出してください。
+The only mandatory obligation for bridge implementers is **to make `backend_ready` true**. If you need a per-capability breakdown, pack it into the `reason` string or publish it on a bridge-specific extra topic.
 
-**Localization は別仕様**: 自己位置推定（AMCL / SLAM toolbox / 自前 localization など）の readiness は本仕様では扱いません。`mapoi/initialpose_poi` の subscribe や `/initialpose` への配信は #209 で `mapoi_amcl_localization_bridge` に分離されており、独立した `LocalizationBackendStatus` 仕様（下節）として定義されています。独自 localization に切り替える場合は AMCL bridge を停止して、自作 bridge から `mapoi/localization/backend_status` を publish + `mapoi/initialpose_poi` を subscribe してください。
+**Localization is a separate specification**: readiness of self-localization (AMCL / SLAM toolbox / your own localization, etc.) is out of scope here. Subscribing to `mapoi/initialpose_poi` and publishing to `/initialpose` were split into `mapoi_amcl_localization_bridge` in #209 and are defined as the independent `LocalizationBackendStatus` specification (next section). To switch to your own localization, stop the AMCL bridge and have your own bridge publish `mapoi/localization/backend_status` and subscribe to `mapoi/initialpose_poi`.
 
-**運用上の注意**: WebUI / RViz panel は `backend_ready=true` を見て操作 UI を enable するため、operator は **`Navigation connected` バッジが点いてから操作する** ことを前提にしています。bridge 起動直後の数 100ms は action server が discovery 中でまだ ready でないことがあり、その間に強引に Run を押すと一度 `backend_unavailable` ステータスが返ることがあります（再度 Run を押せば正常進行）。バッジ表示は 1Hz 更新です。
+**Operational note**: since the WebUI / RViz panel enables the operation UI based on `backend_ready=true`, operators are expected to **wait until the `Navigation connected` badge lights up before operating**. For a few hundred milliseconds right after the bridge starts, the action server may still be in discovery and not yet ready; forcing Run during that window can return a one-time `backend_unavailable` status (pressing Run again proceeds normally). The badge display is updated at 1Hz.
 
-## Localization backend 仕様
+## Localization backend specification
 
-`mapoi_amcl_localization_bridge` は AMCL 互換 localization (`/initialpose` を `geometry_msgs/PoseWithCovarianceStamped` で受ける構成) 用の bridge ノードです。slam_toolbox / NDT / 自前 localization 等を mapoi の UI（WebUI / RViz panel）から扱いたい場合は、bridge ノードを自作して以下の topic 仕様を満たしてください。Navigation backend と独立した仕様として運用されるため、両方の bridge は同時に動かせます。
+`mapoi_amcl_localization_bridge` is the bridge node for AMCL-compatible localization (configurations that receive `/initialpose` as `geometry_msgs/PoseWithCovarianceStamped`). To drive slam_toolbox / NDT / your own localization, etc. from the mapoi UI (WebUI / RViz panel), implement your own bridge node that satisfies the topic specification below. It is operated as a specification independent of the Navigation backend, so both bridges can run at the same time.
 
-**Subscribe する command topics**（mapoi の UI / mapoi_nav2_bridge / mapoi_server が publish する）:
+**Subscribed command topics** (published by the mapoi UI / mapoi_nav2_bridge / mapoi_server):
 
-| topic | 型 |
+| topic | type |
 | --- | --- |
-| `mapoi/initialpose_poi` | `mapoi_interfaces/InitialPoseRequest`（`{map_name, poi_name}`、`transient_local`） |
+| `mapoi/initialpose_poi` | `mapoi_interfaces/InitialPoseRequest` (`{map_name, poi_name}`, `transient_local`) |
 
-**Publish する status topics**（mapoi の UI が subscribe する）:
+**Published status topics** (subscribed by the mapoi UI):
 
-| topic | 型 |
+| topic | type |
 | --- | --- |
-| `mapoi/localization/backend_status` | `mapoi_interfaces/LocalizationBackendStatus`（readiness summary、`transient_local`、minimal 3 フィールド） |
+| `mapoi/localization/backend_status` | `mapoi_interfaces/LocalizationBackendStatus` (readiness summary, `transient_local`, minimal 3 fields) |
 
-`mapoi/localization/backend_status` の `backend_ready=true` を出した時のみ WebUI / RViz panel の Initial Pose 操作 UI が enable されます。bridge は POI 情報を `mapoi_server` の `mapoi/get_pois_info` service から取得し、`InitialPoseRequest.poi_name` を resolve して自前 localization に流します。
+Only while `mapoi/localization/backend_status` reports `backend_ready=true` does the WebUI / RViz panel enable the Initial Pose UI. The bridge obtains POI information from the `mapoi_server` `mapoi/get_pois_info` service, resolves `InitialPoseRequest.poi_name`, and forwards it to its own localization.
 
-**`LocalizationBackendStatus` 各フィールドの埋め方**（minimal 仕様）:
+**How to populate each `LocalizationBackendStatus` field** (minimal specification):
 
-- `backend_type`: 自前 bridge を識別する短い文字列（例: `amcl`, `slam_toolbox`, `custom_lidar_amcl`）。WebUI の tooltip に表示されるだけで挙動には影響しないが、複数 bridge が混在する環境で運用者が見分けられるように一意にする
-- `backend_ready`: 初期位置を **今この瞬間に** 受け付け可能かの真偽値。bridge から見た downstream localization が listening 状態にあること（`mapoi_amcl_localization_bridge` は `/initialpose` の subscriber 数 > 0 を ready 条件として使用）
-- `reason`: `backend_ready=false` の時の人間可読な理由文字列（例: `"no subscriber on /initialpose (localization node not running?)"`）。空文字も許容するが、トラブルシュート支援のために理由を入れることを推奨
+- `backend_type`: a short string identifying your bridge (e.g. `amcl`, `slam_toolbox`, `custom_lidar_amcl`). It is only shown in the WebUI tooltip and does not affect behavior, but keep it unique so operators can tell bridges apart in environments where multiple bridges coexist
+- `backend_ready`: a boolean indicating whether an initial pose can be accepted **right now** — the downstream localization, as seen from the bridge, is in a listening state (`mapoi_amcl_localization_bridge` uses subscriber count > 0 on `/initialpose` as its ready condition)
+- `reason`: a human-readable reason string for when `backend_ready=false` (e.g. `"no subscriber on /initialpose (localization node not running?)"`). An empty string is allowed, but providing a reason is recommended to aid troubleshooting
 
-bridge 実装者の必須実装は **`backend_ready` を真にする** ことだけです。Navigation 軸との独立性により、Nav2 を使わない localization 単体構成（POI editor + AMCL のみ）も成立します。
+The only mandatory obligation for bridge implementers is **to make `backend_ready` true**. Thanks to the independence from the Navigation axis, a localization-only configuration without Nav2 (POI editor + AMCL only) is also viable.
 
-**Navigation backend との関係**: WebUI / RViz panel は **2 つのバッジを別 indicator として表示** します（`Navigation connected` / `Localization connected`）。Nav2 が落ちても AMCL は ready のまま、その逆もあり得ます。Operator map switch（`mapoi/nav/switch_map`）は Nav2 LoadMap → mapoi/initialpose_poi publish → localization bridge resolve のシーケンスで進みますが、UI の **map switch ボタンは navigation backend_ready のみで gate** しています（localization bridge 不在 / 一時不通でも localization bridge 側の subscriber 後起動 retry で initial pose 配信が吸収できるため）。確実に initial pose まで通したい場合は operator が両バッジを目視確認してから map switch を実行してください。
+**Relationship to the Navigation backend**: the WebUI / RViz panel **displays the two badges as separate indicators** (`Navigation connected` / `Localization connected`). Nav2 can go down while AMCL stays ready, and vice versa. An operator map switch (`mapoi/nav/switch_map`) proceeds through the sequence Nav2 LoadMap → mapoi/initialpose_poi publish → localization bridge resolve, but the UI **gates the map switch button on navigation backend_ready only** (even if the localization bridge is absent / temporarily unreachable, the localization bridge's late-subscriber retry absorbs the initial pose delivery). To make sure the initial pose goes through, the operator should visually confirm both badges before executing the map switch.
