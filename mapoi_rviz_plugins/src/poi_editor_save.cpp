@@ -171,7 +171,13 @@ void PoiEditorPanel::SaveButton()
   }
   auto request_reload_map_info = std::make_shared<std_srvs::srv::Trigger::Request>();
   auto result_reload_map_info = reload_map_info_client_->async_send_request(request_reload_map_info);
-  rclcpp::spin_until_future_complete(service_node_, result_reload_map_info);
+  // #404: timeout (説明は poi_editor.cpp)。保存自体は完了済み。timeout / 非 SUCCESS 時は
+  // suppression・QTimer (UpdatePoiTable 遅延再構築) フローに進まず return する。
+  // SAVED! 表示は既に完了しているが、それは既存の wait_for_service 失敗 return と同じ位置づけ。
+  if (rclcpp::spin_until_future_complete(service_node_, result_reload_map_info, 5s) != rclcpp::FutureReturnCode::SUCCESS) {
+    RCLCPP_ERROR(LOGGER, "Failed to call service mapoi/reload_map_info (timeout or error)");
+    return;
+  }
 
   // Drag による reorder は Qt の visual order だけ変えるため、Save 後も verticalHeader の
   // 番号は元の logical order のまま (例: [3, 1, 2] のように見える)。

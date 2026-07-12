@@ -52,7 +52,8 @@ void MapoiPanel::onInitialize()
   }
   auto request = std::make_shared<mapoi_interfaces::srv::GetMapsInfo::Request>();
   auto result = get_maps_info_client_->async_send_request(request);
-  if(rclcpp::spin_until_future_complete(service_node_, result) == rclcpp::FutureReturnCode::SUCCESS)
+  // #404: hang した service で UI スレッドが無期限ブロックしないよう timeout を付ける
+  if(rclcpp::spin_until_future_complete(service_node_, result, 5s) == rclcpp::FutureReturnCode::SUCCESS)
   {
     auto map_info = result.get();
     current_map_ = map_info->map_name;
@@ -62,7 +63,7 @@ void MapoiPanel::onInitialize()
     }
     SetMapComboBox(map_info->map_name);
   }else{
-    RCLCPP_ERROR(LOGGER, "Failed to call service mapoi/get_maps_info");
+    RCLCPP_ERROR(LOGGER, "Failed to call service mapoi/get_maps_info (timeout or error)");
   }
 
   // Buttons

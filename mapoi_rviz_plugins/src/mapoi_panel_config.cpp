@@ -95,7 +95,8 @@ void MapoiPanel::SetNav2GoalComboBox()
   }
 
   auto result_get_pois_info = get_pois_info_client_->async_send_request(request_gtp);
-  if(rclcpp::spin_until_future_complete(service_node_, result_get_pois_info) == rclcpp::FutureReturnCode::SUCCESS)
+  // #404: timeout (説明は mapoi_panel.cpp)
+  if(rclcpp::spin_until_future_complete(service_node_, result_get_pois_info, 5s) == rclcpp::FutureReturnCode::SUCCESS)
   {
 
     auto pois_all = result_get_pois_info.get()->pois_list;
@@ -138,7 +139,8 @@ void MapoiPanel::SetMapoiRouteComboBox()
 
   auto request = std::make_shared<mapoi_interfaces::srv::GetRoutesInfo::Request>();
   auto result = get_routes_info_client_->async_send_request(request);
-  if(rclcpp::spin_until_future_complete(service_node_, result) == rclcpp::FutureReturnCode::SUCCESS)
+  // #404: timeout (説明は mapoi_panel.cpp)
+  if(rclcpp::spin_until_future_complete(service_node_, result, 5s) == rclcpp::FutureReturnCode::SUCCESS)
   {
     ui_->MapoiRouteComboBox->clear();
     ui_->MapoiRouteComboBox->addItem(QString::fromStdString("(なし)"));
