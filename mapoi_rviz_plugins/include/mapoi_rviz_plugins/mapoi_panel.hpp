@@ -105,6 +105,12 @@ protected:
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr command_rejected_sub_;
   void CommandRejectedCallback(std_msgs::msg::String::SharedPtr msg);
   QTimer* reject_clear_timer_ {nullptr};
+  // #401: CommandRejectedLabel への一時通知を集約するヘルパー。#398 の CommandRejectedLabel と
+  // reject_clear_timer_ (singleShot 5 秒) を共用し、initial pose 拒否 / route 取得失敗など
+  // ボタン押下起点の操作失敗も同じ揮発表示に載せる (latched な NavStatusLabel は汚さない)。
+  // UI (Qt メイン) スレッドからのみ呼ぶこと (呼び出し元は全て Qt スロット / queued lambda 内)。
+  // is_error=false で情報通知 (緑)。既定はエラー (赤)。
+  void ShowTransientNotice(const QString & text, bool is_error = true);
 
   // #406: mapoi/events 購読。ROUTE 走行中の通過 POI 進捗を RouteProgressLabel に表示する。
   // events は ROUTE 走行時のみ発火 (IDLE/GOAL では無音) なのでアイドル時の負荷はゼロ。
