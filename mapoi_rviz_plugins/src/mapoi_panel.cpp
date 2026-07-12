@@ -130,8 +130,15 @@ void MapoiPanel::onInitialize()
   rclcpp::SubscriptionOptions nav_sub_opts;
   nav_sub_opts.event_callbacks.liveliness_callback =
     [this](rclcpp::QOSLivelinessChangedInfo & event) {
-      nav_backend_alive_ = event.alive_count > 0;
-      QMetaObject::invokeMethod(this, [this]() {
+      // #400 スレッド規約: alive_count を値キャプチャし、メンバ更新は UI スレッド (lambda 内) で行う。
+      const bool alive = event.alive_count > 0;
+      QMetaObject::invokeMethod(this, [this, alive]() {
+        nav_backend_alive_ = alive;
+        if (!alive) {
+          // 死亡直前の reason は stale なため破棄する。再接続直後に新 status 到達前の窓で
+          // 古い reason 付き「未準備」が一瞬出るのを防ぐ (PR #419 review low)。
+          last_navigation_reason_.clear();
+        }
         UpdateNavButtonsEnabled();
       }, Qt::QueuedConnection);
     };
@@ -143,8 +150,14 @@ void MapoiPanel::onInitialize()
   rclcpp::SubscriptionOptions loc_sub_opts;
   loc_sub_opts.event_callbacks.liveliness_callback =
     [this](rclcpp::QOSLivelinessChangedInfo & event) {
-      localization_backend_alive_ = event.alive_count > 0;
-      QMetaObject::invokeMethod(this, [this]() {
+      // #400 スレッド規約: alive_count を値キャプチャし、メンバ更新は UI スレッド (lambda 内) で行う。
+      const bool alive = event.alive_count > 0;
+      QMetaObject::invokeMethod(this, [this, alive]() {
+        localization_backend_alive_ = alive;
+        if (!alive) {
+          // stale reason の破棄 (nav 側と同じ理由、PR #419 review low)。
+          last_localization_reason_.clear();
+        }
         UpdateNavButtonsEnabled();
       }, Qt::QueuedConnection);
     };

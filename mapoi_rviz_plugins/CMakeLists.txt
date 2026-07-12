@@ -52,6 +52,11 @@ if(BUILD_TESTING)
   ament_auto_add_gtest(test_poi_editor_validation
     test/test_poi_editor_validation.cpp
   )
+  # mapoi_panel_helpers.hpp の build_backend_badge_text (#400) の unit test。バッジ表示規則と
+  # 「切断時に stale reason を出さない」契約を pin する。header は <string> のみ依存。
+  ament_auto_add_gtest(test_mapoi_panel_helpers
+    test/test_mapoi_panel_helpers.cpp
+  )
 endif()
 
 # 将来のROS 2（Kilted Kaiju以降）と互換性を持たせるため
