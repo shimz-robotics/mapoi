@@ -63,9 +63,10 @@ void PoiEditorPanel::onInitialize()
   connect(ui_->TagFilterComboBox, SIGNAL(activated(int)), this, SLOT(TagFilterChanged(int)));
   connect(ui_->TagHelperComboBox, SIGNAL(activated(int)), this, SLOT(TagHelperSelected(int)));
   // POI 名フィルタ (#405): テキスト変更のたびに setRowHidden で絞り込む。
-  // textChanged は文字入力・clearButton 押下の両方で発火する。
+  // textChanged は文字入力・clearButton 押下の両方で発火する。フィルタ本体は
+  // NameFilterEdit の現在値を直接読むため、シグナル引数は使わず直接 connect する。
   connect(ui_->NameFilterEdit, &QLineEdit::textChanged,
-    this, &PoiEditorPanel::NameFilterChanged);
+    this, &PoiEditorPanel::ApplyNameFilter);
 
   poi_pose_sub_ = node_->create_subscription<geometry_msgs::msg::PoseStamped>(
     "mapoi_rviz_pose", 10, std::bind(&PoiEditorPanel::PoiPoseCallback, this, std::placeholders::_1));
@@ -349,6 +350,11 @@ void PoiEditorPanel::TableChanged(int row, int column)
     // is_table_color_=false で setItem 由来の cellChanged が飛ぶため、既存の green 着色ガードに
     // 相乗りしてユーザー編集だけを拾う (再構築由来の cellChanged では dirty を立てない)。
     table_dirty_ = true;
+    if (column == kColName) {
+      // 名前セルの編集確定時はその行だけ名前フィルタを再評価する (#405、PR #420 review)。
+      // 一致しなくなった行は編集確定と同時に隠れる (絞り込み表示の一貫性を優先)。
+      ApplyNameFilterToRow(row);
+    }
   }
   ui_->SaveButton->setText("save");
   ui_->SaveButton->setStyleSheet("QPushButton {background-color: white; color: black;}");
@@ -554,8 +560,21 @@ void PoiEditorPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
 
 void PoiEditorPanel::UpdatePoiCount()
 {
-  int count = ui_->PoiTable->rowCount();
-  ui_->PoiCountLabel->setText(tr("POIs: %1").arg(count));
+  const int total = ui_->PoiTable->rowCount();
+  int visible = 0;
+  for (int row = 0; row < total; ++row) {
+    if (!ui_->PoiTable->isRowHidden(row)) {
+      ++visible;
+    }
+  }
+  // 名前フィルタ (#405) で非表示行がある間は「可視/全体」を併記し、テーブルの見た目と
+  // 件数表示のズレを避ける (PR #420 review。タグフィルタは行自体を再構築するため
+  // rowCount() に反映済みで、従来表記のまま)。
+  if (visible != total) {
+    ui_->PoiCountLabel->setText(tr("POIs: %1/%2").arg(visible).arg(total));
+  } else {
+    ui_->PoiCountLabel->setText(tr("POIs: %1").arg(total));
+  }
 }
 
 // ValidatePois() の定義は poi_editor_validation.cpp へ切り出した (#346)。
