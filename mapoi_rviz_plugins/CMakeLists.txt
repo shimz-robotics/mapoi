@@ -28,6 +28,7 @@ set(SOURCE_FILES
   src/poi_editor.cpp
   src/poi_editor_display_settings.cpp
   src/poi_editor_save.cpp
+  src/poi_editor_table.cpp
   src/poi_editor_tags.cpp
   src/poi_editor_validation.cpp
   src/mapoi_pose_tool.cpp

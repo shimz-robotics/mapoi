@@ -6,9 +6,11 @@
 #include <fstream>
 #include <sstream>
 
-#include <QFileDialog>
-#include <QStandardPaths>
+// QFileDialog / QStandardPaths は FileComboBox の移設 (#397 step 9 → poi_editor_table.cpp)
+// に伴い不要化したため削除。
 #include <QTimer>
+// undo_stack_->clear() の呼び出しに完全型が要る (hpp は前方宣言のみ、#407)。
+#include <QUndoStack>
 
 #include "ui_poi_editor.h"
 
@@ -62,6 +64,13 @@ void PoiEditorPanel::onInitialize()
   // NameFilterEdit の現在値を直接読むため、シグナル引数は使わず直接 connect する。
   connect(ui_->NameFilterEdit, &QLineEdit::textChanged,
     this, &PoiEditorPanel::ApplyNameFilter);
+
+  // Undo/Redo 基盤 (#407): QUndoStack 生成・ショートカット (Ctrl+Z / Ctrl+Shift+Z、
+  // WidgetWithChildrenShortcut) 配線・cleanChanged↔dirty 連携をまとめて行う。テーブル系
+  // slot の connect (上の cellChanged / sectionMoved / New/Copy/Delete) より後、初回の
+  // UpdatePoiTable (shadow 初期構築 + stack clear を行う) より前に一度だけ呼ぶ。定義は
+  // poi_editor_table.cpp。
+  SetupUndoRedo();
 
   poi_pose_sub_ = node_->create_subscription<geometry_msgs::msg::PoseStamped>(
     "mapoi_rviz_pose", 10, std::bind(&PoiEditorPanel::PoiPoseCallback, this, std::placeholders::_1));
@@ -142,104 +151,10 @@ void PoiEditorPanel::MapComboBox()
   PoiEditorPanel::UpdatePoiTable();
 }
 
-void PoiEditorPanel::ResetButton()
-{
-  PoiEditorPanel::UpdatePoiTable();
-}
-
-void PoiEditorPanel::TableChanged(int row, int column)
-{
-  if(is_table_color_){
-    ui_->PoiTable->item(row, column)->setBackground(Qt::green);
-    // ユーザー編集の dirty マーク (#399)。UpdatePoiTable / TagFilterChanged の再構築中は
-    // is_table_color_=false で setItem 由来の cellChanged が飛ぶため、既存の green 着色ガードに
-    // 相乗りしてユーザー編集だけを拾う (再構築由来の cellChanged では dirty を立てない)。
-    table_dirty_ = true;
-    if (column == kColName) {
-      // 名前セルの編集確定時はその行だけ名前フィルタを再評価する (#405、PR #420 review)。
-      // 一致しなくなった行は編集確定と同時に隠れる (絞り込み表示の一貫性を優先)。
-      ApplyNameFilterToRow(row);
-    }
-  }
-  ui_->SaveButton->setText("save");
-  ui_->SaveButton->setStyleSheet("QPushButton {background-color: white; color: black;}");
-  UpdatePoiCount();
-}
-
-void PoiEditorPanel::NewButton()
-{
-  int current_row = ui_->PoiTable->currentRow();
-  int new_row = current_row + 1;
-  ui_->PoiTable->insertRow(new_row);
-  // column 構造 (#158): name / pose / tolerance "xy m, yaw rad" / tags / description
-  ui_->PoiTable->setItem(new_row, kColName, new QTableWidgetItem("new_poi"));
-  ui_->PoiTable->setItem(new_row, kColPose, new QTableWidgetItem("0.0, 0.0, 0.0"));
-  ui_->PoiTable->setItem(new_row, kColTolerance, new QTableWidgetItem("0.5, 0.7854"));  // ≒ π/4 rad
-  ui_->PoiTable->setItem(new_row, kColTags, new QTableWidgetItem(""));
-  ui_->PoiTable->setItem(new_row, kColDescription, new QTableWidgetItem(""));
-  // insertRow / setItem は cellChanged を確実には発火しないため dirty を明示 set (#399)。
-  table_dirty_ = true;
-  UpdatePoiCount();
-}
-
-void PoiEditorPanel::CopyButton()
-{
-  int current_row = ui_->PoiTable->currentRow();
-  if (current_row < 0) return;
-  int new_row = current_row + 1;
-  ui_->PoiTable->insertRow(new_row);
-  for (int col = 0; col < ui_->PoiTable->columnCount(); col++){
-    auto* item = ui_->PoiTable->item(current_row, col);
-    QString txt = item ? item->text() : "";
-    ui_->PoiTable->setItem(new_row, col, new QTableWidgetItem(txt));
-  }
-  // insertRow による行複製は cellChanged を確実には発火しないため dirty を明示 set (#399)。
-  table_dirty_ = true;
-  UpdatePoiCount();
-}
-
-void PoiEditorPanel::DeleteButton()
-{
-  int current_row = ui_->PoiTable->currentRow();
-  ui_->PoiTable->removeRow(current_row);
-  // removeRow は cellChanged を発火しないため dirty を明示 set (#399)。
-  table_dirty_ = true;
-  ui_->SaveButton->setText("save");
-  ui_->SaveButton->setStyleSheet("QPushButton {background-color: white; color: black;}");
-  UpdatePoiCount();
-}
-
-void PoiEditorPanel::RowMoved(int logicalIndex, int oldVisualIndex, int newVisualIndex){
-  Q_UNUSED(newVisualIndex);
-  Q_UNUSED(oldVisualIndex);
-  int numCols = ui_->PoiTable->columnCount();
-  for (int col = 0; col < numCols; col++){
-    ui_->PoiTable->item(logicalIndex, col)->setBackground(Qt::green);
-  }
-  // sectionMoved は cellChanged を発火しないため dirty を明示 set (#399)。
-  table_dirty_ = true;
-  ui_->SaveButton->setText("save");
-  ui_->SaveButton->setStyleSheet("QPushButton {background-color: white; color: black;}");
-}
-
-void PoiEditorPanel::FileComboBox()
-{
-  int last = ui_->FileComboBox->count() - 1;
-  if(ui_->FileComboBox->currentIndex() == last){
-    QString filename = QFileDialog::getOpenFileName(
-        this, tr("Select a poi_file"), QString::fromStdString(config_path_), tr("YAML files(*.yaml)"));
-    if(filename == ""){
-      ui_->FileComboBox->setItemText(last, "the other");
-      ui_->FileComboBox->setCurrentIndex(0);
-    }else{
-      ui_->FileComboBox->setItemText(last, filename);
-    }
-  } else{
-    int last2 = ui_->FileComboBox->count() - 1;
-    ui_->FileComboBox->setItemText(last2, "the other");
-  }
-  ui_->SaveButton->setText("save");
-}
+// ResetButton / TableChanged / NewButton / CopyButton / DeleteButton / RowMoved /
+// FileComboBox の定義は poi_editor_table.cpp へ切り出した (#397 step 9)。
+// 同 TU には Undo/Redo 基盤 (QUndoStack / QUndoCommand 群 / shadow model / 適用ヘルパー)
+// も実装している (#407。step 9 を先行分割せず Undo/Redo と統合したのは #397 step 9 の記述どおり)。
 
 // SaveButton() の定義は poi_editor_save.cpp へ切り出した (#397 step 6)。
 
@@ -475,7 +390,19 @@ void PoiEditorPanel::UpdatePoiTable()
   // SaveButton の全行ループは非表示行も含めて正しく保存される。
   ApplyNameFilter();
 
+  // Undo/Redo (#407): 全再構築で行 index の前提が総入れ替えになるため、それ以前の
+  // 履歴 (行 index を握るコマンド) を残すと undo で存在しない行を触りかねない。安全側に
+  // 割り切って undo stack を clear し、shadow model を再構築後のテーブルで取り直す。
+  // (名前フィルタ #405 の setRowHidden は行を削除しないため履歴と共存可 = clear 不要。
+  //  タグフィルタ TagFilterChanged 側でも同様に clear + 取り直しを行う。)
+  if (undo_stack_) {
+    undo_stack_->clear();  // ここで clean=true になり cleanChanged→table_dirty_=false も走る
+  }
+  RebuildShadowModel();
+
   // 全再構築 = サーバ状態と一致した時点なので dirty をクリアする (#399)。
+  // stack clear の cleanChanged でも false になるが、undo_stack_ 未生成の初回や
+  // 既に clean だった場合 (cleanChanged 不発) に備えて明示 set は不変のまま残す。
   table_dirty_ = false;
 
   // 外部変更検出 (SaveButton) の baseline スナップショットを取り直す (#399)。

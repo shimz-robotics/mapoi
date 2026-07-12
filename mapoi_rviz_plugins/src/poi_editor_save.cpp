@@ -8,6 +8,8 @@
 #include <sstream>
 
 #include <QTimer>
+// undo_stack_->setClean() の呼び出しに完全型が要る (hpp は前方宣言のみ、#407)。
+#include <QUndoStack>
 
 // generated UI header: PoiEditorPanel::ui_ (`Ui::PoiEditorUi*`) は poi_editor.hpp では
 // 前方宣言のみなので、`ui_->PoiTable` 等の完全型アクセスにはこの include が要る
@@ -164,6 +166,15 @@ void PoiEditorPanel::SaveButton()
   table_dirty_ = false;
   baseline_path_ = save_path;
   baseline_content_ = out.c_str();
+
+  // Undo/Redo (#407): 保存成功時点を undo stack の clean 基準にする。以降 undo でここへ
+  // 戻れば cleanChanged→table_dirty_=false でガードが再解除される (WebUI の「保存後 undo で
+  // dirty 復活 / さらに undo で保存点へ戻ると clean」と同じ意味論)。stack 自体は clear せず
+  // 保存後も undo で保存前へ戻れる (1.5 秒後の UpdatePoiTable で全再構築 → そこで stack は
+  // clear される。それまでの間の undo/redo は有効)。undo_stack_ 未生成は無いが防御的に check。
+  if (undo_stack_) {
+    undo_stack_->setClean();
+  }
 
   // 保存後の reload_map_info 失敗はログだけだと「保存成功と認識したままサーバ側が古い」状態に
   // 気づけない (PR #424 review medium)。保存自体は完了している旨とあわせて明示する。
