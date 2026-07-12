@@ -8,6 +8,8 @@
 #include <sstream>
 
 #include <QTimer>
+// undo_stack_->setClean() の呼び出しに完全型が要る (hpp は前方宣言のみ、#407)。
+#include <QUndoStack>
 
 // generated UI header: PoiEditorPanel::ui_ (`Ui::PoiEditorUi*`) は poi_editor.hpp では
 // 前方宣言のみなので、`ui_->PoiTable` 等の完全型アクセスにはこの include が要る
@@ -164,6 +166,16 @@ void PoiEditorPanel::SaveButton()
   table_dirty_ = false;
   baseline_path_ = save_path;
   baseline_content_ = out.c_str();
+
+  // Undo/Redo (#407): 保存成功 = 履歴境界として undo stack を clear する (PR #426 review)。
+  // setClean で履歴を残しても、1.5 秒後の UpdatePoiTable 全再構築で stack は消えるため
+  // 「保存直後の 1.5 秒だけ undo でき、直後の再構築で突然保存状態へ戻される」錯乱窓に
+  // しかならない。WebUI (poi-history.js) は保存後も履歴を保つが、RViz 側には保存後の
+  // 自動再構築があるため意図的に分岐する。clear は clean 化を伴い cleanChanged→
+  // table_dirty_=false も走る (上の明示 set と整合)。undo_stack_ 未生成は無いが防御的に check。
+  if (undo_stack_) {
+    undo_stack_->clear();
+  }
 
   // 保存後の reload_map_info 失敗はログだけだと「保存成功と認識したままサーバ側が古い」状態に
   // 気づけない (PR #424 review medium)。保存自体は完了している旨とあわせて明示する。

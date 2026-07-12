@@ -27,10 +27,16 @@
 #include <QLabel>
 #include <QRadioButton>
 #include <QCheckBox>
+// ApplySetCell / ApplyInsertRow の引数型 (QString / std::vector<QString>) 用 (#407)。
+#include <QString>
 
 namespace Ui {
 class PoiEditorUi;
 }
+
+// Undo/Redo 基盤 (#407)。QUndoStack のポインタメンバだけを持つため前方宣言で足りる
+// (<QUndoStack> の include は poi_editor_table.cpp 側)。
+class QUndoStack;
 
 
 namespace mapoi_rviz_plugins
@@ -46,6 +52,17 @@ public:
   void onInitialize() override;
   void onEnable();
   void onDisable();
+
+  // Undo/Redo 適用ヘルパー (#407)。poi_editor_table.cpp 内 file-local な QUndoCommand
+  // サブクラスの undo()/redo() から呼ばれるため public にする (hpp の公開面を増やさない
+  // 方針だが、file-local コマンドは friend にできないため最小限の public API として露出する)。
+  // いずれも applying_undo_ を立ててシグナル再入 (cellChanged / sectionMoved → 二重
+  // コマンド化・dirty 重複) を抑制し、shadow model を同期する。実装・詳細コメントは
+  // poi_editor_table.cpp。
+  void ApplySetCell(int row, int col, const QString & text);
+  void ApplyInsertRow(int row, const std::vector<QString> & texts);
+  void ApplyRemoveRow(int row);
+  void ApplyMoveSection(int from_visual, int to_visual);
 
 private Q_SLOTS:
   void MapComboBox();
@@ -66,6 +83,27 @@ protected:
   std::string config_path_;
   std::vector<std::string> map_name_list_;
   bool is_table_color_;
+
+  // Undo/Redo 基盤 (#407)。いずれも UI (Qt メイン) スレッド上でのみ触るためロック不要。
+  //
+  // QUndoStack: New/Copy/Delete/セル編集/RowMoved の 5 操作を積む。panel が親 (QObject
+  // 所有権) なので明示 delete 不要。UpdatePoiTable / TagFilterChanged の全再構築時に
+  // clear (行 index 前提が崩れた履歴を残さない)、保存成功時に setClean、cleanChanged で
+  // table_dirty_ と連携する。前方宣言のみ握るためポインタ。
+  QUndoStack * undo_stack_ = nullptr;
+
+  // シグナル再入抑制フラグ (#407 §4)。コマンドの undo()/redo() がテーブルを書き換える際、
+  // cellChanged→TableChanged / sectionMoved→RowMoved の再入で dirty 再 set・二重コマンド化
+  // しないよう、適用ヘルパー (Apply*) がこの間 true にする。TableChanged / RowMoved の冒頭で
+  // これを見て早期 return する。既存の is_table_color_ ガード (再構築中の cellChanged 弾き)
+  // とは目的が異なるため別フラグで共存させる。
+  bool applying_undo_ = false;
+
+  // shadow model (#407 §3)。テーブル内容のミラー (logical row × column の QString)。
+  // QTableWidget の cellChanged は旧値を渡さないため、cellChanged 時に shadow との差分から
+  // old 値を得てセル編集コマンドを生成し、shadow を新値へ更新する。UpdatePoiTable /
+  // TagFilterChanged の全再構築後に RebuildShadowModel で取り直す (行 index 前提を揃える)。
+  std::vector<std::vector<QString>> shadow_;
 
   // Tag filter: store all POIs to restore when filter is cleared
   std::vector<mapoi_interfaces::msg::PointOfInterest> all_pois_;
@@ -144,6 +182,14 @@ protected:
   // Functions
   void InitConfigs(std::string map_name);
   void UpdatePoiTable();
+
+  // Undo/Redo 基盤の初期化と shadow model の (再) 構築 (#407)。定義は poi_editor_table.cpp。
+  // SetupUndoRedo: QUndoStack 生成・ショートカット配線・cleanChanged↔dirty 連携。onInitialize
+  //   から一度だけ呼ぶ (テーブル系 connect 後・初回 UpdatePoiTable 前)。
+  // RebuildShadowModel: shadow_ を現在のテーブル内容で作り直す。全再構築 (UpdatePoiTable /
+  //   TagFilterChanged) の末尾で呼び、cellChanged 差分計算の基準を揃える。
+  void SetupUndoRedo();
+  void RebuildShadowModel();
   void UpdatePoiCount();
   void PopulateTagFilter();
   void LoadTagDefinitions();

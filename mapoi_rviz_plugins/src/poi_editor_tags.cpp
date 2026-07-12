@@ -4,6 +4,9 @@
 #include "mapoi_rviz_plugins/poi_editor.hpp"
 #include "mapoi_rviz_plugins/poi_editor_helpers.hpp"
 
+// undo_stack_->clear() の呼び出しに完全型が要る (hpp は前方宣言のみ、#407)。
+#include <QUndoStack>
+
 // generated UI header: PoiEditorPanel::ui_ (`Ui::PoiEditorUi*`) は poi_editor.hpp では
 // 前方宣言のみなので、`ui_->TagFilterComboBox` 等の完全型アクセスにはこの include が要る
 // (poi_editor_save.cpp / poi_editor_validation.cpp と同じ)。
@@ -69,6 +72,15 @@ void PoiEditorPanel::TagFilterChanged(int index)
   // タグフィルタはまずタグ一致行を setRowCount(0) で再構築し、その後 名前フィルタが
   // setRowHidden で絞り込む。つまり「タグ AND 名前」の併用絞り込みになる。
   ApplyNameFilter();
+
+  // Undo/Redo (#407): タグフィルタの適用は setRowCount(0) で行を丸ごと入れ替えるため、
+  // 行 index を握る既存履歴が崩れる。UpdatePoiTable の全再構築と同じ理由で undo stack を
+  // clear し、shadow model をフィルタ後のテーブルで取り直す (index <= 0 の解除パスは
+  // UpdatePoiTable を呼ぶのでそちらで clear + 取り直し済み)。
+  if (undo_stack_) {
+    undo_stack_->clear();
+  }
+  RebuildShadowModel();
 }
 
 void PoiEditorPanel::PopulateTagFilter()
