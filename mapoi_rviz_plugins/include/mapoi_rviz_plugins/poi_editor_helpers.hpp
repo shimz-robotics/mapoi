@@ -265,6 +265,8 @@ inline bool should_confirm_overwrite(
 // PoiEditorPanel::calcYaw から移植 (#397 step 8 で自由関数化)。
 // geometry_msgs::msg::Pose の orientation (quaternion) から yaw 角 [rad] を返す。
 // tf2::Quaternion / tf2::Matrix3x3::getRPY を使用。
+// 入力は単位四元数前提 (mapoi_server / Editor 側で保証)。非正規化・ゼロ四元数の挙動は
+// 未定義に近い (PR #425 review low の契約明示)。
 // 命名規約: detail 内の既存関数群は snake_case なので calc_yaw に rename (全 call site 置換済み)。
 // 出典: #397 step 8 (元のメンバ関数 PoiEditorPanel::calcYaw から移動)。
 inline double calc_yaw(const geometry_msgs::msg::Pose & pose)
@@ -305,6 +307,12 @@ inline std::vector<std::string> split_sentence(std::string sentence, std::string
 {
   std::vector<std::string> words;
   size_t position = 0;
+
+  // 空 delimiter は find が現在位置にマッチし続け position が進まず無限ループするため、
+  // 分割せず全体を 1 要素で返す (自由関数化で再利用面が広がるためのガード、PR #425 review)。
+  if (delimiter.empty()) {
+    return {sentence};
+  }
 
   while (sentence.find(delimiter.c_str(), position) != std::string::npos) {
     size_t next_position = sentence.find(delimiter.c_str(), position);

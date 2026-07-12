@@ -306,11 +306,11 @@ TEST(CalcYaw, KnownYawNegativeNinetyDeg)
 
 TEST(CalcYaw, NearPiBoundary)
 {
-  // yaw ≈ π (180°) 付近。getRPY の返値範囲は (-π, π] なので ±π 境界を確認する。
-  // tf2::Matrix3x3::getRPY は π を返すことがある (実装依存) ため |result| ≤ π を検証。
+  // yaw ≈ π (180°) 付近。getRPY の返値範囲は (-π, π] で、±π のどちらで返るかは実装依存。
+  // 「常に 0 を返す」ような退行も検知できるよう |result| ≈ π まで断言する (PR #425 review)。
   const double yaw = M_PI;
   const double result = calc_yaw(make_pose_yaw(yaw));
-  EXPECT_LE(std::abs(result), M_PI + 1e-9);
+  EXPECT_NEAR(std::abs(result), M_PI, 1e-6);
 }
 
 // --- join (#397 step 8) ---
@@ -341,11 +341,21 @@ TEST(Join, NullDelim)
 
 TEST(SplitSentence, BasicTwoParts)
 {
-  // "waypoint, pause" → ["waypoint", " pause"] (SplitSentence は trim しない)
+  // 区切り ", " (カンマ+スペース) での基本分割。スペースは区切りの一部として消費される。
   const auto result = split_sentence("waypoint, pause", ", ");
   ASSERT_EQ(result.size(), 2u);
   EXPECT_EQ(result[0], "waypoint");
   EXPECT_EQ(result[1], "pause");
+}
+
+TEST(SplitSentence, CommaOnlyDelimiterDoesNotTrim)
+{
+  // 区切り "," (スペース無し) だと後続トークンの先頭スペースは残る = trim しない契約
+  // (trim が要る場合は split_and_trim を使う)。PR #425 review のコメント誤読対策として分離。
+  const auto result = split_sentence("waypoint, pause", ",");
+  ASSERT_EQ(result.size(), 2u);
+  EXPECT_EQ(result[0], "waypoint");
+  EXPECT_EQ(result[1], " pause");
 }
 
 TEST(SplitSentence, NoDelimiter)
@@ -372,4 +382,22 @@ TEST(SplitSentence, EmptyString)
   const auto result = split_sentence("", ", ");
   ASSERT_EQ(result.size(), 1u);
   EXPECT_EQ(result[0], "");
+}
+
+TEST(SplitSentence, EmptyDelimiterReturnsWholeSentence)
+{
+  // 空 delimiter は無限ループガードにより分割せず全体を 1 要素で返す (PR #425 review)。
+  const auto result = split_sentence("abc", "");
+  ASSERT_EQ(result.size(), 1u);
+  EXPECT_EQ(result[0], "abc");
+}
+
+TEST(SplitSentence, RoundTripWithJoin)
+{
+  // UI 表示は join(", ")・保存/検証は split_sentence(", ") の対で使われるため、
+  // 往復の同一性を pin する (片方だけ変更された時のタグ列回帰を検知、PR #425 review)。
+  const std::vector<std::string> tags = {"waypoint", "pause", "landmark"};
+  EXPECT_EQ(split_sentence(join(tags, ", "), ", "), tags);
+  const std::string joined = "a, b, c";
+  EXPECT_EQ(join(split_sentence(joined, ", "), ", "), joined);
 }
