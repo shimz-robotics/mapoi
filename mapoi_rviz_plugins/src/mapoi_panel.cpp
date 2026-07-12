@@ -130,8 +130,10 @@ void MapoiPanel::onInitialize()
   rclcpp::SubscriptionOptions nav_sub_opts;
   nav_sub_opts.event_callbacks.liveliness_callback =
     [this](rclcpp::QOSLivelinessChangedInfo & event) {
-      nav_backend_alive_ = event.alive_count > 0;
-      QMetaObject::invokeMethod(this, [this]() {
+      // #400 スレッド規約: alive_count を値キャプチャし、メンバ更新は UI スレッド (lambda 内) で行う。
+      const bool alive = event.alive_count > 0;
+      QMetaObject::invokeMethod(this, [this, alive]() {
+        nav_backend_alive_ = alive;
         UpdateNavButtonsEnabled();
       }, Qt::QueuedConnection);
     };
@@ -143,8 +145,10 @@ void MapoiPanel::onInitialize()
   rclcpp::SubscriptionOptions loc_sub_opts;
   loc_sub_opts.event_callbacks.liveliness_callback =
     [this](rclcpp::QOSLivelinessChangedInfo & event) {
-      localization_backend_alive_ = event.alive_count > 0;
-      QMetaObject::invokeMethod(this, [this]() {
+      // #400 スレッド規約: alive_count を値キャプチャし、メンバ更新は UI スレッド (lambda 内) で行う。
+      const bool alive = event.alive_count > 0;
+      QMetaObject::invokeMethod(this, [this, alive]() {
+        localization_backend_alive_ = alive;
         UpdateNavButtonsEnabled();
       }, Qt::QueuedConnection);
     };

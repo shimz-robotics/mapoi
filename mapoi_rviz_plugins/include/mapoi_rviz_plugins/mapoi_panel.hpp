@@ -125,6 +125,7 @@ protected:
   void BackendStatusCallback(mapoi_interfaces::msg::NavigationBackendStatus::SharedPtr msg);
   // backend_status 不在 (contract 未実装の bridge build / editor 構成) では callback が呼ばれず、初期値
   // (true = enable) のままで後方互換を保つ。Minimal contract なので per-capability gate は持たない。
+  // 以下のメンバはすべて UI (Qt メイン) スレッド所有 (#400: queued lambda 内でのみ読み書きする)。
   bool last_navigation_backend_ready_ {true};
   // 一度でも navigation backend_status を受信したか。受信実績なし = 旧 mapoi_nav_server build (#208 以前 contract 未実装、#204 で rename)
   // / editor 構成として enable のまま (後方互換)。受信実績ありの publisher が liveliness lost
@@ -133,6 +134,8 @@ protected:
   // MANUAL_BY_TOPIC liveliness (#208) で publisher 生存を track。subscription event_callback
   // が `alive_count > 0` で更新する。`*_received_` と AND して、未受信は alive 判定をバイパス。
   bool nav_backend_alive_ {false};
+  // backend_ready=false 時に bridge が設定する reason 文字列 (#400)。UI スレッド所有。
+  std::string last_navigation_reason_;
 
   // Localization backend readiness subscribe (#209): mapoi_amcl_localization_bridge (or any
   // custom localization bridge) が publish する readiness で LocalizationButton を gate する。
@@ -142,9 +145,12 @@ protected:
     localization_backend_status_sub_;
   void LocalizationBackendStatusCallback(
     mapoi_interfaces::msg::LocalizationBackendStatus::SharedPtr msg);
+  // 以下のメンバはすべて UI (Qt メイン) スレッド所有 (#400: queued lambda 内でのみ読み書きする)。
   bool last_localization_backend_ready_ {true};
   bool localization_backend_status_received_ {false};
   bool localization_backend_alive_ {false};
+  // backend_ready=false 時に bridge が設定する reason 文字列 (#400)。UI スレッド所有。
+  std::string last_localization_reason_;
 
   // navigation_ready / localization_ready の最新値を保持し、両 callback / liveliness event から
   // 共通の UpdateNavButtonsEnabled を呼び出す。LocalizationButton は localization、それ以外の
