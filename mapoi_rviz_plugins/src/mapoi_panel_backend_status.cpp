@@ -2,6 +2,7 @@
 // BackendStatusCallback / LocalizationBackendStatusCallback / UpdateNavButtonsEnabled を収録。
 // バックエンド接続状態バッジ実装 (#400) の直前分割として実施。
 #include "mapoi_rviz_plugins/mapoi_panel.hpp"
+#include "mapoi_rviz_plugins/mapoi_panel_helpers.hpp"
 #include "ui_mapoi_panel.h"
 
 namespace mapoi_rviz_plugins
@@ -19,6 +20,10 @@ void MapoiPanel::BackendStatusCallback(
   std::string reason = msg->reason;
   QMetaObject::invokeMethod(this, [this, ready, reason]() {
     nav_backend_status_received_ = true;
+    // MANUAL_BY_TOPIC では publish 自体が liveliness assert なので、msg 受信は publisher 生存の
+    // 直接証拠として alive も立てる (PR #419 review high)。初回受信〜liveliness イベント到達までの
+    // 窓で「切断」誤表示とボタンの一時 disable が起きるのを防ぐ。lost イベントで false に戻る。
+    nav_backend_alive_ = true;
     last_navigation_backend_ready_ = ready;
     last_navigation_reason_ = std::move(reason);
     UpdateNavButtonsEnabled();
@@ -35,6 +40,8 @@ void MapoiPanel::LocalizationBackendStatusCallback(
   std::string reason = msg->reason;
   QMetaObject::invokeMethod(this, [this, ready, reason]() {
     localization_backend_status_received_ = true;
+    // msg 受信 = 生存の直接証拠として alive も立てる (nav 側と同じ理由、PR #419 review high)。
+    localization_backend_alive_ = true;
     last_localization_backend_ready_ = ready;
     last_localization_reason_ = std::move(reason);
     UpdateNavButtonsEnabled();
@@ -69,41 +76,21 @@ void MapoiPanel::UpdateNavButtonsEnabled()
   ui_->MapComboBox->setEnabled(nav_ready);
 
   // #400: バックエンド接続状態バッジ更新 (値変化時のみ setText)。
-  // 表示規則 (Nav / Loc 共通):
-  //   *_received_ == false → 空文字 (contract 未実装 publisher / 後方互換状態)
-  //   received && !*_alive_ → "切断 (bridge 停止)" — liveliness lost。stale reason は表示しない
-  //   alive && ready        → "接続"
-  //   alive && !ready       → "未準備 (<reason>)" (reason 空なら括弧ごと省略)
-  auto build_badge = [](const char * prefix, bool received, bool alive, bool ready,
-                        const std::string & reason) -> QString {
-    if (!received) {
-      return QString{};
-    }
-    if (!alive) {
-      return QString::fromUtf8(prefix) + QString::fromUtf8(": 切断 (bridge 停止)");
-    }
-    if (ready) {
-      return QString::fromUtf8(prefix) + QString::fromUtf8(": 接続");
-    }
-    if (!reason.empty()) {
-      return QString::fromUtf8(prefix) + QString::fromUtf8(": 未準備 (") +
-             QString::fromStdString(reason) + QString::fromUtf8(")");
-    }
-    return QString::fromUtf8(prefix) + QString::fromUtf8(": 未準備");
-  };
-
-  const QString nav_text = build_badge(
+  // 表示規則は build_backend_badge_text (mapoi_panel_helpers.hpp) に純関数として集約し、
+  // gtest で分岐表 (未受信 / 切断 / 接続 / 未準備±reason、stale reason 抑制) を pin する
+  // (PR #419 review)。ここでは結果を QString へ変換して QLabel に載せるだけ。
+  const QString nav_text = QString::fromStdString(detail::build_backend_badge_text(
     "Nav",
     nav_backend_status_received_, nav_backend_alive_,
-    last_navigation_backend_ready_, last_navigation_reason_);
+    last_navigation_backend_ready_, last_navigation_reason_));
   if (ui_->NavBackendStatusLabel->text() != nav_text) {
     ui_->NavBackendStatusLabel->setText(nav_text);
   }
 
-  const QString loc_text = build_badge(
+  const QString loc_text = QString::fromStdString(detail::build_backend_badge_text(
     "Loc",
     localization_backend_status_received_, localization_backend_alive_,
-    last_localization_backend_ready_, last_localization_reason_);
+    last_localization_backend_ready_, last_localization_reason_));
   if (ui_->LocBackendStatusLabel->text() != loc_text) {
     ui_->LocBackendStatusLabel->setText(loc_text);
   }
