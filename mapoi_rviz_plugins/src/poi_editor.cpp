@@ -75,8 +75,9 @@ void PoiEditorPanel::onInitialize()
   }
   auto request = std::make_shared<mapoi_interfaces::srv::GetMapsInfo::Request>();
   auto result = get_maps_info_client_->async_send_request(request);
-  if (rclcpp::spin_until_future_complete(service_node_, result) != rclcpp::FutureReturnCode::SUCCESS) {
-    RCLCPP_ERROR(LOGGER, "Failed to call service mapoi/get_maps_info");
+  // #404: hang した service で UI スレッドが無期限ブロックしないよう timeout を付ける
+  if (rclcpp::spin_until_future_complete(service_node_, result, 5s) != rclcpp::FutureReturnCode::SUCCESS) {
+    RCLCPP_ERROR(LOGGER, "Failed to call service mapoi/get_maps_info (timeout or error)");
     return;
   }
   auto map_info = result.get();
@@ -132,9 +133,10 @@ void PoiEditorPanel::MapComboBox()
   }
 
   auto result_sm = select_map_client_->async_send_request(request_sm);
-  if (rclcpp::spin_until_future_complete(service_node_, result_sm) != rclcpp::FutureReturnCode::SUCCESS ||
+  // #404: timeout (説明は poi_editor.cpp onInitialize)
+  if (rclcpp::spin_until_future_complete(service_node_, result_sm, 5s) != rclcpp::FutureReturnCode::SUCCESS ||
       !result_sm.get()->success) {
-    RCLCPP_ERROR(LOGGER, "Failed to call service mapoi/select_map");
+    RCLCPP_ERROR(LOGGER, "Failed to call service mapoi/select_map (timeout or error)");
     return;
   }
   PoiEditorPanel::UpdatePoiTable();
@@ -416,7 +418,11 @@ void PoiEditorPanel::UpdatePoiTable()
   }
 
   auto result_gtp = get_pois_info_client_->async_send_request(request_gtp);
-  rclcpp::spin_until_future_complete(service_node_, result_gtp);
+  // #404: timeout (説明は poi_editor.cpp onInitialize)
+  if (rclcpp::spin_until_future_complete(service_node_, result_gtp, 5s) != rclcpp::FutureReturnCode::SUCCESS) {
+    RCLCPP_ERROR(LOGGER, "Failed to call service mapoi/get_pois_info (timeout or error)");
+    return;
+  }
   auto poi_info = result_gtp.get();
   auto pois = poi_info->pois_list;
   auto numRows = pois.size();

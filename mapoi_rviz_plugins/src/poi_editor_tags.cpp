@@ -98,7 +98,11 @@ void PoiEditorPanel::LoadTagDefinitions()
 
   auto request = std::make_shared<mapoi_interfaces::srv::GetTagDefinitions::Request>();
   auto result = get_tag_defs_client_->async_send_request(request);
-  rclcpp::spin_until_future_complete(service_node_, result);
+  // #404: timeout (説明は poi_editor.cpp)。非 SUCCESS 時は result.get() せず return。
+  if (rclcpp::spin_until_future_complete(service_node_, result, 5s) != rclcpp::FutureReturnCode::SUCCESS) {
+    RCLCPP_WARN(LOGGER, "Failed to call service mapoi/get_tag_definitions (timeout or error), TagHelper will be empty.");
+    return;
+  }
   auto response = result.get();
 
   known_tag_names_.clear();

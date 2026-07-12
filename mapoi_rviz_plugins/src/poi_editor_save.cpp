@@ -165,13 +165,28 @@ void PoiEditorPanel::SaveButton()
   baseline_path_ = save_path;
   baseline_content_ = out.c_str();
 
+  // 保存後の reload_map_info 失敗はログだけだと「保存成功と認識したままサーバ側が古い」状態に
+  // 気づけない (PR #424 review medium)。保存自体は完了している旨とあわせて明示する。
+  auto warn_reload_failed = [this]() {
+    QMessageBox::warning(this, tr("Reload Failed"),
+      tr("The configuration was saved, but the server failed to reload it.\n"
+         "Other clients may not see the change until the server reloads."));
+  };
   if (!reload_map_info_client_->wait_for_service(3s)) {
     RCLCPP_ERROR(LOGGER, "mapoi/reload_map_info service not available after 3s timeout.");
+    warn_reload_failed();
     return;
   }
   auto request_reload_map_info = std::make_shared<std_srvs::srv::Trigger::Request>();
   auto result_reload_map_info = reload_map_info_client_->async_send_request(request_reload_map_info);
-  rclcpp::spin_until_future_complete(service_node_, result_reload_map_info);
+  // #404: timeout (説明は poi_editor.cpp)。保存自体は完了済み。timeout / 非 SUCCESS 時は
+  // suppression・QTimer (UpdatePoiTable 遅延再構築) フローに進まず return する。
+  // SAVED! 表示は既に完了しているが、それは既存の wait_for_service 失敗 return と同じ位置づけ。
+  if (rclcpp::spin_until_future_complete(service_node_, result_reload_map_info, 5s) != rclcpp::FutureReturnCode::SUCCESS) {
+    RCLCPP_ERROR(LOGGER, "Failed to call service mapoi/reload_map_info (timeout or error)");
+    warn_reload_failed();
+    return;
+  }
 
   // Drag による reorder は Qt の visual order だけ変えるため、Save 後も verticalHeader の
   // 番号は元の logical order のまま (例: [3, 1, 2] のように見える)。
