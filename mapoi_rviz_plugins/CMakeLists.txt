@@ -23,6 +23,7 @@ set(SOURCE_FILES
   src/mapoi_panel.cpp
   src/mapoi_panel_config.cpp
   src/mapoi_panel_backend_status.cpp
+  src/mapoi_panel_nav_control.cpp
   src/mapoi_panel_nav_status.cpp
   src/poi_editor.cpp
   src/poi_editor_save.cpp
