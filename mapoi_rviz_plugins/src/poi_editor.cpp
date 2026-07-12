@@ -136,7 +136,7 @@ void PoiEditorPanel::MapComboBox()
   // #404: timeout (説明は poi_editor.cpp onInitialize)
   if (rclcpp::spin_until_future_complete(service_node_, result_sm, 5s) != rclcpp::FutureReturnCode::SUCCESS ||
       !result_sm.get()->success) {
-    RCLCPP_ERROR(LOGGER, "Failed to call service mapoi/select_map");
+    RCLCPP_ERROR(LOGGER, "Failed to call service mapoi/select_map (timeout or error)");
     return;
   }
   PoiEditorPanel::UpdatePoiTable();
