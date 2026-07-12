@@ -476,8 +476,31 @@ void PoiEditorPanel::ConfigPathCallback(std_msgs::msg::String::SharedPtr msg)
       current_map_, map_name, config_path_);
     config_path_ = resolved_path;
     current_map_ = map_name;
-    const auto action = detail::apply_poi_editor_content_update_suppression(
+    const auto suppressed = detail::apply_poi_editor_content_update_suppression(
       base_action, suppress_config_callback_update_);
+
+    // 内容 diff ガード (#403): ゲート適用順 suppression → dedup → dirty guard。
+    // suppression が Noop にした場合、dedup は Noop 入力をそのまま素通しし (last_seen も
+    // 更新されない)、guard は kProceed → dispatch は何もしない。suppression (Save 直後の
+    // SAVED! 保護) と dedup (内容不変の抑制) は目的が異なるが、この合成で両立する。
+    // dedup が Noop にした場合 = 内容不変の再 publish。dirty でも確認ダイアログを出さない
+    // (変化が無いのに編集破棄を問わない)。
+    std::error_code mtime_ec;
+    const auto mtime = std::filesystem::last_write_time(resolved_path, mtime_ec);
+    const auto action = detail::apply_config_content_dedup(
+      suppressed, !mtime_ec,
+      resolved_path, mtime,
+      last_seen_config_path_, last_seen_config_mtime_);
+
+    // dedup で Noop にならなかった場合 = イベントを処理する場合に last_seen_* を更新する。
+    // 更新タイミングは dirty guard (AskUser) の前: No でも last_seen を進めることで、同一内容
+    // の再 publish で再度ダイアログを出さない。実変更 (mtime 変化) なら再度尋ねる。
+    if (action != detail::ConfigPathUpdateAction::Noop) {
+      last_seen_config_path_ = resolved_path;
+      if (!mtime_ec) {
+        last_seen_config_mtime_ = mtime;
+      }
+    }
 
     // 未保存編集ガード (#399)。suppression 適用後の action・dirty・dialog 表示中フラグから
     // 再構築の可否を純関数で判定する。callback はこの判定を QMessageBox 表示へ写像するだけ。

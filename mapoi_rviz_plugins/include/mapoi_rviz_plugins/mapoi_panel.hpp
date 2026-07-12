@@ -2,6 +2,7 @@
 
 #ifndef Q_MOC_RUN
 #include <rclcpp/rclcpp.hpp>
+#include <filesystem>
 #endif
 
 #include <QTimer>
@@ -86,6 +87,12 @@ protected:
 
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr config_path_sub_;
   void ConfigPathCallback(std_msgs::msg::String::SharedPtr msg);
+
+  // 内容 diff ガード (#403)。直前に処理した config_path イベントの path と mtime を保持し、
+  // path も mtime も変わっていない再 publish (= 内容変化なし) を Noop に落とす。
+  // UI (Qt メイン) スレッド上でのみ読み書きする (queued lambda 内、PR #412/#414 の規約と同じ)。
+  std::string last_seen_config_path_;
+  std::filesystem::file_time_type last_seen_config_mtime_{};
 
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr nav_status_sub_;
   void NavStatusCallback(std_msgs::msg::String::SharedPtr msg);
