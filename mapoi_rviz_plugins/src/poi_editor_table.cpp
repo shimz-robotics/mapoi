@@ -21,6 +21,7 @@
 #include <vector>
 
 #include <QFileDialog>
+#include <QScopedValueRollback>
 #include <QShortcut>
 #include <QUndoCommand>
 #include <QUndoStack>
@@ -104,6 +105,13 @@ private:
 
 // 行削除 (Delete)。redo = row_ を削除、undo = row_ に texts_ を挿入 (削除前の全 cell
 // テキストを保持しておき復元)。生成側で削除前に行テキストをキャプチャする。
+//
+// 既知制限 (PR #426 review): 行ドラッグ (visual 並び替え) 済みのテーブルで削除→undo すると、
+// 内容は logical index に正しく復元されるが、visual 位置は既定 (logical と同じ) に戻る
+// (QHeaderView は削除された section の visual 位置を記憶しない)。visual 位置まで復元するには
+// visualIndex のキャプチャ + moveSection 逆適用が要るが、複合エッジ (並び替え+削除+undo) の
+// 頻度に対して複雑化が見合わないため割り切る。保存後の UpdatePoiTable 再構築で visual =
+// logical に正規化される点は従来通り。
 class RemoveRowCommand : public QUndoCommand
 {
 public:
@@ -228,28 +236,31 @@ void PoiEditorPanel::ApplySetCell(int row, int col, const QString & text)
   // 既存の is_table_color_ ガード (再構築中の cellChanged を弾く) とは目的が異なるので
   // 別フラグで共存させる (is_table_color_ は着色/dirty の可否、applying_undo_ は
   // コマンド適用中の TableChanged 全処理スキップ)。
-  applying_undo_ = true;
-  if (row >= 0 && row < ui_->PoiTable->rowCount()) {
-    // 既存 item があれば setText で更新する (setItem による delete/再生成を避ける)。
-    // push 時の初回 redo() は cellChanged ハンドラ (TableChanged) の呼び出し中に走るため、
-    // シグナルを発火させた item 自体を破棄すると再入安全性が脆くなる。setText なら
-    // item 実体を保ったまま値だけ更新でき、同値上書き (冪等 redo) も無害。
-    if (auto * existing = ui_->PoiTable->item(row, col)) {
-      existing->setText(text);
-    } else {
-      ui_->PoiTable->setItem(row, col, new QTableWidgetItem(text));
-    }
-    // 編集済みの視覚マーク (通常編集の green 着色に合わせる)。
-    if (auto * item = ui_->PoiTable->item(row, col)) {
-      item->setBackground(Qt::green);
-    }
-    // shadow を書き換え後の値に同期する (次の cellChanged 差分計算の基準を更新)。
-    if (row < static_cast<int>(shadow_.size()) &&
-        col < static_cast<int>(shadow_[row].size())) {
-      shadow_[row][col] = text;
+  {
+    // QScopedValueRollback で例外・早期 return でもフラグが必ず復元されるようにする
+    // (true のまま残ると以降の編集が全て握りつぶされるため、PR #426 review)。
+    const QScopedValueRollback<bool> guard(applying_undo_, true);
+    if (row >= 0 && row < ui_->PoiTable->rowCount()) {
+      // 既存 item があれば setText で更新する (setItem による delete/再生成を避ける)。
+      // push 時の初回 redo() は cellChanged ハンドラ (TableChanged) の呼び出し中に走るため、
+      // シグナルを発火させた item 自体を破棄すると再入安全性が脆くなる。setText なら
+      // item 実体を保ったまま値だけ更新でき、同値上書き (冪等 redo) も無害。
+      if (auto * existing = ui_->PoiTable->item(row, col)) {
+        existing->setText(text);
+      } else {
+        ui_->PoiTable->setItem(row, col, new QTableWidgetItem(text));
+      }
+      // 編集済みの視覚マーク (通常編集の green 着色に合わせる)。
+      if (auto * item = ui_->PoiTable->item(row, col)) {
+        item->setBackground(Qt::green);
+      }
+      // shadow を書き換え後の値に同期する (次の cellChanged 差分計算の基準を更新)。
+      if (row < static_cast<int>(shadow_.size()) &&
+          col < static_cast<int>(shadow_[row].size())) {
+        shadow_[row][col] = text;
+      }
     }
   }
-  applying_undo_ = false;
   // 名前セルの undo/redo は TableChanged と同じくその行のフィルタを再評価する (#405 整合)。
   // undo で名前を戻したら隠れていた行が再表示される / redo で非一致になれば隠れる、を
   // 通常編集と揃える。applying_undo_ を戻した後に呼ぶ (setRowHidden は cellChanged 非発火)。
@@ -273,19 +284,20 @@ void PoiEditorPanel::ApplyInsertRow(int row, const std::vector<QString> & texts)
   // 行挿入 (New/Copy の redo、Delete の undo)。insertRow は cellChanged を確実には
   // 発火しないが、setItem 経由の cellChanged が飛ぶ可能性があるため applying_undo_ で
   // 抑制する (二重コマンド化・dirty の重複計上を防ぐ)。
-  applying_undo_ = true;
-  ui_->PoiTable->insertRow(row);
-  for (int col = 0; col < kColCount && col < static_cast<int>(texts.size()); ++col) {
-    ui_->PoiTable->setItem(row, col, new QTableWidgetItem(texts[col]));
+  {
+    const QScopedValueRollback<bool> guard(applying_undo_, true);  // 例外安全 (PR #426 review)
+    ui_->PoiTable->insertRow(row);
+    for (int col = 0; col < kColCount && col < static_cast<int>(texts.size()); ++col) {
+      ui_->PoiTable->setItem(row, col, new QTableWidgetItem(texts[col]));
+    }
+    // shadow に行を挿入して以降の差分計算の基準を保つ。
+    if (row >= 0 && row <= static_cast<int>(shadow_.size())) {
+      std::vector<QString> shadow_row(texts.begin(),
+        texts.begin() + std::min(texts.size(), static_cast<size_t>(kColCount)));
+      shadow_row.resize(kColCount);
+      shadow_.insert(shadow_.begin() + row, std::move(shadow_row));
+    }
   }
-  // shadow に行を挿入して以降の差分計算の基準を保つ。
-  if (row >= 0 && row <= static_cast<int>(shadow_.size())) {
-    std::vector<QString> shadow_row(texts.begin(),
-      texts.begin() + std::min(texts.size(), static_cast<size_t>(kColCount)));
-    shadow_row.resize(kColCount);
-    shadow_.insert(shadow_.begin() + row, std::move(shadow_row));
-  }
-  applying_undo_ = false;
   table_dirty_ = true;
   // 挿入行は名前フィルタで再評価しない (#405 の「New/Copy の新規行はフィルタ非一致でも
   // デフォルト可視」意図を維持)。Delete の undo による行復元でも復元行を可視で戻すことで
@@ -298,14 +310,15 @@ void PoiEditorPanel::ApplyRemoveRow(int row)
 {
   // 行削除 (Delete の redo、New/Copy の undo)。removeRow は cellChanged を発火しないが、
   // 対称性のため applying_undo_ で括る。shadow からも同じ行を落とす。
-  applying_undo_ = true;
-  if (row >= 0 && row < ui_->PoiTable->rowCount()) {
-    ui_->PoiTable->removeRow(row);
+  {
+    const QScopedValueRollback<bool> guard(applying_undo_, true);  // 例外安全 (PR #426 review)
+    if (row >= 0 && row < ui_->PoiTable->rowCount()) {
+      ui_->PoiTable->removeRow(row);
+    }
+    if (row >= 0 && row < static_cast<int>(shadow_.size())) {
+      shadow_.erase(shadow_.begin() + row);
+    }
   }
-  if (row >= 0 && row < static_cast<int>(shadow_.size())) {
-    shadow_.erase(shadow_.begin() + row);
-  }
-  applying_undo_ = false;
   table_dirty_ = true;
   ui_->SaveButton->setText("save");
   ui_->SaveButton->setStyleSheet("QPushButton {background-color: white; color: black;}");
@@ -319,9 +332,10 @@ void PoiEditorPanel::ApplyMoveSection(int from_visual, int to_visual)
   // を抑制する。moveSection は visual index 基準 (logical は不変) なので shadow は
   // 触らない (shadow は logical row の内容ミラーであり visual 並びに依存しない — #405 の
   // 名前フィルタが logical 基準なのと同じ扱い)。
-  applying_undo_ = true;
-  ui_->PoiTable->verticalHeader()->moveSection(from_visual, to_visual);
-  applying_undo_ = false;
+  {
+    const QScopedValueRollback<bool> guard(applying_undo_, true);  // 例外安全 (PR #426 review)
+    ui_->PoiTable->verticalHeader()->moveSection(from_visual, to_visual);
+  }
   table_dirty_ = true;
   ui_->SaveButton->setText("save");
   ui_->SaveButton->setStyleSheet("QPushButton {background-color: white; color: black;}");

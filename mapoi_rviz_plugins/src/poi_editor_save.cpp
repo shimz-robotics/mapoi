@@ -167,13 +167,14 @@ void PoiEditorPanel::SaveButton()
   baseline_path_ = save_path;
   baseline_content_ = out.c_str();
 
-  // Undo/Redo (#407): 保存成功時点を undo stack の clean 基準にする。以降 undo でここへ
-  // 戻れば cleanChanged→table_dirty_=false でガードが再解除される (WebUI の「保存後 undo で
-  // dirty 復活 / さらに undo で保存点へ戻ると clean」と同じ意味論)。stack 自体は clear せず
-  // 保存後も undo で保存前へ戻れる (1.5 秒後の UpdatePoiTable で全再構築 → そこで stack は
-  // clear される。それまでの間の undo/redo は有効)。undo_stack_ 未生成は無いが防御的に check。
+  // Undo/Redo (#407): 保存成功 = 履歴境界として undo stack を clear する (PR #426 review)。
+  // setClean で履歴を残しても、1.5 秒後の UpdatePoiTable 全再構築で stack は消えるため
+  // 「保存直後の 1.5 秒だけ undo でき、直後の再構築で突然保存状態へ戻される」錯乱窓に
+  // しかならない。WebUI (poi-history.js) は保存後も履歴を保つが、RViz 側には保存後の
+  // 自動再構築があるため意図的に分岐する。clear は clean 化を伴い cleanChanged→
+  // table_dirty_=false も走る (上の明示 set と整合)。undo_stack_ 未生成は無いが防御的に check。
   if (undo_stack_) {
-    undo_stack_->setClean();
+    undo_stack_->clear();
   }
 
   // 保存後の reload_map_info 失敗はログだけだと「保存成功と認識したままサーバ側が古い」状態に
