@@ -25,6 +25,7 @@ set(SOURCE_FILES
   src/mapoi_panel_backend_status.cpp
   src/mapoi_panel_nav_status.cpp
   src/poi_editor.cpp
+  src/poi_editor_display_settings.cpp
   src/poi_editor_save.cpp
   src/poi_editor_tags.cpp
   src/poi_editor_validation.cpp

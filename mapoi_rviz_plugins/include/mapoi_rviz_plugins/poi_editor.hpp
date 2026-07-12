@@ -151,6 +151,10 @@ protected:
   bool ValidatePois();
   double calcYaw(geometry_msgs::msg::Pose pose);
 
+  // Display Settings 副パネル (QGroupBox + Radio/Check) を構築し connect まで行う。
+  // onInitialize から rviz2_pub_param_client_ 生成後・初期 Sync 前に一度だけ呼ぶ。
+  void SetupDisplaySettingsUi();
+
   // Display Settings UI を mapoi_rviz2_publisher の現在 parameter 値に同期する。
   // onInitialize 末尾の初期同期と、SetParameters 失敗時の UI rollback の両方で使う。
   // 成功時は cached_* を更新する。
