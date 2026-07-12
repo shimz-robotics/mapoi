@@ -24,6 +24,12 @@ static const rclcpp::Logger LOGGER = rclcpp::get_logger("mapoi_rviz_plugins.poi_
 
 void PoiEditorPanel::SetupDisplaySettingsUi()
 {
+  // onInitialize から一度だけ呼ばれる前提。誤って再呼び出しされた場合にウィジェットと
+  // connect が二重化しないよう早期 return で守る (PR #422 review。メンバは hpp で
+  // nullptr 初期化されており、構築済みなら非 null)。
+  if (route_radio_all_ != nullptr) {
+    return;
+  }
   auto * display_group = new QGroupBox("Display Settings", this);
   auto * display_form = new QFormLayout(display_group);
   display_form->setContentsMargins(8, 8, 8, 8);
@@ -73,6 +79,11 @@ void PoiEditorPanel::SetupDisplaySettingsUi()
   // Display Settings group を verticalLayout に append (Save 行の下)
   if (auto * panel_layout = qobject_cast<QVBoxLayout *>(this->layout())) {
     panel_layout->addWidget(display_group);
+  } else {
+    // poi_editor.ui のルート layout が QVBoxLayout でなくなった場合のみ到達する。
+    // その場合 display_group は UI に載らない (parent=this なので leak はしない)。
+    // 黙って消えると原因究明が難しいため明示ログを残す (PR #422 review low)。
+    RCLCPP_ERROR(LOGGER, "Display Settings group could not be attached: root layout is not QVBoxLayout");
   }
 
   // Connect signals → set_parameters service call.
