@@ -62,8 +62,17 @@ void MapoiPanel::MapoiRouteComboBox()
           // (highlighted_route_poi_names_ は上で既に clear 済み)。
           RCLCPP_ERROR(LOGGER, "get_route_pois failed for '%s': %s",
                        route_name_list_[route_index].c_str(), response->error_message.c_str());
-          // #401: route 取得失敗も UI へ。error_message はそのまま PlainText ラベルに載る。
-          ShowTransientNotice(QString::fromStdString("route 取得失敗: " + response->error_message));
+          // #401: route 取得失敗も UI へ。error_message はそのまま PlainText ラベルに載る
+          // (空なら文言が宙に浮くためフォールバック、PR #423 review low)。
+          const std::string err =
+            response->error_message.empty() ? "(詳細なし)" : response->error_message;
+          ShowTransientNotice(QString::fromStdString("route 取得失敗: " + err));
+        } else {
+          // response が null (future 完了だが応答本体なし)。LocalizationButton と同じ 3 分岐に
+          // 揃え、無表示のまま取りこぼさない (PR #423 review)。
+          RCLCPP_ERROR(LOGGER, "get_route_pois call failed for '%s' (null response).",
+                       route_name_list_[route_index].c_str());
+          ShowTransientNotice(QString::fromStdString("route 取得 失敗 (応答なし)"));
         }
       }
     } else {
@@ -114,7 +123,10 @@ void MapoiPanel::LocalizationButton()
       RCLCPP_ERROR(LOGGER, "request_initial_pose rejected: %s",
                    response->error_message.c_str());
       // #401: 拒否も UI へ。error_message はそのまま PlainText ラベルに載る (#398 で rich text 無効化済み)。
-      ShowTransientNotice(QString::fromStdString("初期位置設定 拒否: " + response->error_message));
+      // 空 message は文言が宙に浮くためフォールバック (PR #423 review low)。
+      const std::string err =
+        response->error_message.empty() ? "(詳細なし)" : response->error_message;
+      ShowTransientNotice(QString::fromStdString("初期位置設定 拒否: " + err));
     } else {
       // response が null (future 完了だが応答本体なし)。timeout/failed と同じ扱い。
       RCLCPP_ERROR(LOGGER, "request_initial_pose call failed or timed out.");
