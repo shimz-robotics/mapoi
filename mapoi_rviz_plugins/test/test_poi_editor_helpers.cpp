@@ -1,5 +1,10 @@
-// Pure helper functions のための gtest (#158 round 1)。Qt 不要 (header は stdlib のみ)。
+// Pure helper functions のための gtest (#158 round 1)。Qt 不要。
+// header 依存: stdlib + geometry_msgs / tf2 (calc_yaw のみ、#397 step 8 で追加)。
+// テスト target は ament_auto_add_gtest で ament_cmake_auto が package.xml の
+// geometry_msgs / tf2 depend から link を解決する。
 #include <gtest/gtest.h>
+
+#include <cmath>
 
 #include "mapoi_rviz_plugins/poi_editor_helpers.hpp"
 
@@ -11,6 +16,11 @@ using mapoi_rviz_plugins::detail::ConfigPathUpdateAction;
 using mapoi_rviz_plugins::detail::ConfigReloadGuardDecision;
 using mapoi_rviz_plugins::detail::decide_config_reload_guard;
 using mapoi_rviz_plugins::detail::should_confirm_overwrite;
+
+// 自由関数化した helpers (#397 step 8)
+using mapoi_rviz_plugins::detail::calc_yaw;
+using mapoi_rviz_plugins::detail::join;
+using mapoi_rviz_plugins::detail::split_sentence;
 
 // --- split_and_trim ---
 
@@ -249,4 +259,117 @@ TEST(ShouldConfirmOverwrite, EmptyBaselinePathDoesNotMatchNonEmptySave)
   // baseline 未取得 (path も空) の状態で保存先を指定 → path 不一致で比較しない。
   EXPECT_FALSE(should_confirm_overwrite(
     "/maps/mapA/mapoi_config.yaml", "", "", "poi: [x]"));
+}
+
+// --- calc_yaw (#397 step 8) ---
+//
+// PoiEditorPanel::calcYaw を detail::calc_yaw として自由関数化した純関数のテスト。
+// quaternion → yaw 変換の契約を pin する。
+
+// ヘルパ: roll=0, pitch=0, yaw=theta の quaternion を作る (tf2 直接使用)。
+namespace
+{
+geometry_msgs::msg::Pose make_pose_yaw(double yaw_rad)
+{
+  tf2::Quaternion q;
+  q.setRPY(0.0, 0.0, yaw_rad);
+  geometry_msgs::msg::Pose pose;
+  pose.orientation.x = q.x();
+  pose.orientation.y = q.y();
+  pose.orientation.z = q.z();
+  pose.orientation.w = q.w();
+  return pose;
+}
+}  // namespace
+
+TEST(CalcYaw, IdentityQuaternionIsZero)
+{
+  // 恒等 quaternion (w=1, xyz=0) → yaw = 0
+  geometry_msgs::msg::Pose pose;
+  pose.orientation.w = 1.0;
+  EXPECT_NEAR(calc_yaw(pose), 0.0, 1e-9);
+}
+
+TEST(CalcYaw, KnownYawFortyFiveDeg)
+{
+  // yaw = π/4 (45°) の quaternion → π/4 が返る
+  const double expected = M_PI / 4.0;
+  EXPECT_NEAR(calc_yaw(make_pose_yaw(expected)), expected, 1e-9);
+}
+
+TEST(CalcYaw, KnownYawNegativeNinetyDeg)
+{
+  // yaw = -π/2 (-90°) の quaternion → -π/2 が返る
+  const double expected = -M_PI / 2.0;
+  EXPECT_NEAR(calc_yaw(make_pose_yaw(expected)), expected, 1e-9);
+}
+
+TEST(CalcYaw, NearPiBoundary)
+{
+  // yaw ≈ π (180°) 付近。getRPY の返値範囲は (-π, π] なので ±π 境界を確認する。
+  // tf2::Matrix3x3::getRPY は π を返すことがある (実装依存) ため |result| ≤ π を検証。
+  const double yaw = M_PI;
+  const double result = calc_yaw(make_pose_yaw(yaw));
+  EXPECT_LE(std::abs(result), M_PI + 1e-9);
+}
+
+// --- join (#397 step 8) ---
+
+TEST(Join, EmptyVector)
+{
+  // 空ベクタ → 空文字列
+  EXPECT_EQ(join({}, ", "), "");
+}
+
+TEST(Join, SingleElement)
+{
+  EXPECT_EQ(join({"foo"}, ", "), "foo");
+}
+
+TEST(Join, MultipleElements)
+{
+  EXPECT_EQ(join({"waypoint", "pause", "landmark"}, ", "), "waypoint, pause, landmark");
+}
+
+TEST(Join, NullDelim)
+{
+  // delim が nullptr の場合は単純連結 (区切りなし)
+  EXPECT_EQ(join({"a", "b", "c"}, nullptr), "abc");
+}
+
+// --- split_sentence (#397 step 8) ---
+
+TEST(SplitSentence, BasicTwoParts)
+{
+  // "waypoint, pause" → ["waypoint", " pause"] (SplitSentence は trim しない)
+  const auto result = split_sentence("waypoint, pause", ", ");
+  ASSERT_EQ(result.size(), 2u);
+  EXPECT_EQ(result[0], "waypoint");
+  EXPECT_EQ(result[1], "pause");
+}
+
+TEST(SplitSentence, NoDelimiter)
+{
+  // 区切り無し → 1 要素のベクタ
+  const auto result = split_sentence("single", ", ");
+  ASSERT_EQ(result.size(), 1u);
+  EXPECT_EQ(result[0], "single");
+}
+
+TEST(SplitSentence, TrailingDelimiter)
+{
+  // "a, b, " → ["a", "b", ""] (末尾区切り後に空文字列が入る)
+  const auto result = split_sentence("a, b, ", ", ");
+  ASSERT_EQ(result.size(), 3u);
+  EXPECT_EQ(result[0], "a");
+  EXPECT_EQ(result[1], "b");
+  EXPECT_EQ(result[2], "");
+}
+
+TEST(SplitSentence, EmptyString)
+{
+  // 空文字列 → 1 要素 (空文字列) のベクタ (while loop が回らず末尾トークンだけ push)
+  const auto result = split_sentence("", ", ");
+  ASSERT_EQ(result.size(), 1u);
+  EXPECT_EQ(result[0], "");
 }

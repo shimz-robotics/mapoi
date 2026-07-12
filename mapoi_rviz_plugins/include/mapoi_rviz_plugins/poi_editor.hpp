@@ -9,7 +9,6 @@
 #include <rviz_common/panel.hpp>
 #include <rviz_common/display_context.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
-#include <tf2/LinearMath/Quaternion.h>
 
 #include <std_msgs/msg/string.hpp>
 #include <std_srvs/srv/trigger.hpp>
@@ -149,7 +148,8 @@ protected:
   void PopulateTagFilter();
   void LoadTagDefinitions();
   bool ValidatePois();
-  double calcYaw(geometry_msgs::msg::Pose pose);
+  // calcYaw / join / SplitSentence は poi_editor_helpers.hpp の
+  // detail::calc_yaw / detail::join / detail::split_sentence に移動 (#397 step 8)。
 
   // Display Settings 副パネル (QGroupBox + Radio/Check) を構築し connect まで行う。
   // onInitialize から rviz2_pub_param_client_ 生成後・初期 Sync 前に一度だけ呼ぶ。
@@ -172,8 +172,5 @@ protected:
   // SyncDisplaySettingsFromPublisher() で sync を試みた後 (cache 未更新) のフォールバック用。
   void RevertDisplaySettingsUiFromCache();
 
-  std::string join(const std::vector<std::string>& v, const char* delim);
-  std::vector<std::string> SplitSentence(std::string sentence,
-                                         std::string delimiter);
 };
 } // end namespace mapoi_rviz_plugins

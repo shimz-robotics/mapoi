@@ -1,5 +1,7 @@
 // Pure helper functions for PoiEditorPanel (#158 で header 化、unit test 容易化のため)。
-// Qt 依存なし、stdlib のみ。
+// Qt 依存なし。stdlib のみ + geometry_msgs / tf2 (calc_yaw のみ)。
+// NOTE: calc_yaw のために tf2/geometry_msgs 依存が加わったが、それ以外の関数は
+//       引き続き stdlib のみ (テスト時は calc_yaw のテストだけ tf2 link が要る)。
 #pragma once
 
 #include <cctype>
@@ -7,6 +9,10 @@
 #include <sstream>
 #include <string>
 #include <vector>
+
+#include <geometry_msgs/msg/pose.hpp>
+#include <tf2/LinearMath/Matrix3x3.h>
+#include <tf2/LinearMath/Quaternion.h>
 
 #include "mapoi_rviz_plugins/config_path_update_policy.hpp"
 
@@ -254,6 +260,62 @@ inline bool should_confirm_overwrite(
     return false;  // baseline を読めなかった: ガード無効 (従来挙動)
   }
   return baseline_content != current_content;  // path 一致 && baseline 非空 && 内容不一致
+}
+
+// PoiEditorPanel::calcYaw から移植 (#397 step 8 で自由関数化)。
+// geometry_msgs::msg::Pose の orientation (quaternion) から yaw 角 [rad] を返す。
+// tf2::Quaternion / tf2::Matrix3x3::getRPY を使用。
+// 命名規約: detail 内の既存関数群は snake_case なので calc_yaw に rename (全 call site 置換済み)。
+// 出典: #397 step 8 (元のメンバ関数 PoiEditorPanel::calcYaw から移動)。
+inline double calc_yaw(const geometry_msgs::msg::Pose & pose)
+{
+  tf2::Quaternion q(
+    pose.orientation.x,
+    pose.orientation.y,
+    pose.orientation.z,
+    pose.orientation.w);
+  tf2::Matrix3x3 m(q);
+  double roll, pitch, yaw;
+  m.getRPY(roll, pitch, yaw);
+  return yaw;
+}
+
+// PoiEditorPanel::join から移植 (#397 step 8 で自由関数化)。
+// 文字列ベクタを delim で連結して返す。delim が nullptr の場合は単純連結。
+// 命名規約: join は元名と一致 (既存 snake_case 慣例と同一形)。
+// 出典: https://marycore.jp/prog/cpp/vector-join/
+inline std::string join(const std::vector<std::string> & v, const char * delim)
+{
+  std::string s;
+  if (!v.empty()) {
+    s += v[0];
+    for (decltype(v.size()) i = 1, c = v.size(); i < c; ++i) {
+      if (delim) s += delim;
+      s += v[i];
+    }
+  }
+  return s;
+}
+
+// PoiEditorPanel::SplitSentence から移植 (#397 step 8 で自由関数化)。
+// sentence を delimiter で分割し、末尾トークン含む全トークンのベクタを返す。
+// 命名規約: detail 内の既存関数群は snake_case なので split_sentence に rename (全 call site 置換済み)。
+// 出典: https://lilaboc.work/archives/19026007.html
+inline std::vector<std::string> split_sentence(std::string sentence, std::string delimiter)
+{
+  std::vector<std::string> words;
+  size_t position = 0;
+
+  while (sentence.find(delimiter.c_str(), position) != std::string::npos) {
+    size_t next_position = sentence.find(delimiter.c_str(), position);
+    std::string word = sentence.substr(position, next_position - position);
+    position = next_position + delimiter.length();
+    words.push_back(word);
+  }
+  std::string last_word = sentence.substr(position, sentence.length() - position);
+  words.push_back(last_word);
+
+  return words;
 }
 
 }  // namespace mapoi_rviz_plugins::detail

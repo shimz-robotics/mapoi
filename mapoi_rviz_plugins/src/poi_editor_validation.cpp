@@ -108,7 +108,7 @@ bool PoiEditorPanel::ValidatePois()
     std::string tags_str = tags_item ? tags_item->text().toStdString() : "";
     if (tags_str.empty()) continue;
 
-    auto tags = this->SplitSentence(tags_str, ", ");
+    auto tags = detail::split_sentence(tags_str, ", ");
     const auto excl = detail::check_tag_exclusivity(tags);
     if (excl.waypoint_landmark_conflict) {
       exclusivity_warnings.append(
@@ -135,7 +135,7 @@ bool PoiEditorPanel::ValidatePois()
     std::string tags_str = tags_item ? tags_item->text().toStdString() : "";
     if (tags_str.empty()) continue;
 
-    auto tags = this->SplitSentence(tags_str, ", ");
+    auto tags = detail::split_sentence(tags_str, ", ");
     for (const auto& tag : tags) {
       if (tag.empty()) continue;
       bool found = false;
