@@ -60,6 +60,7 @@ private Q_SLOTS:
   void SaveButton();
   void TagFilterChanged(int index);
   void TagHelperSelected(int index);
+  void NameFilterChanged(const QString & text);
 
 protected:
   Ui::PoiEditorUi* ui_;
@@ -155,6 +156,11 @@ protected:
   // onInitialize 末尾の初期同期と、SetParameters 失敗時の UI rollback の両方で使う。
   // 成功時は cached_* を更新する。
   void SyncDisplaySettingsFromPublisher();
+
+  // POI 名フィルタ (#405): NameFilterEdit の現在テキストに基づいて全行の表示/非表示を設定する。
+  // setRowHidden (行削除なし) を使うため rowCount() は不変。UpdatePoiTable / TagFilterChanged の
+  // 再構築後に呼び出すことで、再構築後もフィルタ状態を維持する。
+  void ApplyNameFilter();
 
   // service down 等で sync が失敗した場合、cached_* に基づいて UI を revert する。
   // SyncDisplaySettingsFromPublisher() で sync を試みた後 (cache 未更新) のフォールバック用。

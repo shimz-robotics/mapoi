@@ -62,6 +62,10 @@ void PoiEditorPanel::onInitialize()
   connect(ui_->SaveButton, SIGNAL(clicked()), this, SLOT(SaveButton()));
   connect(ui_->TagFilterComboBox, SIGNAL(activated(int)), this, SLOT(TagFilterChanged(int)));
   connect(ui_->TagHelperComboBox, SIGNAL(activated(int)), this, SLOT(TagHelperSelected(int)));
+  // POI 名フィルタ (#405): テキスト変更のたびに setRowHidden で絞り込む。
+  // textChanged は文字入力・clearButton 押下の両方で発火する。
+  connect(ui_->NameFilterEdit, &QLineEdit::textChanged,
+    this, &PoiEditorPanel::NameFilterChanged);
 
   poi_pose_sub_ = node_->create_subscription<geometry_msgs::msg::PoseStamped>(
     "mapoi_rviz_pose", 10, std::bind(&PoiEditorPanel::PoiPoseCallback, this, std::placeholders::_1));
@@ -638,6 +642,10 @@ void PoiEditorPanel::UpdatePoiTable()
   // green stylesheet が残ったままになる症状 (issue #77 症状 2) を明示リセットで防ぐ。
   ui_->SaveButton->setStyleSheet("QPushButton {background-color: white; color: black;}");
   UpdatePoiCount();
+  // 全再構築後、名前フィルタを再適用して絞り込み状態を維持する (#405)。
+  // setRowHidden は行を削除しないため rowCount() = 全 POI 数は変わらず、
+  // SaveButton の全行ループは非表示行も含めて正しく保存される。
+  ApplyNameFilter();
 
   // 全再構築 = サーバ状態と一致した時点なので dirty をクリアする (#399)。
   table_dirty_ = false;
