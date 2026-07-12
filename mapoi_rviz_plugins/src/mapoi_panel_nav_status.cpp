@@ -147,6 +147,19 @@ void MapoiPanel::PoiEventCallback(mapoi_interfaces::msg::PoiEvent::SharedPtr msg
   }, Qt::QueuedConnection);
 }
 
+// #401: CommandRejectedLabel への一時通知の共用ヘルパー。#398 の CommandRejectedLabel と
+// reject_clear_timer_ (singleShot 5 秒) をここ (両者の責務がある TU) で集約する。
+// UI (Qt メイン) スレッドからのみ呼ぶ前提: CommandRejectedCallback は queued lambda 内、
+// LocalizationButton / MapoiRouteComboBox は Qt スロット内 = いずれも UI スレッド。
+// is_error で文字色を切り替える (エラー=赤 / 情報=緑)。成功通知まで赤にすると
+// オペレータに誤警戒を与えるため、.ui の初期値に頼らず呼び出しごとに設定する。
+void MapoiPanel::ShowTransientNotice(const QString & text, bool is_error)
+{
+  ui_->CommandRejectedLabel->setStyleSheet(is_error ? "color: red;" : "color: green;");
+  ui_->CommandRejectedLabel->setText(text);
+  reject_clear_timer_->start();  // 連続通知時は自動リスタートで 5 秒延長
+}
+
 // #398: mapoi/nav/command_rejected コールバック。payload は target 名のみの文字列
 // (README §Publishers command_rejected 節参照)。NavStatusLabel (latched 状態スナップショット) には
 // 一切触れず、CommandRejectedLabel に一時表示して 5 秒後にクリアする。
@@ -157,8 +170,7 @@ void MapoiPanel::CommandRejectedCallback(std_msgs::msg::String::SharedPtr msg)
     const QString text = target.empty()
       ? QString::fromStdString("コマンド拒否")
       : QString::fromStdString("コマンド拒否: " + target);
-    ui_->CommandRejectedLabel->setText(text);
-    reject_clear_timer_->start();  // 連続 reject 時は自動リスタートで 5 秒延長
+    ShowTransientNotice(text);  // #401: 一時通知機構を共用 (挙動不変)
   }, Qt::QueuedConnection);
 }
 

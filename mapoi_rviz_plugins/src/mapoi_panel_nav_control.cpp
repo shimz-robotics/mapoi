@@ -62,10 +62,14 @@ void MapoiPanel::MapoiRouteComboBox()
           // (highlighted_route_poi_names_ は上で既に clear 済み)。
           RCLCPP_ERROR(LOGGER, "get_route_pois failed for '%s': %s",
                        route_name_list_[route_index].c_str(), response->error_message.c_str());
+          // #401: route 取得失敗も UI へ。error_message はそのまま PlainText ラベルに載る。
+          ShowTransientNotice(QString::fromStdString("route 取得失敗: " + response->error_message));
         }
       }
     } else {
+      // #401: service 未起動もログのみだと無反応。UI にも一時通知する。
       RCLCPP_ERROR(LOGGER, "mapoi/get_route_pois service not available after 3s timeout.");
+      ShowTransientNotice(QString::fromStdString("route 取得サービス未接続"));
     }
   }
   PublishHighlightPois();
@@ -84,7 +88,9 @@ void MapoiPanel::LocalizationButton()
   // per-writer latched cache が単一化され stale POI を構造的に排除する。bridge が POI resolve /
   // landmark 排他 / `/initialpose` 配信 / retry を一元処理する点は不変 (#209)。
   if (!request_initial_pose_client_->wait_for_service(3s)) {
+    // #401: service 未起動もログのみだと無反応で操作失敗に気づけない。UI にも一時通知する。
     RCLCPP_ERROR(LOGGER, "mapoi/request_initial_pose service not available after 3s timeout.");
+    ShowTransientNotice(QString::fromStdString("初期位置設定サービス未接続"));
     return;
   }
   auto request = std::make_shared<mapoi_interfaces::srv::RequestInitialPose::Request>();
@@ -95,16 +101,29 @@ void MapoiPanel::LocalizationButton()
     // #299: server は非空 map_name が現在 map と不一致な要求を publish せず success=false で
     // 返すようになった (panel の current_map_ が stale な窓など)。future 完了 = 成功ではない
     // ので response を確認し、reject を operator に成功と誤認させない。
+    // #421 review: null チェックは MapoiRouteComboBox と同じく `response && response->success` に統一。
     const auto response = result.get();
-    if (response->success) {
+    if (response && response->success) {
       RCLCPP_INFO(LOGGER, "Requested initial pose: %s (map: %s).",
                   request->poi_name.c_str(), current_map_.c_str());
-    } else {
+      // #401: 成功フィードバック。オペレータが初期位置設定の受理を確認できるようにする。
+      // 成功は情報通知 (緑)。エラーの赤と区別して誤警戒を避ける。
+      ShowTransientNotice(QString::fromStdString("初期位置設定: " + request->poi_name),
+                          /*is_error=*/false);
+    } else if (response) {
       RCLCPP_ERROR(LOGGER, "request_initial_pose rejected: %s",
                    response->error_message.c_str());
+      // #401: 拒否も UI へ。error_message はそのまま PlainText ラベルに載る (#398 で rich text 無効化済み)。
+      ShowTransientNotice(QString::fromStdString("初期位置設定 拒否: " + response->error_message));
+    } else {
+      // response が null (future 完了だが応答本体なし)。timeout/failed と同じ扱い。
+      RCLCPP_ERROR(LOGGER, "request_initial_pose call failed or timed out.");
+      ShowTransientNotice(QString::fromStdString("初期位置設定 失敗 (応答なし)"));
     }
   } else {
+    // #401: 応答なし (timeout/失敗) もログのみだと無反応。UI にも通知する。
     RCLCPP_ERROR(LOGGER, "request_initial_pose call failed or timed out.");
+    ShowTransientNotice(QString::fromStdString("初期位置設定 失敗 (応答なし)"));
   }
 }
 
