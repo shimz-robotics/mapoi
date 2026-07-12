@@ -53,12 +53,12 @@ void PoiEditorPanel::TagFilterChanged(int index)
         tr("%1, %2, %3")
           .arg(QString::number(p.pose.position.x, 'f', 2))
           .arg(QString::number(p.pose.position.y, 'f', 2))
-          .arg(QString::number(this->calcYaw(p.pose), 'f', 2))));
+          .arg(QString::number(detail::calc_yaw(p.pose), 'f', 2))));
       ui_->PoiTable->setItem(row, kColTolerance, new QTableWidgetItem(
         tr("%1, %2")
           .arg(QString::number(p.tolerance.xy, 'f', 2))
           .arg(QString::number(p.tolerance.yaw, 'f', 2))));
-      ui_->PoiTable->setItem(row, kColTags, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
+      ui_->PoiTable->setItem(row, kColTags, new QTableWidgetItem(QString::fromStdString(detail::join(p.tags, ", "))));
       ui_->PoiTable->setItem(row, kColDescription, new QTableWidgetItem(QString::fromStdString(p.description)));
       row++;
     }
@@ -148,7 +148,7 @@ void PoiEditorPanel::TagHelperSelected(int index)
   std::string current_tags = tags_item ? tags_item->text().toStdString() : "";
 
   // Check if tag already exists
-  auto tag_list = this->SplitSentence(current_tags, ", ");
+  auto tag_list = detail::split_sentence(current_tags, ", ");
   for (const auto& t : tag_list) {
     if (t == tag_name) {
       ui_->TagHelperComboBox->setCurrentIndex(0);

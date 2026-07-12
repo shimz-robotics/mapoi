@@ -247,7 +247,7 @@ void PoiEditorPanel::FileComboBox()
 void PoiEditorPanel::PoiPoseCallback(geometry_msgs::msg::PoseStamped::SharedPtr msg)
 {
   auto p = msg->pose;
-  auto txt = tr("%1, %2, %3").arg(p.position.x).arg(p.position.y).arg(this->calcYaw(p));
+  auto txt = tr("%1, %2, %3").arg(p.position.x).arg(p.position.y).arg(detail::calc_yaw(p));
   QMetaObject::invokeMethod(this, [this, txt]() {
     int current_row = ui_->PoiTable->currentRow();
     if (current_row >= 0) {
@@ -456,12 +456,12 @@ void PoiEditorPanel::UpdatePoiTable()
       tr("%1, %2, %3")
         .arg(QString::number(p.pose.position.x, 'f', 2))
         .arg(QString::number(p.pose.position.y, 'f', 2))
-        .arg(QString::number(this->calcYaw(p.pose), 'f', 2))));
+        .arg(QString::number(detail::calc_yaw(p.pose), 'f', 2))));
     ui_->PoiTable->setItem(row, kColTolerance, new QTableWidgetItem(
       tr("%1, %2")
         .arg(QString::number(p.tolerance.xy, 'f', 2))
         .arg(QString::number(p.tolerance.yaw, 'f', 2))));
-    ui_->PoiTable->setItem(row, kColTags, new QTableWidgetItem(QString::fromStdString(this->join(p.tags, ", "))));
+    ui_->PoiTable->setItem(row, kColTags, new QTableWidgetItem(QString::fromStdString(detail::join(p.tags, ", "))));
     ui_->PoiTable->setItem(row, kColDescription, new QTableWidgetItem(QString::fromStdString(p.description)));
   }
   is_table_color_ = true;
@@ -506,50 +506,8 @@ void PoiEditorPanel::UpdatePoiTable()
   }
 }
 
-double PoiEditorPanel::calcYaw(geometry_msgs::msg::Pose pose)
-{
-  tf2::Quaternion q(
-    pose.orientation.x,
-    pose.orientation.y,
-    pose.orientation.z,
-    pose.orientation.w);
-  tf2::Matrix3x3 m(q);
-  double roll, pitch, yaw;
-  m.getRPY(roll, pitch, yaw);
-  return yaw;
-}
-
-// https://marycore.jp/prog/cpp/vector-join/
-std::string PoiEditorPanel::join(const std::vector<std::string>& v, const char* delim)
-{
-  std::string s;
-  if (!v.empty()) {
-    s += v[0];
-    for (decltype(v.size()) i = 1, c = v.size(); i < c; ++i) {
-      if (delim) s += delim;
-      s += v[i];
-    }
-  }
-  return s;
-}
-
-// https://lilaboc.work/archives/19026007.html
-std::vector<std::string> PoiEditorPanel::SplitSentence(std::string sentence, std::string delimiter)
-{
-	std::vector<std::string> words;
-	size_t position = 0;
-
-	while(sentence.find(delimiter.c_str(), position) != std::string::npos){
-		size_t next_position = sentence.find(delimiter.c_str(), position);
-		std::string word = sentence.substr(position, next_position-position);
-		position = next_position + delimiter.length();
-		words.push_back(word);
-	}
-	std::string last_word = sentence.substr(position, sentence.length()-position);
-	words.push_back(last_word);
-
-	return words;
-}
+// calcYaw / join / SplitSentence の定義は poi_editor_helpers.hpp に移動 (#397 step 8)。
+// detail::calc_yaw / detail::join / detail::split_sentence として自由関数化。
 
 }  // mapoi_rviz_plugins
 

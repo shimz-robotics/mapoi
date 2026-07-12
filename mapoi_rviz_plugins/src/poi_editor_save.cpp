@@ -126,7 +126,7 @@ void PoiEditorPanel::SaveButton()
     poi["tolerance"]["xy"] = xy_val;
     poi["tolerance"]["yaw"] = yaw_val;
     auto tags_str = cell_text(kColTags);
-    poi["tags"] = this->SplitSentence(tags_str, ", ");
+    poi["tags"] = detail::split_sentence(tags_str, ", ");
     poi["description"] = cell_text(kColDescription);
     pois_list.push_back(poi);
   }
