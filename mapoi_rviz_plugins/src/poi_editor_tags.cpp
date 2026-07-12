@@ -1,7 +1,6 @@
 // PoiEditorPanel::TagFilterChanged / PopulateTagFilter / LoadTagDefinitions /
-// TagHelperSelected の定義 (#397 step 7 で poi_editor.cpp から別 TU へ分離)。
-// POI 名検索フィルタ (#405) の追加直前に分割し、タグ操作 UI 系を独立 TU に集約する。
-// クラス構造・宣言 (poi_editor.hpp) は変更なし。
+// TagHelperSelected / ApplyNameFilter / ApplyNameFilterToRow の定義。
+// (#397 step 7 で poi_editor.cpp から別 TU へ分離、#405 で名前フィルタを追加)
 #include "mapoi_rviz_plugins/poi_editor.hpp"
 #include "mapoi_rviz_plugins/poi_editor_helpers.hpp"
 
@@ -66,6 +65,10 @@ void PoiEditorPanel::TagFilterChanged(int index)
   }
   is_table_color_ = true;
   UpdatePoiCount();
+  // タグフィルタで行を再構築した後、名前フィルタを再適用して絞り込み状態を維持する (#405)。
+  // タグフィルタはまずタグ一致行を setRowCount(0) で再構築し、その後 名前フィルタが
+  // setRowHidden で絞り込む。つまり「タグ AND 名前」の併用絞り込みになる。
+  ApplyNameFilter();
 }
 
 void PoiEditorPanel::PopulateTagFilter()
@@ -160,6 +163,50 @@ void PoiEditorPanel::TagHelperSelected(int index)
 
   // Reset combo to placeholder
   ui_->TagHelperComboBox->setCurrentIndex(0);
+}
+
+// POI 名フィルタ (#405)
+// -----------------------------------------------------------------------
+// 設計判断:
+//   - setRowHidden を使うため行は削除せず rowCount() は不変。
+//     SaveButton の全行ループは非表示行も含めて正しく保存される
+//     (タグフィルタの setRowCount(0) 再構築とは異なり、保存ブロック不要)。
+//   - 判定は logical row の item text に対して行う (verticalHeader の
+//     visual 並び替えには依存しない)。
+//   - タグフィルタとの併用: TagFilterChanged → ApplyNameFilter の順に呼ぶことで
+//     「タグ AND 名前」の絞り込みになる。タグフィルタで非一致行は行ごと setRowCount(0) で
+//     排除済みのため、名前フィルタは残行に対して追加絞り込みを行うだけでよい。
+//   - TableChanged (セル編集): セル編集は行数を変えないため setRowHidden 状態は有効なまま。
+//     kColName セルの編集確定時のみ、その行を ApplyNameFilterToRow で再評価する
+//     (PR #420 review。一致しなくなった行は編集確定と同時に隠れる)。
+//   - New/Copy の新規行はフィルタ非一致でもデフォルト可視のまま (作った行が見えないと
+//     編集を継続できないため意図的)。件数表示は UpdatePoiCount の可視/全体 併記で整合する。
+//   - 行ドラッグ (setSectionsMovable): setRowHidden は logical row 基準で visual 並びと
+//     独立。非表示行を跨ぐドラッグは Qt 標準挙動に委ねる。
+// -----------------------------------------------------------------------
+
+void PoiEditorPanel::ApplyNameFilterToRow(int row)
+{
+  const QString filter_text = ui_->NameFilterEdit->text();
+  if (filter_text.isEmpty()) {
+    // 空文字 = フィルタ解除 (行は常に表示)
+    ui_->PoiTable->setRowHidden(row, false);
+    return;
+  }
+  const auto * name_item = ui_->PoiTable->item(row, kColName);
+  const QString name_text = name_item ? name_item->text() : QString();
+  // 部分一致・大文字小文字不区別 (WebUI の matchesPoiName と同じ意味論)
+  ui_->PoiTable->setRowHidden(row, !name_text.contains(filter_text, Qt::CaseInsensitive));
+}
+
+void PoiEditorPanel::ApplyNameFilter()
+{
+  const int num_rows = ui_->PoiTable->rowCount();
+  for (int row = 0; row < num_rows; ++row) {
+    ApplyNameFilterToRow(row);
+  }
+  // 可視行数が変わるので件数表示 (可視/全体) を同期する (PR #420 review)。
+  UpdatePoiCount();
 }
 
 }  // namespace mapoi_rviz_plugins

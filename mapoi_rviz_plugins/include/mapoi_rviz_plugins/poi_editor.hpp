@@ -156,6 +156,14 @@ protected:
   // 成功時は cached_* を更新する。
   void SyncDisplaySettingsFromPublisher();
 
+  // POI 名フィルタ (#405): NameFilterEdit の現在テキストに基づいて全行の表示/非表示を設定する。
+  // setRowHidden (行削除なし) を使うため rowCount() は不変。UpdatePoiTable / TagFilterChanged の
+  // 再構築後に呼び出すことで、再構築後もフィルタ状態を維持する。textChanged からも直接呼ばれる。
+  // 末尾で UpdatePoiCount を呼び、可視行数と件数表示を同期する (PR #420 review)。
+  void ApplyNameFilter();
+  // 単一行だけフィルタを再評価する (#405)。名前セルの編集確定時 (TableChanged) に使用。
+  void ApplyNameFilterToRow(int row);
+
   // service down 等で sync が失敗した場合、cached_* に基づいて UI を revert する。
   // SyncDisplaySettingsFromPublisher() で sync を試みた後 (cache 未更新) のフォールバック用。
   void RevertDisplaySettingsUiFromCache();

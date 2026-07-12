@@ -48,6 +48,16 @@
       </widget>
      </item>
      <item>
+      <widget class="QLineEdit" name="NameFilterEdit">
+       <property name="placeholderText">
+        <string>POI 名で絞り込み</string>
+       </property>
+       <property name="clearButtonEnabled">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QPushButton" name="ResetButton">
        <property name="text">
         <string>reset POIs</string>
