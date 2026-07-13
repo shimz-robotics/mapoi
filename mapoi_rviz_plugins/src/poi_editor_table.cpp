@@ -21,6 +21,7 @@
 #include <vector>
 
 #include <QFileDialog>
+#include <QHeaderView>  // verticalHeader()->visualIndex / moveSection (#434, ApplyInsertRow の視覚移動)
 #include <QScopedValueRollback>
 #include <QShortcut>
 #include <QUndoCommand>
@@ -85,22 +86,30 @@ private:
 
 // 行追加 (New) / 複製 (Copy) 共通。redo = row_ に texts_ の行を挿入、undo = row_ を削除。
 // New は "new_poi" 既定行、Copy は複製元行のテキストを texts_ に持つ (生成側で構築)。
+//
+// visual_ref_ (#434): 選択行の logical index。redo() で ApplyInsertRow に渡し、視覚順を
+// 並べ替え済みのテーブルでも新規行を選択行の視覚直下へ moveSection する。視覚移動は redo 経路
+// (ApplyInsertRow) に置くため、undo→redo のやり直しでも同じ視覚位置に再現される。undo は
+// ApplyRemoveRow が挿入した section をそのまま除去するため、視覚移動の明示的な逆適用は不要
+// (残り行の相対視覚順は removeRow で保たれる)。選択なし (New で -1) は視覚移動しない。
 class InsertRowCommand : public QUndoCommand
 {
 public:
-  InsertRowCommand(PoiEditorPanel * panel, int row, RowTexts texts, const QString & label)
-  : panel_(panel), row_(row), texts_(std::move(texts))
+  InsertRowCommand(PoiEditorPanel * panel, int row, RowTexts texts, const QString & label,
+                   int visual_ref)
+  : panel_(panel), row_(row), texts_(std::move(texts)), visual_ref_(visual_ref)
   {
     setText(label);
   }
 
   void undo() override { panel_->ApplyRemoveRow(row_); }
-  void redo() override { panel_->ApplyInsertRow(row_, texts_); }
+  void redo() override { panel_->ApplyInsertRow(row_, texts_, visual_ref_); }
 
 private:
   PoiEditorPanel * panel_;
   int row_;
   RowTexts texts_;
+  int visual_ref_;
 };
 
 // 行削除 (Delete)。redo = row_ を削除、undo = row_ に texts_ を挿入 (削除前の全 cell
@@ -112,6 +121,9 @@ private:
 // visualIndex のキャプチャ + moveSection 逆適用が要るが、複合エッジ (並び替え+削除+undo) の
 // 頻度に対して複雑化が見合わないため割り切る。保存後の UpdatePoiTable 再構築で visual =
 // logical に正規化される点は従来通り。
+// なお New/Copy の挿入は #434 で選択行の視覚直下へ揃えるようにしたが、これは RemoveRowCommand の
+// undo (再挿入) には及ぼさない — ApplyInsertRow を visual_ref_row = -1 (既定) で呼ぶため、上記の
+// 削除 undo の視覚挙動 (既定に戻る) はこれまで通り。
 class RemoveRowCommand : public QUndoCommand
 {
 public:
@@ -289,7 +301,7 @@ void PoiEditorPanel::ApplySetCell(int row, int col, const QString & text)
   UpdatePoiCount();
 }
 
-void PoiEditorPanel::ApplyInsertRow(int row, const std::vector<QString> & texts)
+void PoiEditorPanel::ApplyInsertRow(int row, const std::vector<QString> & texts, int visual_ref_row)
 {
   // 行挿入 (New/Copy の redo、Delete の undo)。insertRow は cellChanged を確実には
   // 発火しないが、setItem 経由の cellChanged が飛ぶ可能性があるため applying_undo_ で
@@ -306,6 +318,26 @@ void PoiEditorPanel::ApplyInsertRow(int row, const std::vector<QString> & texts)
         texts.begin() + std::min(texts.size(), static_cast<size_t>(kColCount)));
       shadow_row.resize(kColCount);
       shadow_.insert(shadow_.begin() + row, std::move(shadow_row));
+    }
+    // #434: New/Copy 経路 (visual_ref_row >= 0) は、視覚順を並べ替え済みのテーブルでも
+    // 新規行が選択行の視覚直下に来るよう moveSection する。Qt は挿入 section の視覚位置を
+    // 選択行と無関係に決めるため、挿入後の実 visual index を読んで移動先を計算する。
+    // visual_ref_row (= 選択行 logical) は row = 選択行+1 なので insertRow で index が
+    // ずれず、visualIndex(visual_ref_row) で選択行の現在 visual を得られる。moveSection は
+    // sectionMoved を発火するが applying_undo_ 中なので RowMoved slot は早期 return し
+    // 二重コマンド化しない (この guard ブロック内で実行するのが要件)。
+    // visual_ref_row < row も条件で強制する (ヘッダ記載の事前条件)。満たさない呼び出しは
+    // 挿入で参照行の logical がずれ誤った行の直下へ移動し得るため、視覚移動なしへ縮退させる。
+    if (visual_ref_row >= 0 && visual_ref_row < row) {
+      auto * vheader = ui_->PoiTable->verticalHeader();
+      const int inserted_visual = vheader->visualIndex(row);
+      const int ref_visual = vheader->visualIndex(visual_ref_row);
+      if (inserted_visual >= 0 && ref_visual >= 0) {
+        const int target = detail::insert_move_target_visual(inserted_visual, ref_visual);
+        if (inserted_visual != target) {
+          vheader->moveSection(inserted_visual, target);
+        }
+      }
     }
   }
   table_dirty_ = true;
@@ -423,9 +455,11 @@ void PoiEditorPanel::NewButton()
   };
   // コマンド化 (#407)。redo() = ApplyInsertRow が実際の挿入・dirty set・shadow 更新を行う。
   // insertRow / setItem は cellChanged を確実には発火しないため dirty はヘルパー側で明示 set (#399)。
+  // current_row (#434): 選択行の logical index を渡し、視覚順並べ替え済みでも新規行を選択行の
+  // 視覚直下へ揃える。選択なし (current_row == -1) は視覚移動せず従来挙動を維持する。
   if (undo_stack_) {
     undo_stack_->push(new InsertRowCommand(this, new_row, std::move(texts),
-      QObject::tr("add row")));
+      QObject::tr("add row"), current_row));
   }
 }
 
@@ -435,10 +469,12 @@ void PoiEditorPanel::CopyButton()
   if (current_row < 0) return;
   int new_row = current_row + 1;
   // 複製元行の全 cell テキストを持ってコマンド化 (#407)。redo() = ApplyInsertRow。
+  // current_row (#434): 複製元 (選択行) の logical index を渡し、複製行を選択行の視覚直下へ
+  // 揃える。ここでは current_row >= 0 が保証済み (上のガード) なので必ず視覚移動する。
   RowTexts texts = CaptureRowTexts(ui_->PoiTable, current_row);
   if (undo_stack_) {
     undo_stack_->push(new InsertRowCommand(this, new_row, std::move(texts),
-      QObject::tr("copy row")));
+      QObject::tr("copy row"), current_row));
   }
 }
 

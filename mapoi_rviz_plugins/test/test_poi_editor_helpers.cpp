@@ -28,6 +28,9 @@ using mapoi_rviz_plugins::detail::calc_yaw;
 using mapoi_rviz_plugins::detail::join;
 using mapoi_rviz_plugins::detail::split_sentence;
 
+// New/Copy の視覚移動先計算 (#434)
+using mapoi_rviz_plugins::detail::insert_move_target_visual;
+
 // --- split_and_trim ---
 
 TEST(SplitAndTrim, BasicTwoParts)
@@ -494,4 +497,37 @@ TEST(SplitSentence, RoundTripWithJoin)
   EXPECT_EQ(split_sentence(join(tags, ", "), ", "), tags);
   const std::string joined = "a, b, c";
   EXPECT_EQ(join(split_sentence(joined, ", "), ", "), joined);
+}
+
+// --- insert_move_target_visual (#434) ---
+
+TEST(InsertMoveTargetVisual, InsertedBelowRefKeepsRefPosition)
+{
+  // 新規行が選択行より下 (inserted > ref) にある場合: moveSection で取り除いても選択行の
+  // 位置は不変なので、直後 (ref+1) が移動先。例: 選択行 visual 0、挿入行 visual 3 → 1。
+  EXPECT_EQ(insert_move_target_visual(3, 0), 1);
+  EXPECT_EQ(insert_move_target_visual(2, 1), 2);
+}
+
+TEST(InsertMoveTargetVisual, InsertedAboveRefShiftsRefUp)
+{
+  // 新規行が選択行より上 (inserted < ref) にある場合: 取り除くと選択行が 1 つ繰り上がるため、
+  // 移動先は ref のまま (= 繰り上がった選択行の直後)。例: 選択行 visual 2、挿入行 visual 0 → 2。
+  EXPECT_EQ(insert_move_target_visual(0, 2), 2);
+  EXPECT_EQ(insert_move_target_visual(1, 3), 3);
+}
+
+TEST(InsertMoveTargetVisual, AdjacentBelowIsNoOpTarget)
+{
+  // 既に選択行の直下 (inserted == ref+1) にある場合、移動先も同じ値 = 実質 no-op。
+  // 並べ替え未実施 (visual==logical) の New/Copy がこのケースに落ちて挙動不変になる。
+  EXPECT_EQ(insert_move_target_visual(2, 1), 2);  // inserted は移動不要
+  EXPECT_EQ(insert_move_target_visual(1, 0), 1);
+}
+
+TEST(InsertMoveTargetVisual, RefAtBottomStaysAtBottom)
+{
+  // 選択行が視覚最下段 (ref) で挿入行がその上にある場合、移動先 = ref (最下段) となり
+  // 範囲外にならない (N+1 行なら最大 visual index = N = ref)。
+  EXPECT_EQ(insert_move_target_visual(0, 3), 3);
 }

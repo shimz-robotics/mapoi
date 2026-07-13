@@ -377,4 +377,23 @@ inline std::vector<std::string> split_sentence(std::string sentence, std::string
   return words;
 }
 
+// PoiEditorPanel の New/Copy 行挿入 (#434) の視覚移動先を求める純関数。Qt 非依存。
+// 行ドラッグで視覚順 (visual) ≠ 論理順 (logical) に並べ替え済みのテーブルで New/Copy すると、
+// 挿入行は Qt の section 挿入規則で選択行と無関係な視覚位置に現れる。これを選択行の視覚直下へ
+// moveSection するための移動先 visual index を返す。
+//
+//   inserted_visual: 挿入直後の新規行の現在 visual index
+//   ref_visual     : 直上に置きたい選択行の現在 visual index
+//   (両者は別の行なので inserted_visual != ref_visual を前提)
+//
+// QHeaderView::moveSection(from, to) は「visual from の section を取り除き、残り列の中で
+// visual to の位置へ挿し込む」意味論。選択行の直後 (ref_visual+1) に入れたいが、取り除く行が
+// 選択行より上 (inserted_visual < ref_visual) の場合は除去で選択行が 1 つ繰り上がるため、
+// 移動先は ref_visual のまま。選択行より下 (inserted_visual > ref_visual) から動かす場合のみ
+// +1 する。これで inserted_visual の位置に依らず「選択行の視覚直下」に収まる。
+inline int insert_move_target_visual(int inserted_visual, int ref_visual)
+{
+  return ref_visual + (inserted_visual > ref_visual ? 1 : 0);
+}
+
 }  // namespace mapoi_rviz_plugins::detail
