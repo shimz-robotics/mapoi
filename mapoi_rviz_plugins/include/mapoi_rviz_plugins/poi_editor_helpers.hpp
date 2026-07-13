@@ -34,6 +34,22 @@ constexpr int kColTags = 3;
 constexpr int kColDescription = 4;
 constexpr int kColCount = 5;
 
+// PoiEditorPanel::PoiPoseCallback の frame_id 検証 (#430)。MapoiPoseTool は RViz2 の
+// Fixed Frame で pose を publish するが、POI pose は mapoi_server 側で frame_id="map" 前提の
+// goal として扱われる。Fixed Frame が "map" でない状態で反映すると、raw な x/y/theta が
+// 別 frame の座標のまま "map" 座標として保存され、ロボットを誤誘導する (修正案2採用: 警告して
+// 反映を拒否する。tf2 変換は依存追加になるため導入しない)。
+// 先頭の '/' は古いノードが frame_id を "/map" 形式 (tf1 由来の絶対 frame 表記) で
+// publish するケースを許容するため正規化してから比較する。
+inline bool is_map_frame(const std::string & frame_id)
+{
+  std::string normalized = frame_id;
+  if (!normalized.empty() && normalized.front() == '/') {
+    normalized.erase(0, 1);
+  }
+  return normalized == "map";
+}
+
 // 文字列を strict に double に parse し、有限性を確認する純関数 (Codex review #139 medium 対応)。
 // std::stod は "1abc" を 1 として返し NaN/Inf も throw しないため、validation と save で
 // 同じ parser を使うために helper にする。min check は呼び出し側の責任。
