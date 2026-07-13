@@ -94,6 +94,8 @@ A pose-specification tool that can be added to the RViz2 toolbar. Shortcut key: 
 - Click and drag on RViz2 to specify a position and orientation
 - Reflects the position onto the selected row in PoiEditor
 - Automatically switches back to the default tool after use
+- Assumes the RViz2 Fixed Frame is `map`, since POI poses are stored in the `map` frame. If the
+  Fixed Frame is something else, the pose is not reflected and a warning dialog is shown instead.
 
 #### Publishers
 

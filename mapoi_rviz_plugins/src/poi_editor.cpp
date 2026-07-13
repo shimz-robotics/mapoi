@@ -161,9 +161,25 @@ void PoiEditorPanel::MapComboBox()
 // Subscription Callback
 void PoiEditorPanel::PoiPoseCallback(geometry_msgs::msg::PoseStamped::SharedPtr msg)
 {
+  // frame_id 検証 (#430): MapoiPoseTool は Fixed Frame で pose を publish するが、POI pose は
+  // "map" frame 前提で保存される (bridge 側は frame_id="map" の goal として発行するため)。
+  // Fixed Frame が "map" 以外だと raw な x/y/theta をそのまま反映してしまい、ロボットを誤誘導する
+  // 座標が保存される。判定自体は純関数 (detail::is_map_frame) に切り出し、msg からの読み取りだけ
+  // ここ (ROS executor スレッド) で行う。ダイアログ表示・テーブル更新は他 callback (#399/#406) と
+  // 同じ規約で queued lambda 内 (UI スレッド) にまとめる。
+  const bool frame_ok = detail::is_map_frame(msg->header.frame_id);
+  const auto frame_id = msg->header.frame_id;
   auto p = msg->pose;
   auto txt = tr("%1, %2, %3").arg(p.position.x).arg(p.position.y).arg(detail::calc_yaw(p));
-  QMetaObject::invokeMethod(this, [this, txt]() {
+  QMetaObject::invokeMethod(this, [this, frame_ok, frame_id, txt]() {
+    if (!frame_ok) {
+      // 反映を拒否し警告のみ表示する (修正案2)。テーブルには一切触れない。
+      QMessageBox::warning(this, tr("Frame Mismatch"),
+        tr("Set Mapoi Pose ignored: the Fixed Frame is '%1', but POI poses are stored in "
+           "the 'map' frame. Set the RViz Fixed Frame to 'map' and try again.")
+          .arg(QString::fromStdString(frame_id)));
+      return;
+    }
     int current_row = ui_->PoiTable->currentRow();
     if (current_row >= 0) {
       ui_->PoiTable->setItem(current_row, 2, new QTableWidgetItem(txt));

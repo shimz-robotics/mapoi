@@ -11,6 +11,9 @@
 using mapoi_rviz_plugins::detail::split_and_trim;
 using mapoi_rviz_plugins::detail::try_parse_finite_double;
 
+// frame_id 検証 (#430)
+using mapoi_rviz_plugins::detail::is_map_frame;
+
 // 未保存編集ガード判定 (#399)
 using mapoi_rviz_plugins::detail::ConfigPathUpdateAction;
 using mapoi_rviz_plugins::detail::ConfigReloadGuardDecision;
@@ -99,6 +102,40 @@ TEST(SplitAndTrim, TrimsNewlines)
   ASSERT_EQ(result.size(), 2u);
   EXPECT_EQ(result[0], "0.5");
   EXPECT_EQ(result[1], "0.7854");
+}
+
+// --- is_map_frame (#430) ---
+
+TEST(IsMapFrame, ExactMapMatches)
+{
+  EXPECT_TRUE(is_map_frame("map"));
+}
+
+TEST(IsMapFrame, LeadingSlashIsNormalized)
+{
+  // tf1 由来の絶対 frame 表記 ("/map") も許容する
+  EXPECT_TRUE(is_map_frame("/map"));
+}
+
+TEST(IsMapFrame, DifferentFrameRejected)
+{
+  EXPECT_FALSE(is_map_frame("odom"));
+}
+
+TEST(IsMapFrame, DifferentFrameWithLeadingSlashRejected)
+{
+  EXPECT_FALSE(is_map_frame("/base_link"));
+}
+
+TEST(IsMapFrame, EmptyFrameRejected)
+{
+  EXPECT_FALSE(is_map_frame(""));
+}
+
+TEST(IsMapFrame, CaseSensitive)
+{
+  // "Map" は "map" と一致しない (大文字小文字を区別する)
+  EXPECT_FALSE(is_map_frame("Map"));
 }
 
 // --- try_parse_finite_double ---
