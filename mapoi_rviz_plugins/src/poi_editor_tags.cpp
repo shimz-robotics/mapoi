@@ -29,7 +29,37 @@ using detail::kColDescription;
 // Tag Filter
 void PoiEditorPanel::TagFilterChanged(int index)
 {
+  // 未保存編集ガード (#428)。current index / 適用済み index / dirty から純関数で判定する
+  // (#399 の decide_config_reload_guard と同型)。callback はこの判定を no-op / 確認ダイアログ /
+  // フィルタ適用へ写像するだけ。フィルタ適用は setRowCount(0) の行入れ替え + undo_stack_->clear()
+  // で未保存編集を復元不能に破棄するため、config_path 経路と同様にガードが要る。
+  const auto decision = detail::decide_tag_filter_change(
+    index, applied_tag_filter_index_, table_dirty_);
+
+  if (decision == detail::TagFilterChangeDecision::kNoop) {
+    // 適用済みと同じ index の再選択 (activated は選び直しでも発火する) は何もしない。
+    return;
+  }
+  if (decision == detail::TagFilterChangeDecision::kAskUser) {
+    // 未保存編集がある状態でのフィルタ変更。破棄可否をユーザーに確認する。
+    const auto answer = QMessageBox::question(
+      this, tr("Unsaved Edits"),
+      tr("There are unsaved edits. Discard them and change the tag filter?"),
+      QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (answer != QMessageBox::Yes) {
+      // 「編集を継続」: combo の選択を適用済み index に戻して何もしない。setCurrentIndex は
+      // activated を発火しないが currentIndexChanged は飛ぶため blockSignals で確実に抑制し、
+      // シグナル再発火 (この slot の再入や将来配線される slot) を防ぐ。
+      const bool blocked = ui_->TagFilterComboBox->blockSignals(true);
+      ui_->TagFilterComboBox->setCurrentIndex(applied_tag_filter_index_);
+      ui_->TagFilterComboBox->blockSignals(blocked);
+      return;
+    }
+    // 「破棄して変更」: 従来通りフィルタ適用へ進む (以降で undo stack を clear する)。
+  }
+
   if (index <= 0) {
+    // "All" 選択: 全再構築 (PopulateTagFilter が applied_tag_filter_index_ を 0 にリセットする)。
     UpdatePoiTable();
     return;
   }
@@ -81,6 +111,9 @@ void PoiEditorPanel::TagFilterChanged(int index)
     undo_stack_->clear();
   }
   RebuildShadowModel();
+
+  // 適用完了。以後この index の再選択は decide_tag_filter_change の kNoop で弾く (#428)。
+  applied_tag_filter_index_ = index;
 }
 
 void PoiEditorPanel::PopulateTagFilter()
@@ -99,6 +132,10 @@ void PoiEditorPanel::PopulateTagFilter()
   for (const auto& tag : unique_tags) {
     ui_->TagFilterComboBox->addItem(QString::fromStdString(tag));
   }
+  // combo を "All" (index 0) に再構築した = フィルタ無し状態に戻ったので追跡を同期する (#428)。
+  // clear()/addItem() は activated を発火しないため TagFilterChanged は呼ばれず、
+  // UpdatePoiTable (全再構築 = 全 POI 表示) と applied index が食い違わないようここで揃える。
+  applied_tag_filter_index_ = 0;
 }
 
 void PoiEditorPanel::LoadTagDefinitions()

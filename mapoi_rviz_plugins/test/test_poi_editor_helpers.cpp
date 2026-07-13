@@ -16,6 +16,9 @@ using mapoi_rviz_plugins::detail::ConfigPathUpdateAction;
 using mapoi_rviz_plugins::detail::ConfigReloadGuardDecision;
 using mapoi_rviz_plugins::detail::decide_config_reload_guard;
 using mapoi_rviz_plugins::detail::should_confirm_overwrite;
+// タグフィルタ変更の未保存編集ガード判定 (#428)
+using mapoi_rviz_plugins::detail::TagFilterChangeDecision;
+using mapoi_rviz_plugins::detail::decide_tag_filter_change;
 
 // 自由関数化した helpers (#397 step 8)
 using mapoi_rviz_plugins::detail::calc_yaw;
@@ -217,6 +220,60 @@ TEST(DecideConfigReloadGuard, NoopTakesPrecedenceOverDialogOpen)
     decide_config_reload_guard(
       ConfigPathUpdateAction::Noop, true, true),
     ConfigReloadGuardDecision::kProceed);
+}
+
+// --- decide_tag_filter_change (#428) ---
+//
+// TagFilterChanged はタグフィルタ combo の activated 時に、この判定を no-op /
+// 確認ダイアログ / フィルタ適用へ写像するだけ。current×applied×dirty の分岐表をここで
+// pin し、未保存編集を黙って捨てる回帰 (no-op 判定の抜け・dirty ガードの反転等) を安く捕える。
+
+TEST(DecideTagFilterChange, SameIndexIsNoop)
+{
+  // 適用済みと同じ index の再選択は何もしない (dirty でなくても)。
+  EXPECT_EQ(
+    decide_tag_filter_change(2, 2, false),
+    TagFilterChangeDecision::kNoop);
+}
+
+TEST(DecideTagFilterChange, SameIndexIsNoopEvenWhenDirty)
+{
+  // 同一 index はフィルタ結果が変わらないので dirty でも問わず no-op (無駄な確認を出さない)。
+  EXPECT_EQ(
+    decide_tag_filter_change(2, 2, true),
+    TagFilterChangeDecision::kNoop);
+}
+
+TEST(DecideTagFilterChange, DifferentIndexNotDirtyProceeds)
+{
+  // 未保存編集なし + index 変化: そのまま適用する。
+  EXPECT_EQ(
+    decide_tag_filter_change(1, 0, false),
+    TagFilterChangeDecision::kProceed);
+}
+
+TEST(DecideTagFilterChange, DifferentIndexDirtyAsksUser)
+{
+  // 未保存編集あり + index 変化: 破棄可否を確認する。
+  EXPECT_EQ(
+    decide_tag_filter_change(1, 0, true),
+    TagFilterChangeDecision::kAskUser);
+}
+
+TEST(DecideTagFilterChange, ChangeToAllNotDirtyProceeds)
+{
+  // フィルタ解除 (index 0 = "All") への変化も dirty でなければそのまま適用。
+  EXPECT_EQ(
+    decide_tag_filter_change(0, 3, false),
+    TagFilterChangeDecision::kProceed);
+}
+
+TEST(DecideTagFilterChange, ChangeToAllDirtyAsksUser)
+{
+  // フィルタ解除も table を丸ごと再構築するため、dirty なら確認する。
+  EXPECT_EQ(
+    decide_tag_filter_change(0, 3, true),
+    TagFilterChangeDecision::kAskUser);
 }
 
 // --- should_confirm_overwrite (#399) ---

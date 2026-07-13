@@ -238,6 +238,41 @@ inline ConfigReloadGuardDecision decide_config_reload_guard(
   return ConfigReloadGuardDecision::kProceed;
 }
 
+// PoiEditorPanel::TagFilterChanged の未保存編集ガード判定 (#428)。
+// タグフィルタ combo の activated(int) は同じ項目を選び直しても発火し、フィルタ適用は
+// 行を setRowCount(0) で丸ごと入れ替えて undo_stack_->clear() するため、未保存編集を
+// 無警告で破棄してしまう (#399 の decide_config_reload_guard は config_path 変更経路のみ
+// カバー)。current index / 適用済み index / dirty から、UI が「何もしない / 確認ダイアログ /
+// そのまま適用」のいずれを取るべきかを判定する純関数。Qt 非依存 (呼び出し側が結果を
+// QMessageBox 表示 + combo revert へ写像する)。
+enum class TagFilterChangeDecision
+{
+  kNoop,      // 適用済みと同じ index の再選択 (フィルタ結果不変なので何もしない)
+  kAskUser,   // 未保存編集ありのため確認ダイアログを出す
+  kProceed,   // そのままフィルタを適用する
+};
+
+// current_index : combo の activated で通知された選択 index
+// applied_index : 最後にテーブルへ適用したフィルタ index (member で追跡)
+// table_dirty   : UI スレッド上のユーザー編集有無 (未保存編集ガードの主軸)
+inline TagFilterChangeDecision decide_tag_filter_change(
+  int current_index,
+  int applied_index,
+  bool table_dirty)
+{
+  // 同一 index の再選択はフィルタ結果が変わらないので何もしない (dirty でも問わない)。
+  // activated は同じ項目を選び直しただけでも発火するため冒頭で弾く。
+  if (current_index == applied_index) {
+    return TagFilterChangeDecision::kNoop;
+  }
+  // 未保存編集がある状態でのフィルタ変更は、破棄可否をユーザーに確認する。
+  if (table_dirty) {
+    return TagFilterChangeDecision::kAskUser;
+  }
+  // dirty でなければそのまま適用する (サーバ状態は変えず表示行を絞るだけ)。
+  return TagFilterChangeDecision::kProceed;
+}
+
 // PoiEditorPanel::SaveButton の外部変更検出判定 (#399)。保存先ファイルが baseline (最後に
 // テーブルへ読み込んだ / 保存した時点の内容) と食い違う場合に上書き確認を出すべきかを返す。
 // WebUI の expected_version 楽観ロック相当のクライアント側実装で、config_version の厳密共有は

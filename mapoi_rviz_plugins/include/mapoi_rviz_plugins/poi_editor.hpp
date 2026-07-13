@@ -108,6 +108,13 @@ protected:
   // Tag filter: store all POIs to restore when filter is cleared
   std::vector<mapoi_interfaces::msg::PointOfInterest> all_pois_;
 
+  // 最後にテーブルへ適用したタグフィルタの index (#428)。TagFilterComboBox の activated は
+  // 同じ項目を選び直しても発火するため、これと突き合わせて no-op を弾き、dirty ガードを
+  // かける (判定は detail::decide_tag_filter_change)。0 = "All" (フィルタ無し)。
+  // PopulateTagFilter が combo を "All" (index 0) に再構築するタイミングで 0 にリセットする。
+  // UI (Qt メイン) スレッド上でのみ触るためロック不要。
+  int applied_tag_filter_index_ = 0;
+
   // Tag definitions from server
   std::vector<std::string> known_tag_names_;
   std::vector<bool> known_tag_is_system_;
