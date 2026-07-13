@@ -50,7 +50,7 @@
      <item>
       <widget class="QLineEdit" name="NameFilterEdit">
        <property name="placeholderText">
-        <string>POI 名で絞り込み</string>
+        <string>Filter POIs by name</string>
        </property>
        <property name="clearButtonEnabled">
         <bool>true</bool>
@@ -131,7 +131,7 @@
      </item>
      <item row="0" column="4">
       <property name="text">
-       <string>エレベータ</string>
+       <string>Elevator</string>
       </property>
      </item>
      <item row="1" column="0">
@@ -156,7 +156,7 @@
      </item>
      <item row="1" column="4">
       <property name="text">
-       <string>シアタールーム</string>
+       <string>Theater room</string>
       </property>
      </item>
     </widget>

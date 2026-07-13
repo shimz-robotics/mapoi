@@ -143,7 +143,7 @@ void MapoiPanel::SetMapoiRouteComboBox()
   if(rclcpp::spin_until_future_complete(service_node_, result, 5s) == rclcpp::FutureReturnCode::SUCCESS)
   {
     ui_->MapoiRouteComboBox->clear();
-    ui_->MapoiRouteComboBox->addItem(QString::fromStdString("(なし)"));
+    ui_->MapoiRouteComboBox->addItem(tr("-- Select Route --"));
     route_name_list_ = result.get()->routes_list;
     for(const auto & route : route_name_list_){
       ui_->MapoiRouteComboBox->addItem(QString::fromStdString(route));
