@@ -316,7 +316,9 @@ void PoiEditorPanel::ApplyInsertRow(int row, const std::vector<QString> & texts,
     // ずれず、visualIndex(visual_ref_row) で選択行の現在 visual を得られる。moveSection は
     // sectionMoved を発火するが applying_undo_ 中なので RowMoved slot は早期 return し
     // 二重コマンド化しない (この guard ブロック内で実行するのが要件)。
-    if (visual_ref_row >= 0) {
+    // visual_ref_row < row も条件で強制する (ヘッダ記載の事前条件)。満たさない呼び出しは
+    // 挿入で参照行の logical がずれ誤った行の直下へ移動し得るため、視覚移動なしへ縮退させる。
+    if (visual_ref_row >= 0 && visual_ref_row < row) {
       auto * vheader = ui_->PoiTable->verticalHeader();
       const int inserted_visual = vheader->visualIndex(row);
       const int ref_visual = vheader->visualIndex(visual_ref_row);
