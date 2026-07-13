@@ -110,6 +110,15 @@ protected:
   // TagFilterChanged の全再構築後に RebuildShadowModel で取り直す (行 index 前提を揃える)。
   std::vector<std::vector<QString>> shadow_;
 
+  // 編集済みマーク (緑着色) の基準スナップショット (#445)。「緑 = clean 状態 (最後の全再構築 /
+  // 保存時点) とテキストが異なるセル」に意味を揃えるための比較基準。shadow_ が「直前値
+  // (cellChanged 差分検出用、編集のたび更新)」なのに対し、こちらは clean 状態のまま保つ。
+  // RebuildShadowModel で shadow_ と同時に取り直し、保存成功時は保存内容 (= shadow_) へ
+  // 同期、行挿入/削除 (ApplyInsertRow/ApplyRemoveRow) で行単位に index を揃える (挿入行の
+  // 基準は挿入時テキスト = 従来の「挿入行は無着色」挙動を維持)。外部変更検出用の
+  // baseline_path_/baseline_content_ (ファイル内容スナップショット) とは別物。
+  std::vector<std::vector<QString>> clean_texts_;
+
   // Tag filter: store all POIs to restore when filter is cleared
   std::vector<mapoi_interfaces::msg::PointOfInterest> all_pois_;
 
@@ -198,10 +207,19 @@ protected:
   // Undo/Redo 基盤の初期化と shadow model の (再) 構築 (#407)。定義は poi_editor_table.cpp。
   // SetupUndoRedo: QUndoStack 生成・ショートカット配線・cleanChanged↔dirty 連携。onInitialize
   //   から一度だけ呼ぶ (テーブル系 connect 後・初回 UpdatePoiTable 前)。
-  // RebuildShadowModel: shadow_ を現在のテーブル内容で作り直す。全再構築 (UpdatePoiTable /
-  //   TagFilterChanged) の末尾で呼び、cellChanged 差分計算の基準を揃える。
+  // RebuildShadowModel: shadow_ (と着色基準 clean_texts_、#445) を現在のテーブル内容で
+  //   作り直す。全再構築 (UpdatePoiTable / TagFilterChanged) の末尾で呼び、cellChanged
+  //   差分計算・着色判定の基準を揃える。
   void SetupUndoRedo();
   void RebuildShadowModel();
+  // 編集済みマーク (緑着色) の再計算 (#445)。セル テキストを clean_texts_ と比較し、一致なら
+  // 着色解除 (既定背景)・不一致なら緑にする。通常編集 (TableChanged) と undo/redo 適用
+  // (ApplySetCell) の両経路から呼ぶ。定義は poi_editor_table.cpp。
+  void RefreshCellEditMark(int row, int col);
+  // 全セルの編集済みマークを解除する (#445)。undo stack が clean へ戻った時
+  // (cleanChanged(true)) に呼び、テキスト比較では検出できない行並べ替え (RowMoved) 由来の
+  // 行着色もまとめて掃除する。定義は poi_editor_table.cpp。
+  void ClearAllEditMarks();
   void UpdatePoiCount();
   void PopulateTagFilter();
   void LoadTagDefinitions();

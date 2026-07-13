@@ -20,6 +20,7 @@
 #include <utility>    // std::move (コマンドへのテキスト move)
 #include <vector>
 
+#include <QBrush>  // 編集済みマークの着色/解除 (#445, RefreshCellEditMark / ClearAllEditMarks)
 #include <QFileDialog>
 #include <QHeaderView>  // verticalHeader()->visualIndex / moveSection (#434, ApplyInsertRow の視覚移動)
 #include <QScopedValueRollback>
@@ -230,6 +231,11 @@ void PoiEditorPanel::SetupUndoRedo()
   // 時だけ dirty=false にする (既存 dirty set は不変のまま連携させる)。
   connect(undo_stack_, &QUndoStack::cleanChanged, this, [this](bool clean) {
     if (clean) {
+      // clean へ戻った = テーブルは基準状態 (#445)。編集済みマークを全解除する。undo で
+      // 戻った場合、行並べ替え (RowMoved) 由来の行着色はテキスト比較 (RefreshCellEditMark)
+      // では検出できないため、ここでまとめて掃除する。保存成功・全再構築の stack clear
+      // 経由でも走るが無害 (どちらも着色なしへ向かう状態)。
+      ClearAllEditMarks();
       table_dirty_ = false;
     }
   });
@@ -247,6 +253,43 @@ void PoiEditorPanel::RebuildShadowModel()
     for (int c = 0; c < cols; ++c) {
       auto * item = ui_->PoiTable->item(r, c);
       shadow_[r][c] = item ? item->text() : QString();
+    }
+  }
+  // 着色基準 (#445) も同時に取り直す。全再構築直後のテーブルは clean 状態 (無着色) であり、
+  // ここを基準に「テキストが基準と異なるセルだけ緑」を判定する。
+  clean_texts_ = shadow_;
+}
+
+void PoiEditorPanel::RefreshCellEditMark(int row, int col)
+{
+  // 「緑 = clean 基準とテキストが異なるセル」(#445)。基準に一致したら既定背景へ戻す
+  // (QBrush() は「brush 未設定」= スタイル既定色に委ねる)。基準が無い範囲 (通常は無いが
+  // 防御的に) は従来どおり緑側に倒す。setBackground は同値なら dataChanged を発火しない
+  // (Qt 5.12+ の setData 同値 early-return) ため冪等。
+  auto * item = ui_->PoiTable->item(row, col);
+  if (!item) {
+    return;
+  }
+  bool matches_clean = false;
+  if (row >= 0 && row < static_cast<int>(clean_texts_.size()) &&
+      col >= 0 && col < static_cast<int>(clean_texts_[row].size())) {
+    matches_clean = (clean_texts_[row][col] == item->text());
+  }
+  item->setBackground(matches_clean ? QBrush() : QBrush(Qt::green));
+}
+
+void PoiEditorPanel::ClearAllEditMarks()
+{
+  // setBackground は cellChanged (dataChanged) を発火し得るため、applying_undo_ を立てて
+  // TableChanged の再処理 (dirty 再 set・SaveButton 文言更新・コマンド化) を抑制する。
+  const QScopedValueRollback<bool> guard(applying_undo_, true);
+  const int rows = ui_->PoiTable->rowCount();
+  const int cols = ui_->PoiTable->columnCount();
+  for (int r = 0; r < rows; ++r) {
+    for (int c = 0; c < cols; ++c) {
+      if (auto * item = ui_->PoiTable->item(r, c)) {
+        item->setBackground(QBrush());
+      }
     }
   }
 }
@@ -272,10 +315,9 @@ void PoiEditorPanel::ApplySetCell(int row, int col, const QString & text)
       } else {
         ui_->PoiTable->setItem(row, col, new QTableWidgetItem(text));
       }
-      // 編集済みの視覚マーク (通常編集の green 着色に合わせる)。
-      if (auto * item = ui_->PoiTable->item(row, col)) {
-        item->setBackground(Qt::green);
-      }
+      // 編集済みの視覚マーク (#445): clean 基準との比較で着色/解除する。undo で値が基準へ
+      // 戻ったセルは緑が解除され、redo で再び基準から離れれば緑に戻る。
+      RefreshCellEditMark(row, col);
       // shadow を書き換え後の値に同期する (次の cellChanged 差分計算の基準を更新)。
       if (row < static_cast<int>(shadow_.size()) &&
           col < static_cast<int>(shadow_[row].size())) {
@@ -312,12 +354,17 @@ void PoiEditorPanel::ApplyInsertRow(int row, const std::vector<QString> & texts,
     for (int col = 0; col < kColCount && col < static_cast<int>(texts.size()); ++col) {
       ui_->PoiTable->setItem(row, col, new QTableWidgetItem(texts[col]));
     }
-    // shadow に行を挿入して以降の差分計算の基準を保つ。
+    // shadow に行を挿入して以降の差分計算の基準を保つ。着色基準 (#445) にも同じ行を挿入して
+    // index を揃える。挿入行の着色基準 = 挿入時テキストとし、従来の「挿入行は無着色」挙動を
+    // 保ちつつ、以後のその行の編集・undo を比較で判定できるようにする。
+    std::vector<QString> row_texts(texts.begin(),
+      texts.begin() + std::min(texts.size(), static_cast<size_t>(kColCount)));
+    row_texts.resize(kColCount);
     if (row >= 0 && row <= static_cast<int>(shadow_.size())) {
-      std::vector<QString> shadow_row(texts.begin(),
-        texts.begin() + std::min(texts.size(), static_cast<size_t>(kColCount)));
-      shadow_row.resize(kColCount);
-      shadow_.insert(shadow_.begin() + row, std::move(shadow_row));
+      shadow_.insert(shadow_.begin() + row, row_texts);
+    }
+    if (row >= 0 && row <= static_cast<int>(clean_texts_.size())) {
+      clean_texts_.insert(clean_texts_.begin() + row, std::move(row_texts));
     }
     // #434: New/Copy 経路 (visual_ref_row >= 0) は、視覚順を並べ替え済みのテーブルでも
     // 新規行が選択行の視覚直下に来るよう moveSection する。Qt は挿入 section の視覚位置を
@@ -359,6 +406,10 @@ void PoiEditorPanel::ApplyRemoveRow(int row)
     }
     if (row >= 0 && row < static_cast<int>(shadow_.size())) {
       shadow_.erase(shadow_.begin() + row);
+    }
+    // 着色基準 (#445) からも同じ行を落として index を揃える。
+    if (row >= 0 && row < static_cast<int>(clean_texts_.size())) {
+      clean_texts_.erase(clean_texts_.begin() + row);
     }
   }
   table_dirty_ = true;
@@ -402,7 +453,9 @@ void PoiEditorPanel::TableChanged(int row, int column)
   }
 
   if(is_table_color_){
-    ui_->PoiTable->item(row, column)->setBackground(Qt::green);
+    // 編集済みの視覚マーク (#445): 無条件の緑でなく clean 基準との比較で着色/解除する。
+    // 手入力で元の値に戻した場合も緑が解除される (undo と意味を揃える)。
+    RefreshCellEditMark(row, column);
     // ユーザー編集の dirty マーク (#399)。UpdatePoiTable / TagFilterChanged の再構築中は
     // is_table_color_=false で setItem 由来の cellChanged が飛ぶため、既存の green 着色ガードに
     // 相乗りしてユーザー編集だけを拾う (再構築由来の cellChanged では dirty を立てない)。

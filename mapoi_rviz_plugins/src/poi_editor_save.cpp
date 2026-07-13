@@ -177,6 +177,10 @@ void PoiEditorPanel::SaveButton()
   table_dirty_ = false;
   baseline_path_ = save_path;
   baseline_content_ = out.c_str();
+  // 着色基準 (#445) も保存内容 (= 現在のテーブル内容をミラーする shadow_) へ同期する。
+  // 1.5 秒後の UpdatePoiTable 再構築 (RebuildShadowModel) を待たずに、保存直後の編集が
+  // 「保存値との差分」で正しく着色されるようにする (baseline_content_ の即時更新と同旨)。
+  clean_texts_ = shadow_;
 
   // Undo/Redo (#407): 保存成功 = 履歴境界として undo stack を clear する (PR #426 review)。
   // setClean で履歴を残しても、1.5 秒後の UpdatePoiTable 全再構築で stack は消えるため
