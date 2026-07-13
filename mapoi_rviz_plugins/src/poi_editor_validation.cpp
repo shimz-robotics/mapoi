@@ -112,13 +112,15 @@ bool PoiEditorPanel::ValidatePois()
     const auto excl = detail::check_tag_exclusivity(tags);
     if (excl.waypoint_landmark_conflict) {
       exclusivity_warnings.append(
-        tr("Row %1: \"waypoint\" と \"landmark\" は併用できません (landmark は Nav2 navigation 不可)").arg(row + 1));
+        tr("Row %1: \"waypoint\" and \"landmark\" cannot be used together."
+           " A landmark is only a reference POI and is not sent to Nav2.").arg(row + 1));
     }
     // landmark × pause 排他 (#143): landmark は到達不可な reference なので
     // pause (= 到達したときに止める semantics) と意味的に矛盾する。
     if (excl.pause_landmark_conflict) {
       exclusivity_warnings.append(
-        tr("Row %1: \"pause\" と \"landmark\" は併用できません (landmark は到達不可な reference のため pause 動作が成立しない)").arg(row + 1));
+        tr("Row %1: \"pause\" and \"landmark\" cannot be used together."
+           " A landmark is not a navigation target, so the robot cannot pause there.").arg(row + 1));
     }
     // (initial_pose × landmark 排他は #144 で initial_pose system tag を廃止したため不要に。)
   }

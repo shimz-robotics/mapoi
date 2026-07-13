@@ -33,67 +33,62 @@ void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
       if (!target.empty() && current_nav_mode_ == "idle") {
         // 後起動 panel / 外部ノード発行 nav: payload の target を復元して表示。
         current_nav_target_ = target;
-        ui_->NavStatusLabel->setText(
-            QString::fromStdString("走行中: " + target));
+        ui_->NavStatusLabel->setText(tr("Navigating: ") + QString::fromStdString(target));
       } else if (current_nav_mode_ == "route") {
         ui_->NavStatusLabel->setText(
-            QString::fromStdString("ルート走行中: " + current_nav_target_));
+            tr("Navigating route: ") + QString::fromStdString(current_nav_target_));
       } else if (current_nav_mode_ == "idle") {
         // target も無い (旧 publisher 等) → 汎用表示にフォールバック。
-        ui_->NavStatusLabel->setText(QString::fromStdString("走行中"));
+        ui_->NavStatusLabel->setText(tr("Navigating"));
       }
       // goal mode は RunGoalButton で即時表示済みのため何もしない
     } else if (status == "succeeded") {
       current_nav_mode_ = "idle";
       ui_->NavStatusLabel->setText(
-          target.empty() ? QString::fromStdString("到着")
-                         : QString::fromStdString("到着: " + target));
+          target.empty() ? tr("Arrived") : tr("Arrived: ") + QString::fromStdString(target));
       clear_route_progress();
     } else if (status == "aborted") {
       current_nav_mode_ = "idle";
       ui_->NavStatusLabel->setText(
-          target.empty() ? QString::fromStdString("走行失敗")
-                         : QString::fromStdString("走行失敗: " + target));
+          target.empty() ? tr("Aborted") : tr("Aborted: ") + QString::fromStdString(target));
       clear_route_progress();
     } else if (status == "canceled") {
       current_nav_mode_ = "idle";
       ui_->NavStatusLabel->setText(
-          target.empty() ? QString::fromStdString("走行キャンセル")
-                         : QString::fromStdString("走行キャンセル: " + target));
+          target.empty() ? tr("Canceled") : tr("Canceled: ") + QString::fromStdString(target));
       clear_route_progress();
     } else if (status == "paused") {
       ui_->NavStatusLabel->setText(
-          target.empty() ? QString::fromStdString("一時停止中")
-                         : QString::fromStdString("一時停止中: " + target));
+          target.empty() ? tr("Paused") : tr("Paused: ") + QString::fromStdString(target));
     } else if (status == "map_switching") {
       ui_->NavStatusLabel->setText(
-          target.empty() ? QString::fromStdString("地図切替中")
-                         : QString::fromStdString("地図切替中: " + target));
+          target.empty() ? tr("Switching map")
+                         : tr("Switching map: ") + QString::fromStdString(target));
     } else if (status == "map_switch_succeeded") {
       current_nav_mode_ = "idle";
       ui_->NavStatusLabel->setText(
-          target.empty() ? QString::fromStdString("地図切替完了")
-                         : QString::fromStdString("地図切替完了: " + target));
+          target.empty() ? tr("Map switched")
+                         : tr("Map switched: ") + QString::fromStdString(target));
       clear_route_progress();
     } else if (status == "map_switch_failed") {
       current_nav_mode_ = "idle";
       ui_->NavStatusLabel->setText(
-          target.empty() ? QString::fromStdString("地図切替失敗")
-                         : QString::fromStdString("地図切替失敗: " + target));
+          target.empty() ? tr("Map switch failed")
+                         : tr("Map switch failed: ") + QString::fromStdString(target));
       clear_route_progress();
     } else if (status == "backend_unavailable") {
       current_nav_mode_ = "idle";
       ui_->NavStatusLabel->setText(
-          target.empty() ? QString::fromStdString("ナビゲーション利用不可")
-                         : QString::fromStdString("ナビゲーション利用不可: " + target));
+          target.empty() ? tr("Navigation backend unavailable")
+                         : tr("Navigation backend unavailable: ") + QString::fromStdString(target));
       clear_route_progress();
     } else if (status == "rejected") {
       // #339: 受理前に拒否されたコマンド (存在しない POI 名、landmark POI を goal 指定、
       // 空 route 等)。直前の status が居座って誤操作に気づけない事態を防ぐ。
       current_nav_mode_ = "idle";
       ui_->NavStatusLabel->setText(
-          target.empty() ? QString::fromStdString("コマンド拒否")
-                         : QString::fromStdString("コマンド拒否: " + target));
+          target.empty() ? tr("Command rejected")
+                         : tr("Command rejected: ") + QString::fromStdString(target));
       clear_route_progress();
     }
   }, Qt::QueuedConnection);
@@ -135,15 +130,16 @@ void MapoiPanel::PoiEventCallback(mapoi_interfaces::msg::PoiEvent::SharedPtr msg
         progress_suffix = " (" + std::to_string(n) + "/" + std::to_string(total) + ")";
       }
     }
-    std::string text;
+    QString prefix;
     if (event_type == mapoi_interfaces::msg::PoiEvent::EVENT_ENTER) {
-      text = "進入: " + poi_name + progress_suffix;
+      prefix = tr("Entered: ");
     } else if (event_type == mapoi_interfaces::msg::PoiEvent::EVENT_PAUSED) {
-      text = "POI で一時停止中: " + poi_name + progress_suffix;
+      prefix = tr("Paused at: ");
     } else {  // EVENT_EXIT
-      text = "通過: " + poi_name + progress_suffix;
+      prefix = tr("Passed: ");
     }
-    ui_->RouteProgressLabel->setText(QString::fromStdString(text));
+    ui_->RouteProgressLabel->setText(
+        prefix + QString::fromStdString(poi_name + progress_suffix));
   }, Qt::QueuedConnection);
 }
 
@@ -168,8 +164,8 @@ void MapoiPanel::CommandRejectedCallback(std_msgs::msg::String::SharedPtr msg)
   const std::string target = msg->data;
   QMetaObject::invokeMethod(this, [this, target]() {
     const QString text = target.empty()
-      ? QString::fromStdString("コマンド拒否")
-      : QString::fromStdString("コマンド拒否: " + target);
+      ? tr("Command rejected")
+      : tr("Command rejected: ") + QString::fromStdString(target);
     ShowTransientNotice(text);  // #401: 一時通知機構を共用 (挙動不変)
   }, Qt::QueuedConnection);
 }

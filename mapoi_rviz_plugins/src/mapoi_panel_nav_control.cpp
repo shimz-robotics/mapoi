@@ -65,20 +65,20 @@ void MapoiPanel::MapoiRouteComboBox()
           // #401: route 取得失敗も UI へ。error_message はそのまま PlainText ラベルに載る
           // (空なら文言が宙に浮くためフォールバック、PR #423 review low)。
           const std::string err =
-            response->error_message.empty() ? "(詳細なし)" : response->error_message;
-          ShowTransientNotice(QString::fromStdString("route 取得失敗: " + err));
+            response->error_message.empty() ? tr("(no details)").toStdString() : response->error_message;
+          ShowTransientNotice(tr("Route fetch failed: ") + QString::fromStdString(err));
         } else {
           // response が null (future 完了だが応答本体なし)。LocalizationButton と同じ 3 分岐に
           // 揃え、無表示のまま取りこぼさない (PR #423 review)。
           RCLCPP_ERROR(LOGGER, "get_route_pois call failed for '%s' (null response).",
                        route_name_list_[route_index].c_str());
-          ShowTransientNotice(QString::fromStdString("route 取得 失敗 (応答なし)"));
+          ShowTransientNotice(tr("Route fetch failed (no response)"));
         }
       }
     } else {
       // #401: service 未起動もログのみだと無反応。UI にも一時通知する。
       RCLCPP_ERROR(LOGGER, "mapoi/get_route_pois service not available after 3s timeout.");
-      ShowTransientNotice(QString::fromStdString("route 取得サービス未接続"));
+      ShowTransientNotice(tr("Route fetch service not connected"));
     }
   }
   PublishHighlightPois();
@@ -99,7 +99,7 @@ void MapoiPanel::LocalizationButton()
   if (!request_initial_pose_client_->wait_for_service(3s)) {
     // #401: service 未起動もログのみだと無反応で操作失敗に気づけない。UI にも一時通知する。
     RCLCPP_ERROR(LOGGER, "mapoi/request_initial_pose service not available after 3s timeout.");
-    ShowTransientNotice(QString::fromStdString("初期位置設定サービス未接続"));
+    ShowTransientNotice(tr("Initial pose service not connected"));
     return;
   }
   auto request = std::make_shared<mapoi_interfaces::srv::RequestInitialPose::Request>();
@@ -117,7 +117,7 @@ void MapoiPanel::LocalizationButton()
                   request->poi_name.c_str(), current_map_.c_str());
       // #401: 成功フィードバック。オペレータが初期位置設定の受理を確認できるようにする。
       // 成功は情報通知 (緑)。エラーの赤と区別して誤警戒を避ける。
-      ShowTransientNotice(QString::fromStdString("初期位置設定: " + request->poi_name),
+      ShowTransientNotice(tr("Initial pose set: ") + QString::fromStdString(request->poi_name),
                           /*is_error=*/false);
     } else if (response) {
       RCLCPP_ERROR(LOGGER, "request_initial_pose rejected: %s",
@@ -125,17 +125,17 @@ void MapoiPanel::LocalizationButton()
       // #401: 拒否も UI へ。error_message はそのまま PlainText ラベルに載る (#398 で rich text 無効化済み)。
       // 空 message は文言が宙に浮くためフォールバック (PR #423 review low)。
       const std::string err =
-        response->error_message.empty() ? "(詳細なし)" : response->error_message;
-      ShowTransientNotice(QString::fromStdString("初期位置設定 拒否: " + err));
+        response->error_message.empty() ? tr("(no details)").toStdString() : response->error_message;
+      ShowTransientNotice(tr("Initial pose rejected: ") + QString::fromStdString(err));
     } else {
       // response が null (future 完了だが応答本体なし)。timeout/failed と同じ扱い。
       RCLCPP_ERROR(LOGGER, "request_initial_pose call failed or timed out.");
-      ShowTransientNotice(QString::fromStdString("初期位置設定 失敗 (応答なし)"));
+      ShowTransientNotice(tr("Initial pose failed (no response)"));
     }
   } else {
     // #401: 応答なし (timeout/失敗) もログのみだと無反応。UI にも通知する。
     RCLCPP_ERROR(LOGGER, "request_initial_pose call failed or timed out.");
-    ShowTransientNotice(QString::fromStdString("初期位置設定 失敗 (応答なし)"));
+    ShowTransientNotice(tr("Initial pose failed (no response)"));
   }
 }
 
@@ -154,7 +154,7 @@ void MapoiPanel::RunGoalButton()
   current_nav_mode_ = "goal";
   current_nav_target_ = msg.data;
   ui_->NavStatusLabel->setText(
-      QString::fromStdString("目的地走行中: " + current_nav_target_));
+      tr("Navigating to POI: ") + QString::fromStdString(current_nav_target_));
   RCLCPP_INFO(LOGGER, "Published goal POI request: %s", current_nav_target_.c_str());
 }
 
@@ -174,7 +174,7 @@ void MapoiPanel::RunRouteButton()
   current_nav_mode_ = "route";
   current_nav_target_ = route_name_list_[route_index];
   ui_->NavStatusLabel->setText(
-      QString::fromStdString("ルート走行中: " + current_nav_target_));
+      tr("Navigating route: ") + QString::fromStdString(current_nav_target_));
   RCLCPP_INFO(LOGGER, "A route was set: %s", msg.data.c_str());
 }
 
@@ -183,7 +183,7 @@ void MapoiPanel::PauseButton()
   std_msgs::msg::String msg;
   msg.data = "mapoi_panel";
   mapoi_pause_pub_->publish(msg);
-  ui_->NavStatusLabel->setText(QString::fromStdString("一時停止中"));
+  ui_->NavStatusLabel->setText(tr("Paused"));
   RCLCPP_INFO(LOGGER, "Pause requested");
 }
 
@@ -192,7 +192,7 @@ void MapoiPanel::ResumeButton()
   std_msgs::msg::String msg;
   msg.data = "mapoi_panel";
   mapoi_resume_pub_->publish(msg);
-  ui_->NavStatusLabel->setText(QString::fromStdString("再開中..."));
+  ui_->NavStatusLabel->setText(tr("Resuming..."));
   RCLCPP_INFO(LOGGER, "Resume requested");
 }
 
@@ -203,7 +203,7 @@ void MapoiPanel::StopButton()
   mapoi_cancel_pub_->publish(msg);
 
   current_nav_mode_ = "idle";
-  ui_->NavStatusLabel->setText(QString::fromStdString("走行キャンセル"));
+  ui_->NavStatusLabel->setText(tr("Canceled"));
   RCLCPP_INFO(LOGGER, "The robot was stopped");
 }
 

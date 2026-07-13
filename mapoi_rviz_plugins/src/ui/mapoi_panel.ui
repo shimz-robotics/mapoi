@@ -46,7 +46,7 @@
      <item>
       <widget class="QPushButton" name="LocalizationButton">
        <property name="text">
-        <string>自己位置推定</string>
+        <string>Initial Pose</string>
        </property>
        <property name="autoDefault">
         <bool>true</bool>
@@ -62,7 +62,7 @@
      <item>
       <widget class="QPushButton" name="RunGoalButton">
        <property name="text">
-        <string>目的地走行</string>
+        <string>Run Goal</string>
        </property>
        <property name="autoDefault">
         <bool>true</bool>
@@ -79,7 +79,7 @@
      <item>
       <widget class="QPushButton" name="RunRouteButton">
        <property name="text">
-        <string>ルート走行</string>
+        <string>Run Route</string>
        </property>
        <property name="autoDefault">
         <bool>true</bool>
@@ -89,7 +89,7 @@
      <item>
       <widget class="QPushButton" name="PauseButton">
        <property name="text">
-        <string>一時停止</string>
+        <string>Pause</string>
        </property>
        <property name="autoDefault">
         <bool>true</bool>
@@ -99,7 +99,7 @@
      <item>
       <widget class="QPushButton" name="ResumeButton">
        <property name="text">
-        <string>再開</string>
+        <string>Resume</string>
        </property>
        <property name="autoDefault">
         <bool>true</bool>
@@ -115,7 +115,7 @@
         <bool>true</bool>
        </property>
        <property name="text">
-        <string>走行停止</string>
+        <string>Stop</string>
        </property>
        <property name="autoDefault">
         <bool>true</bool>

@@ -19,22 +19,22 @@ TEST(BuildBackendBadgeText, LivelinessLostHidesStaleReason)
   // liveliness lost 時は保持中の reason (死亡直前の stale 値) を表示しない (issue #400)。
   EXPECT_EQ(
     build_backend_badge_text("Nav", true, false, true, "stale reason"),
-    "Nav: 切断 (bridge 停止)");
+    "Nav: Disconnected (bridge stopped)");
 }
 
 TEST(BuildBackendBadgeText, AliveAndReadyIsConnected)
 {
-  EXPECT_EQ(build_backend_badge_text("Loc", true, true, true, ""), "Loc: 接続");
+  EXPECT_EQ(build_backend_badge_text("Loc", true, true, true, ""), "Loc: Connected");
 }
 
 TEST(BuildBackendBadgeText, NotReadyWithReasonShowsReason)
 {
   EXPECT_EQ(
     build_backend_badge_text("Nav", true, true, false, "not ready: navigate_to_pose action"),
-    "Nav: 未準備 (not ready: navigate_to_pose action)");
+    "Nav: Not ready (not ready: navigate_to_pose action)");
 }
 
 TEST(BuildBackendBadgeText, NotReadyWithoutReasonOmitsParens)
 {
-  EXPECT_EQ(build_backend_badge_text("Loc", true, true, false, ""), "Loc: 未準備");
+  EXPECT_EQ(build_backend_badge_text("Loc", true, true, false, ""), "Loc: Not ready");
 }
