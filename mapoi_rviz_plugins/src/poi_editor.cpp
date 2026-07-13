@@ -375,8 +375,7 @@ void PoiEditorPanel::UpdatePoiTable()
                   << tr("tolerance (xy, yaw)") << tr("tags") << tr("description"));
   ui_->PoiTable->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
   ui_->PoiTable->verticalHeader()->setSectionsMovable(true);
-  ui_->PoiTable->horizontalHeader()->setSortIndicatorShown(true);
-  ui_->PoiTable->horizontalHeader()->setSortIndicator(0, Qt::AscendingOrder);
+  // ソートは有効化しない (undo/shadow/save が論理 index 前提) (#433)
 
   is_table_color_ = false;
   for (size_t row = 0; row < numRows; row++){
