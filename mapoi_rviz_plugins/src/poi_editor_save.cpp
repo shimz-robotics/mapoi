@@ -79,7 +79,18 @@ void PoiEditorPanel::SaveButton()
 
   int numRows = ui_->PoiTable->rowCount();
 
-  YAML::Node map_info = YAML::LoadFile(ui_->FileComboBox->itemText(0).toStdString());
+  // #429: 保存対象 YAML が読めない (placeholder "file to save" のまま到達 / 外部で削除・破損)
+  // 場合に YAML::BadFile / ParserException が未捕捉のまま漏れると RViz ごと落ちるため、
+  // 他の Save Error 系ダイアログ (open for writing / write failure) と同じパターンで捕捉する。
+  YAML::Node map_info;
+  try {
+    map_info = YAML::LoadFile(ui_->FileComboBox->itemText(0).toStdString());
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR(LOGGER, "Failed to load map YAML file: %s", e.what());
+    QMessageBox::critical(this, tr("Save Error"),
+      tr("Failed to load the map YAML file:\n%1").arg(QString::fromStdString(e.what())));
+    return;
+  }
   std::vector<YAML::Node> pois_list;
 
   for (int row = 0; row < numRows; row++) {
