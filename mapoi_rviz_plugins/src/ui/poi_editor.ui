@@ -185,6 +185,32 @@
       </widget>
      </item>
      <item>
+      <widget class="QPushButton" name="UndoButton">
+       <property name="enabled">
+        <bool>false</bool>
+       </property>
+       <property name="toolTip">
+        <string>Undo (Ctrl+Z)</string>
+       </property>
+       <property name="text">
+        <string>Undo</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="RedoButton">
+       <property name="enabled">
+        <bool>false</bool>
+       </property>
+       <property name="toolTip">
+        <string>Redo (Ctrl+Shift+Z)</string>
+       </property>
+       <property name="text">
+        <string>Redo</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QComboBox" name="TagHelperComboBox">
        <item>
         <property name="text">

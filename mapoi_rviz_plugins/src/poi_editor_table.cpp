@@ -201,6 +201,16 @@ void PoiEditorPanel::SetupUndoRedo()
   redo_shortcut->setContext(Qt::WidgetWithChildrenShortcut);
   connect(redo_shortcut, &QShortcut::activated, undo_stack_, &QUndoStack::redo);
 
+  // Undo/Redo ボタン (#435)。ショートカットは WidgetWithChildrenShortcut のためパネル内に
+  // focus が無いと無反応で、キーボード専用では発見しづらい (#407 の PR #426 で「実装されて
+  // いない」と誤認された経緯)。ボタンは focus 状態に関係なくクリックで動作する。初期状態は
+  // .ui 側で disabled にしてあり、canUndoChanged/canRedoChanged で有効/無効を連動させる
+  // (履歴が空の間は押せない)。
+  connect(undo_stack_, &QUndoStack::canUndoChanged, ui_->UndoButton, &QPushButton::setEnabled);
+  connect(undo_stack_, &QUndoStack::canRedoChanged, ui_->RedoButton, &QPushButton::setEnabled);
+  connect(ui_->UndoButton, &QPushButton::clicked, undo_stack_, &QUndoStack::undo);
+  connect(ui_->RedoButton, &QPushButton::clicked, undo_stack_, &QUndoStack::redo);
+
   // dirty 連携 (#407 §6, #399)。undo で編集前 (clean) に戻ったら未保存ガードを解除する。
   // WebUI の「undo で clean に戻るとガード解除」(beforeunload.e2e.js の
   // "undo back to clean removes the guard again") と同じ意味論。clean=false へ移る

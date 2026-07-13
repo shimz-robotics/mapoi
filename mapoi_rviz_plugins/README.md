@@ -64,6 +64,9 @@ A panel that displays, edits, and saves POI information in tabular form.
     - The `2π rad` (= 360°) maximum is a guard that rejects old deg-based inputs (e.g. `45`) mistakenly entered as rad after the deg → rad unit change (#158)
   - **description** is the last column (long text is fine, avoids squeezing the other columns)
 - Add / copy / delete POIs
+- Undo/redo edits (add/copy/delete rows, cell edits, row reordering) via the Undo/Redo buttons or `Ctrl+Z` / `Ctrl+Shift+Z` (#407, #435)
+  - The buttons work regardless of focus; the keyboard shortcuts only work while focus is inside the panel (click a table cell first to enable them)
+  - History is cleared when a save succeeds, when the tag filter changes, or when the table is fully rebuilt (e.g. switching maps, or the automatic reload after saving)
 - Filter the displayed list by tag
 - Tag input assistance via a TagHelperComboBox (system tags shown with an `[S]` marker)
 - Save with validation (duplicate-name check, coordinate format, `tolerance.xy` check, warnings for undefined tags)
