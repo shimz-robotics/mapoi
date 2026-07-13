@@ -376,7 +376,11 @@ void PoiEditorPanel::TableChanged(int row, int column)
         column < static_cast<int>(shadow_[row].size())) {
       old_text = shadow_[row][column];
     }
-    if (undo_stack_ && old_text != new_text) {
+    // shadow_ 未構築 (行/列がまだ無い) 状態での書き込みは範囲外アクセスになるため、
+    // ApplySetCell (:258-260) と同型の境界チェックで弾く (#432)。
+    if (undo_stack_ && old_text != new_text &&
+        row < static_cast<int>(shadow_.size()) &&
+        column < static_cast<int>(shadow_[row].size())) {
       // shadow を先に更新してから push する。EditCellCommand の redo() は生成直後に
       // QUndoStack::push が呼ぶが、その redo() は ApplySetCell(new_text) で「既に new_text
       // が入っている」テーブルへ同じ値を上書きするだけ (冪等) なので副作用は無い。
