@@ -82,7 +82,7 @@ protected:
   std::string current_map_;
   std::string config_path_;
   std::vector<std::string> map_name_list_;
-  bool is_table_color_;
+  bool is_table_color_ = false;
 
   // Undo/Redo 基盤 (#407)。いずれも UI (Qt メイン) スレッド上でのみ触るためロック不要。
   //
