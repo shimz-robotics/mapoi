@@ -60,7 +60,12 @@ public:
   // コマンド化・dirty 重複) を抑制し、shadow model を同期する。実装・詳細コメントは
   // poi_editor_table.cpp。
   void ApplySetCell(int row, int col, const QString & text);
-  void ApplyInsertRow(int row, const std::vector<QString> & texts);
+  // visual_ref_row (#434): >= 0 の時、挿入後に新規行を logical `visual_ref_row` 行の視覚直下へ
+  // moveSection する (New/Copy 経路が選択行の logical index を渡す)。-1 (既定) なら視覚移動しない
+  // = 行削除 undo の再挿入はこちらで、visual 位置を既定に戻す #426 の既知制限を維持する。
+  // visual_ref_row は挿入 (row 位置) で index がずれない行 (< row) であること。New/Copy は
+  // row = current_row + 1 なので visual_ref_row = current_row < row を満たす。
+  void ApplyInsertRow(int row, const std::vector<QString> & texts, int visual_ref_row = -1);
   void ApplyRemoveRow(int row);
   void ApplyMoveSection(int from_visual, int to_visual);
 
