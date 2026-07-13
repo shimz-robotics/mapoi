@@ -166,7 +166,7 @@ void PoiEditorPanel::PoiPoseCallback(geometry_msgs::msg::PoseStamped::SharedPtr 
   QMetaObject::invokeMethod(this, [this, txt]() {
     int current_row = ui_->PoiTable->currentRow();
     if (current_row >= 0) {
-      ui_->PoiTable->setItem(current_row, 2, new QTableWidgetItem(txt));
+      ui_->PoiTable->setItem(current_row, kColPose, new QTableWidgetItem(txt));
     }
   }, Qt::QueuedConnection);
 }
