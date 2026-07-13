@@ -35,19 +35,20 @@ test.describe('UI 表示コントロール (#323 / #324)', () => {
     const toggleBtn = page.locator('#btn-ui-toggle');
     expect(await displayOf(page, 'header')).not.toBe('none');
     expect(await displayOf(page, '#poi-panel')).not.toBe('none');
-    // アイコンは固定の ☰ (#390、swap しない)。状態は aria-pressed と title で示す
+    // アイコンは固定の ☰ (#390、swap しない)。状態は aria-pressed と title で示し、
+    // pressed = UI 表示中 (#449) なので既定 (表示) で青
     await expect(toggleBtn.locator('.ui-control-glyph')).toHaveText('☰');
-    await expect(toggleBtn).toHaveAttribute('aria-pressed', 'false');
+    await expect(toggleBtn).toHaveAttribute('aria-pressed', 'true');
     await expect(toggleBtn).toHaveAttribute('title', 'Hide UI (U)');
 
     await toggleBtn.click();
     expect(await bodyHasClass(page, 'ui-hidden')).toBe(true);
     expect(await displayOf(page, 'header')).toBe('none');
     expect(await displayOf(page, '#poi-panel')).toBe('none');
-    // UI を復帰できるようコントロール自身は残し、pressed (青) + title が「戻す」側へ同期
+    // UI を復帰できるようコントロール自身は残し、非表示中は消灯 + title が「戻す」側へ同期
     expect(await displayOf(page, '#ui-controls')).not.toBe('none');
     await expect(toggleBtn.locator('.ui-control-glyph')).toHaveText('☰');
-    await expect(toggleBtn).toHaveAttribute('aria-pressed', 'true');
+    await expect(toggleBtn).toHaveAttribute('aria-pressed', 'false');
     await expect(toggleBtn).toHaveAttribute('title', 'Show UI (U)');
 
     await toggleBtn.click();

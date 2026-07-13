@@ -173,9 +173,11 @@
 
     // アイコンは固定の ☰ (#390、index.html 側)。状態は aria-pressed (青ハイライト) と
     // title だけを同期し、icon swap はしない — Gmail/YouTube の sidebar トグルと同じ流儀。
+    // pressed は「UI 表示中」(#449): ☰ は「UI を出す」記号として読まれるため
+    // 表示中 = 青が直感に合い、ロックボタンの「既定状態で点灯」とも揃う。
     function syncToggleBtn() {
       if (!toggleBtn) return;
-      toggleBtn.setAttribute('aria-pressed', settings.hidden ? 'true' : 'false');
+      toggleBtn.setAttribute('aria-pressed', settings.hidden ? 'false' : 'true');
       toggleBtn.title = settings.hidden ? 'Show UI (U)' : 'Hide UI (U)';
     }
 
