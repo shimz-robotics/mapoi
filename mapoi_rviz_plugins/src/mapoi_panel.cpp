@@ -14,6 +14,11 @@ static const rclcpp::Logger LOGGER = rclcpp::get_logger("mapoi_rviz_plugins.mapo
 MapoiPanel::MapoiPanel(QWidget* parent) : Panel(parent),  ui_(new Ui::ScUI())
 {
   ui_->setupUi(this);
+  // #451: idle 表示の正本は Set*Idle (C++ 側)。.ui の初期値は Designer プレビュー用で、
+  // ここで上書きして文言の二重管理ずれを防ぐ。
+  SetNavStatusIdle();
+  SetRouteProgressIdle();
+  SetNoticeIdle();
 }
 
 MapoiPanel::~MapoiPanel() = default;
@@ -91,7 +96,7 @@ void MapoiPanel::onInitialize()
       "mapoi/nav/status", rclcpp::QoS(1).transient_local(),
       std::bind(&MapoiPanel::NavStatusCallback, this, std::placeholders::_1));
 
-  // reject_clear_timer_: 受信から 5 秒後に CommandRejectedLabel をクリアする。
+  // reject_clear_timer_: 受信から 5 秒後に CommandRejectedLabel を idle 表示に戻す (#451)。
   // singleShot=true かつ再受信時に start() を呼ぶことで連続 reject でも先行タイマーが
   // 後続表示を早期クリアする race を防ぐ (start() は未満了タイマーを自動リスタートする)。
   // 購読より先に生成しておく (callback の queued lambda が timer を参照するため、
@@ -100,7 +105,7 @@ void MapoiPanel::onInitialize()
   reject_clear_timer_->setSingleShot(true);
   reject_clear_timer_->setInterval(5000);
   connect(reject_clear_timer_, &QTimer::timeout, this, [this]() {
-    ui_->CommandRejectedLabel->setText(QString{});
+    SetNoticeIdle();
   });
 
   // #398: command_rejected は volatile depth 10 (publisher と整合)。latched 不要 (イベント通知)。

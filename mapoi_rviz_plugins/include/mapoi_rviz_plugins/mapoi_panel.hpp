@@ -112,6 +112,17 @@ protected:
   // is_error=false で情報通知 (緑)。既定はエラー (赤)。
   void ShowTransientNotice(const QString & text, bool is_error = true);
 
+  // #451: NavStatusLabel / RouteProgressLabel / CommandRejectedLabel は空文字にせず、
+  // idle 時は「<caption>: —」をグレーで常設表示する (空白行に見える問題の解消。ラベル
+  // 常駐自体はレイアウトジャンプ防止の仕様で hide しない)。idle 表示の正本は Set*Idle
+  // 関数で、constructor (setupUi 直後) とクリア経路の両方から呼ぶ。NavStatusLabel は
+  // idle のグレーを既定色へ戻すため setText 直呼びせず必ず SetNavStatus() を通すこと。
+  // いずれも UI スレッドからのみ呼ぶ。
+  void SetNavStatus(const QString & text);
+  void SetNavStatusIdle();
+  void SetRouteProgressIdle();
+  void SetNoticeIdle();
+
   // #406: mapoi/events 購読。ROUTE 走行中の通過 POI 進捗を RouteProgressLabel に表示する。
   // events は ROUTE 走行時のみ発火 (IDLE/GOAL では無音) なのでアイドル時の負荷はゼロ。
   // 総数は highlighted_route_poi_names_ (panel でルート選択時に取得) を参照するため、
