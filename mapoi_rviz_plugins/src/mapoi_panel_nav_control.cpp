@@ -153,7 +153,7 @@ void MapoiPanel::RunGoalButton()
 
   current_nav_mode_ = "goal";
   current_nav_target_ = msg.data;
-  ui_->NavStatusLabel->setText(
+  SetNavStatus(
       tr("Navigating to POI: ") + QString::fromStdString(current_nav_target_));
   RCLCPP_INFO(LOGGER, "Published goal POI request: %s", current_nav_target_.c_str());
 }
@@ -173,7 +173,7 @@ void MapoiPanel::RunRouteButton()
 
   current_nav_mode_ = "route";
   current_nav_target_ = route_name_list_[route_index];
-  ui_->NavStatusLabel->setText(
+  SetNavStatus(
       tr("Navigating route: ") + QString::fromStdString(current_nav_target_));
   RCLCPP_INFO(LOGGER, "A route was set: %s", msg.data.c_str());
 }
@@ -183,7 +183,7 @@ void MapoiPanel::PauseButton()
   std_msgs::msg::String msg;
   msg.data = "mapoi_panel";
   mapoi_pause_pub_->publish(msg);
-  ui_->NavStatusLabel->setText(tr("Paused"));
+  SetNavStatus(tr("Paused"));
   RCLCPP_INFO(LOGGER, "Pause requested");
 }
 
@@ -192,7 +192,7 @@ void MapoiPanel::ResumeButton()
   std_msgs::msg::String msg;
   msg.data = "mapoi_panel";
   mapoi_resume_pub_->publish(msg);
-  ui_->NavStatusLabel->setText(tr("Resuming..."));
+  SetNavStatus(tr("Resuming..."));
   RCLCPP_INFO(LOGGER, "Resume requested");
 }
 
@@ -203,7 +203,7 @@ void MapoiPanel::StopButton()
   mapoi_cancel_pub_->publish(msg);
 
   current_nav_mode_ = "idle";
-  ui_->NavStatusLabel->setText(tr("Canceled"));
+  SetNavStatus(tr("Canceled"));
   RCLCPP_INFO(LOGGER, "The robot was stopped");
 }
 

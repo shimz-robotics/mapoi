@@ -125,19 +125,22 @@
     </layout>
    </item>
    <item>
+    <!-- NavStatusLabel / RouteProgressLabel / CommandRejectedLabel は状態・一時表示用。
+         出現/消滅でレイアウトが上下しないよう常駐させ (hide しない)、idle 時は
+         「<caption>: —」をグレー表示して空白行に見えないようにする (#451)。
+         idle 表示の正本は MapoiPanel::Set*Idle で、constructor が setupUi 直後に
+         上書きする。ここの text / styleSheet は Designer プレビュー用 (実表示には
+         使われない)。 -->
     <widget class="QLabel" name="NavStatusLabel">
      <property name="text">
-      <string></string>
+      <string>Nav status: —</string>
+     </property>
+     <property name="styleSheet">
+      <string notr="true">color: gray;</string>
      </property>
     </widget>
    </item>
    <item>
-    <!-- RouteProgressLabel / CommandRejectedLabel は一時表示用のプレースホルダ。
-         出現/消滅でレイアウトが上下しないよう常駐させ (hide しない)、idle 時は
-         「<caption>: —」をグレー表示して空白 2 行に見えないようにする (#451)。
-         idle 表示の正本は MapoiPanel::SetRouteProgressIdle / SetNoticeIdle で、
-         constructor が setupUi 直後に上書きする。ここの text / styleSheet は
-         Designer プレビュー用 (実表示には使われない)。 -->
     <widget class="QLabel" name="RouteProgressLabel">
      <property name="text">
       <string>Route progress: —</string>

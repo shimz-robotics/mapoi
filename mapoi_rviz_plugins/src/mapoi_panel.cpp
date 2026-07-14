@@ -14,8 +14,9 @@ static const rclcpp::Logger LOGGER = rclcpp::get_logger("mapoi_rviz_plugins.mapo
 MapoiPanel::MapoiPanel(QWidget* parent) : Panel(parent),  ui_(new Ui::ScUI())
 {
   ui_->setupUi(this);
-  // #451: idle 表示の正本は SetRouteProgressIdle / SetNoticeIdle (C++ 側)。.ui の
-  // 初期値は Designer プレビュー用で、ここで上書きして文言の二重管理ずれを防ぐ。
+  // #451: idle 表示の正本は Set*Idle (C++ 側)。.ui の初期値は Designer プレビュー用で、
+  // ここで上書きして文言の二重管理ずれを防ぐ。
+  SetNavStatusIdle();
   SetRouteProgressIdle();
   SetNoticeIdle();
 }

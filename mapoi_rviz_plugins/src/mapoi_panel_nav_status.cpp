@@ -33,52 +33,52 @@ void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
       if (!target.empty() && current_nav_mode_ == "idle") {
         // 後起動 panel / 外部ノード発行 nav: payload の target を復元して表示。
         current_nav_target_ = target;
-        ui_->NavStatusLabel->setText(tr("Navigating: ") + QString::fromStdString(target));
+        SetNavStatus(tr("Navigating: ") + QString::fromStdString(target));
       } else if (current_nav_mode_ == "route") {
-        ui_->NavStatusLabel->setText(
+        SetNavStatus(
             tr("Navigating route: ") + QString::fromStdString(current_nav_target_));
       } else if (current_nav_mode_ == "idle") {
         // target も無い (旧 publisher 等) → 汎用表示にフォールバック。
-        ui_->NavStatusLabel->setText(tr("Navigating"));
+        SetNavStatus(tr("Navigating"));
       }
       // goal mode は RunGoalButton で即時表示済みのため何もしない
     } else if (status == "succeeded") {
       current_nav_mode_ = "idle";
-      ui_->NavStatusLabel->setText(
+      SetNavStatus(
           target.empty() ? tr("Arrived") : tr("Arrived: ") + QString::fromStdString(target));
       clear_route_progress();
     } else if (status == "aborted") {
       current_nav_mode_ = "idle";
-      ui_->NavStatusLabel->setText(
+      SetNavStatus(
           target.empty() ? tr("Aborted") : tr("Aborted: ") + QString::fromStdString(target));
       clear_route_progress();
     } else if (status == "canceled") {
       current_nav_mode_ = "idle";
-      ui_->NavStatusLabel->setText(
+      SetNavStatus(
           target.empty() ? tr("Canceled") : tr("Canceled: ") + QString::fromStdString(target));
       clear_route_progress();
     } else if (status == "paused") {
-      ui_->NavStatusLabel->setText(
+      SetNavStatus(
           target.empty() ? tr("Paused") : tr("Paused: ") + QString::fromStdString(target));
     } else if (status == "map_switching") {
-      ui_->NavStatusLabel->setText(
+      SetNavStatus(
           target.empty() ? tr("Switching map")
                          : tr("Switching map: ") + QString::fromStdString(target));
     } else if (status == "map_switch_succeeded") {
       current_nav_mode_ = "idle";
-      ui_->NavStatusLabel->setText(
+      SetNavStatus(
           target.empty() ? tr("Map switched")
                          : tr("Map switched: ") + QString::fromStdString(target));
       clear_route_progress();
     } else if (status == "map_switch_failed") {
       current_nav_mode_ = "idle";
-      ui_->NavStatusLabel->setText(
+      SetNavStatus(
           target.empty() ? tr("Map switch failed")
                          : tr("Map switch failed: ") + QString::fromStdString(target));
       clear_route_progress();
     } else if (status == "backend_unavailable") {
       current_nav_mode_ = "idle";
-      ui_->NavStatusLabel->setText(
+      SetNavStatus(
           target.empty() ? tr("Navigation backend unavailable")
                          : tr("Navigation backend unavailable: ") + QString::fromStdString(target));
       clear_route_progress();
@@ -86,7 +86,7 @@ void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
       // #339: 受理前に拒否されたコマンド (存在しない POI 名、landmark POI を goal 指定、
       // 空 route 等)。直前の status が居座って誤操作に気づけない事態を防ぐ。
       current_nav_mode_ = "idle";
-      ui_->NavStatusLabel->setText(
+      SetNavStatus(
           target.empty() ? tr("Command rejected")
                          : tr("Command rejected: ") + QString::fromStdString(target));
       clear_route_progress();
@@ -145,9 +145,26 @@ void MapoiPanel::PoiEventCallback(mapoi_interfaces::msg::PoiEvent::SharedPtr msg
   }, Qt::QueuedConnection);
 }
 
-// #451: idle 時のプレースホルダ表示。空文字だと「Arrived」〜バッジ間が説明のない
-// 空白 2 行に見えるため、「<caption>: —」をグレーで常設する (.ui の初期値と同値)。
-// ラベル自体を hide しないのは従来どおり (出現/消滅でレイアウトが上下しないため)。
+// #451: idle 時のプレースホルダ表示。空文字だと状態エリアが説明のない空白行に
+// 見えるため、「<caption>: —」をグレーで常設する。ラベル自体を hide しないのは
+// 従来どおり (出現/消滅でレイアウトが上下しないため)。
+
+// NavStatusLabel の唯一の書き込み経路。idle のグレーを実値表示で既定色へ戻すため、
+// setText 直呼びせず必ずここを通す (nav_status callback / nav ボタン群の全 17 箇所)。
+void MapoiPanel::SetNavStatus(const QString & text)
+{
+  ui_->NavStatusLabel->setStyleSheet(QString{});
+  ui_->NavStatusLabel->setText(text);
+}
+
+// NavStatusLabel は latched (transient_local) な mapoi/nav/status の replay で埋まるため、
+// idle 表示が出るのは server/bridge が一度も publish していない起動直後のみ。
+void MapoiPanel::SetNavStatusIdle()
+{
+  ui_->NavStatusLabel->setStyleSheet("color: gray;");
+  ui_->NavStatusLabel->setText(tr("Nav status: —"));
+}
+
 void MapoiPanel::SetRouteProgressIdle()
 {
   ui_->RouteProgressLabel->setStyleSheet("color: gray;");
