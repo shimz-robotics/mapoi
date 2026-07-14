@@ -114,8 +114,8 @@ protected:
 
   // #451: RouteProgressLabel / CommandRejectedLabel は空文字にせず、idle 時は
   // 「<caption>: —」をグレーで常設表示する (空白 2 行に見える問題の解消。ラベル常駐
-  // 自体はレイアウトジャンプ防止の仕様で hide しない)。.ui の初期値と同じ表示に
-  // 戻すクリア経路をここに集約する。UI (Qt メイン) スレッドからのみ呼ぶこと。
+  // 自体はレイアウトジャンプ防止の仕様で hide しない)。idle 表示の正本はこの 2 関数で、
+  // constructor (setupUi 直後) とクリア経路の両方から呼ぶ。UI スレッドからのみ呼ぶこと。
   void SetRouteProgressIdle();
   void SetNoticeIdle();
 
