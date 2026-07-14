@@ -112,6 +112,13 @@ protected:
   // is_error=false で情報通知 (緑)。既定はエラー (赤)。
   void ShowTransientNotice(const QString & text, bool is_error = true);
 
+  // #451: RouteProgressLabel / CommandRejectedLabel は空文字にせず、idle 時は
+  // 「<caption>: —」をグレーで常設表示する (空白 2 行に見える問題の解消。ラベル常駐
+  // 自体はレイアウトジャンプ防止の仕様で hide しない)。.ui の初期値と同じ表示に
+  // 戻すクリア経路をここに集約する。UI (Qt メイン) スレッドからのみ呼ぶこと。
+  void SetRouteProgressIdle();
+  void SetNoticeIdle();
+
   // #406: mapoi/events 購読。ROUTE 走行中の通過 POI 進捗を RouteProgressLabel に表示する。
   // events は ROUTE 走行時のみ発火 (IDLE/GOAL では無音) なのでアイドル時の負荷はゼロ。
   // 総数は highlighted_route_poi_names_ (panel でルート選択時に取得) を参照するため、

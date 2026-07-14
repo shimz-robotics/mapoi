@@ -132,9 +132,17 @@
     </widget>
    </item>
    <item>
+    <!-- RouteProgressLabel / CommandRejectedLabel は一時表示用のプレースホルダ。
+         出現/消滅でレイアウトが上下しないよう常駐させ (hide しない)、idle 時は
+         「<caption>: —」をグレー表示して空白 2 行に見えないようにする (#451)。
+         クリア経路の表示復元は MapoiPanel::SetRouteProgressIdle / SetNoticeIdle
+         (ここと同値の表示に戻す)。 -->
     <widget class="QLabel" name="RouteProgressLabel">
      <property name="text">
-      <string></string>
+      <string>Route progress: —</string>
+     </property>
+     <property name="styleSheet">
+      <string notr="true">color: gray;</string>
      </property>
      <property name="textFormat">
       <enum>Qt::PlainText</enum>
@@ -144,10 +152,10 @@
    <item>
     <widget class="QLabel" name="CommandRejectedLabel">
      <property name="text">
-      <string></string>
+      <string>Notice: —</string>
      </property>
      <property name="styleSheet">
-      <string notr="true">color: red;</string>
+      <string notr="true">color: gray;</string>
      </property>
      <property name="textFormat">
       <enum>Qt::PlainText</enum>

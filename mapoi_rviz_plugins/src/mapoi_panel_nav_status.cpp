@@ -21,14 +21,14 @@ void MapoiPanel::NavStatusCallback(std_msgs::msg::String::SharedPtr msg)
     // 表示復活を抑制する (#406。抑制解除は navigating 分岐)。
     auto clear_route_progress = [this]() {
       route_progress_suppressed_ = true;
-      ui_->RouteProgressLabel->setText(QString{});
+      SetRouteProgressIdle();
     };
     if (status == "navigating") {
       // 新しい走行の開始。前回終了時の抑制を解除する。抑制中だった場合のみクリアする
       // (走行中の navigating 再受信で進行中の進捗表示を消さないため)。
       if (route_progress_suppressed_) {
         route_progress_suppressed_ = false;
-        ui_->RouteProgressLabel->setText(QString{});
+        SetRouteProgressIdle();
       }
       if (!target.empty() && current_nav_mode_ == "idle") {
         // 後起動 panel / 外部ノード発行 nav: payload の target を復元して表示。
@@ -138,9 +138,28 @@ void MapoiPanel::PoiEventCallback(mapoi_interfaces::msg::PoiEvent::SharedPtr msg
     } else {  // EVENT_EXIT
       prefix = tr("Passed: ");
     }
+    // idle 表示 (#451) はグレーの styleSheet を持つため、実値の表示時は既定色に戻す。
+    ui_->RouteProgressLabel->setStyleSheet(QString{});
     ui_->RouteProgressLabel->setText(
         prefix + QString::fromStdString(poi_name + progress_suffix));
   }, Qt::QueuedConnection);
+}
+
+// #451: idle 時のプレースホルダ表示。空文字だと「Arrived」〜バッジ間が説明のない
+// 空白 2 行に見えるため、「<caption>: —」をグレーで常設する (.ui の初期値と同値)。
+// ラベル自体を hide しないのは従来どおり (出現/消滅でレイアウトが上下しないため)。
+void MapoiPanel::SetRouteProgressIdle()
+{
+  ui_->RouteProgressLabel->setStyleSheet("color: gray;");
+  ui_->RouteProgressLabel->setText(tr("Route progress: —"));
+}
+
+// CommandRejectedLabel は通知ごとに赤/緑を setStyleSheet する (ShowTransientNotice)
+// ため、idle 復帰時に必ずグレーへ戻す (戻し忘れると次の idle が着色されたまま残る)。
+void MapoiPanel::SetNoticeIdle()
+{
+  ui_->CommandRejectedLabel->setStyleSheet("color: gray;");
+  ui_->CommandRejectedLabel->setText(tr("Notice: —"));
 }
 
 // #401: CommandRejectedLabel への一時通知の共用ヘルパー。#398 の CommandRejectedLabel と
