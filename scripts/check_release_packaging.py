@@ -49,23 +49,33 @@ from catkin_pkg.changelog import CHANGELOG_FILENAME, get_changelog_from_path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # bloom がパッケージ単位で source を切り出すため各パッケージに同梱が必須なファイル。
+# ファイル名は ROS/bloom 慣習の ``LICENSE`` 固定 (``LICENSE.txt`` 等は対象外)。
 REQUIRED_SIBLINGS = (CHANGELOG_FILENAME, 'LICENSE')
 
 # package.xml 探索から除外するディレクトリ (ビルド生成物・依存物)。
 IGNORE_DIRS = {'node_modules', 'build', 'install', 'log', '.git'}
 
-# 版見出しのテキスト表現 (行全体が ``X.Y.Z (YYYY-MM-DD)``)。
-VERSION_HEADING_RE = re.compile(r'^(\d+\.\d+\.\d+) \(\d{4}-\d{2}-\d{2}\)$', re.MULTILINE)
+# 版見出しのテキスト表現 (行全体が ``X.Y.Z (YYYY-MM-DD)``)。CRLF の PR も拾えるよう ``\r?``。
+VERSION_HEADING_RE = re.compile(r'^(\d+\.\d+\.\d+) \(\d{4}-\d{2}-\d{2}\)\r?$', re.MULTILINE)
+
+# fork PR 由来の信頼できない CHANGELOG.rst を parse するため、任意ファイル読み込み /
+# 情報漏洩ベクタとなる directive を弾く。changelog は bullet list のみで directive は
+# 本来不要 (catkin_pkg も解釈しない)。get_changelog_from_path は default 設定
+# (file_insertion 有効) で parse するため、呼ぶ前にここで検出して弾く必要がある。
+UNSAFE_DIRECTIVE_RE = re.compile(r'^[ \t]*\.\.[ \t]+(include|raw)[ \t]*::', re.MULTILINE | re.IGNORECASE)
 
 FORTHCOMING_LABEL = 'Forthcoming'
 
 # doctitle/subtitle への昇格変換を切って全見出しを section として扱い、警告は buffer へ
-# 逃がして CI ログを汚さない (node は doctree から拾う)。
+# 逃がして CI ログを汚さない (node は doctree から拾う)。file/raw insertion は信頼できない
+# 入力対策として無効化 (二重防御。UNSAFE_DIRECTIVE_RE で先に弾くが念のため)。
 _DOCUTILS_OVERRIDES = {
     'report_level': 1,
     'halt_level': 5,
     'doctitle_xform': False,
     'sectsubtitle_xform': False,
+    'file_insertion_enabled': False,
+    'raw_enabled': False,
 }
 
 
@@ -108,10 +118,21 @@ def _check_changelog(pkg_dir: Path) -> list[str]:
 
     rst = path.read_text(encoding='utf-8')
 
+    # 0: 信頼できない入力対策。任意ファイル読み込みベクタとなる directive を含む場合は
+    # 以降の parse (get_changelog_from_path は default 設定で file を読む) を行わず弾く。
+    unsafe = UNSAFE_DIRECTIVE_RE.search(rst)
+    if unsafe:
+        issues.append(
+            f'{rel}/{CHANGELOG_FILENAME}: 許可されない RST directive "{unsafe.group(1)}::" を含む '
+            f'(changelog には不要、CI 上での任意ファイル読み込みリスク)'
+        )
+        return issues
+
     # 2 + 4: 構造警告と Forthcoming 節の健在性を docutils の doctree から検査。
     titles, warnings = _section_titles_and_warnings(rst)
     for warning in warnings:
-        issues.append(f'{rel}/{CHANGELOG_FILENAME}: RST 構造警告 (見出し underline 崩れ等): {warning}')
+        # warning には docutils の原文 (例: "Title underline too short.") がそのまま入る。
+        issues.append(f'{rel}/{CHANGELOG_FILENAME}: RST 構造警告: {warning}')
     if FORTHCOMING_LABEL not in titles:
         issues.append(
             f'{rel}/{CHANGELOG_FILENAME}: "{FORTHCOMING_LABEL}" 節が section として存在しない '
@@ -159,7 +180,13 @@ def main() -> int:
     issues: list[str] = []
     for pkg_dir in pkg_dirs:
         issues.extend(_check_siblings(pkg_dir))
-        issues.extend(_check_changelog(pkg_dir))
+        try:
+            issues.extend(_check_changelog(pkg_dir))
+        except Exception as exc:  # noqa: BLE001 - 壊れた入力での予期せぬ parse 失敗を traceback で全体を落とさず issue 化
+            rel = pkg_dir.relative_to(REPO_ROOT)
+            issues.append(
+                f'{rel}/{CHANGELOG_FILENAME}: 検査中に予期せぬ例外: {type(exc).__name__}: {exc}'
+            )
 
     if issues:
         print('release packaging check failed:', file=sys.stderr)
