@@ -12,6 +12,16 @@ patch releases. See ``README.md`` for the full version policy.
 For releases prior to v0.2.0, see the
 `GitHub Releases page <https://github.com/shimz-robotics/mapoi/releases>`_.
 
+Each package also has its own ``CHANGELOG.rst`` next to its ``package.xml``
+(``mapoi/``, ``mapoi_interfaces/``, ``mapoi_server/``, ``mapoi_webui/``,
+``mapoi_rviz_plugins/``, ``mapoi_turtlebot3_example/``). Those per-package
+files are the ones bloom / buildfarm consume, are written in the flat
+``catkin_pkg``-parseable format, and hold only the changes affecting that
+package. From the next release onward they are appended to via
+``catkin_generate_changelog``. This root file remains the project-wide
+narrative (breaking-change migration guides, cross-package context) and is
+not consumed by the release tooling.
+
 
 Unreleased
 ==========
