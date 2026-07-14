@@ -16,7 +16,7 @@ Forthcoming
 * ``GetRoutePois`` response gains ``bool success`` / ``string error_message`` ahead of the ``pois_list`` / ``landmark_pois`` fields; recompile all clients (#342).
 * ``PointOfInterest`` drops the always-zero ``int32 id`` field; key on ``name`` instead (#338).
 * ``SelectMap`` response field ``initial_poi_name`` renamed to ``resolved_initial_poi_name`` (request field unchanged) (#343).
-* ``PoiEvent`` simplified from four event types to three: remove ``EVENT_STOPPED`` / ``EVENT_RESUMED``, add ``EVENT_PAUSED`` (value ``2``), shifting ``EVENT_EXIT`` from ``2`` to ``3`` (#220, #227).
+* ``PoiEvent`` simplified from four event types to three: remove ``EVENT_STOPPED`` / ``EVENT_RESUMED``, add ``EVENT_PAUSED`` (value ``2``), shifting ``EVENT_EXIT`` from ``2`` to ``3`` (#220, #227). Note the numeric value ``3`` is reused (old ``EVENT_STOPPED`` -> new ``EVENT_EXIT``): rosbags recorded before 0.5.0 and clients comparing hardcoded numbers will silently misinterpret events; always compare against the named constants after recompiling.
 
 0.4.0 (2026-05-08)
 ------------------
