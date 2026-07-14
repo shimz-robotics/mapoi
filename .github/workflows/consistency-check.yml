@@ -19,8 +19,8 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install pyyaml
-        run: pip install --no-cache-dir pyyaml
+      - name: Install lint dependencies
+        run: pip install --no-cache-dir pyyaml catkin_pkg
 
       - name: Check robot_radius drift between WebUI launch and Nav2 yaml
         run: python3 scripts/check_robot_radius_drift.py
@@ -30,6 +30,9 @@ jobs:
 
       - name: Check mapoi_interfaces docs/implementation consistency
         run: python3 scripts/check_docs_consistency.py
+
+      - name: Check release packaging (CHANGELOG.rst parse + LICENSE co-location)
+        run: python3 scripts/check_release_packaging.py
 
   webui_js_tests:
     runs-on: ubuntu-latest
