@@ -10,6 +10,22 @@ root ``CHANGELOG.rst`` / the GitHub Releases page.
 Forthcoming
 -----------
 
+0.6.0 (2026-07-15)
+------------------
+
+* Flip the UI toggle (☰) ``aria-pressed`` semantics so the button lights up (blue) while the UI panel is shown, matching the lock button's "on by default" look (#449).
+* Vendor Leaflet under ``web/vendor/leaflet/`` and serve it from a new ``/vendor/<path>`` static route instead of loading it from the ``unpkg.com`` CDN, so the WebUI works fully offline (#394).
+* Add a Help overlay (``?`` button / modal, also opened with the ``?`` key) listing shortcuts and map/edit/save/POI-list/Navigation usage; Escape closes it with top priority over other shortcuts, and while it is open all other owned shortcuts are disabled to prevent accidental actions behind the modal (#391).
+* Add ``L`` / ``U`` single-key shortcuts to toggle POI position-drag lock and UI panel visibility, driving the existing toggle buttons through a single code path; modifier combinations (e.g. ``Ctrl+L``) and key repeat are ignored (#390).
+* Add a name search box to the POI list: case-insensitive substring match on ``poi.name``, filtering the list only (map markers and the current selection are unaffected) (#383).
+* Pan the map to the selected POI when it is picked from the POI list (or Navigation dropdown) and falls outside the current viewport; selections originating from a map click are never panned since the clicked POI is already visible (#382).
+* Warn on tab close / reload / navigation via ``beforeunload`` when a POI/route/tag editor is dirty or has an open edit form, reusing the same blocker definition as the SSE reload guard (#380).
+* Show a world-coordinate readout (``x: ..., y: ...``, formatted to the POI YAML's decimal precision) that follows the mouse over the map and hides on ``mouseout`` or non-finite coordinates (#381).
+* Skip the SSE-triggered full reload when a tab's own Save round-trips back to it: ``config_changed`` payloads now carry a ``config_version`` (sha256), and the frontend treats a matching version as self-originated, avoiding the undo-history and map-viewport reset that a spurious reload used to cause; a "Saved" toast (shown on a successful ``Ctrl+S`` save) now gives the save-confirmation feedback that the reload flicker previously provided (#384).
+* Add ``Ctrl+S`` / ``Cmd+S`` to save all dirty editors, committing an open edit form first (via its OK-equivalent validation) before saving; shows a "No unsaved changes" toast when there is nothing to save, and ignores key repeat and re-entry while a save is in flight (#375).
+* Add a ``Delete`` key shortcut to remove the selected POI, with no confirmation dialog — the deletion only touches the working copy and is undoable with ``Ctrl+Z``, so an undo-hint toast is shown instead; ignored while an input is focused or a route/POI form is open (#374).
+* Guard the SSE ``config_changed`` full reload against silently discarding a dirty tab's unsaved edits and undo history: reload is now held and offered as an OK/Cancel choice (load latest vs. keep editing) whenever a POI/route/tag editor is dirty or has an open edit form (#373).
+
 0.5.0 (2026-07-10)
 ------------------
 

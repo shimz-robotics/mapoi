@@ -11,6 +11,11 @@ narrative: root ``CHANGELOG.rst`` / the GitHub Releases page.
 Forthcoming
 -----------
 
+0.6.0 (2026-07-15)
+------------------
+
+* ``mapoi_rviz2_publisher``: rebuild the marker arrays only when the underlying data changed (POIs, routes, highlights, display parameters), republishing the cached arrays with a refreshed stamp on unchanged ticks — the 1 Hz republish itself is kept so late-joining ``volatile`` subscribers still receive markers — and skip the tick entirely while both marker topics have zero subscribers (#402).
+
 0.5.0 (2026-07-10)
 ------------------
 

@@ -10,6 +10,11 @@ narrative: root ``CHANGELOG.rst`` / the GitHub Releases page.
 Forthcoming
 -----------
 
+0.6.0 (2026-07-15)
+------------------
+
+* No changes for this package in this release.
+
 0.5.0 (2026-07-10)
 ------------------
 
