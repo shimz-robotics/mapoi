@@ -9,6 +9,11 @@ project-level narrative: root ``CHANGELOG.rst`` / the GitHub Releases page.
 Forthcoming
 -----------
 
+0.6.0 (2026-07-15)
+------------------
+
+* Add the repository ``LICENSE`` alongside ``package.xml``, so the bloom-generated release artifacts (source archive / deb) for the metapackage bundle the license text like the other packages already did (#395).
+
 0.5.0 (2026-07-10)
 ------------------
 
