@@ -236,11 +236,11 @@ Two samples are included, together covering every combination of POI placement +
 
 | POI | tags | `tolerance` (xy / yaw) | Role |
 | --- | --- | --- | --- |
-| `start` | `waypoint` | 0.50 / 0.785 | First in the POI list = default initial pose (#144); starting point for all routes; matches the Gazebo spawn position (-2.0, -0.5) |
-| `basic_waypoint` | `waypoint` | 0.35 / 0.785 | A southern relay point for `tutorial_01` / `02` / `tour_full` (a pure waypoint) |
-| `pause_waypoint` | `waypoint`, `pause`, `capture_trigger` | 0.30 / 3.14 | The `pause` POI for `tutorial_03` / `tour_full`; when the demo subscriber is running, `camera_node` mocks a capture while paused |
-| `goal` | `waypoint` | 0.40 / **0.10** | The end point of `tutorial_01` / `02` / `tour_full` (**strict yaw**) |
-| `audio_landmark` | `landmark`, `audio_info` | 0.35 / 0.785 | Listed in `route.landmarks` for `tutorial_02` / `tour_full`; when the demo subscriber is running, `audio_guide_node` fires on `EVENT_ENTER` |
+| `start` | `waypoint` | 0.30 / 2.0944 | First in the POI list = default initial pose (#144); starting point for all routes; matches the Gazebo spawn position (-2.0, -0.5) |
+| `basic_waypoint` | `waypoint` | 0.30 / 3.1416 | A southern relay point for `tutorial_01` / `02` / `tour_full` (a pure waypoint) |
+| `pause_waypoint` | `waypoint`, `pause`, `capture_trigger` | 0.30 / 1.5708 | The `pause` POI for `tutorial_03` / `tour_full`; when the demo subscriber is running, `camera_node` mocks a capture while paused |
+| `goal` | `waypoint` | 0.30 / **0.10** | The end point of `tutorial_01` / `02` / `tour_full` (**strict yaw**) |
+| `audio_landmark` | `landmark`, `audio_info` | 0.35 / 0.7854 | Listed in `route.landmarks` for `tutorial_02` / `tour_full`; when the demo subscriber is running, `audio_guide_node` fires on `EVENT_ENTER` |
 
 > **NOTE**: `tutorial_01_basic` / `tutorial_03_pause` omit `route.landmarks`, so they also double as an implicit demo that the yaml schema works correctly when `landmarks` is omitted.
 
