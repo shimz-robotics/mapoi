@@ -32,41 +32,48 @@ gazebo:
 # tolerance.yaw は >= 0.001 (rad) を指定する (msg spec #138 で 0 / 負値は禁止)。
 # default 0.785 (≒ π/4 = 45°)、yaw 厳密目標は 0.10 (≒ 5.7°)、yaw 不問の通過点は 3.14 (≒ 180°)。
 # start_zone は POI list 先頭 (= default initial pose、#149) で Gazebo spawn の (0, 0) と一致。
+# description は user-facing (WebUI POI カード / demo subscriber の log に verbatim 表示) なので
+# 「その地点が何か」の短句のみ書き、route 参照・検証観点は各エントリ上のコメントに置く。
 poi:
 - name: start_zone
-  description: 開始地点 (POI list 先頭 = default initial pose)
+  description: Route start point
   pose: {x: 0.0, y: 0.0, yaw: 0.0}
   tolerance: {xy: 0.40, yaw: 0.785}
   tags: [waypoint]
+# avoidance_a (西回り) の中継点。yaw 不問の通過点 (tolerance.yaw=π)。
 - name: checkpoint_west
-  description: 西側中継点 (yaw 不問の通過点、tolerance.yaw=π)
+  description: West pass-through checkpoint
   pose: {x: -1.6, y: 0.5, yaw: 1.57}
   tolerance: {xy: 0.35, yaw: 3.14}
   tags: [waypoint, checkpoint]
+# avoidance_b (東回り) の中継点。yaw 不問の通過点 (tolerance.yaw=π)。
 - name: checkpoint_east
-  description: 東側中継点 (yaw 不問の通過点、tolerance.yaw=π)
+  description: East pass-through checkpoint
   pose: {x: 1.4, y: -0.3, yaw: -1.6}
   tolerance: {xy: 0.30, yaw: 3.14}
   tags: [waypoint, checkpoint]
+# 交差点で自動停止する pause 中継。avoidance_a の連続走行で pause 発火を検証する役。
 - name: pause_intersection
-  description: 交差点で自動停止 (avoidance_a の連続走行で pause 発火を検証)
+  description: Intersection pause stop
   pose: {x: -0.4, y: 1.0, yaw: 1.57}
   tolerance: {xy: 0.30, yaw: 3.14}
   tags: [waypoint, pause]
+# 北側の最終目標 (yaw 厳密)。
 - name: north_goal
-  description: 北側目標地点 (yaw 厳密)
+  description: North goal (exact heading)
   pose: {x: 0.4, y: 1.7, yaw: -2.0}
   tolerance: {xy: 0.30, yaw: 0.10}
   tags: [waypoint]
 # 以下 landmark 群: Nav2 navigation 不可な reference 点 (#85, #143)。
 # avoidance_a の landmarks: [...] で route 走行中だけ radius event 監視対象。
+# hazard_south = landmark + custom hazard、observation_point = landmark + observation の複合 tag 例。
 - name: hazard_south
-  description: 南側ハザード (landmark + custom hazard、Nav2 goal 不可な複合 tag)
+  description: South hazard zone
   pose: {x: 0.5, y: -1.3, yaw: 0.0}
   tolerance: {xy: 0.45, yaw: 0.785}
   tags: [landmark, hazard]
 - name: observation_point
-  description: 観察対象 (landmark + observation、route 走行中の参照点)
+  description: Observation target
   pose: {x: -1.0, y: -0.6, yaw: 0.0}
   tolerance: {xy: 0.30, yaw: 0.785}
   tags: [landmark, observation]

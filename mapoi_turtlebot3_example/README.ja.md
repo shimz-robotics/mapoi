@@ -237,11 +237,11 @@ mapoi の **custom tag (system tag 以外のユーザー定義タグ)** は以�
 
 | POI | tags | `tolerance` (xy / yaw) | 役割 |
 | --- | --- | --- | --- |
-| `start` | `waypoint` | 0.50 / 0.785 | POI list 先頭 = default initial pose (#144)、全 route 起点、Gazebo spawn 位置 (-2.0, -0.5) と一致 |
-| `basic_waypoint` | `waypoint` | 0.35 / 0.785 | `tutorial_01` / `02` / `tour_full` の南側中継点 (pure waypoint) |
-| `pause_waypoint` | `waypoint`, `pause`, `capture_trigger` | 0.30 / 3.14 | `tutorial_03` / `tour_full` の `pause` POI、demo subscriber 起動時は `camera_node` が pause 中に撮影 mock |
-| `goal` | `waypoint` | 0.40 / **0.10** | `tutorial_01` / `02` / `tour_full` の終点 (**yaw 厳密**) |
-| `audio_landmark` | `landmark`, `audio_info` | 0.35 / 0.785 | `tutorial_02` / `tour_full` の `route.landmarks` 列挙対象、demo subscriber 起動時は `audio_guide_node` が `EVENT_ENTER` で発火 |
+| `start` | `waypoint` | 0.30 / 2.0944 | POI list 先頭 = default initial pose (#144)、全 route 起点、Gazebo spawn 位置 (-2.0, -0.5) と一致 |
+| `basic_waypoint` | `waypoint` | 0.30 / 3.1416 | `tutorial_01` / `02` / `tour_full` の南側中継点 (pure waypoint) |
+| `pause_waypoint` | `waypoint`, `pause`, `capture_trigger` | 0.30 / 1.5708 | `tutorial_03` / `tour_full` の `pause` POI、demo subscriber 起動時は `camera_node` が pause 中に撮影 mock |
+| `goal` | `waypoint` | 0.30 / **0.10** | `tutorial_01` / `02` / `tour_full` の終点 (**yaw 厳密**) |
+| `audio_landmark` | `landmark`, `audio_info` | 0.35 / 0.7854 | `tutorial_02` / `tour_full` の `route.landmarks` 列挙対象、demo subscriber 起動時は `audio_guide_node` が `EVENT_ENTER` で発火 |
 
 > **NOTE**: `tutorial_01_basic` / `tutorial_03_pause` は `route.landmarks` を省略しているため、yaml schema が `landmarks` 省略時にも正常動作する暗黙 demo を兼ねる。
 
