@@ -39,29 +39,35 @@ map:
 - {node_name: /map_server, map_file: turtlebot3_world.yaml}
 gazebo:
   world_model: {uri: 'model://turtlebot3_world', name: turtlebot3_world}
+# description は user-facing (WebUI POI カード / demo subscriber の log に verbatim 表示) なので
+# 「その地点が何か」の短句のみ書き、route 参照・検証観点は各エントリ上のコメントに置く。
 poi:
-- description: 全 route 起点 (POI list 先頭 = default initial pose, Gazebo spawn 位置)
+# 全 route 起点。POI list 先頭 = default initial pose、Gazebo spawn 位置と一致。
+- description: Route start point
   name: start
   pose: {x: -2.0, y: -0.5, yaw: 0.0}
   tags: [waypoint]
   tolerance: {xy: 0.3, yaw: 2.0944}
-- description: tutorial_01 / 02 / tour_full の南側中継点 (pure waypoint、yaw 不問で fly-through)
+# tutorial_01 / 02 / tour_full の南側中継点 (pure waypoint、yaw 不問で fly-through)。
+- description: Pass-through waypoint
   name: basic_waypoint
   pose: {x: -0.6, y: -0.89, yaw: 0.06}
   tags: [waypoint]
   tolerance: {xy: 0.3, yaw: 3.1416}
-- description: tutorial_03 / tour_full の pause POI (停止中に camera 撮影 mock を発火)
+# tutorial_03 / tour_full の pause POI。停止中に camera_node の撮影 mock が発火 (capture_trigger)。
+- description: Camera capture stop
   name: pause_waypoint
   pose: {x: 0.01, y: -0.27, yaw: -0.08}
   tags: [waypoint, pause, capture_trigger]
   tolerance: {xy: 0.3, yaw: 1.5708}
-- description: tutorial_01 / 02 / tour_full の終点 (北、yaw 厳密)
+# tutorial_01 / 02 / tour_full の終点 (北、yaw 厳密)。
+- description: Final goal (exact heading)
   name: goal
   pose: {x: 0.66, y: -0.65, yaw: 0.01}
   tags: [waypoint]
   tolerance: {xy: 0.3, yaw: 0.1}
-- description: tutorial_02 / tour_full の route.landmarks 列挙対象 (audio_info で audio_guide_node
-    発火対象)
+# tutorial_02 / tour_full の route.landmarks 列挙対象。audio_info で audio_guide_node が発火。
+- description: Audio guide spot
   name: audio_landmark
   pose: {x: -1.09, y: -0.5, yaw: -0.03}
   tags: [landmark, audio_info]
