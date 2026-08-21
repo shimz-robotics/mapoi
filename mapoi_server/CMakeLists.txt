@@ -46,7 +46,7 @@ if(gazebo_msgs_FOUND)
     src/initial_pose_resolver.cpp
   )
   target_link_libraries(mapoi_gazebo_bridge ${_mapoi_yaml_cpp_target})
-  ament_target_dependencies(mapoi_gazebo_bridge gazebo_msgs)
+  target_link_libraries(mapoi_gazebo_bridge ${gazebo_msgs_TARGETS})
   message(STATUS "Building mapoi_gazebo_bridge (Gazebo Classic)")
 else()
   message(STATUS "Skipping mapoi_gazebo_bridge (gazebo_msgs not found)")
@@ -64,7 +64,7 @@ if(ros_gz_interfaces_FOUND AND NOT "$ENV{ROS_DISTRO}" STREQUAL "humble")
     src/initial_pose_resolver.cpp
   )
   target_link_libraries(mapoi_gz_bridge ${_mapoi_yaml_cpp_target})
-  ament_target_dependencies(mapoi_gz_bridge ros_gz_interfaces)
+  target_link_libraries(mapoi_gz_bridge ${ros_gz_interfaces_TARGETS})
   message(STATUS "Building mapoi_gz_bridge (gz-sim, ROS_DISTRO=$ENV{ROS_DISTRO})")
 else()
   message(STATUS "Skipping mapoi_gz_bridge "
