@@ -19,7 +19,7 @@
 #include <rviz_default_plugins/tools/pose/pose_tool.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
-#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Quaternion.hpp>
 
 
 // namespace rviz_common
