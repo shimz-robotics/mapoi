@@ -8,6 +8,20 @@ ament_auto_find_build_dependencies()
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOMOC ON)
 
+# Match rviz_common even when both Qt major versions are installed.
+get_target_property(RVIZ_COMMON_LINK_LIBRARIES
+  rviz_common::rviz_common INTERFACE_LINK_LIBRARIES
+)
+if("Qt6::Widgets" IN_LIST RVIZ_COMMON_LINK_LIBRARIES)
+  find_package(Qt6 REQUIRED COMPONENTS Widgets)
+  set(RVIZ_QT_WIDGETS_TARGET Qt6::Widgets)
+elseif("Qt5::Widgets" IN_LIST RVIZ_COMMON_LINK_LIBRARIES)
+  find_package(Qt5 REQUIRED COMPONENTS Widgets)
+  set(RVIZ_QT_WIDGETS_TARGET Qt5::Widgets)
+else()
+  message(FATAL_ERROR "Could not determine the Qt version used by rviz_common")
+endif()
+
 pluginlib_export_plugin_description_file(rviz_common plugin_description.xml)
 
 set(HEADERS
@@ -15,10 +29,17 @@ set(HEADERS
   include/mapoi_rviz_plugins/poi_editor.hpp
   include/mapoi_rviz_plugins/mapoi_pose_tool.hpp
 )
-qt5_wrap_ui(UIC_FILES
-  src/ui/mapoi_panel.ui
-  src/ui/poi_editor.ui
-)
+if(RVIZ_QT_WIDGETS_TARGET STREQUAL "Qt6::Widgets")
+  qt6_wrap_ui(UIC_FILES
+    src/ui/mapoi_panel.ui
+    src/ui/poi_editor.ui
+  )
+else()
+  qt5_wrap_ui(UIC_FILES
+    src/ui/mapoi_panel.ui
+    src/ui/poi_editor.ui
+  )
+endif()
 set(SOURCE_FILES
   src/mapoi_panel.cpp
   src/mapoi_panel_config.cpp
@@ -35,6 +56,7 @@ set(SOURCE_FILES
 )
 
 ament_auto_add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${HEADERS} ${UIC_FILES})
+target_link_libraries(${PROJECT_NAME} ${RVIZ_QT_WIDGETS_TARGET})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
