@@ -6,6 +6,54 @@
 #include <rclcpp/rclcpp.hpp>
 #include "mapoi_server/mapoi_nav2_bridge.hpp"
 
+namespace
+{
+mapoi_interfaces::msg::PointOfInterest make_poi(
+  const std::string & name, double x, double y,
+  double tolerance_xy, const std::vector<std::string> & tags)
+{
+  mapoi_interfaces::msg::PointOfInterest poi;
+  poi.name = name;
+  poi.pose.position.x = x;
+  poi.pose.position.y = y;
+  poi.tolerance.xy = tolerance_xy;
+  poi.tolerance.yaw = 0.0;
+  poi.tags = tags;
+  return poi;
+}
+
+// MapoiNav2Bridge の constructor は専用 executor thread を持つ TransformListener を作り、
+// 破棄時に ros2/geometry2#517 の cancel/spin race を踏み得る。この test 群が検証するのは
+// constructor の parameter 反映・結線であって破棄ではないため、全 node を retain する。
+// context shutdown 後に破棄を集約し、spin の loop 条件を先に偽にすることで race を構造的に避ける。
+std::vector<std::shared_ptr<MapoiNav2Bridge>> & retained_nodes()
+{
+  static std::vector<std::shared_ptr<MapoiNav2Bridge>> nodes;
+  return nodes;
+}
+
+std::shared_ptr<MapoiNav2Bridge> retain_node(std::shared_ptr<MapoiNav2Bridge> node)
+{
+  retained_nodes().push_back(node);
+  return node;
+}
+
+class RetainedNodesEnvironment : public ::testing::Environment
+{
+public:
+  void TearDown() override
+  {
+    if (rclcpp::ok()) {
+      rclcpp::shutdown();
+    }
+    retained_nodes().clear();
+  }
+};
+
+[[maybe_unused]] ::testing::Environment * const retained_nodes_environment =
+  ::testing::AddGlobalTestEnvironment(new RetainedNodesEnvironment);
+}  // namespace
+
 class Nav2BridgeTestFixture : public ::testing::Test
 {
 protected:
@@ -14,31 +62,32 @@ protected:
     if (!rclcpp::ok()) {
       rclcpp::init(0, nullptr);
     }
-    node_ = std::make_shared<MapoiNav2Bridge>();
   }
-  void TearDown() override
+};
+
+class Nav2BridgeNodeFixture : public ::testing::Test
+{
+protected:
+  static void SetUpTestSuite()
   {
+    if (!rclcpp::ok()) {
+      rclcpp::init(0, nullptr);
+    }
+    node_ = retain_node(std::make_shared<MapoiNav2Bridge>());
+  }
+
+  static void TearDownTestSuite()
+  {
+    // retained_nodes() の参照は残り、実際の解放は global test environment の TearDown() で行う。
     node_.reset();
   }
 
-  mapoi_interfaces::msg::PointOfInterest make_poi(
-    const std::string & name, double x, double y,
-    double tolerance_xy, const std::vector<std::string> & tags)
-  {
-    mapoi_interfaces::msg::PointOfInterest poi;
-    poi.name = name;
-    poi.pose.position.x = x;
-    poi.pose.position.y = y;
-    poi.tolerance.xy = tolerance_xy;
-    poi.tolerance.yaw = 0.0;
-    poi.tags = tags;
-    return poi;
-  }
-
-  std::shared_ptr<MapoiNav2Bridge> node_;
+  static std::shared_ptr<MapoiNav2Bridge> node_;
 };
 
-TEST_F(Nav2BridgeTestFixture, DistanceCalculation)
+std::shared_ptr<MapoiNav2Bridge> Nav2BridgeNodeFixture::node_;
+
+TEST_F(Nav2BridgeNodeFixture, DistanceCalculation)
 {
   geometry_msgs::msg::Pose pose;
   pose.position.x = 3.0;
@@ -47,7 +96,7 @@ TEST_F(Nav2BridgeTestFixture, DistanceCalculation)
   EXPECT_DOUBLE_EQ(dist, 5.0);
 }
 
-TEST_F(Nav2BridgeTestFixture, DistanceCalculationZero)
+TEST_F(Nav2BridgeNodeFixture, DistanceCalculationZero)
 {
   geometry_msgs::msg::Pose pose;
   pose.position.x = 1.0;
@@ -195,10 +244,12 @@ TEST_F(Nav2BridgeTestFixture, ClassifyRadiusTransitionExitAtBoundary)
             MapoiNav2Bridge::RadiusTransition::NONE);
 }
 
-TEST_F(Nav2BridgeTestFixture, RebuildEventPoisIncludesAllPois)
+TEST_F(Nav2BridgeNodeFixture, RebuildEventPoisIncludesAllPois)
 {
   {
     std::lock_guard<std::mutex> lock(node_->data_mutex_);
+    node_->pois_list_.clear();
+    node_->event_pois_.clear();
     node_->pois_list_.push_back(make_poi("goal_only", 1.0, 0.0, 0.5, {"waypoint"}));
     node_->pois_list_.push_back(make_poi("with_pause", 0.0, 2.0, 0.5, {"waypoint", "pause"}));
     node_->pois_list_.push_back(make_poi("with_custom", 3.0, 0.0, 0.5, {"waypoint", "audio_info"}));
@@ -208,8 +259,13 @@ TEST_F(Nav2BridgeTestFixture, RebuildEventPoisIncludesAllPois)
   EXPECT_EQ(node_->event_pois_.size(), 4u);
 }
 
-TEST_F(Nav2BridgeTestFixture, RebuildEventPoisEmpty)
+TEST_F(Nav2BridgeNodeFixture, RebuildEventPoisEmpty)
 {
+  {
+    std::lock_guard<std::mutex> lock(node_->data_mutex_);
+    node_->pois_list_.clear();
+    node_->event_pois_.clear();
+  }
   node_->rebuild_event_pois();
   EXPECT_EQ(node_->event_pois_.size(), 0u);
 }
@@ -384,15 +440,22 @@ TEST_F(Nav2BridgeTestFixture, IsActiveRoutePoiFalseInRouteModeUnlistedPoi)
 
 // --- reset_nav_state (#143 / #148) ---
 
-TEST_F(Nav2BridgeTestFixture, ResetNavStateClearsRouteContext)
+TEST_F(Nav2BridgeNodeFixture, ResetNavStateClearsRouteContext)
 {
   // route 走行中 + pause 中に相当する状態を fixture から直接 set し、
   // reset_nav_state() が route lifecycle 終了時 (cancel / SUCCEEDED / ABORTED /
   // GOAL 切替) に行うクリーンアップ動作を再現する。`reset_nav_state()` の
   // 契約に含まれる全 member をまとめて検証することで、将来 reset 対象が漏れた
   // 場合を unit test で検出できる。
+  node_->nav_mode_ = MapoiNav2Bridge::NavMode::IDLE;
+  node_->is_paused_ = false;
+  node_->current_waypoint_index_ = 0;
+  node_->current_route_waypoints_.clear();
+  node_->paused_waypoints_.clear();
+  node_->paused_goal_pose_ = geometry_msgs::msg::PoseStamped{};
   {
     std::lock_guard<std::mutex> lock(node_->data_mutex_);
+    node_->current_route_poi_names_.clear();
     node_->current_route_poi_names_.insert("wp1");
     node_->current_route_poi_names_.insert("lm1");
   }
@@ -402,8 +465,8 @@ TEST_F(Nav2BridgeTestFixture, ResetNavStateClearsRouteContext)
 
   geometry_msgs::msg::PoseStamped wp;
   wp.pose.position.x = 1.0;
-  node_->current_route_waypoints_.push_back(wp);
-  node_->paused_waypoints_.push_back(wp);
+  node_->current_route_waypoints_ = {wp};
+  node_->paused_waypoints_ = {wp};
 
   geometry_msgs::msg::PoseStamped paused_goal;
   paused_goal.pose.position.x = 9.0;
@@ -427,22 +490,25 @@ TEST_F(Nav2BridgeTestFixture, ResetNavStateClearsRouteContext)
 
 // --- auto_resume_timeout_sec (#231) ---
 
-TEST_F(Nav2BridgeTestFixture, AutoResumeTimeoutDefaultDisabled)
+TEST_F(Nav2BridgeNodeFixture, AutoResumeTimeoutDefaultDisabled)
 {
   // default では disabled (= 0.0)。負値以外の正値検証は launch_test / 結合 test に委ねる。
+  // 現状この member を書き換える test は無く、追加時は本 test の前提を壊さぬよう明示的にリセットする。
   EXPECT_DOUBLE_EQ(node_->auto_resume_timeout_sec_, 0.0);
 }
 
-TEST_F(Nav2BridgeTestFixture, AutoResumeTimeoutNegativeClampedToZero)
+// 以下 2 test で専用 `cmd_vel_topic` 無しに `cmd_vel_msg_type` だけ override すると、retain 中の
+// 同一 topic に別型の sub ができ、rcl が `invalid allocator` で crash する (#249 lessons)。
+TEST_F(Nav2BridgeNodeFixture, AutoResumeTimeoutNegativeClampedToZero)
 {
   // 負値は constructor で 0.0 に clamp する。RAII で別 node を作って検証する。
   rclcpp::NodeOptions options;
   options.append_parameter_override("auto_resume_timeout_sec", -1.5);
-  auto node_with_negative = std::make_shared<MapoiNav2Bridge>(options);
+  auto node_with_negative = retain_node(std::make_shared<MapoiNav2Bridge>(options));
   EXPECT_DOUBLE_EQ(node_with_negative->auto_resume_timeout_sec_, 0.0);
 }
 
-TEST_F(Nav2BridgeTestFixture, AutoResumeTimeoutNonFiniteClampedToZero)
+TEST_F(Nav2BridgeNodeFixture, AutoResumeTimeoutNonFiniteClampedToZero)
 {
   // NaN / Inf も constructor で 0.0 に clamp する (#231 / cursor review medium 対応)。
   // NaN は `< 0.0` でも `> 0.0` でもないため isfinite 込みで弾く必要がある。
@@ -451,24 +517,28 @@ TEST_F(Nav2BridgeTestFixture, AutoResumeTimeoutNonFiniteClampedToZero)
                      -std::numeric_limits<double>::infinity()}) {
     rclcpp::NodeOptions options;
     options.append_parameter_override("auto_resume_timeout_sec", bad);
-    auto node_with_bad = std::make_shared<MapoiNav2Bridge>(options);
+    auto node_with_bad = retain_node(std::make_shared<MapoiNav2Bridge>(options));
     EXPECT_DOUBLE_EQ(node_with_bad->auto_resume_timeout_sec_, 0.0)
       << "auto_resume_timeout_sec=" << bad << " should be clamped to 0.0";
   }
 }
 
-TEST_F(Nav2BridgeTestFixture, CancelAutoResumeTimerIsIdempotent)
+TEST_F(Nav2BridgeNodeFixture, CancelAutoResumeTimerIsIdempotent)
 {
   // 何も schedule していない状態で cancel を呼んでも安全 (二重 resume 経路で呼ばれる想定)。
+  node_->auto_resume_timer_.reset();
+  node_->auto_resume_target_poi_.clear();
   EXPECT_NO_THROW(node_->cancel_auto_resume_timer_());
   EXPECT_EQ(node_->auto_resume_timer_, nullptr);
 }
 
-TEST_F(Nav2BridgeTestFixture, ResetNavStateCancelsAutoResumeTimer)
+TEST_F(Nav2BridgeNodeFixture, ResetNavStateCancelsAutoResumeTimer)
 {
   // reset_nav_state は pending auto-resume timer も明示的に破棄する契約 (#231)。
   // 直接 timer を生やして reset で消えることを確認する (実際の schedule は ROUTE mode 起点で
   // ros 時計が必要だが、ここでは契約のみを検証)。
+  node_->auto_resume_timer_.reset();
+  node_->auto_resume_target_poi_.clear();
   node_->auto_resume_timer_ = node_->create_wall_timer(
     std::chrono::seconds(60), []() {});
   node_->auto_resume_target_poi_ = "dummy_poi";
@@ -487,9 +557,11 @@ TEST_F(Nav2BridgeTestFixture, ResetNavStateCancelsAutoResumeTimer)
 // silent regression が起きていた。両 callback が同じ zero-velocity 判定 helper
 // (update_zero_velocity_state) を呼ぶ contract を pin する。
 
-TEST_F(Nav2BridgeTestFixture, CmdVelTwistCallbackUpdatesZeroVelocityState)
+TEST_F(Nav2BridgeNodeFixture, CmdVelTwistCallbackUpdatesZeroVelocityState)
 {
   // Humble 系の Twist publisher: zero 入力で zero_velocity_active_ が true に遷移。
+  node_->zero_velocity_active_ = false;
+  node_->last_zero_velocity_start_ = {};
   EXPECT_FALSE(node_->zero_velocity_active_);
   auto msg = std::make_shared<geometry_msgs::msg::Twist>();
   msg->linear.x = 0.0;
@@ -500,9 +572,11 @@ TEST_F(Nav2BridgeTestFixture, CmdVelTwistCallbackUpdatesZeroVelocityState)
   EXPECT_TRUE(node_->zero_velocity_active_);
 }
 
-TEST_F(Nav2BridgeTestFixture, CmdVelTwistStampedCallbackUpdatesZeroVelocityState)
+TEST_F(Nav2BridgeNodeFixture, CmdVelTwistStampedCallbackUpdatesZeroVelocityState)
 {
   // Jazzy 系の TwistStamped publisher: 内包 twist を unwrap して同じ判定を通す。
+  node_->zero_velocity_active_ = false;
+  node_->last_zero_velocity_start_ = {};
   EXPECT_FALSE(node_->zero_velocity_active_);
   auto msg = std::make_shared<geometry_msgs::msg::TwistStamped>();
   msg->twist.linear.x = 0.0;
@@ -513,9 +587,11 @@ TEST_F(Nav2BridgeTestFixture, CmdVelTwistStampedCallbackUpdatesZeroVelocityState
   EXPECT_TRUE(node_->zero_velocity_active_);
 }
 
-TEST_F(Nav2BridgeTestFixture, CmdVelNonZeroClearsZeroVelocityState)
+TEST_F(Nav2BridgeNodeFixture, CmdVelNonZeroClearsZeroVelocityState)
 {
   // zero で active 化 → 非 zero で即 clear。Twist / TwistStamped どちらの経路でも同じ。
+  node_->zero_velocity_active_ = false;
+  node_->last_zero_velocity_start_ = {};
   auto zero = std::make_shared<geometry_msgs::msg::Twist>();
   node_->cmd_vel_callback(zero);
   EXPECT_TRUE(node_->zero_velocity_active_);
@@ -597,16 +673,16 @@ TEST_F(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeAutoByDistro)
 // ことのみで、subscription が実際に message を受信できるかは scope 外 (それは
 // CmdVel*CallbackUpdatesZeroVelocityState / route_integration launch_test で別途 pin)。
 //
-// 同 process の fixture node が default 設定で `/cmd_vel` に sub を貼っているため、本 test 群は
-// 必ず専用 `cmd_vel_topic` を割り当てる: 同 topic に違う型の sub を作ると rcl が
-// `invalid allocator` で crash する (#249 lessons)。
+// 共有 node と AutoResumeTimeout* の node は retain 中ずっと既定 `cmd_vel` を掴み続ける。
+// 同 topic に違う型の sub を作ると rcl が `invalid allocator` で crash するため、constructor test を
+// 追加する場合も必ず専用 `cmd_vel_topic` を割り当てる (#249 lessons)。
 
 TEST_F(Nav2BridgeTestFixture, ConstructorTwistStampedParamCreatesStampedSub)
 {
   rclcpp::NodeOptions options;
   options.append_parameter_override("cmd_vel_msg_type", std::string("twist_stamped"));
   options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_stamped_branch"));
-  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  auto node = retain_node(std::make_shared<MapoiNav2Bridge>(options));
   EXPECT_NE(node->cmd_vel_stamped_sub_, nullptr);
   EXPECT_EQ(node->cmd_vel_sub_, nullptr);
 }
@@ -616,7 +692,7 @@ TEST_F(Nav2BridgeTestFixture, ConstructorTwistParamCreatesTwistSub)
   rclcpp::NodeOptions options;
   options.append_parameter_override("cmd_vel_msg_type", std::string("twist"));
   options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_twist_branch"));
-  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  auto node = retain_node(std::make_shared<MapoiNav2Bridge>(options));
   EXPECT_NE(node->cmd_vel_sub_, nullptr);
   EXPECT_EQ(node->cmd_vel_stamped_sub_, nullptr);
 }
@@ -632,7 +708,7 @@ TEST_F(Nav2BridgeTestFixture, ConstructorUnknownParamJazzyFallsBackToStampedSub)
   rclcpp::NodeOptions options;
   options.append_parameter_override("cmd_vel_msg_type", std::string("Twist"));  // case-sensitive typo
   options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_unknown_jazzy_branch"));
-  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  auto node = retain_node(std::make_shared<MapoiNav2Bridge>(options));
   EXPECT_NE(node->cmd_vel_stamped_sub_, nullptr);
   EXPECT_EQ(node->cmd_vel_sub_, nullptr);
 }
@@ -647,7 +723,7 @@ TEST_F(Nav2BridgeTestFixture, ConstructorUnknownParamHumbleFallsBackToTwistSub)
   rclcpp::NodeOptions options;
   options.append_parameter_override("cmd_vel_msg_type", std::string("twst"));  // typo
   options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_unknown_humble_branch"));
-  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  auto node = retain_node(std::make_shared<MapoiNav2Bridge>(options));
   EXPECT_NE(node->cmd_vel_sub_, nullptr);
   EXPECT_EQ(node->cmd_vel_stamped_sub_, nullptr);
 }
@@ -666,7 +742,7 @@ TEST_F(Nav2BridgeTestFixture, ConstructorAutoParamJazzyCreatesStampedSub)
   rclcpp::NodeOptions options;
   options.append_parameter_override("cmd_vel_msg_type", std::string("auto"));
   options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_auto_jazzy_branch"));
-  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  auto node = retain_node(std::make_shared<MapoiNav2Bridge>(options));
   EXPECT_NE(node->cmd_vel_stamped_sub_, nullptr);
   EXPECT_EQ(node->cmd_vel_sub_, nullptr);
 }
@@ -679,7 +755,7 @@ TEST_F(Nav2BridgeTestFixture, ConstructorAutoParamHumbleCreatesTwistSub)
   rclcpp::NodeOptions options;
   options.append_parameter_override("cmd_vel_msg_type", std::string("auto"));
   options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_auto_humble_branch"));
-  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  auto node = retain_node(std::make_shared<MapoiNav2Bridge>(options));
   EXPECT_NE(node->cmd_vel_sub_, nullptr);
   EXPECT_EQ(node->cmd_vel_stamped_sub_, nullptr);
 }
@@ -695,7 +771,7 @@ TEST_F(Nav2BridgeTestFixture, ConstructorAutoParamUnsetDistroCreatesStampedSub)
   rclcpp::NodeOptions options;
   options.append_parameter_override("cmd_vel_msg_type", std::string("auto"));
   options.append_parameter_override("cmd_vel_topic", std::string("test_cmd_vel_auto_unset_branch"));
-  auto node = std::make_shared<MapoiNav2Bridge>(options);
+  auto node = retain_node(std::make_shared<MapoiNav2Bridge>(options));
   EXPECT_NE(node->cmd_vel_stamped_sub_, nullptr);
   EXPECT_EQ(node->cmd_vel_sub_, nullptr);
 }
