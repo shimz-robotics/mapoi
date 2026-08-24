@@ -12,3 +12,6 @@ __pycache__/
 
 # Codex CLI 作業ディレクトリ印 (各セッションで自動生成される空ファイル)
 .codex
+
+# Playwright の実行成果物 (mapoi_webui の e2e をローカル実行すると生成される)
+test-results/
