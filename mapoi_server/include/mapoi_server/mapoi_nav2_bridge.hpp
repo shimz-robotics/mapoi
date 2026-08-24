@@ -380,9 +380,8 @@ private:
     bool was_inside, double dist, double tolerance_xy, double hysteresis_multiplier);
 
 #ifdef UNIT_TEST
-  friend class Nav2BridgeTestFixture;
-  FRIEND_TEST(Nav2BridgeTestFixture, DistanceCalculation);
-  FRIEND_TEST(Nav2BridgeTestFixture, DistanceCalculationZero);
+  FRIEND_TEST(Nav2BridgeNodeFixture, DistanceCalculation);
+  FRIEND_TEST(Nav2BridgeNodeFixture, DistanceCalculationZero);
   FRIEND_TEST(Nav2BridgeTestFixture, YawFromQuaternionIdentity);
   FRIEND_TEST(Nav2BridgeTestFixture, YawFromQuaternionHalfPi);
   FRIEND_TEST(Nav2BridgeTestFixture, YawFromQuaternionNegHalfPi);
@@ -391,8 +390,8 @@ private:
   FRIEND_TEST(Nav2BridgeTestFixture, AngleDiffAbsHalfPi);
   FRIEND_TEST(Nav2BridgeTestFixture, AngleDiffAbsWrapAround);
   FRIEND_TEST(Nav2BridgeTestFixture, AngleDiffAbsSymmetric);
-  FRIEND_TEST(Nav2BridgeTestFixture, RebuildEventPoisIncludesAllPois);
-  FRIEND_TEST(Nav2BridgeTestFixture, RebuildEventPoisEmpty);
+  FRIEND_TEST(Nav2BridgeNodeFixture, RebuildEventPoisIncludesAllPois);
+  FRIEND_TEST(Nav2BridgeNodeFixture, RebuildEventPoisEmpty);
   FRIEND_TEST(Nav2BridgeTestFixture, PauseTagDetection);
   FRIEND_TEST(Nav2BridgeTestFixture, HasLandmarkTagDetection);
   FRIEND_TEST(Nav2BridgeTestFixture, BuildRoutePoiNamesWaypointsOnly);
@@ -409,15 +408,15 @@ private:
   FRIEND_TEST(Nav2BridgeTestFixture, IsActiveRoutePoiFalseInGoalMode);
   FRIEND_TEST(Nav2BridgeTestFixture, IsActiveRoutePoiTrueInRouteModeListedPoi);
   FRIEND_TEST(Nav2BridgeTestFixture, IsActiveRoutePoiFalseInRouteModeUnlistedPoi);
-  FRIEND_TEST(Nav2BridgeTestFixture, ResetNavStateClearsRouteContext);
-  FRIEND_TEST(Nav2BridgeTestFixture, AutoResumeTimeoutDefaultDisabled);
-  FRIEND_TEST(Nav2BridgeTestFixture, AutoResumeTimeoutNegativeClampedToZero);
-  FRIEND_TEST(Nav2BridgeTestFixture, AutoResumeTimeoutNonFiniteClampedToZero);
-  FRIEND_TEST(Nav2BridgeTestFixture, CancelAutoResumeTimerIsIdempotent);
-  FRIEND_TEST(Nav2BridgeTestFixture, ResetNavStateCancelsAutoResumeTimer);
-  FRIEND_TEST(Nav2BridgeTestFixture, CmdVelTwistCallbackUpdatesZeroVelocityState);
-  FRIEND_TEST(Nav2BridgeTestFixture, CmdVelTwistStampedCallbackUpdatesZeroVelocityState);
-  FRIEND_TEST(Nav2BridgeTestFixture, CmdVelNonZeroClearsZeroVelocityState);
+  FRIEND_TEST(Nav2BridgeNodeFixture, ResetNavStateClearsRouteContext);
+  FRIEND_TEST(Nav2BridgeNodeFixture, AutoResumeTimeoutDefaultDisabled);
+  FRIEND_TEST(Nav2BridgeNodeFixture, AutoResumeTimeoutNegativeClampedToZero);
+  FRIEND_TEST(Nav2BridgeNodeFixture, AutoResumeTimeoutNonFiniteClampedToZero);
+  FRIEND_TEST(Nav2BridgeNodeFixture, CancelAutoResumeTimerIsIdempotent);
+  FRIEND_TEST(Nav2BridgeNodeFixture, ResetNavStateCancelsAutoResumeTimer);
+  FRIEND_TEST(Nav2BridgeNodeFixture, CmdVelTwistCallbackUpdatesZeroVelocityState);
+  FRIEND_TEST(Nav2BridgeNodeFixture, CmdVelTwistStampedCallbackUpdatesZeroVelocityState);
+  FRIEND_TEST(Nav2BridgeNodeFixture, CmdVelNonZeroClearsZeroVelocityState);
   FRIEND_TEST(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeExplicit);
   FRIEND_TEST(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeAutoByDistro);
   FRIEND_TEST(Nav2BridgeTestFixture, ResolveCmdVelMsgTypeUnknownFallback);
