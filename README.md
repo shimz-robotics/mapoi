@@ -68,21 +68,18 @@ See [docs/docker.md](./docs/docker.md) for details on the Humble variant, GPU ac
 ## Requirements
 
 - ROS 2 Humble (Ubuntu 22.04) or Jazzy (Ubuntu 24.04)
-- Nav2 and the other dependencies are resolved via `rosdep` (see the build steps below)
+- Nav2 and the other dependencies are resolved automatically, whether installing via apt or building from source with `rosdep`
 
-## Building and running the sample
+## Try the sample
 
 ```sh
-source /opt/ros/<distro>/setup.bash   # humble or jazzy
-# cd path/to/your_ws
-git clone https://github.com/shimz-robotics/mapoi.git src/mapoi
-rosdep update
-rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install
-source install/setup.bash
+sudo apt install ros-<distro>-mapoi-turtlebot3-example   # humble or jazzy
+source /opt/ros/<distro>/setup.bash
 export TURTLEBOT3_MODEL=burger
 ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml
 ```
+
+> Not yet available via apt for Humble on arm64 (upstream `turtlebot3` binaries are missing there) — build from source in that case, or use the [Docker quickstart](#docker-quickstart) instead. To build from source yourself, see [CONTRIBUTING.md](./CONTRIBUTING.md#development-setup).
 
 Access the Web UI from a browser:
 
@@ -99,7 +96,7 @@ ros2 topic pub -1 /mapoi/nav/goal_pose_poi std_msgs/msg/String "{data: goal}"
 
 ## Integrating with your own robot
 
-mapoi works with any Nav2-based robot, real or simulated. See [docs/integration.md](./docs/integration.md) for step-by-step integration instructions.
+mapoi works with any Nav2-based robot, real or simulated. The core packages are available via `apt install ros-<distro>-mapoi` (Humble and Jazzy) — see [docs/integration.md](./docs/integration.md) for step-by-step integration instructions.
 
 ## Package composition
 

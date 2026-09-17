@@ -3,7 +3,15 @@
 > English version (primary): [integration.md](./integration.md)
 > 本ファイルは日本語スナップショットです。最新の内容は英語版を参照してください。
 
-現状は本リポジトリを clone して colcon build で組み込んでください。**将来的に apt/rosdep での提供を予定しています**（[#20](https://github.com/shimz-robotics/mapoi/issues/20)）。
+コアパッケージは Humble・Jazzy とも apt/rosdep で配布しています。metapackage を入れれば一式（server・interfaces・RViz2 プラグイン・Web UI）が揃います:
+
+```sh
+sudo apt install ros-<distro>-mapoi   # humble または jazzy
+```
+
+RViz2 GUI や Web UI が不要なら `ros-<distro>-mapoi-server` だけでも足ります（依存で `mapoi_interfaces` も入ります）。
+
+colcon によるソースビルドも引き続き利用できます — [CONTRIBUTING.md](../CONTRIBUTING.md#development-setup) を参照してください。
 
 パッケージ・ノードの全体像は [docs/architecture.ja.md](./architecture.ja.md) を参照してください。
 

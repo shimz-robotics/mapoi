@@ -2,7 +2,7 @@
 
 > Japanese version: [docker.ja.md](./docker.ja.md)
 
-The Docker images are for **demo / evaluation purposes**. To integrate mapoi into your own robot, see [Integrating into your own robot](./integration.md) (apt/rosdep distribution is planned for the future).
+The Docker images are for **demo / evaluation purposes**. To integrate mapoi into your own robot, install it via apt — see [Integrating into your own robot](./integration.md).
 
 A Linux host is assumed; you can try the Turtlebot3 sample with Gazebo / RViz2 / Web UI.
 

@@ -3,7 +3,7 @@
 > English version (primary): [docker.md](./docker.md)
 > 本ファイルは日本語スナップショットです。最新の内容は英語版を参照してください。
 
-Docker イメージは **demo / 動作確認用**です。自作ロボットに組み込む場合は [自分のロボットへの導入方法](./integration.ja.md) を参照してください（将来 apt/rosdep での提供を予定しています）。
+Docker イメージは **demo / 動作確認用**です。自作ロボットに組み込む場合は apt でインストールしてください — [自分のロボットへの導入方法](./integration.ja.md) を参照してください。
 
 Linux ホストが前提で、Turtlebot3 サンプルを Gazebo / RViz2 / Web UI で体験できます。
 
