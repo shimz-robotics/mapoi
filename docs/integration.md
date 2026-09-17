@@ -2,13 +2,13 @@
 
 > Japanese version: [integration.ja.md](./integration.ja.md)
 
-The core packages are distributed via apt/rosdep for both Humble and Jazzy. Install the metapackage to get everything (server, interfaces, RViz2 plugins, Web UI):
+The core packages are distributed via apt/rosdep for both Humble and Jazzy. With ROS 2 sourced (`echo $ROS_DISTRO` prints `humble` or `jazzy`; if empty, `source /opt/ros/<distro>/setup.bash` first), install the metapackage to get everything (server, interfaces, RViz2 plugins, Web UI):
 
 ```sh
-sudo apt install ros-<distro>-mapoi   # humble or jazzy
+sudo apt install ros-$ROS_DISTRO-mapoi
 ```
 
-If you don't need the RViz2 GUI or Web UI, `ros-<distro>-mapoi-server` alone is enough (`mapoi_interfaces` comes along as a dependency).
+If you don't need the RViz2 GUI or Web UI, `ros-$ROS_DISTRO-mapoi-server` alone is enough (`mapoi_interfaces` comes along as a dependency).
 
 Building from source with colcon is also supported — see [CONTRIBUTING.md](../CONTRIBUTING.md#development-setup).
 
