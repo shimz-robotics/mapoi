@@ -2,7 +2,15 @@
 
 > Japanese version: [integration.ja.md](./integration.ja.md)
 
-For now, clone this repository and build it with colcon. **Distribution via apt/rosdep is planned** ([#20](https://github.com/shimz-robotics/mapoi/issues/20)).
+The core packages are distributed via apt/rosdep for both Humble and Jazzy. Install the metapackage to get everything (server, interfaces, RViz2 plugins, Web UI):
+
+```sh
+sudo apt install ros-<distro>-mapoi   # humble or jazzy
+```
+
+If you don't need the RViz2 GUI or Web UI, `ros-<distro>-mapoi-server` alone is enough (`mapoi_interfaces` comes along as a dependency).
+
+Building from source with colcon is also supported — see [CONTRIBUTING.md](../CONTRIBUTING.md#development-setup).
 
 See [docs/architecture.md](./architecture.md) for the big picture of how the packages and nodes fit together.
 

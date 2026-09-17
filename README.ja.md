@@ -69,21 +69,18 @@ Humble 版 / GPU 加速 / ソースビルド / 開発用 bind mount / UID 調整
 ## 動作要件
 
 - ROS 2 Humble (Ubuntu 22.04) または Jazzy (Ubuntu 24.04)
-- Nav2 ほか依存パッケージは `rosdep` で解決します（後述のビルド手順を参照）
+- Nav2 ほか依存パッケージは、apt でインストールする場合も `rosdep` でソースビルドする場合も自動解決されます
 
-## ビルドとサンプルの実行
+## サンプルを試す
 
 ```sh
-source /opt/ros/<distro>/setup.bash   # humble または jazzy
-# cd path/to/your_ws
-git clone https://github.com/shimz-robotics/mapoi.git src/mapoi
-rosdep update
-rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install
-source install/setup.bash
+sudo apt install ros-<distro>-mapoi-turtlebot3-example   # humble または jazzy
+source /opt/ros/<distro>/setup.bash
 export TURTLEBOT3_MODEL=burger
 ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml
 ```
+
+> Humble の arm64 では apt にまだ無い (upstream の `turtlebot3` バイナリが未収録) — その場合はソースビルドするか、代わりに [Docker quickstart](#docker-quickstart) を利用してください。自分でソースビルドする場合は [CONTRIBUTING.md](./CONTRIBUTING.md#development-setup) を参照してください。
 
 ブラウザから Web UI にアクセス:
 
@@ -100,7 +97,7 @@ ros2 topic pub -1 /mapoi/nav/goal_pose_poi std_msgs/msg/String "{data: goal}"
 
 ## 自分のロボットへの導入
 
-mapoi は Nav2 ベースのロボットであれば実機・シミュレーションを問わず利用できます。導入手順は [docs/integration.ja.md](./docs/integration.ja.md) を参照してください。
+mapoi は Nav2 ベースのロボットであれば実機・シミュレーションを問わず利用できます。コアパッケージは `apt install ros-<distro>-mapoi` (Humble・Jazzy) で入手できます — 導入手順は [docs/integration.ja.md](./docs/integration.ja.md) を参照してください。
 
 ## パッケージ構成
 
