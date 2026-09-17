@@ -74,8 +74,8 @@ Humble 版 / GPU 加速 / ソースビルド / 開発用 bind mount / UID 調整
 ## サンプルを試す
 
 ```sh
-sudo apt install ros-<distro>-mapoi-turtlebot3-example   # humble または jazzy
-source /opt/ros/<distro>/setup.bash
+source /opt/ros/<distro>/setup.bash   # humble または jazzy。既に source 済みならスキップ可 (確認: echo $ROS_DISTRO)
+sudo apt install ros-$ROS_DISTRO-mapoi-turtlebot3-example
 export TURTLEBOT3_MODEL=burger
 ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml
 ```

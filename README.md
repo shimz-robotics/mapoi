@@ -73,8 +73,8 @@ See [docs/docker.md](./docs/docker.md) for details on the Humble variant, GPU ac
 ## Try the sample
 
 ```sh
-sudo apt install ros-<distro>-mapoi-turtlebot3-example   # humble or jazzy
-source /opt/ros/<distro>/setup.bash
+source /opt/ros/<distro>/setup.bash   # humble or jazzy; skip if already sourced (check: echo $ROS_DISTRO)
+sudo apt install ros-$ROS_DISTRO-mapoi-turtlebot3-example
 export TURTLEBOT3_MODEL=burger
 ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml
 ```
