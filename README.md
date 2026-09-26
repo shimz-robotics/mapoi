@@ -47,39 +47,30 @@ flowchart LR
 
 The diagram above is simplified (localization, RViz markers, and status/event details are omitted) — see [docs/architecture.md](./docs/architecture.md) for the full node/topic/service breakdown.
 
-## Docker quickstart
-
-For the fastest way to try it out, `docker run` the image distributed via ghcr.io:
-
-```sh
-xhost +local:docker
-docker pull ghcr.io/shimz-robotics/mapoi:jazzy   # jazzy/latest is a rolling tag that tracks main; pull again on each revisit to get the latest
-docker run --rm -it --network host --ipc host \
-  -e DISPLAY=$DISPLAY \
-  -e QT_X11_NO_MITSHM=1 \
-  -v /tmp/.X11-unix:/tmp/.X11-unix \
-  ghcr.io/shimz-robotics/mapoi:jazzy
-```
-
-Access http://localhost:8765 in your browser. Bringing up the Nav2 lifecycle takes about 30-60 seconds, so give it a moment. If the WebUI stays stuck on "Navigation unavailable", see the troubleshooting section in [docs/docker.md](./docs/docker.md).
-
-See [docs/docker.md](./docs/docker.md) for details on the Humble variant, GPU acceleration, building from source, development bind mounts, UID adjustment, and more.
-
 ## Requirements
 
-- ROS 2 Humble (Ubuntu 22.04) or Jazzy (Ubuntu 24.04)
+- ROS 2 Humble (Ubuntu 22.04) or Jazzy (Ubuntu 24.04), or Docker
 - Nav2 and the other dependencies are resolved automatically, whether installing via apt or building from source with `rosdep`
+
+## Installation
+
+If ROS 2 (Humble / Jazzy) is already installed via apt, you can install mapoi with:
+
+```sh
+# source /opt/ros/<distro>/setup.bash   # humble or jazzy; skip if already sourced (check: echo $ROS_DISTRO)
+sudo apt install ros-$ROS_DISTRO-mapoi-turtlebot3-example
+# core packages only, without the sample:
+# sudo apt install ros-$ROS_DISTRO-mapoi
+```
+
+> The sample (`mapoi-turtlebot3-example`) is not yet available via apt for Humble on arm64 (upstream `turtlebot3` binaries are missing there) — build from source in that case, or [try it with Docker](#try-it-with-docker) instead. To build from source yourself, see [CONTRIBUTING.md](./CONTRIBUTING.md#development-setup).
 
 ## Try the sample
 
 ```sh
-source /opt/ros/<distro>/setup.bash   # humble or jazzy; skip if already sourced (check: echo $ROS_DISTRO)
-sudo apt install ros-$ROS_DISTRO-mapoi-turtlebot3-example
 export TURTLEBOT3_MODEL=burger
 ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml
 ```
-
-> Not yet available via apt for Humble on arm64 (upstream `turtlebot3` binaries are missing there) — build from source in that case, or use the [Docker quickstart](#docker-quickstart) instead. To build from source yourself, see [CONTRIBUTING.md](./CONTRIBUTING.md#development-setup).
 
 Access the Web UI from a browser:
 
@@ -94,9 +85,34 @@ If you'd rather send a goal from the command line, you can test autonomous navig
 ros2 topic pub -1 /mapoi/nav/goal_pose_poi std_msgs/msg/String "{data: goal}"
 ```
 
+## Try it with Docker
+
+Even without a ROS 2 environment, you can try the same sample by running the image distributed via ghcr.io:
+
+```sh
+xhost +local:docker
+docker pull ghcr.io/shimz-robotics/mapoi:jazzy   # jazzy/latest is a rolling tag that tracks main; pull again on each revisit to get the latest
+docker run --rm -it --network host --ipc host \
+  -e DISPLAY=$DISPLAY \
+  -e QT_X11_NO_MITSHM=1 \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  ghcr.io/shimz-robotics/mapoi:jazzy
+```
+
+Bringing up the Nav2 lifecycle takes about 30-60 seconds, so wait a moment before accessing http://localhost:8765 in your browser. If the WebUI stays stuck on "Navigation unavailable", see the troubleshooting section in [docs/docker.md](./docs/docker.md).
+
+The container is removed automatically on exit thanks to `--rm`. To clean up completely, remove the image and revoke the X server access:
+
+```sh
+docker rmi ghcr.io/shimz-robotics/mapoi:jazzy
+xhost -local:docker
+```
+
+See [docs/docker.md](./docs/docker.md) for details on the Humble variant, GPU acceleration, building from source, development bind mounts, UID adjustment, and more.
+
 ## Integrating with your own robot
 
-mapoi works with any Nav2-based robot, real or simulated. The core packages are available via `apt install ros-<distro>-mapoi` (Humble and Jazzy) — see [docs/integration.md](./docs/integration.md) for step-by-step integration instructions.
+mapoi works with any Nav2-based robot, real or simulated. See [docs/integration.md](./docs/integration.md) for details.
 
 ## Package composition
 
