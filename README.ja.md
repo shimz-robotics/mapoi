@@ -48,9 +48,47 @@ flowchart LR
 
 上図は簡略版です (localization・RViz マーカー・status/event の詳細は省略)。ノード・topic・service の全体像は [docs/architecture.ja.md](./docs/architecture.ja.md) を参照してください。
 
-## Docker quickstart
+## 動作要件
 
-最速で試したい場合は ghcr.io 配布 image を `docker run`:
+- ROS 2 Humble (Ubuntu 22.04) または Jazzy (Ubuntu 24.04) または Docker
+- Nav2 ほか依存パッケージは、apt でインストールする場合も `rosdep` でソースビルドする場合も自動解決されます
+
+## インストール
+
+ROS 2 (Humble / Jazzy) を apt で導入済みの環境なら、以下でインストールできます。
+
+```sh
+# source /opt/ros/<distro>/setup.bash   # humble または jazzy。既に source 済みならスキップ可 (確認: echo $ROS_DISTRO)
+sudo apt install ros-$ROS_DISTRO-mapoi-turtlebot3-example
+# サンプル不要ならコアのみ:
+# sudo apt install ros-$ROS_DISTRO-mapoi
+```
+
+> サンプル (`mapoi-turtlebot3-example`) は Humble の arm64 では apt にまだ無い (upstream の `turtlebot3` バイナリが未収録) — その場合はソースビルドするか、代わりに [Docker で試す](#docker-で試す) を利用してください。自分でソースビルドする場合は [CONTRIBUTING.md](./CONTRIBUTING.md#development-setup) を参照してください。
+
+## サンプルを試す
+
+```sh
+export TURTLEBOT3_MODEL=burger
+ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml
+```
+
+ブラウザから Web UI にアクセス:
+
+http://localhost:8765
+
+スマートフォンからも同一ネットワーク内であればアクセスできます。その場合、localhost の部分を実行している PC の IP アドレスに変更してください。
+地図表示・POI 編集・ナビゲーション操作・ロボット位置表示が可能です。
+
+コマンドで目的地を指定したい場合には、別ターミナルから自律走行をテストできます。
+
+```sh
+ros2 topic pub -1 /mapoi/nav/goal_pose_poi std_msgs/msg/String "{data: goal}"
+```
+
+## Docker で試す
+
+ROS 2 環境が無くても、ghcr.io 配布 image を `docker run` すれば同じサンプルを試せます。
 
 ```sh
 xhost +local:docker
@@ -62,42 +100,20 @@ docker run --rm -it --network host --ipc host \
   ghcr.io/shimz-robotics/mapoi:jazzy
 ```
 
-ブラウザで http://localhost:8765 にアクセス。Nav2 lifecycle 立ち上げに 30〜60 秒かかるので少し待ってから。WebUI が「Navigation unavailable」のままになる場合は [docs/docker.ja.md](./docs/docker.ja.md) のトラブルシューティングを参照してください。
+Nav2 lifecycle の立ち上げに 30〜60 秒かかるので、少し待ってからブラウザで http://localhost:8765 にアクセスしてください。WebUI が「Navigation unavailable」のままになる場合は [docs/docker.ja.md](./docs/docker.ja.md) のトラブルシューティングを参照してください。
+
+container は `--rm` により終了時に自動削除されます。完全に片付ける場合は、image を削除し X server へのアクセス許可を戻します。
+
+```sh
+docker rmi ghcr.io/shimz-robotics/mapoi:jazzy
+xhost -local:docker
+```
 
 Humble 版 / GPU 加速 / ソースビルド / 開発用 bind mount / UID 調整等の詳細は [docs/docker.ja.md](./docs/docker.ja.md) を参照してください。
 
-## 動作要件
-
-- ROS 2 Humble (Ubuntu 22.04) または Jazzy (Ubuntu 24.04)
-- Nav2 ほか依存パッケージは、apt でインストールする場合も `rosdep` でソースビルドする場合も自動解決されます
-
-## サンプルを試す
-
-```sh
-sudo apt install ros-<distro>-mapoi-turtlebot3-example   # humble または jazzy
-source /opt/ros/<distro>/setup.bash
-export TURTLEBOT3_MODEL=burger
-ros2 launch mapoi_turtlebot3_example turtlebot3_navigation.launch.yaml
-```
-
-> Humble の arm64 では apt にまだ無い (upstream の `turtlebot3` バイナリが未収録) — その場合はソースビルドするか、代わりに [Docker quickstart](#docker-quickstart) を利用してください。自分でソースビルドする場合は [CONTRIBUTING.md](./CONTRIBUTING.md#development-setup) を参照してください。
-
-ブラウザから Web UI にアクセス:
-
-http://localhost:8765
-
-スマートフォンからも同一ネットワーク内であればアクセスできます。その場合、localhostの部分を実行しているPCのIPアドレスに変更してください。
-地図表示・POI 編集・ナビゲーション操作・ロボット位置表示が可能です。
-
-コマンドで目的地を指定したい場合には、別ターミナルから自律走行をテストできます。
-
-```sh
-ros2 topic pub -1 /mapoi/nav/goal_pose_poi std_msgs/msg/String "{data: goal}"
-```
-
 ## 自分のロボットへの導入
 
-mapoi は Nav2 ベースのロボットであれば実機・シミュレーションを問わず利用できます。コアパッケージは `apt install ros-<distro>-mapoi` (Humble・Jazzy) で入手できます — 導入手順は [docs/integration.ja.md](./docs/integration.ja.md) を参照してください。
+mapoi は Nav2 ベースのロボットであれば実機・シミュレーションを問わず利用できます。詳細は [docs/integration.ja.md](./docs/integration.ja.md) を参照してください。
 
 ## パッケージ構成
 

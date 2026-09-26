@@ -3,13 +3,13 @@
 > English version (primary): [integration.md](./integration.md)
 > 本ファイルは日本語スナップショットです。最新の内容は英語版を参照してください。
 
-コアパッケージは Humble・Jazzy とも apt/rosdep で配布しています。metapackage を入れれば一式（server・interfaces・RViz2 プラグイン・Web UI）が揃います:
+コアパッケージは Humble・Jazzy とも apt/rosdep で配布しています。ROS 2 が source 済みなら (`echo $ROS_DISTRO` で `humble`/`jazzy` が出ます。空なら先に `source /opt/ros/<distro>/setup.bash`)、metapackage を入れれば一式（server・interfaces・RViz2 プラグイン・Web UI）が揃います:
 
 ```sh
-sudo apt install ros-<distro>-mapoi   # humble または jazzy
+sudo apt install ros-$ROS_DISTRO-mapoi
 ```
 
-RViz2 GUI や Web UI が不要なら `ros-<distro>-mapoi-server` だけでも足ります（依存で `mapoi_interfaces` も入ります）。
+RViz2 GUI や Web UI が不要なら `ros-$ROS_DISTRO-mapoi-server` だけでも足ります（依存で `mapoi_interfaces` も入ります）。
 
 colcon によるソースビルドも引き続き利用できます — [CONTRIBUTING.md](../CONTRIBUTING.md#development-setup) を参照してください。
 
