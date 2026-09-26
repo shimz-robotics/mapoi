@@ -6,23 +6,21 @@
 TurtleBot3 シミュレーション環境で mapoi の動作を確認するためのサンプルパッケージです。
 SLAM による地図作成から Navigation2 を用いた自律走行までの一連の手順を試すことができます。
 
-## 依存パッケージのインストール
+## インストール
 
-rosdep を使用する場合:
+apt でインストールできます (Humble / Jazzy)。TurtleBot3 シミュレーション・Navigation2・mapoi コア一式も依存で入ります:
+
+```sh
+sudo apt install ros-$ROS_DISTRO-mapoi-turtlebot3-example
+```
+
+> Humble の arm64 では apt にまだ無い (upstream の `turtlebot3` バイナリが未収録)。その場合はソースビルド ([CONTRIBUTING.md](../CONTRIBUTING.md#development-setup)) するか、[Docker](../docs/docker.ja.md) を利用してください。
+
+ソースビルドする場合は、ワークスペースで rosdep により依存を解決します:
 
 ```sh
 # cd path/to/your_ws/
 rosdep install --from-paths src --ignore-src -r -y
-```
-
-手動でインストールする場合:
-
-```sh
-sudo apt install -y \
-  ros-${ROS_DISTRO}-turtlebot3-simulations \
-  ros-${ROS_DISTRO}-turtlebot3-cartographer \
-  ros-${ROS_DISTRO}-turtlebot3-navigation2 \
-  ros-${ROS_DISTRO}-mouse-teleop
 ```
 
 ## クイックスタート
@@ -111,10 +109,11 @@ ros2 launch turtlebot3_cartographer cartographer.launch.py use_sim_time:=True
 ### 3. ロボットの操作
 
 ```sh
-ros2 run mouse_teleop mouse_teleop --ros-args -r /mouse_vel:=/cmd_vel
+export TURTLEBOT3_MODEL=burger
+ros2 run turtlebot3_teleop teleop_keyboard
 ```
 
-マウスでロボットを操作して環境全体を走行させ、地図を完成させます。
+キーボード (`teleop_keyboard` を実行した端末) でロボットを操作して環境全体を走行させ、地図を完成させます。
 
 ### 4. 地図の保存
 

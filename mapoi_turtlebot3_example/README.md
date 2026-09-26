@@ -5,23 +5,21 @@
 A sample package for trying out mapoi in the TurtleBot3 simulation environment.
 You can walk through the whole flow, from building a map with SLAM to autonomous navigation using Navigation2.
 
-## Installing dependencies
+## Installation
 
-Using rosdep:
+Install via apt (Humble / Jazzy). The TurtleBot3 simulation, Navigation2, and the mapoi core packages come along as dependencies:
+
+```sh
+sudo apt install ros-$ROS_DISTRO-mapoi-turtlebot3-example
+```
+
+> Not yet available via apt for Humble on arm64 (upstream `turtlebot3` binaries are missing there). In that case, build from source ([CONTRIBUTING.md](../CONTRIBUTING.md#development-setup)) or use [Docker](../docs/docker.md).
+
+When building from source, resolve the dependencies with rosdep in your workspace:
 
 ```sh
 # cd path/to/your_ws/
 rosdep install --from-paths src --ignore-src -r -y
-```
-
-Installing manually:
-
-```sh
-sudo apt install -y \
-  ros-${ROS_DISTRO}-turtlebot3-simulations \
-  ros-${ROS_DISTRO}-turtlebot3-cartographer \
-  ros-${ROS_DISTRO}-turtlebot3-navigation2 \
-  ros-${ROS_DISTRO}-mouse-teleop
 ```
 
 ## Quick start
@@ -110,10 +108,11 @@ ros2 launch turtlebot3_cartographer cartographer.launch.py use_sim_time:=True
 ### 3. Drive the robot
 
 ```sh
-ros2 run mouse_teleop mouse_teleop --ros-args -r /mouse_vel:=/cmd_vel
+export TURTLEBOT3_MODEL=burger
+ros2 run turtlebot3_teleop teleop_keyboard
 ```
 
-Drive the robot with the mouse around the whole environment to complete the map.
+Drive the robot with the keyboard (in the terminal running `teleop_keyboard`) around the whole environment to complete the map.
 
 ### 4. Save the map
 
