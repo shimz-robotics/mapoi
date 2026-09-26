@@ -13,15 +13,9 @@ Install via apt (Humble / Jazzy). The TurtleBot3 simulation, Navigation2, and th
 sudo apt install ros-$ROS_DISTRO-mapoi-turtlebot3-example
 ```
 
-To also try [building a map (SLAM)](#building-a-map-slam), install `mouse_teleop`, which is used to drive the robot:
-
-```sh
-sudo apt install ros-$ROS_DISTRO-mouse-teleop
-```
-
 > Not yet available via apt for Humble on arm64 (upstream `turtlebot3` binaries are missing there). In that case, build from source ([CONTRIBUTING.md](../CONTRIBUTING.md#development-setup)) or use [Docker](../docs/docker.md).
 
-When building from source, resolve the dependencies with rosdep in your workspace (`mouse_teleop` still needs to be installed separately):
+When building from source, resolve the dependencies with rosdep in your workspace:
 
 ```sh
 # cd path/to/your_ws/
@@ -114,10 +108,11 @@ ros2 launch turtlebot3_cartographer cartographer.launch.py use_sim_time:=True
 ### 3. Drive the robot
 
 ```sh
-ros2 run mouse_teleop mouse_teleop --ros-args -r /mouse_vel:=/cmd_vel
+export TURTLEBOT3_MODEL=burger
+ros2 run turtlebot3_teleop teleop_keyboard
 ```
 
-Drive the robot with the mouse around the whole environment to complete the map.
+Drive the robot with the keyboard (in the terminal running `teleop_keyboard`) around the whole environment to complete the map.
 
 ### 4. Save the map
 

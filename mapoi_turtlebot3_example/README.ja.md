@@ -14,15 +14,9 @@ apt でインストールできます (Humble / Jazzy)。TurtleBot3 シミュレ
 sudo apt install ros-$ROS_DISTRO-mapoi-turtlebot3-example
 ```
 
-後述の「地図の作成（SLAM）」も試す場合は、ロボット操作に使う `mouse_teleop` を追加でインストールします:
-
-```sh
-sudo apt install ros-$ROS_DISTRO-mouse-teleop
-```
-
 > Humble の arm64 では apt にまだ無い (upstream の `turtlebot3` バイナリが未収録)。その場合はソースビルド ([CONTRIBUTING.md](../CONTRIBUTING.md#development-setup)) するか、[Docker](../docs/docker.ja.md) を利用してください。
 
-ソースビルドする場合は、ワークスペースで rosdep により依存を解決します (`mouse_teleop` は別途インストールが必要です):
+ソースビルドする場合は、ワークスペースで rosdep により依存を解決します:
 
 ```sh
 # cd path/to/your_ws/
@@ -115,10 +109,11 @@ ros2 launch turtlebot3_cartographer cartographer.launch.py use_sim_time:=True
 ### 3. ロボットの操作
 
 ```sh
-ros2 run mouse_teleop mouse_teleop --ros-args -r /mouse_vel:=/cmd_vel
+export TURTLEBOT3_MODEL=burger
+ros2 run turtlebot3_teleop teleop_keyboard
 ```
 
-マウスでロボットを操作して環境全体を走行させ、地図を完成させます。
+キーボード (`teleop_keyboard` を実行した端末) でロボットを操作して環境全体を走行させ、地図を完成させます。
 
 ### 4. 地図の保存
 
