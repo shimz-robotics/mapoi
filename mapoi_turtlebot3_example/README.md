@@ -5,23 +5,27 @@
 A sample package for trying out mapoi in the TurtleBot3 simulation environment.
 You can walk through the whole flow, from building a map with SLAM to autonomous navigation using Navigation2.
 
-## Installing dependencies
+## Installation
 
-Using rosdep:
+Install via apt (Humble / Jazzy). The TurtleBot3 simulation, Navigation2, and the mapoi core packages come along as dependencies:
+
+```sh
+sudo apt install ros-$ROS_DISTRO-mapoi-turtlebot3-example
+```
+
+To also try [building a map (SLAM)](#building-a-map-slam), install `mouse_teleop`, which is used to drive the robot:
+
+```sh
+sudo apt install ros-$ROS_DISTRO-mouse-teleop
+```
+
+> Not yet available via apt for Humble on arm64 (upstream `turtlebot3` binaries are missing there). In that case, build from source ([CONTRIBUTING.md](../CONTRIBUTING.md#development-setup)) or use [Docker](../docs/docker.md).
+
+When building from source, resolve the dependencies with rosdep in your workspace (`mouse_teleop` still needs to be installed separately):
 
 ```sh
 # cd path/to/your_ws/
 rosdep install --from-paths src --ignore-src -r -y
-```
-
-Installing manually:
-
-```sh
-sudo apt install -y \
-  ros-${ROS_DISTRO}-turtlebot3-simulations \
-  ros-${ROS_DISTRO}-turtlebot3-cartographer \
-  ros-${ROS_DISTRO}-turtlebot3-navigation2 \
-  ros-${ROS_DISTRO}-mouse-teleop
 ```
 
 ## Quick start
